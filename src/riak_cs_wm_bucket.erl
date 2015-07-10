@@ -147,8 +147,7 @@ accept_body(RD, Ctx=#context{user=User,
 %% @doc Callback for deleting a bucket.
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
-delete_resource(RD, Ctx=#context{start_time=StartTime,
-                                 user=User,
+delete_resource(RD, Ctx=#context{user=User,
                                  user_object=UserObj,
                                  response_module=ResponseMod,
                                  bucket=Bucket,
@@ -162,7 +161,6 @@ delete_resource(RD, Ctx=#context{start_time=StartTime,
         ok ->
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            ok = riak_cs_stats:update_with_start([bucket, delete], StartTime),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = ResponseMod:status_code(Reason),
