@@ -29,7 +29,6 @@
          content_types_accepted/2,
          post_is_create/2,
          process_post/2,
-         multiple_choices/2,
          valid_entity_length/2,
          delete_resource/2,
          accept_body/2,
@@ -140,9 +139,6 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
                     riak_cs_s3_response:api_error(Reason, RD, Ctx)
             end
     end.
-
-multiple_choices(RD, Ctx) ->
-    {false, RD, Ctx}.
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->

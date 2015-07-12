@@ -35,7 +35,6 @@
          allowed_methods/0,
          malformed_request/2,
          content_types_accepted/2,
-         multiple_choices/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -118,9 +117,6 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-multiple_choices(RD, Ctx) ->
-    {false, RD, Ctx}.
 
 finish_request(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
