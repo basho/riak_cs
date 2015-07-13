@@ -1,7 +1,8 @@
 # Errors
-riak_cs_block_server.erl:312: The pattern Success = {'ok', _} can never match the type {'error',_}
-riak_cs_block_server.erl:347: The pattern {'ok', RiakObject} can never match the type {'error',_}
-riak_cs_pbc.erl:100: The pattern {'ok', ClusterID} can never match the type {'error',_}
+riak_cs_block_server.erl:324: The pattern Success = {'ok', _} can never match the type {'error',_}
+riak_cs_block_server.erl:361: The pattern {'ok', RiakObject} can never match the type {'error',_}
+riak_cs_pbc.erl:58: The variable _ can never match since previous clauses completely covered the type 'pong'
+riak_cs_pbc.erl:175: The pattern {'ok', ClusterID} can never match the type {'error',_}
 # Warnings
 Unknown functions:
   app_helper:get_prop_or_env/3

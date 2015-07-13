@@ -124,7 +124,8 @@ sum_bucket(BucketName, Detailed, LeewayEdge) ->
                     false -> ManifestBucket
                 end,
         Timeout = riak_cs_config:storage_calc_timeout(),
-        case riakc_pb_socket:mapred(ManifestPbc, Input, Query, Timeout) of
+        case riak_cs_pbc:mapred(ManifestPbc, Input, Query, Timeout,
+                                [riakc, mapred_storage]) of
             {ok, MRRes} ->
                 extract_summary(MRRes, Detailed);
             {error, Error} ->

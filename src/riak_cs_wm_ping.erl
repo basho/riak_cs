@@ -104,7 +104,7 @@ non_pool_connection() ->
 riak_ping({RcPid, PoolPid}, Ctx) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     Timeout = riak_cs_config:ping_timeout(),
-    Available = case catch riakc_pb_socket:ping(MasterPbc, Timeout) of
+    Available = case catch riak_cs_pbc:ping(MasterPbc, Timeout, [riakc, ping]) of
                     pong ->
                         true;
                     _ ->

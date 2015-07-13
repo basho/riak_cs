@@ -517,9 +517,11 @@ update_stats(_RD, #context{stats_prefix=no_stats}) ->
     ok;
 update_stats(RD, #context{start_time=StartTime,
                           stats_prefix=StatsPrefix, stats_key=StatsKey}) ->
-    update_stats(StartTime, wrq:response_code(RD),
-                 StatsPrefix, riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
-                 StatsKey).
+    catch update_stats(StartTime,
+                       wrq:response_code(RD),
+                       StatsPrefix,
+                       riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
+                       StatsKey).
 
 update_stats(StartTime, Code, StatsPrefix, Method, StatsKey0) ->
     StatsKey = case StatsKey0 of
@@ -527,6 +529,10 @@ update_stats(StartTime, Code, StatsPrefix, Method, StatsKey0) ->
                    _  -> StatsKey0
                end,
     case Code of
+        405 ->
+            %% Method Not Allowed: don't update stats because unallowed
+            %% mothod may lead to notfound warning in updating stats
+            ok;
         Success when is_integer(Success) andalso Success < 400 ->
             riak_cs_stats:update_with_start(StatsKey, StartTime);
         _Error ->

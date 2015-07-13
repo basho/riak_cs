@@ -380,7 +380,8 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
     %% again without having to re-retrieve the object
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body],
-                    riak_cs_config:put_gckey_timeout()). %% <= bug: put_manifest_timeout should be used here
+                    riak_cs_config:put_gckey_timeout(), %% <= bug: put_manifest_timeout should be used here
+                    [riakc, put_manifest]).
 
 -spec maybe_delete_small_objects([cs_uuid_and_manifest()], riak_client(), non_neg_integer()) ->
                                         {[cs_uuid_and_manifest()], [cs_uuid()]}.
@@ -457,7 +458,8 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_gckey_timeout(),
     ObjectToWrite =
-        case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key, Timeout) of
+        case riak_cs_pbc:get(ManifestPbc, ?GC_BUCKET, Key, [], Timeout,
+                             [riakc, get_gc_manifest_set]) of
             {error, notfound} ->
                 %% There was no previous value, so we'll
                 %% create a new riak object and write it
@@ -475,7 +477,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     Timeout1 = riak_cs_config:put_gckey_timeout(),
-    riak_cs_pbc:put(ManifestPbc, ObjectToWrite, Timeout1).
+    riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 
 -spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->

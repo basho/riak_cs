@@ -84,6 +84,17 @@ duration_metrics() ->
          [velvet, set_bucket_policy],
          [velvet, delete_bucket_policy],
 
+         %% Riak PB client, per key operations
+         [riakc, ping],
+         [riakc, get_cs_bucket],
+         [riakc, get_cs_user_strong],
+         [riakc, get_cs_user],
+         [riakc, put_cs_user],
+
+         [riakc, get_manifest],
+         [riakc, put_manifest],
+         [riakc, delete_manifest],
+
          [riakc, get_block_n_one],
          [riakc, get_block_n_all],
          [riakc, get_block_remote],
@@ -93,7 +104,29 @@ duration_metrics() ->
          [riakc, put_block_resolved],
          [riakc, head_block],
          [riakc, delete_block_constrained],
-         [riakc, delete_block_secondary]
+         [riakc, delete_block_secondary],
+
+         [riakc, get_gc_manifest_set],
+         [riakc, put_gc_manifest_set],
+         [riakc, delete_gc_manifest_set],
+         [riakc, get_access],
+         [riakc, put_access],
+         [riakc, get_storage],
+         [riakc, put_storage],
+
+         %% Riak PB client, coverage operations
+         [riakc, fold_manifest_objs],
+         [riakc, mapred_storage],
+         [riakc, list_all_user_keys],
+         [riakc, list_all_manifest_keys],
+         [riakc, list_users_receive_chunk],
+         [riakc, get_uploads_by_index],
+         [riakc, get_user_by_index],
+         [riakc, get_gc_keys_by_index],
+         [riakc, get_cs_buckets_by_index],
+
+         %% Riak PB client, misc
+         [riakc, get_clusterid]
         ].
 
 counting_metrics() ->
@@ -118,8 +151,7 @@ counting_subkeys() ->
 
 -spec inflow(key()) -> ok.
 inflow(Key) ->
-    lager:debug("~p:inflow Key: ~p", [?MODULE, Key]),
-    ok = exometer:update([riak_cs, in | Key], 1).
+    safe_update([riak_cs, in | Key], 1).
 
 -spec update_with_start(key(), erlang:timestamp(), ok_error_res()) -> ok.
 update_with_start(Key, StartTime, ok) ->
@@ -139,8 +171,7 @@ update_error_with_start(Key, StartTime) ->
 
 -spec countup(key()) -> ok.
 countup(Key) ->
-    lager:debug("~p:countup Key: ~p", [?MODULE, Key]),
-    ok = exometer:update([riak_cs | Key], 1).
+    safe_update([riak_cs | Key], 1).
 
 -spec report_json() -> string().
 report_json() ->
@@ -182,9 +213,16 @@ init_counting_item(Key) ->
 
 -spec update(key(), integer()) -> ok.
 update(Key, ElapsedUs) ->
-    lager:debug("~p:update Key: ~p", [?MODULE, Key]),
-    ok = exometer:update([riak_cs, out | Key], 1),
-    ok = exometer:update([riak_cs, time | Key], ElapsedUs).
+    safe_update([riak_cs, out | Key], 1),
+    safe_update([riak_cs, time | Key], ElapsedUs).
+
+safe_update(ExometerKey, Arg) ->
+    case exometer:update(ExometerKey, Arg) of
+        ok -> ok;
+        {error, Reason} ->
+            lager:warning("Stats update for key ~p error: ~p", [ExometerKey, Reason]),
+            ok
+    end.
 
 -spec report_exometer_item(key(), [atom()], exometer:type()) -> [{atom(), integer()}].
 report_exometer_item(Key, SubKey, ExometerType) ->
@@ -203,7 +241,7 @@ datapoints(spiral) ->
 suffixes(histogram) ->
     ["_mean", "_median", "_95", "_99", "_100"];
 suffixes(spiral) ->
-    ["_one", "_count"].
+    ["_one", "_total"].
 
 -spec report_pool(atom()) -> [{atom(), integer()}].
 report_pool(Pool) ->
@@ -231,14 +269,19 @@ stats_test_() ->
      fun(_) ->
              [ok = application:stop(App) || App <- Apps]
      end,
-     [{inparallel, [fun() ->
-                            inflow(Key),
-                            update(Key, 16#deadbeef),
-                            update([error | Key], 16#deadbeef)
-                    end || Key <- duration_metrics()]},
+     [{inparallel,
+       [fun() ->
+                inflow(Key),
+                update(Key, 16#deadbeef),
+                update([error | Key], 16#deadbeef)
+        end || Key <- duration_metrics()]},
+      {inparallel,
+       [fun() ->
+                countup(Key)
+        end || Key <- counting_metrics()]},
       fun() ->
               [begin
-                   Report = [N || {_, N} <- report_duration(Key, SubKey, ExometerType)],
+                   Report = [N || {_, N} <- report_exometer_item(Key, SubKey, ExometerType)],
                    case ExometerType of
                        spiral ->
                            ?assertEqual([1, 1], Report);
@@ -249,7 +292,15 @@ stats_test_() ->
                               Report)
                    end
                end || Key <- duration_metrics(),
-                      {SubKey, ExometerType} <- duration_subkeys()]
+                      {SubKey, ExometerType} <- duration_subkeys()],
+              [begin
+                   Report = [N || {_, N} <- report_exometer_item(Key, SubKey, ExometerType)],
+                   case ExometerType of
+                       spiral ->
+                           ?assertEqual([1, 1], Report)
+                   end
+               end || Key <- counting_metrics(),
+                      {SubKey, ExometerType} <- counting_subkeys()]
       end]}.
 
 -endif.

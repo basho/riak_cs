@@ -76,6 +76,7 @@
          proxy_get_block_timeout/0, %% for remote
          get_access_timeout/0,
          get_gckey_timeout/0,
+         put_user_timeout/0,
          put_manifest_timeout/0,
          put_block_timeout/0,
          put_access_timeout/0,
@@ -432,10 +433,7 @@ active_delete_threshold() ->
                get_env(riak_cs, ConfigName,
                        get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT))).
 
-%% @doc Return the configured ping timeout. Default is 5 seconds.  The
-%% timeout is used in call to `poolboy:checkout' and if that fails in
-%% the call to `riakc_pb_socket:ping' so the effective cumulative
-%% timeout could be up to 2 * `ping_timeout()'.
+%% @doc Return the configured ping timeout. Default is 5 seconds.
 -spec ping_timeout() -> pos_integer().
 ping_timeout() ->
     get_env(riak_cs, ping_timeout, ?DEFAULT_PING_TIMEOUT).
@@ -452,6 +450,7 @@ local_get_block_timeout() ->
 ?TIMEOUT_CONFIG_FUNC(proxy_get_block_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_access_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_gckey_timeout).
+?TIMEOUT_CONFIG_FUNC(put_user_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_manifest_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_block_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_access_timeout).

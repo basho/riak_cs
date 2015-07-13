@@ -229,7 +229,8 @@ fetch_next_fileset(ManifestSetKey, RcPid) ->
     %% Get the set of manifests represented by the key
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_gckey_timeout(),
-    case riak_cs_pbc:get_object(ManifestPbc, ?GC_BUCKET, ManifestSetKey, Timeout) of
+    case riak_cs_pbc:get(ManifestPbc, ?GC_BUCKET, ManifestSetKey, [],
+                         Timeout, [riakc, get_gc_manifest_set]) of
         {ok, RiakObj} ->
             ManifestSet = riak_cs_gc:decode_and_merge_siblings(
                             RiakObj, twop_set:new()),
@@ -255,7 +256,8 @@ finish_file_delete(0, _, RiakObj, RcPid) ->
     %% Delete the key from the GC bucket
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:delete_gckey_timeout(),
-    _ = riakc_pb_socket:delete_obj(ManifestPbc, RiakObj, [], Timeout),
+    _ = riak_cs_pbc:delete_obj(ManifestPbc, RiakObj, [],
+                               Timeout, [riakc, delete_gc_manifest_set]),
     ok;
 finish_file_delete(_, FileSet, _RiakObj, _RcPid) ->
     _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),

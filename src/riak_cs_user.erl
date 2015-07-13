@@ -184,7 +184,9 @@ get_user_by_index(Index, Value, RcPid) ->
 -spec get_user_index(binary(), binary(), riak_client()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RcPid) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riakc_pb_socket:get_index(MasterPbc, ?USER_BUCKET, Index, Value) of
+    %% TODO: Does adding max_results=1 help latency or load to riak cluster?
+    case riak_cs_pbc:get_index_eq(MasterPbc, ?USER_BUCKET, Index, Value,
+                                  [riakc, get_user_by_index]) of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->
