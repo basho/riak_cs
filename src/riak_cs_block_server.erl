@@ -209,12 +209,12 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     _ = case riakc_pb_socket:get(block_pbc(RcPid), FullBucket, FullKey, GetOptions, Timeout) of
             {ok, RiakObject} ->
                 ok = delete_block(RcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
-        {error, notfound} ->
-            %% If the block isn't found, assume it's been
-            %% previously deleted by another delete FSM, and
-            %% move on to the next block.
-            riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
-    end,
+            {error, notfound} ->
+                %% If the block isn't found, assume it's been
+                %% previously deleted by another delete FSM, and
+                %% move on to the next block.
+                riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
+        end,
     ok = riak_cs_stats:update_with_start([block, delete], StartTime),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
@@ -240,16 +240,26 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
              UUID, BlockNumber, RcPid) ->
     MaxRetries = riak_cs_config:get_env(riak_cs, block_get_max_retries, 5),
     do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-                 UUID, BlockNumber, RcPid, MaxRetries, 0).
+                 UUID, BlockNumber, RcPid, MaxRetries, []).
 
 do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
-             UUID, BlockNumber, _RcPid, MaxRetries, NumRetries)
-  when is_atom(NumRetries) orelse NumRetries > MaxRetries ->
-    Sorry = {error, notfound},
+             UUID, BlockNumber, _RcPid, _MaxRetries, {LastReason, ErrorReasons})
+  when is_list(ErrorReasons) andalso is_atom(LastReason) ->
+    %% Not worth retrying, 'failure' comes as LastReason
+    Sorry = {error, ErrorReasons},
+    _ = lager:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
+
+do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
+             UUID, BlockNumber, _RcPid, MaxRetries, ErrorReasons)
+  when is_list(ErrorReasons) andalso length(ErrorReasons) > MaxRetries ->
+    Sorry = {error, ErrorReasons},
+    _ = lager:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
+    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
+
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
-             UUID, BlockNumber, RcPid, MaxRetries, NumRetries) ->
-    ok = sleep_retries(NumRetries),
+             UUID, BlockNumber, RcPid, MaxRetries, ErrorReasons) ->
+    ok = sleep_retries(length(ErrorReasons)),
 
     dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
@@ -264,39 +274,40 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
             dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key])
       end,
     RetryFun = fun(NewPause) ->
-               ok = riak_cs_stats:update_with_start([block, get, retry], StartTime),
-               do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
-                            ProxyActive, UUID, BlockNumber, RcPid, MaxRetries, NewPause)
-            end,
+                       ok = riak_cs_stats:update_with_start([block, get, retry], StartTime),
+                       do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
+                                    ProxyActive, UUID, BlockNumber, RcPid, MaxRetries, NewPause)
+               end,
 
     Timeout = riak_cs_config:local_get_block_timeout(),
     try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
-                  Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
+                  Timeout, ProceedFun, RetryFun, ErrorReasons, UseProxyGet,
                   ProxyActive, ClusterID).
 
 try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
-              Timeout, ProceedFun, RetryFun, NumRetries, UseProxyGet,
+              Timeout, ProceedFun, RetryFun, ErrorReasons, UseProxyGet,
               ProxyActive, ClusterID) ->
     case get_block_local(RcPid, FullBucket, FullKey, GetOptions1, Timeout) of
         {ok, _} = Success ->
             ProceedFun(Success);
-        {error, {insufficient_vnodes,_,need,_}} ->
-            RetryFun(NumRetries + 2);
+        {error, {insufficient_vnodes,_,need,_} = Reason} ->
+            RetryFun([{local_one, Reason}|ErrorReasons]);
         {error, Why} when Why == notfound;
                           Why == timeout;
                           Why == disconnected;
                           Why == <<"{insufficient_vnodes,0,need,1}">>;
                           Why == {insufficient_vnodes,0,need,1} ->
             handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
-                                  ProceedFun, RetryFun, NumRetries, UseProxyGet,
+                                  ProceedFun, RetryFun,
+                                  [{local_one, Why}|ErrorReasons], UseProxyGet,
                                   ProxyActive, ClusterID);
         {error, Other} ->
             _ = lager:error("do_get_block: other error 1: ~p\n", [Other]),
-            RetryFun(failure)
+            RetryFun({failure, [{local_one, Other}|ErrorReasons]})
     end.
 
 handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
-                      ProceedFun, RetryFun, NumRetries, UseProxyGet,
+                      ProceedFun, RetryFun, ErrorReasons, UseProxyGet,
                       ProxyActive, ClusterID) ->
 
     Timeout = riak_cs_config:get_block_timeout(),
@@ -307,24 +318,25 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
         {error, Why} when Why == disconnected;
                           Why == timeout ->
             _ = lager:debug("get_block_local/5 failed: {error, ~p}", [Why]),
-            RetryFun(NumRetries + 1);
+            RetryFun([{local_quorum, Why}|ErrorReasons]);
 
         {error, notfound} when UseProxyGet andalso ProxyActive->
             case get_block_remote(RcPid, FullBucket, FullKey,
                                   ClusterID, GetOptions2) of
                 {ok, _} = Success ->
                     ProceedFun(Success);
-                {error, _} ->
-                    RetryFun(NumRetries + 1)
+                {error, Reason} ->
+                    RetryFun([{remote_quorum, Reason}, {local_quorum, notfound}|ErrorReasons])
             end;
-        {error, notfound} when UseProxyGet ->
-            RetryFun(NumRetries + 1);
-        {error, notfound} ->
-            RetryFun(failure);
 
+        {error, notfound} when UseProxyGet ->
+            RetryFun([{local_quorum, notfound}|ErrorReasons]);
+
+        {error, notfound} ->
+            RetryFun({failure, [{local_quorum, notfound}|ErrorReasons]});
         {error, Other} ->
             _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
-            RetryFun(failure)
+            RetryFun({failure, [{local_quorum, Other}|ErrorReasons]})
     end.
 
 get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout) ->
