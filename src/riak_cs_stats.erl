@@ -21,17 +21,19 @@
 -module(riak_cs_stats).
 
 %% API
--export([update/2,
+-export([
+         inflow/1,
          update_with_start/3,
          update_with_start/2,
          update_error_with_start/2,
-         inflow/1,
+         update/2,
+         countup/1,
          report_json/0,
          report_pretty_json/0,
          get_stats/0]).
 
 %% Lower level API, mainly for debugging or investigation from shell
--export([report_duration/3,
+-export([report_exometer_item/3,
          report_pool/1]).
 
 -export([init/0]).
@@ -82,14 +84,23 @@ duration_metrics() ->
          [velvet, set_bucket_policy],
          [velvet, delete_bucket_policy],
 
-         %% TODO: Remove backpresure sleep
-         [manifest, siblings_bp_sleep],
-
-         [block, get],
-         [block, get, retry],
-         [block, put],
-         [block, delete]
+         [riakc, get_block_n_one],
+         [riakc, get_block_n_all],
+         [riakc, get_block_remote],
+         [riakc, get_block_legacy],
+         [riakc, get_block_legacy_remote],
+         [riakc, put_block],
+         [riakc, put_block_resolved],
+         [riakc, head_block],
+         [riakc, delete_block_constrained],
+         [riakc, delete_block_secondary]
         ].
+
+counting_metrics() ->
+    [
+         %% Almost deprecated
+         [manifest, siblings_bp_sleep]
+    ].
 
 duration_subkeys() ->
     [{[in], spiral},
@@ -97,6 +108,9 @@ duration_subkeys() ->
      {[time], histogram},
      {[out, error], spiral},
      {[time, error], histogram}].
+
+counting_subkeys() ->
+    [{[], spiral}].
 
 %% ====================================================================
 %% API
@@ -123,6 +137,11 @@ update_with_start(Key, StartTime) ->
 update_error_with_start(Key, StartTime) ->
     update([error | Key], timer:now_diff(os:timestamp(), StartTime)).
 
+-spec countup(key()) -> ok.
+countup(Key) ->
+    lager:debug("~p:countup Key: ~p", [?MODULE, Key]),
+    ok = exometer:update([riak_cs | Key], 1).
+
 -spec report_json() -> string().
 report_json() ->
     lists:flatten(mochijson2:encode({struct, get_stats()})).
@@ -134,11 +153,15 @@ report_pretty_json() ->
 -spec get_stats() -> proplists:proplist().
 get_stats() ->
     DurationStats =
-        [report_duration(Key, SubKey, ExometerType) ||
+        [report_exometer_item(Key, SubKey, ExometerType) ||
             Key <- duration_metrics(),
             {SubKey, ExometerType} <- duration_subkeys()],
+    CountingStats =
+        [report_exometer_item(Key, SubKey, ExometerType) ||
+            Key <- counting_metrics(),
+            {SubKey, ExometerType} <- counting_subkeys()],
     PoolStats = [report_pool(P) || P <- [request_pool, bucket_list_pool]],
-    lists:flatten([DurationStats, PoolStats]).
+    lists:flatten([DurationStats, CountingStats, PoolStats]).
 
 %% ====================================================================
 %% Internal
@@ -146,11 +169,16 @@ get_stats() ->
 
 init() ->
     _ = [init_duration_item(I) || I <- duration_metrics()],
+    _ = [init_counting_item(I) || I <- counting_metrics()],
     ok.
 
 init_duration_item(Key) ->
     [ok = exometer:re_register([riak_cs | SubKey ++ Key], ExometerType, []) ||
         {SubKey, ExometerType} <- duration_subkeys()].
+
+init_counting_item(Key) ->
+    [ok = exometer:re_register([riak_cs | SubKey ++ Key], ExometerType, []) ||
+        {SubKey, ExometerType} <- counting_subkeys()].
 
 -spec update(key(), integer()) -> ok.
 update(Key, ElapsedUs) ->
@@ -158,8 +186,8 @@ update(Key, ElapsedUs) ->
     ok = exometer:update([riak_cs, out | Key], 1),
     ok = exometer:update([riak_cs, time | Key], ElapsedUs).
 
--spec report_duration(key(), [atom()], exometer:type()) -> [{atom(), integer()}].
-report_duration(Key, SubKey, ExometerType) ->
+-spec report_exometer_item(key(), [atom()], exometer:type()) -> [{atom(), integer()}].
+report_exometer_item(Key, SubKey, ExometerType) ->
     AtomKeys = [metric_to_atom(Key ++ SubKey, Suffix) ||
                    Suffix <- suffixes(ExometerType)],
     {ok, Values} = exometer:get_value([riak_cs | SubKey ++ Key],
