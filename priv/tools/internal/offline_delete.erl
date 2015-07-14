@@ -42,6 +42,15 @@ options() ->
      {yes, undefined, "yes", {boolean, false}, "Automatic yes to prompt"}].
 
 main(Args) ->
+    case code:ensure_loaded(bitcask) of
+        {module, bitcask} ->
+            ok;
+        {error, _} ->
+            io:format(standard_error,
+                      "\033[31m\033[1m[Error] Riak modules are not loaded. Make sure the script run with 'riak escript', not 'riak-cs escript'.\033[0m~n",
+                      []),
+            halt(1)
+    end,
     case getopt:parse(options(), Args) of
         {ok, {Options, [BitcaskDir, BlocksListFile]}} ->
             offline_delete(BitcaskDir, BlocksListFile, Options);
@@ -58,6 +67,16 @@ main(Args) ->
                               orddict:orddict(non_neg_integer(), reference()).
 open_all_bitcask(BitcaskDir) ->
     {ok, List} = file:list_dir(BitcaskDir),
+    FilterFun = fun(X) ->
+                        case re:run(X, "^[0-9]+$") of
+                            {match, _} ->
+                                true;
+                            _ ->
+                                io:format("skipping ~p in the bitcask dir.~n", [X]),
+                                false
+                        end
+                end,
+    DataDirs = lists:filter(FilterFun, List),
     Result = lists:map(fun(File) ->
                                Filename = filename:join(BitcaskDir, File),
                                case bitcask:open(Filename, [read_write]) of
@@ -66,7 +85,7 @@ open_all_bitcask(BitcaskDir) ->
                                    Other ->
                                        error({File, Other})
                                end
-                       end, List),
+                       end, DataDirs),
     orddict:from_list(Result).
 
 -spec close_all_bitcask(orddict:orddict(non_neg_integer(), reference())) -> ok.
