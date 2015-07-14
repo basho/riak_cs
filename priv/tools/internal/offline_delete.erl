@@ -72,7 +72,7 @@ open_all_bitcask(BitcaskDir) ->
                             {match, _} ->
                                 true;
                             _ ->
-                                io:format("skipping ~p in the bitcask dir.", [X]),
+                                io:format("skipping ~p in the bitcask dir.~n", [X]),
                                 false
                         end
                 end,
