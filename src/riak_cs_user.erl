@@ -153,7 +153,8 @@ get_user(KeyId, RcPid) ->
                     {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
                 0 ->
                     {error, no_value};
-                _ ->
+                N ->
+                    _ = lager:warning("User object of '~s' has ~p siblings", [KeyId, N]),
                     Values = [binary_to_term(Value) ||
                                  Value <- riakc_obj:get_values(Obj),
                                  Value /= <<>>  % tombstone

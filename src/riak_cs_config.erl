@@ -63,7 +63,8 @@
          use_2i_for_storage_calc/0,
          detailed_storage_calc/0,
          quota_modules/0,
-         active_delete_threshold/0
+         active_delete_threshold/0,
+         fast_user_get/0
         ]).
 
 %% Timeouts hitting Riak
@@ -423,6 +424,10 @@ quota_modules() ->
 -spec active_delete_threshold() -> non_neg_integer().
 active_delete_threshold() ->
     get_env(riak_cs, active_delete_threshold, 0).
+
+-spec fast_user_get() -> boolean().
+fast_user_get() ->
+    get_env(riak_cs, fast_user_get, false).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

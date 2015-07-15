@@ -30,6 +30,7 @@ default_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_max_workers", 2),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_batch_size", 1000),
     cuttlefish_unit:assert_config(Config, "riak_cs.active_delete_threshold", 0),
+    cuttlefish_unit:assert_config(Config, "riak_cs.fast_user_get", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_factor", 1),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_size", 1000000),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archive_period", 3600),

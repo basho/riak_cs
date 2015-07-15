@@ -211,6 +211,12 @@
   {datatype, bytesize}
 ]}.
 
+%% @doc Whether to omit PR=all get at retrieving user info.
+{mapping, "fast_user_get", "riak_cs.fast_user_get", [
+  {default, off},
+  {datatype, flag}
+]}.
+
 %% == Access statistics ==
 
 %% @doc How often to flush the access stats; integer factor of
