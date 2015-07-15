@@ -42,7 +42,8 @@
 
 -export([
          new_sample/6,
-         find_samples/6,
+         slice_key/2,
+         find_samples/4,
          slice_containing/2,
          next_slice/2,
          iso8601/1,
@@ -63,7 +64,6 @@
 -type datetime() :: calendar:datetime().
 -type slice() :: {Start :: datetime(), End :: datetime()}.
 -type mochijson2() :: term().
--type riak_client() :: pid().
 
 %% @doc Just create the new sample object (don't store it).
 -spec new_sample(binary(), iolist(),
@@ -85,12 +85,10 @@ new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
 %% This implementation reads each slice object from riak, and does the
 %% extraction/etc. on the client side.  It would be a a trivial
 %% modification to do this via MapReduce instead.
--spec find_samples(riak_client(), binary(), iolist(),
-                   datetime(), datetime(), integer()) ->
-         {Samples::[mochijson2()], Errors::[{slice(), Reason::term()}]}.
-find_samples(RcPid, Bucket, KeyPostfix, Start, End, Period) ->
+-spec find_samples(fun(), datetime(), datetime(), integer()) ->
+                          {Samples::[mochijson2()], Errors::[{slice(), Reason::term()}]}.
+find_samples(Puller, Start, End, Period) ->
     Slices = slices_filling(Start, End, Period),
-    Puller = sample_puller(RcPid, Bucket, KeyPostfix),
     {Samples, Errors} = lists:foldl(Puller, {[], []}, Slices),
     {lists:filter(sample_in_bounds(Start, End), Samples), Errors}.
 
@@ -108,36 +106,6 @@ sample_in_bounds(Start, End) ->
             {?END_TIME, SampleEnd}
                 = lists:keyfind(?END_TIME, 1, Sample),
             (SampleStart < End8601) and (SampleEnd > Start8601)
-    end.
-
-%% @doc Make a thunk that looks up samples for a given bucket+prefix.
--spec sample_puller(riak_client(), binary(), iolist()) -> fun().
-sample_puller(RcPid, Bucket, Postfix) ->
-    fun(Slice, {Samples, Errors}) ->
-            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-            Timeout = riak_cs_config:get_access_timeout(),
-            case riakc_pb_socket:get(
-                   MasterPbc, Bucket, slice_key(Slice, Postfix), Timeout) of
-                {ok, Object} ->
-                    RawSamples =
-                        [ catch element(2, {struct,_}=mochijson2:decode(V))
-                          || V <- riakc_obj:get_values(Object) ],
-                    {NewSamples, EncodingErrors} =
-                        lists:partition(fun({'EXIT',_}) -> false;
-                                           (_)          -> true
-                                        end,
-                                        RawSamples),
-                    {NewSamples++Samples,
-                     [{Slice, {encoding, length(EncodingErrors)}}
-                      || EncodingErrors /= []]
-                     ++Errors};
-                {error, notfound} ->
-                    %% this is normal - we ask for all possible
-                    %% archives, and just deal with the ones that exist
-                    {Samples, Errors};
-                {error, Error} ->
-                    {Samples, [{Slice, Error}|Errors]}
-            end
     end.
 
 %% @doc Make the key for this slice+postfix. Note: this must be the

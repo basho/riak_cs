@@ -25,7 +25,8 @@
 %% API
 -export([checkout/0, checkout/1,
          checkin/1, checkin/2]).
--export([pbc_pool_name/1]).
+-export([pbc_pool_name/1,
+         rts_puller/4]).
 -export([
          stop/1,
          get_bucket/2,
@@ -112,6 +113,36 @@ pbc_pool_name(undefined) ->
     pbc_pool_master;
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
+
+%% @doc Make a thunk that looks up samples for a given bucket+prefix.
+-spec rts_puller(riak_client(), binary(), iolist(), riak_cs_stats:key()) -> fun().
+rts_puller(RcPid, Bucket, Postfix, _StatsKey) ->
+    fun(Slice, {Samples, Errors}) ->
+            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+            Timeout = riak_cs_config:get_access_timeout(),
+            case riakc_pb_socket:get(
+                   MasterPbc, Bucket, rts:slice_key(Slice, Postfix), Timeout) of
+                {ok, Object} ->
+                    RawSamples =
+                        [ catch element(2, {struct,_}=mochijson2:decode(V))
+                          || V <- riakc_obj:get_values(Object) ],
+                    {NewSamples, EncodingErrors} =
+                        lists:partition(fun({'EXIT',_}) -> false;
+                                           (_)          -> true
+                                        end,
+                                        RawSamples),
+                    {NewSamples++Samples,
+                     [{Slice, {encoding, length(EncodingErrors)}}
+                      || EncodingErrors /= []]
+                     ++Errors};
+                {error, notfound} ->
+                    %% this is normal - we ask for all possible
+                    %% archives, and just deal with the ones that exist
+                    {Samples, Errors};
+                {error, Error} ->
+                    {Samples, [{Slice, Error}|Errors]}
+            end
+    end.
 
 -spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
