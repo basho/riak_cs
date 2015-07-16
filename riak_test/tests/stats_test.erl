@@ -71,8 +71,8 @@ query_stats(UserConfig, Port) ->
     JsonData.
 
 confirm_initial_stats(StatData) ->
-    %% Check for values for all meters to be 0 when system is initially started
-    ?assertEqual(1096, length(StatData)),
+    lager:debug("length(StatData) = ~p", [length(StatData)]),
+    ?assert(1125 < length(StatData)),
     [begin
          StatKey = list_to_binary(StatType ++ "_out_one"),
          lager:debug("StatKey: ~p~n", [StatKey]),

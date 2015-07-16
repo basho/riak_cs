@@ -34,7 +34,14 @@
 
 %% Lower level API, mainly for debugging or investigation from shell
 -export([report_exometer_item/3,
-         report_pool/1]).
+         report_pool/0,
+         report_pool/1,
+         report_mochiweb/0,
+         report_memory/0,
+         report_system/0,
+         system_monitor_count/0,
+         system_version/0,
+         system_architecture/0]).
 
 -export([init/0]).
 
@@ -191,8 +198,9 @@ get_stats() ->
         [report_exometer_item(Key, SubKey, ExometerType) ||
             Key <- counting_metrics(),
             {SubKey, ExometerType} <- counting_subkeys()],
-    PoolStats = [report_pool(P) || P <- [request_pool, bucket_list_pool]],
-    lists:flatten([DurationStats, CountingStats, PoolStats]).
+    lists:flatten([DurationStats, CountingStats,
+                   report_pool(), report_mochiweb(),
+                   report_memory(), report_system()]).
 
 %% ====================================================================
 %% Internal
@@ -239,21 +247,81 @@ datapoints(spiral) ->
     [one, count].
 
 suffixes(histogram) ->
-    ["_mean", "_median", "_95", "_99", "_100"];
+    ["mean", "median", "95", "99", "100"];
 suffixes(spiral) ->
-    ["_one", "_total"].
+    ["one", "total"].
+
+-spec report_pool() -> [[{atom(), integer()}]].
+report_pool() ->
+    Pools = [request_pool, bucket_list_pool | riak_cs_riak_client:pbc_pools()],
+    [report_pool(Pool) || Pool <- Pools].
 
 -spec report_pool(atom()) -> [{atom(), integer()}].
 report_pool(Pool) ->
     {_PoolState, PoolWorkers, PoolOverflow, PoolSize} = poolboy:status(Pool),
-    Name = binary_to_list(atom_to_binary(Pool, latin1)),
-    [{list_to_atom(lists:flatten([Name, $_, "workers"])), PoolWorkers},
-     {list_to_atom(lists:flatten([Name, $_, "overflow"])), PoolOverflow},
-     {list_to_atom(lists:flatten([Name, $_, "size"])), PoolSize}].
+    [{metric_to_atom([Pool], "workers"), PoolWorkers},
+     {metric_to_atom([Pool], "overflow"), PoolOverflow},
+     {metric_to_atom([Pool], "size"), PoolSize}].
 
+-spec report_mochiweb() -> [[{atom(), integer()}]].
+report_mochiweb() ->
+    MochiIds = [object_web, admin_web],
+    [report_mochiweb(Id) || Id <- MochiIds].
+
+report_mochiweb(Id) ->
+    Children = supervisor:which_children(riak_cs_sup),
+    case lists:keyfind(Id, 1, Children) of
+        false -> [];
+        {_, Pid, _, _} -> report_mochiweb(Id, Pid)
+    end.
+
+report_mochiweb(Id, Pid) ->
+    [{metric_to_atom([Id], PropKey), gen_server:call(Pid, {get, PropKey})} ||
+        PropKey <- [active_sockets, waiting_acceptors, port]].
+
+-spec report_memory() -> [{atom(), integer()}].
+report_memory() ->
+    lists:map(fun({K, V}) -> {metric_to_atom([memory], K), V} end, erlang:memory()).
+
+-spec report_system() -> [{atom(), integer()}].
+report_system() ->
+    [{nodename, erlang:node()},
+     {connected_nodes, erlang:nodes()},
+     {sys_driver_version, list_to_binary(erlang:system_info(driver_version))},
+     {sys_heap_type, erlang:system_info(heap_type)},
+     {sys_logical_processors, erlang:system_info(logical_processors)},
+     {sys_monitor_count, system_monitor_count()},
+     {sys_otp_release, list_to_binary(erlang:system_info(otp_release))},
+     {sys_port_count, erlang:system_info(port_count)},
+     {sys_process_count, erlang:system_info(process_count)},
+     {sys_smp_support, erlang:system_info(smp_support)},
+     {sys_system_version, system_version()},
+     {sys_system_architecture, system_architecture()},
+     {sys_threads_enabled, erlang:system_info(threads)},
+     {sys_thread_pool_size, erlang:system_info(thread_pool_size)},
+     {sys_wordsize, erlang:system_info(wordsize)}].
+
+system_monitor_count() ->
+    lists:foldl(fun(Pid, Count) ->
+                        case erlang:process_info(Pid, monitors) of
+                            {monitors, Mons} ->
+                                Count + length(Mons);
+                            _ ->
+                                Count
+                        end
+                end, 0, processes()).
+
+system_version() ->
+    list_to_binary(string:strip(erlang:system_info(system_version), right, $\n)).
+
+system_architecture() ->
+    list_to_binary(erlang:system_info(system_architecture)).
+
+metric_to_atom(Key, Suffix) when is_atom(Suffix) ->
+    metric_to_atom(Key, atom_to_list(Suffix));
 metric_to_atom(Key, Suffix) ->
     StringKey = string:join([atom_to_list(Token) || Token <- Key], "_"),
-    list_to_atom(lists:flatten([StringKey, Suffix])).
+    list_to_atom(lists:flatten([StringKey, $_, Suffix])).
 
 -ifdef(TEST).
 
