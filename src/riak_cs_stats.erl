@@ -263,7 +263,8 @@ stats_test_() ->
     Apps = [setup, compiler, syntax_tools, goldrush, lager, exometer_core],
     {setup,
      fun() ->
-             [ok = application:start(App) || App <- Apps],
+             application:set_env(lager, handlers, []),
+             [catch (application:start(App)) || App <- Apps],
              ok = init()
      end,
      fun(_) ->
