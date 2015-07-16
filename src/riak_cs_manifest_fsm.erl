@@ -294,7 +294,8 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             case UpdatedManifests of
                 [] ->
                     DeleteTimeout = riak_cs_config:delete_manifest_timeout(),
-                    riakc_pb_socket:delete_obj(manifest_pbc(RcPid), RiakObject, [], DeleteTimeout);
+                    riak_cs_pbc:delete_obj(manifest_pbc(RcPid), RiakObject, [],
+                                           DeleteTimeout, [riakc, delete_manifest]);
                 _ ->
                     ObjectToWrite0 =
                         riak_cs_utils:update_obj_value(
@@ -302,7 +303,8 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
                     ObjectToWrite = update_md_with_multipart_2i(
                                       ObjectToWrite0, UpdatedManifests, Bucket, Key),
                     PutTimeout = riak_cs_config:put_manifest_timeout(),
-                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, PutTimeout)
+                    riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite,
+                                    PutTimeout, [riakc, put_manifest])
             end;
         {error, notfound} ->
             ok
@@ -334,7 +336,8 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket, Key),
             Timeout = riak_cs_config:put_manifest_timeout(),
-            PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, Timeout),
+            PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite,
+                                        Timeout, [riakc, put_manifest]),
             {PutResult, undefined, undefined}
     end.
 
@@ -357,7 +360,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     Delta = MeanSleepMS div 2,
     SleepMS = crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta),
     lager:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p~n", [Siblings, SleepMS]),
-    ok = riak_cs_stats:update([manifest, siblings_bp_sleep], SleepMS * 1000),
+    ok = riak_cs_stats:countup([manifest, siblings_bp_sleep]),
     ok = timer:sleep(SleepMS),
     true.
 
@@ -375,7 +378,8 @@ update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
         case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
             [] ->
                 Timeout = riak_cs_config:put_manifest_timeout(),
-                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body], Timeout);
+                riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite, [return_body],
+                                Timeout, [riakc, put_manifest]);
             OverwrittenUUIDs ->
                 riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                  ObjectToWrite,
@@ -406,7 +410,8 @@ update_from_previous_read(RcPid, RiakObject, Bucket, Key,
     %% anything to make sure
     %% this call succeeded
     Timeout = riak_cs_config:put_manifest_timeout(),
-    riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject, Timeout).
+    riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject, [],
+                    Timeout, [riakc, put_manifest]).
 
 update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
     %% During testing, it's handy to delete Riak keys in the

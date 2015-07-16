@@ -250,9 +250,9 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
               end ++ [{max_results, 1024}],
 
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riakc_pb_socket:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
-                                         <<"$key">>, <<0>>, <<255>>,
-                                         Options) of
+    case riak_cs_pbc:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
+                                     <<"$key">>, <<0>>, <<255>>,
+                                     Options, [riakc, get_cs_buckets_by_index]) of
         {ok, ?INDEX_RESULTS{keys=BucketNames, continuation=Cont}} ->
             Foldfun = iterate_csbuckets_fold_fun(Fun),
             Acc2 = lists:foldl(Foldfun, Acc0, BucketNames),
@@ -383,7 +383,8 @@ bucket_empty(Bucket, RcPid) ->
     %% @TODO Use `stream_list_keys' instead
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:list_keys_list_objects_timeout(),
-    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket, Timeout),
+    ListKeysResult = riak_cs_pbc:list_keys(ManifestPbc, ManifestBucket, Timeout,
+                                           [riakc, list_all_manifest_keys]),
     {ok, bucket_empty_handle_list_keys(RcPid, Bucket, ListKeysResult)}.
 
 -spec bucket_empty_handle_list_keys(riak_client(), binary(),

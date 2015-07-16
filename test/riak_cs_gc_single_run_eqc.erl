@@ -64,6 +64,10 @@
 eqc_test_() ->
     {foreach,
      fun() ->
+             application:set_env(lager, handlers, []),
+             exometer:start(),
+             riak_cs_stats:init(),
+
              application:set_env(riak_cs, gc_batch_size, 7),
              meck:new(riak_cs_gc_manager, []),
 
@@ -77,7 +81,8 @@ eqc_test_() ->
      end,
      fun(_) ->
              meck:unload(),
-             stop_and_wait_for_gc_batch()
+             stop_and_wait_for_gc_batch(),
+             exometer:stop()
      end,
      [
       {timeout, ?TESTING_TIME*2,
@@ -321,11 +326,11 @@ dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest}
 %% ====================================================================
 meck_fileset_get_and_delete() ->
     meck:new(riak_cs_pbc, [passthrough]),
-    meck:expect(riak_cs_pbc, get_object, fun dummy_get_object/4),
+    meck:expect(riak_cs_pbc, get, fun dummy_get/6),
     meck:expect(riakc_pb_socket, is_connected, fun always_true/1),
-    meck:expect(riakc_pb_socket, delete_obj, fun dummy_delete_object/4).
+    meck:expect(riak_cs_pbc, delete_obj, fun dummy_delete_obj/5).
 
-dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K, _Opt) ->
+dummy_get(_Pbc, <<"riak-cs-gc">>=B, K, _Opt, _Timeout, _StatsKey) ->
     case re:run(K, <<"^error:in_fileset_fetch/">>) of
         nomatch ->
             {ok, riakc_obj:new_obj(B, K, vclock,
@@ -334,12 +339,12 @@ dummy_get_object(_Pbc, <<"riak-cs-gc">>=B, K, _Opt) ->
         {match, _} ->
             {error, {dummy_error, in_fileset_fetch}}
     end;
-dummy_get_object(_Pbc, _B, _K, _Opt) ->
+dummy_get(_Pbc, _B, _K, _Opt, _Timeout, _StatsKey) ->
     error.
 
 always_true(_) -> true.
 
-dummy_delete_object(_Pbc, RiakObj, _Opts, _Timeout) ->
+dummy_delete_obj(_Pbc, RiakObj, _Opts, _Timeout, _StatsKey) ->
     Key = riakc_obj:key(RiakObj),
     case re:run(Key, <<"^error:in_block_delete/">>) of
         nomatch ->

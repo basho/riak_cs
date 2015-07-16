@@ -25,7 +25,8 @@
 %% API
 -export([checkout/0, checkout/1,
          checkin/1, checkin/2]).
--export([pbc_pool_name/1]).
+-export([pbc_pool_name/1,
+         rts_puller/4]).
 -export([
          stop/1,
          get_bucket/2,
@@ -112,6 +113,36 @@ pbc_pool_name(undefined) ->
     pbc_pool_master;
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
+
+%% @doc Make a thunk that looks up samples for a given bucket and suffix.
+-spec rts_puller(riak_client(), binary(), iolist(), riak_cs_stats:key()) -> fun().
+rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
+    fun(Slice, {Samples, Errors}) ->
+            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+            Timeout = riak_cs_config:get_access_timeout(),
+            case riak_cs_pbc:get(MasterPbc, Bucket, rts:slice_key(Slice, Suffix), [],
+                                 Timeout, StatsKey) of
+                {ok, Object} ->
+                    RawSamples =
+                        [ catch element(2, {struct,_}=mochijson2:decode(V))
+                          || V <- riakc_obj:get_values(Object) ],
+                    {NewSamples, EncodingErrors} =
+                        lists:partition(fun({'EXIT',_}) -> false;
+                                           (_)          -> true
+                                        end,
+                                        RawSamples),
+                    {NewSamples++Samples,
+                     [{Slice, {encoding, length(EncodingErrors)}}
+                      || EncodingErrors /= []]
+                     ++Errors};
+                {error, notfound} ->
+                    %% this is normal - we ask for all possible
+                    %% archives, and just deal with the ones that exist
+                    {Samples, Errors};
+                {error, Error} ->
+                    {Samples, [{Slice, Error}|Errors]}
+            end
+    end.
 
 -spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
@@ -284,13 +315,14 @@ ensure_master_pbc(#state{} = State) ->
 
 get_bucket_with_pbc(MasterPbc, BucketName) ->
     Timeout = riak_cs_config:get_bucket_timeout(),
-    riak_cs_pbc:get_object(MasterPbc, ?BUCKETS_BUCKET, BucketName, Timeout).
+    riak_cs_pbc:get(MasterPbc, ?BUCKETS_BUCKET, BucketName, [], Timeout,
+                    [riakc, get_cs_bucket]).
 
 get_user_with_pbc(MasterPbc, Key) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     Timeout = riak_cs_config:get_user_timeout(),
-    case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
-                             StrongOptions, Timeout) of
+    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
+                         Timeout, [riakc, get_cs_user_strong]) of
         {ok, Obj} ->
             %% since we read from all primaries, we're
             %% less concerned with there being an 'out-of-date'
@@ -301,8 +333,8 @@ get_user_with_pbc(MasterPbc, Key) ->
         {error, Reason0} ->
             _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
             WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
-                                     WeakOptions, Timeout) of
+            case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions,
+                                 Timeout, [riakc, get_cs_user]) of
                 {ok, Obj} ->
                     %% We weren't able to read from all primary
                     %% vnodes, so don't risk losing information
@@ -322,4 +354,5 @@ save_user_with_pbc(MasterPbc, User, OldUserObj) ->
                    riakc_obj:update_value(OldUserObj,
                                           riak_cs_utils:encode_term(User)),
                    MD),
-    riakc_pb_socket:put(MasterPbc, UpdUserObj).
+    Timeout = riak_cs_config:put_user_timeout(),
+    riak_cs_pbc:put(MasterPbc, UpdUserObj, Timeout, [riakc, put_cs_user]).

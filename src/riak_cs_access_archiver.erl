@@ -202,7 +202,8 @@ archive_user(User, RcPid, Table, Slice) ->
 
 store(User, RcPid, Record, Slice) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case catch riakc_pb_socket:put(MasterPbc, Record) of
+    Timeout = riak_cs_config:put_access_timeout(),
+    case catch riak_cs_pbc:put(MasterPbc, Record, Timeout, [riakc, put_access]) of
         ok ->
             ok = lager:debug("Archived access stats for ~s ~p",
                              [User, Slice]);

@@ -166,12 +166,12 @@ gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedInd
     Timeout = riak_cs_config:get_index_range_gckeys_timeout(),
     CallTimeout = riak_cs_config:get_index_range_gckeys_call_timeout(),
     Options1 = [{timeout, Timeout}, {call_timeout, CallTimeout}] ++ Options,
-    QueryResult = riakc_pb_socket:get_index_range(
+    QueryResult = riak_cs_pbc:get_index_range(
                     ManifestPbc,
                     ?GC_BUCKET, ?KEY_INDEX,
                     StartKey, EndKey,
-                    %% EpochStart, EndTime,
-                    Options1),
+                    Options1,
+                    [riakc, get_gc_keys_by_index]),
 
     case QueryResult of
         {error, disconnected} ->

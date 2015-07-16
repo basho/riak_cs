@@ -112,17 +112,23 @@ stream_users(Format, RcPid, Boundary, Status) ->
     end.
 
 wait_for_users(Format, RcPid, ReqId, Boundary, Status) ->
+    _ = riak_cs_stats:inflow([riakc, list_users_receive_chunk]),
+    StartTime = os:timestamp(),
     receive
         {ReqId, {keys, UserIds}} ->
+            _ = riak_cs_stats:update_with_start(
+                  [riakc, list_users_receive_chunk], StartTime),
             FoldFun = user_fold_fun(RcPid, Status),
             Doc = users_doc(lists:foldl(FoldFun, [], UserIds),
                             Format,
                             Boundary),
             {Doc, fun() -> wait_for_users(Format, RcPid, ReqId, Boundary, Status) end};
         {ReqId, done} ->
+            _ = riak_cs_stats:update_with_start(
+                  [riakc, list_users_receive_chunk], StartTime),
             ok = riak_cs_riak_client:checkin(RcPid),
             {list_to_binary(["\r\n--", Boundary, "--"]), done};
-        _ ->
+        _Other ->
             wait_for_users(Format, RcPid, ReqId, Boundary, Status)
     end.
 
