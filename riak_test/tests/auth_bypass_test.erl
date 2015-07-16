@@ -30,21 +30,33 @@ confirm() ->
     KeyId = UserConfig#aws_config.access_key_id,
     Port = rtcs:cs_port(hd(RiakNodes)),
 
-    confirm_auth_bypass("riak-cs", "stats", UserConfig, Port),
+    confirm_auth_bypass_for_stats("riak-cs", "stats", UserConfig, Port),
     confirm_auth_bypass("riak-cs", "users", UserConfig, Port),
     confirm_auth_bypass("riak-cs", "user/"  ++ KeyId, UserConfig, Port),
-    confirm_auth_bypass("riak-cs", "usage/" ++ KeyId ++ "/ab/" ++ rtcs:datetime() ++ "/" ++ rtcs:datetime(),
+    confirm_auth_bypass("riak-cs", "usage/" ++ KeyId ++ "/ab/" ++
+                            rtcs:datetime() ++ "/" ++ rtcs:datetime(),
                         UserConfig, Port),
-    pass.
+    rtcs:pass().
+
+confirm_auth_bypass_for_stats(Bucket, Key, UserConfig, Port) ->
+    {S3Content, CurlContent} = get_both_contents(Bucket, Key, UserConfig, Port),
+    S3Json = drop_volatile_stats_keys(mochijson2:decode(S3Content)),
+    CurlJson = drop_volatile_stats_keys(mochijson2:decode(CurlContent)),
+    ?assertEqual([], S3Json -- CurlJson),
+    ?assertEqual([], CurlJson -- S3Json).
 
 confirm_auth_bypass(Bucket, Key, UserConfig, Port) ->
+    {S3Content, CurlContent} = get_both_contents(Bucket, Key, UserConfig, Port),
+    ?assertEqual(S3Content, CurlContent).
+
+get_both_contents(Bucket, Key, UserConfig, Port) ->
     S3Result = erlcloud_s3:get_object(Bucket, Key, UserConfig),
-    S3Content = proplists:get_value(content, S3Result),
+    S3Content = extract_contents(proplists:get_value(content, S3Result)),
     lager:debug("erlcloud output: ~p~n", [S3Content]),
 
-    CurlContent = curl_request(Bucket, Key, Port),
+    CurlContent = extract_contents(curl_request(Bucket, Key, Port)),
     lager:debug("curl output: ~p~n", [CurlContent]),
-    ?assertEqual(extract_contents(S3Content), extract_contents(CurlContent)).
+    {S3Content, CurlContent}.
 
 curl_request(Bucket, Key, Port) ->
     Cmd = "curl -s http://localhost:" ++ integer_to_list(Port)
@@ -71,3 +83,21 @@ extract_contents([Boundary | Tokens], Boundary, Contents) ->
     extract_contents(Tokens, Boundary, Contents);
 extract_contents([_ | Tokens], Boundary, Contents) ->
     extract_contents(Tokens, Boundary, Contents).
+
+drop_volatile_stats_keys({struct, KVs}) ->
+    [{K, V} || {K, V} <- KVs, not lists:member(K, volatile_stats_keys())].
+
+volatile_stats_keys() ->
+    [<<"pbc_pool_master_workers">>,
+     <<"pbc_pool_master_size">>,
+     <<"object_web_active_sockets">>,
+     <<"memory_total">>,
+     <<"memory_processes">>,
+     <<"memory_processes_used">>,
+     <<"memory_system">>,
+     <<"memory_atom_used">>,
+     <<"memory_binary">>,
+     <<"memory_ets">>,
+     <<"sys_monitor_count">>,
+     <<"sys_port_count">>,
+     <<"sys_process_count">>].

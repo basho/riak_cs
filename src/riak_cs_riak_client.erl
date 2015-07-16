@@ -25,7 +25,8 @@
 %% API
 -export([checkout/0, checkout/1,
          checkin/1, checkin/2]).
--export([pbc_pool_name/1,
+-export([pbc_pools/0,
+         pbc_pool_name/1,
          rts_puller/4]).
 -export([
          stop/1,
@@ -105,6 +106,10 @@ checkin(RcPid) ->
 checkin(Pool, RcPid) ->
     ok = gen_server:call(RcPid, cleanup),
     poolboy:checkin(Pool, RcPid).
+
+-spec pbc_pools() -> [atom()].
+pbc_pools() ->
+    [pbc_pool_name(B) || {B, _, _} <- riak_cs_mb_helper:bags()].
 
 -spec pbc_pool_name(master | bag_id()) -> atom().
 pbc_pool_name(master) ->

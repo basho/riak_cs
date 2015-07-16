@@ -39,7 +39,7 @@ confirm() ->
         {multibag, _} ->
             lager:info("select_gc_bucket script does not supprt multibag env."),
             lager:info("Skip the test."),
-            pass;
+            rtcs:pass();
         _ -> confirm1()
     end.
 
@@ -67,7 +67,7 @@ confirm1() ->
     lager:debug("select_gc_bucket.erl log:============= END"),
 
     tools_helper:offline_delete({RiakNodes, CSNodes, Stanchion}, [BlockKeysFile]),
-    pass.
+    rtcs:pass().
 
 upload_object(UserConfig, Bucket, normal, Key) ->
     SingleBlock = crypto:rand_bytes(400),

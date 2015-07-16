@@ -41,7 +41,7 @@ confirm() ->
     {ok, InitialState} = cs_suites:new(SetupRes),
     {ok, EvolvedState} = cs_suites:fold_with_state(InitialState, history()),
     {ok, _FinalState}  = cs_suites:cleanup(EvolvedState),
-    pass.
+    rtcs:pass().
 
 setup_previous() ->
     PrevConfigs = rtcs:previous_configs(custom_configs(previous)),
