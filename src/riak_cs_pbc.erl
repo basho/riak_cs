@@ -33,19 +33,30 @@
          get_index_eq/5,
          get_index_eq/6,
          get_index_range/7,
-         get_cluster_id/1
+         get_cluster_id/1,
+         check_connection_status/2
         ]).
 
+%% Lower level APIs, which don't update stats.
 -export([
-         get_no_stats/5,
+         get_sans_stats/5,
          put_object/5,
-         put_no_stats/3,
-         put_no_stats/4,
-         list_keys_no_stats/3,
-         check_connection_status/2]).
+         put_sans_stats/3,
+         put_sans_stats/4,
+         list_keys_sans_stats/3
+         ]).
 
 -include_lib("riakc/include/riakc.hrl").
--include("riak_cs_stats.hrl").
+
+-define(WITH_STATS(StatsKey, Statement),
+        begin
+            _ = riak_cs_stats:inflow(StatsKey),
+            StartTime__with_stats = os:timestamp(),
+            Result__with_stats = Statement,
+            _ = riak_cs_stats:update_with_start(StatsKey, StartTime__with_stats,
+                                                Result__with_stats),
+            Result__with_stats
+        end).
 
 -spec ping(pid(), timeout(), riak_cs_stats:key()) -> pong.
 ping(PbcPid, Timeout, StatsKey) ->
@@ -61,16 +72,16 @@ ping(PbcPid, Timeout, StatsKey) ->
     Result.
 
 %% @doc Get an object from Riak
--spec get_no_stats(pid(), binary(), binary(), proplists:proplist(), timeout()) ->
+-spec get_sans_stats(pid(), binary(), binary(), proplists:proplist(), timeout()) ->
                         {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_no_stats(PbcPid, BucketName, Key, Opts, Timeout)  ->
+get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)  ->
     riakc_pb_socket:get(PbcPid, BucketName, Key, Opts, Timeout).
 
 -spec get(pid(), binary(), binary(), proplists:proplist(), timeout(),
           riak_cs_stats:key()) ->
                             {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get(PbcPid, BucketName, Key, Opts, Timeout, StatsKey) ->
-    ?WITH_STATS(StatsKey, get_no_stats(PbcPid, BucketName, Key, Opts, Timeout)).
+    ?WITH_STATS(StatsKey, get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)).
 
 -spec repl_get(pid(), binary(), binary(), binary(),
                           proplists:proplist(), timeout(), riak_cs_stats:key()) ->
@@ -92,17 +103,17 @@ put_object(PbcPid, BucketName, Key, Value, Metadata) ->
     NewObj = riakc_obj:update_metadata(RiakObject, Metadata),
     riakc_pb_socket:put(PbcPid, NewObj).
 
-put_no_stats(PbcPid, RiakcObj, Timeout) ->
-    put_no_stats(PbcPid, RiakcObj, [], Timeout).
+put_sans_stats(PbcPid, RiakcObj, Timeout) ->
+    put_sans_stats(PbcPid, RiakcObj, [], Timeout).
 
-put_no_stats(PbcPid, RiakcObj, Options, Timeout) ->
+put_sans_stats(PbcPid, RiakcObj, Options, Timeout) ->
     riakc_pb_socket:put(PbcPid, RiakcObj, Options, Timeout).
 
 put(PbcPid, RiakcObj, Timeout, StatsKey) ->
-    ?WITH_STATS(StatsKey, put_no_stats(PbcPid, RiakcObj, [], Timeout)).
+    ?WITH_STATS(StatsKey, put_sans_stats(PbcPid, RiakcObj, [], Timeout)).
 
 put(PbcPid, RiakcObj, Options, Timeout, StatsKey) ->
-    ?WITH_STATS(StatsKey, put_no_stats(PbcPid, RiakcObj, Options, Timeout)).
+    ?WITH_STATS(StatsKey, put_sans_stats(PbcPid, RiakcObj, Options, Timeout)).
 
 -spec delete_obj(pid(), riakc_obj:riakc_obj(), delete_options(),
                             non_neg_integer(),riak_cs_stats:key()) ->
@@ -125,10 +136,10 @@ mapred(Pid, Inputs, Query, Timeout, StatsKey) ->
 -spec list_keys(pid(), binary(), timeout(), riak_cs_stats:key()) ->
                        {ok, [binary()]} | {error, term()}.
 list_keys(PbcPid, BucketName, Timeout, StatsKey) ->
-    ?WITH_STATS(StatsKey, list_keys_no_stats(PbcPid, BucketName, Timeout)).
+    ?WITH_STATS(StatsKey, list_keys_sans_stats(PbcPid, BucketName, Timeout)).
 
--spec list_keys_no_stats(pid(), binary(), timeout()) -> {ok, [binary()]} | {error, term()}.
-list_keys_no_stats(PbcPid, BucketName, Timeout) ->
+-spec list_keys_sans_stats(pid(), binary(), timeout()) -> {ok, [binary()]} | {error, term()}.
+list_keys_sans_stats(PbcPid, BucketName, Timeout) ->
     case riakc_pb_socket:list_keys(PbcPid, BucketName, Timeout) of
         {ok, Keys} ->
             %% TODO:
@@ -170,13 +181,13 @@ get_index_range(PbcPid, Bucket, Index, StartKey, EndKey, Opts, StatsKey) ->
 -spec get_cluster_id(pid()) -> undefined | binary().
 get_cluster_id(Pbc) ->
     StatsKey = [riakc, get_clusterid],
-    Res = ?WITH_STATS(StatsKey, get_cluster_id_no_stats(Pbc)),
+    Res = ?WITH_STATS(StatsKey, get_cluster_id_sans_stats(Pbc)),
     case Res of
         {ok, ClusterID} -> ClusterID;
         {error, _} -> undefined
     end.
 
-get_cluster_id_no_stats(Pbc) ->
+get_cluster_id_sans_stats(Pbc) ->
     Timeout = riak_cs_config:cluster_id_timeout(),
     try
         riak_repl_pb_api:get_clusterid(Pbc, Timeout)

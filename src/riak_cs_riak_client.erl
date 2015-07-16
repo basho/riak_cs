@@ -114,13 +114,13 @@ pbc_pool_name(undefined) ->
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
 
-%% @doc Make a thunk that looks up samples for a given bucket+prefix.
+%% @doc Make a thunk that looks up samples for a given bucket and suffix.
 -spec rts_puller(riak_client(), binary(), iolist(), riak_cs_stats:key()) -> fun().
-rts_puller(RcPid, Bucket, Postfix, StatsKey) ->
+rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
     fun(Slice, {Samples, Errors}) ->
             {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
             Timeout = riak_cs_config:get_access_timeout(),
-            case riak_cs_pbc:get(MasterPbc, Bucket, rts:slice_key(Slice, Postfix), [],
+            case riak_cs_pbc:get(MasterPbc, Bucket, rts:slice_key(Slice, Suffix), [],
                                  Timeout, StatsKey) of
                 {ok, Object} ->
                     RawSamples =
