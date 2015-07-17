@@ -40,7 +40,7 @@ confirm() ->
         {multibag, _} ->
             lager:info("Block audit script does not supprt multibag env."),
             lager:info("Skip the test."),
-            pass;
+            rtcs:pass();
         _ -> confirm1()
     end.
 
@@ -74,7 +74,7 @@ confirm1() ->
     BlockKeysFileList = [filename:join([Home, "actual-orphaned-blocks", B]) ||
                         B <- [?BUCKET1, ?BUCKET2]],
     tools_helper:offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList),
-    pass.
+    rtcs:pass().
 
 setup_objects(RiakNodes, UserConfig, Bucket, Type,
               KeyAlive, KeyOrphaned, KeyFalseOrphaned) ->

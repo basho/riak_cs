@@ -83,7 +83,7 @@ confirm() ->
     setup_normal_obj([{"spam", 42}, {"ham", 65536}, {"egg", 7}], UserConfig),
 
     verify_partial_gc_run(hd(CSNodes), RiakNodes, Start, End),
-    pass.
+    rtcs:pass().
 
 setup_normal_obj(ObjSpecs, UserConfig) ->
     %% Put and delete some objects

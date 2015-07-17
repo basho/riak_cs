@@ -36,7 +36,7 @@ confirm() ->
     confirm_auth_bypass("riak-cs", "usage/" ++ KeyId ++ "/ab/" ++
                             rtcs:datetime() ++ "/" ++ rtcs:datetime(),
                         UserConfig, Port),
-    pass.
+    rtcs:pass().
 
 confirm_auth_bypass_for_stats(Bucket, Key, UserConfig, Port) ->
     {S3Content, CurlContent} = get_both_contents(Bucket, Key, UserConfig, Port),

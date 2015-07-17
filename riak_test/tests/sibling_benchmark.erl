@@ -114,7 +114,7 @@ confirm() ->
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
-    pass.
+    rtcs:pass().
 
 start_object_reader(UserConfig) ->
     Pid = spawn_link(fun() -> object_reader(UserConfig, 1) end),
