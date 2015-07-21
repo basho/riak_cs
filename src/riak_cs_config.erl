@@ -279,17 +279,13 @@ set_md5_chunk_size(_) ->
 %% Defaults to false.
 -spec proxy_get_active() -> boolean().
 proxy_get_active() ->
-    case application:get_env(riak_cs, proxy_get) of
-        {ok, enabled} ->
-            true;
-        {ok, disabled} ->
-            false;
-        {ok, true} ->
-            true;
-        {ok, _} ->
-            _ = lager:warning("proxy_get value in riak.conf (advanced.config) is invalid"),
-            false;
-        undefined ->
+    case application:get_env(riak_cs, proxy_get, false) of
+        enabled ->   true;
+        disabled -> false;
+        Flag when is_boolean(Flag) -> Flag;
+        Other ->
+            _ = lager:warning("proxy_get value in riak.conf (advanced.config) is invalid: ~p",
+                              [Other]),
             false
     end.
 
