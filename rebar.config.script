@@ -1,17 +1,3 @@
-HashMacroAdded =
-    case erlang:system_info(otp_release) < "R16" of
-        true ->
-            CONFIG;
-        false ->
-            HashDefine = [{d,new_hash}],
-            case lists:keysearch(erl_opts, 1, CONFIG) of
-                {value, {erl_opts, Opts}} ->
-                    lists:keyreplace(erl_opts,1,CONFIG,{erl_opts,Opts++HashDefine});
-                false ->
-                    CONFIG ++ [{erl_opts, HashDefine}]
-            end
-    end,
-
 {IsEE, Package} = case os:getenv("RIAK_CS_EE_DEPS") of
                       false -> {false, "riak-cs"};
                       _     -> {true, "riak-cs-ee"}
@@ -21,11 +7,11 @@ io:format("Building ~s~n", [Package]),
 DepsUpdated =
     case IsEE of
         false ->
-            HashMacroAdded;
+            CONFIG;
         true ->
-            {value, {deps, Deps}} = lists:keysearch(deps, 1, HashMacroAdded),
-            {value, {deps_ee, DepsEE}} = lists:keysearch(deps_ee, 1, HashMacroAdded),
-            lists:keyreplace(deps, 1, HashMacroAdded, {deps, Deps ++ DepsEE})
+            {value, {deps, Deps}} = lists:keysearch(deps, 1, CONFIG),
+            {value, {deps_ee, DepsEE}} = lists:keysearch(deps_ee, 1, CONFIG),
+            lists:keyreplace(deps, 1, CONFIG, {deps, Deps ++ DepsEE})
     end,
 
 XrefQueryUpdated =
