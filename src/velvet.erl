@@ -391,7 +391,7 @@ request(Method, Url, Expect, ContentType, Headers, Body) ->
 %% @doc Calculate an MD5 hash of a request body.
 -spec content_md5(string()) -> string().
 content_md5(Body) ->
-    base64:encode_to_string(stanchion_utils:md5(list_to_binary(Body))).
+    base64:encode_to_string(riak_cs_utils:md5(list_to_binary(Body))).
 
 %% @doc Construct a MOSS authentication header
 -spec auth_header(atom(),
@@ -400,11 +400,11 @@ content_md5(Body) ->
                   string(),
                   {string(), iodata()}) -> nonempty_string().
 auth_header(HttpVerb, ContentType, Headers, Path, {AuthKey, AuthSecret}) ->
-    Signature = stanchion_auth:request_signature(HttpVerb,
-                                                      [{"content-type", ContentType} |
-                                                       Headers],
-                                                      Path,
-                                                      AuthSecret),
+    Signature = velvet_auth:request_signature(HttpVerb,
+                                              [{"content-type", ContentType} |
+                                               Headers],
+                                              Path,
+                                              AuthSecret),
     "MOSS " ++ AuthKey ++ ":" ++ Signature.
 
 %% @doc Assemble a requester query string for

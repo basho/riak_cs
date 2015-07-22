@@ -18,9 +18,9 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(stanchion_auth).
+-module(velvet_auth).
 
--include("stanchion.hrl").
+-include("riak_cs.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -35,7 +35,7 @@
 
 -spec authenticate(term(), [string()]) -> ok | {error, atom()}.
 authenticate(RD, [KeyId, Signature]) ->
-    case stanchion_utils:get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, {AdminKeyId, AdminSecret}} ->
             CalculatedSignature = signature(AdminSecret, RD),
             _ = lager:debug("Presented Signature: ~p~nCalculated Signature: ~p~n",
@@ -89,7 +89,7 @@ request_signature(HttpVerb, RawHeaders, Path, KeyData) ->
            Path],
 
     base64:encode_to_string(
-      stanchion_utils:sha_mac(KeyData, STS)).
+      riak_cs_utils:sha_mac(KeyData, STS)).
 
 %% ===================================================================
 %% Internal functions
@@ -126,7 +126,7 @@ signature(KeyData, RD) ->
            BashoHeaders,
            Resource],
     base64:encode_to_string(
-      stanchion_utils:sha_mac(KeyData, STS)).
+      riak_cs_utils:sha_mac(KeyData, STS)).
 
 check_auth(PresentedSignature, CalculatedSignature) ->
     PresentedSignature == CalculatedSignature.
