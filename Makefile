@@ -10,11 +10,13 @@ OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test depgraph graphviz all compile
+.PHONY: rel stagedevrel deps test depgraph graphviz all compile compile-src
 
 all: compile
 
-compile: deps
+compile: compile-riak-test
+
+compile-src: deps
 	@(./rebar compile)
 
 compile-client-test: all
@@ -27,7 +29,7 @@ riak_test/src/downgrade_bitcask.erl:
 	@wget https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
 		-O riak_test/src/downgrade_bitcask.erl
 
-compile-riak-test: all bitcask-downgrade-script
+compile-riak-test: compile-src bitcask-downgrade-script
 	@./rebar skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice
