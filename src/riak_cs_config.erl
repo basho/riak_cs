@@ -284,7 +284,7 @@ proxy_get_active() ->
         disabled -> false;
         Flag when is_boolean(Flag) -> Flag;
         Other ->
-            _ = lager:warning("proxy_get value in riak.conf (advanced.config) is invalid: ~p",
+            _ = lager:warning("proxy_get value in advanced.config is invalid: ~p",
                               [Other]),
             false
     end.
