@@ -25,8 +25,6 @@
 -export([create_bucket/5,
          create_user/5,
          delete_bucket/5,
-         list_buckets/3,
-         list_buckets/4,
          ping/3,
          set_bucket_acl/6,
          set_bucket_policy/6,
@@ -34,11 +32,6 @@
          update_user/6
          % @TODO: update_bucket/3
         ]).
-
-%% @TODO Remove after module development is completed
--export([stats_url/3,
-         list_buckets_url/4,
-         request/4]).
 
 %% ===================================================================
 %% Public API
@@ -146,16 +139,6 @@ delete_bucket(Ip, Port, Bucket, Requester, Options) ->
         {error, Error} ->
             {error, Error}
     end.
-
-%% @doc List all the buckets that currently have owners.
--spec list_buckets(string(), pos_integer(), boolean()) -> {ok, [{binary(), binary()}]}. %% | {error, term()}.
-list_buckets(_Ip, _Port, _Ssl) ->
-    {ok, []}.
-
-%% @doc List all the buckets owned by a particular user.
--spec list_buckets(string(), pos_integer(), boolean(), binary()) -> {ok, [{binary(), binary()}]}. %% | {error, term()}.
-list_buckets(_Ip, _Port, _Ssl, _UserId) ->
-    {ok, []}.
 
 %% @doc Ping the server by requesting the "/ping" resource.
 -spec ping(string(), pos_integer(), boolean()) -> ok | {error, term()}.
@@ -309,11 +292,6 @@ root_url(Ip, Port, false) ->
 ping_url(Ip, Port, Ssl) ->
     lists:flatten([root_url(Ip, Port, Ssl), "ping/"]).
 
-%% @doc Assemble the URL for the stats resource
--spec stats_url(string(), pos_integer(), boolean()) -> string().
-stats_url(Ip, Port, Ssl) ->
-    lists:flatten([root_url(Ip, Port, Ssl), "stats/"]).
-
 %% @doc Assemble the path for a bucket request
 -spec buckets_path(binary()) -> string().
 buckets_path(Bucket) ->
@@ -334,18 +312,6 @@ url(Ip, Port, Ssl, Path) ->
     lists:flatten(
       [root_url(Ip, Port, Ssl),
        Path
-      ]).
-
-%% @doc Assemble the URL for the given bucket and key
--spec list_buckets_url(string(), pos_integer(), boolean(), binary()) -> string().
-list_buckets_url(Ip, Port, Ssl, Owner) ->
-    Query =
-        "owner=" ++
-        binary_to_list(Owner),
-    lists:flatten(
-      [root_url(Ip, Port, Ssl),
-       "buckets",
-       ["?", mochiweb_util:quote_plus(Query)]
       ]).
 
 %% @doc send an HTTP request where `Expect' is a list
