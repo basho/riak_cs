@@ -1018,17 +1018,9 @@ make_authorization(Method, Resource, ContentType, Config, Date) ->
         base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
 
--ifdef(new_hash).
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 sha(Bin) -> crypto:hash(sha, Bin).
 md5(Bin) -> crypto:hash(md5, Bin).
-
--else.
-sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
-sha(Bin) -> crypto:sha(Bin).
-md5(Bin) -> crypto:md5(Bin).
-
--endif.
 
 datetime() ->
     {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
