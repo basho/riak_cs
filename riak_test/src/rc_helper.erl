@@ -24,12 +24,16 @@
 
 to_riak_bucket(objects, CSBucket) ->
     %%  or make version switch here.
-    <<"0o:", (stanchion_utils:md5(CSBucket))/binary>>;
+    <<"0o:", (md5(CSBucket))/binary>>;
 to_riak_bucket(blocks, CSBucket) ->
     %%  or make version switch here.
-    <<"0b:", (stanchion_utils:md5(CSBucket))/binary>>;
+    <<"0b:", (md5(CSBucket))/binary>>;
 to_riak_bucket(_, CSBucket) ->
     CSBucket.
+
+-spec md5(iodata()) -> binary().
+md5(IOData) ->
+    crypto:hash(md5, IOData).
 
 to_riak_key(objects, CsKey) when is_binary(CsKey) ->
     CsKey;

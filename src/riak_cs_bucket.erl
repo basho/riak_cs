@@ -365,7 +365,7 @@ bucket_acl_json(ACL, KeyId)  ->
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
-                                    stanchion_acl_utils:acl_to_json_term(ACL)]}))).
+                                    riak_cs_acl_utils:acl_to_json_term(ACL)]}))).
 
 %% @doc Generate a JSON document to use for a bucket
 -spec bucket_policy_json(binary(), string()) -> string().
@@ -550,7 +550,7 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"bucket">>, Bucket},
                                     {<<"requester">>, list_to_binary(KeyId)},
-                                    stanchion_acl_utils:acl_to_json_term(ACL)] ++
+                                    riak_cs_acl_utils:acl_to_json_term(ACL)] ++
                                BagElement}))).
 
 %% @doc Return a bucket record for the specified bucket name.
