@@ -47,8 +47,7 @@
         ]).
 
 %% Public API
--export([acl/5,
-         acl_from_json/1,
+-export([
          acl_to_json_term/1
         ]).
 
@@ -383,24 +382,6 @@ validate_acl({ok, _}, _) ->
     {error, access_denied};
 validate_acl({error, _}=Error, _) ->
     Error.
-
-
-%% @doc Construct an acl. The structure is the same for buckets
-%% and objects.
--spec acl(string(), string(), string(), [acl_grant()], erlang:timestamp()) -> acl().
-acl(DisplayName, CanonicalId, KeyId, Grants, CreationTime) ->
-    OwnerData = {DisplayName, CanonicalId, KeyId},
-    ?ACL{owner=OwnerData,
-         grants=Grants,
-         creation_time=CreationTime}.
-
-%% @doc Convert a set of JSON terms representing an ACL into
-%% an internal representation.
--spec acl_from_json(term()) -> acl().
-acl_from_json({struct, Json}) ->
-    process_acl_contents(Json, ?ACL{});
-acl_from_json(Json) ->
-    process_acl_contents(Json, ?ACL{}).
 
 %% @doc Convert an internal representation of an ACL into
 %% erlang terms that can be encoded using `mochijson2:encode'.
@@ -770,6 +751,32 @@ owner_to_json_term(DisplayName, CanonicalId, KeyId) ->
 permissions_to_json_term(Perms) ->
     [list_to_binary(atom_to_list(Perm)) || Perm <- Perms].
 
+
+%% ===================================================================
+%% Eunit tests
+%% ===================================================================
+
+-ifdef(TEST).
+
+
+%% @doc Construct an acl. The structure is the same for buckets
+%% and objects.
+-spec acl(string(), string(), string(), [acl_grant()], erlang:timestamp()) -> acl().
+acl(DisplayName, CanonicalId, KeyId, Grants, CreationTime) ->
+    OwnerData = {DisplayName, CanonicalId, KeyId},
+    ?ACL{owner=OwnerData,
+         grants=Grants,
+         creation_time=CreationTime}.
+
+
+%% @doc Convert a set of JSON terms representing an ACL into
+%% an internal representation.
+-spec acl_from_json(term()) -> acl().
+acl_from_json({struct, Json}) ->
+    process_acl_contents(Json, ?ACL{});
+acl_from_json(Json) ->
+    process_acl_contents(Json, ?ACL{}).
+
 %% @doc Process the top-level elements of the
 -spec process_acl_contents([term()], acl()) -> acl().
 process_acl_contents([], Acl) ->
@@ -901,13 +908,6 @@ process_creation_time([{Name, Value} | RestObjects], CreationTime) ->
             UpdCreationTime = {MegaSecs, Secs, Value}
     end,
     process_creation_time(RestObjects, UpdCreationTime).
-
-
-%% ===================================================================
-%% Eunit tests
-%% ===================================================================
-
--ifdef(TEST).
 
 %% @TODO Use eqc to do some more interesting case explorations.
 
