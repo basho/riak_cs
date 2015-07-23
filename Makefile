@@ -43,7 +43,7 @@ clean-client-test:
 	@./rebar client_test_clean
 
 clean-riak-test:
-	@./rebar riak_test_clean
+	@./rebar riak_test_clean skip_deps=true
 
 deps:
 	@./rebar get-deps
