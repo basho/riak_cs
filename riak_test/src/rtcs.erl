@@ -217,6 +217,7 @@ cs_port(N) when is_integer(N) ->
 cs_port(Node) ->
     cs_port(rt_cs_dev:node_id(Node)).
 
+stanchion_port() -> 9095.
 
 riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
@@ -322,7 +323,7 @@ previous_cs_config(UserExtra, OtherApps) ->
            {proxy_get, enabled},
            {anonymous_user_creation, true},
            {riak_pb_port, 10017},
-           {stanchion_port, 9095},
+           {stanchion_port, stanchion_port()},
            {cs_version, 010300}
           ]
      }] ++ OtherApps.
@@ -347,7 +348,7 @@ cs_config(UserExtra, OtherApps) ->
            {block_get_max_retries, 1},
            {proxy_get, enabled},
            {anonymous_user_creation, true},
-           {stanchion_host, {"127.0.0.1", 9095}},
+           {stanchion_host, {"127.0.0.1", stanchion_port()}},
            {riak_host, {"127.0.0.1", 10017}},
            {cs_version, 010300}
           ]
@@ -372,7 +373,7 @@ previous_stanchion_config() ->
      lager_config(),
      {stanchion,
       [
-       {stanchion_port, 9095},
+       {stanchion_port, stanchion_port()},
        {riak_pb_port, 10017}
       ]
      }].
@@ -387,11 +388,11 @@ stanchion_config() ->
      lager_config(),
      {stanchion,
       [
-       {host, {"127.0.0.1", 9095}},
+       {host, {"127.0.0.1", stanchion_port()}},
        {riak_host, {"127.0.0.1", 10017}}
       ]
      }].
-    
+
 stanchion_config(UserExtra) ->
     lists:foldl(fun({Key,Value}, Config0) ->
                         replace_stanchion_config(Key,Value,Config0)
@@ -438,6 +439,9 @@ riakcs_logpath(Prefix, N, File) ->
 riakcscmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_statuscmd(Path, N) ->
+    lists:flatten(io_lib:format("~s-admin status", [riakcs_binpath(Path, N)])).
+
 riakcs_switchcmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-admin stanchion ~s", [riakcs_binpath(Path, N), Cmd])).
 
@@ -458,6 +462,9 @@ stanchion_etcpath(Prefix) ->
 
 stanchioncmd(Path, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
+
+stanchion_statuscmd(Path) ->
+    lists:flatten(io_lib:format("~s-admin status", [stanchion_binpath(Path)])).
 
 riak_root_and_vsn(current, oss) -> {?RIAK_ROOT, current};
 riak_root_and_vsn(current, ee) ->  {?EE_ROOT, ee_current};
@@ -1013,10 +1020,17 @@ pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, Opts) ->
     rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, Opts).
 
 make_authorization(Method, Resource, ContentType, Config, Date) ->
+    make_authorization(s3, Method, Resource, ContentType, Config, Date).
+
+make_authorization(Type, Method, Resource, ContentType, Config, Date) ->
     StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
     Signature =
         base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
-    lists:flatten(["AWS ", Config#aws_config.access_key_id, $:, Signature]).
+    Prefix = case Type of
+                 s3 -> "AWS";
+                 velvet -> "MOSS"
+             end,
+    lists:flatten([Prefix, " ", Config#aws_config.access_key_id, $:, Signature]).
 
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 sha(Bin) -> crypto:hash(sha, Bin).
