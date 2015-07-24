@@ -380,7 +380,7 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
     %% again without having to re-retrieve the object
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body],
-                    riak_cs_config:put_gckey_timeout(), %% <= bug: put_manifest_timeout should be used here
+                    riak_cs_config:put_manifest_timeout(),
                     [riakc, put_manifest]).
 
 -spec maybe_delete_small_objects([cs_uuid_and_manifest()], riak_client(), non_neg_integer()) ->
