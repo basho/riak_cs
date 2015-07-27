@@ -211,7 +211,13 @@
   {datatype, bytesize}
 ]}.
 
-%% @doc Whether to omit PR=all get at retrieving user info.
+%% @doc When some of the nodes are slow, getting user with PR=all may
+%% make all requests of the user slow. This option stands for whether
+%% to omit PR=all get at retrieving user object. When this is turned
+%% on, instead gets are performed with R=quorum and PR=one to avoid
+%% waiting for responses from slow node. The price for this option is
+%% a very slight possibility of stale user object (such as a list of
+%% owned buckets) being read.
 {mapping, "fast_user_get", "riak_cs.fast_user_get", [
   {default, off},
   {datatype, flag}

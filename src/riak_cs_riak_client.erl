@@ -324,24 +324,24 @@ get_bucket_with_pbc(MasterPbc, BucketName) ->
                     [riakc, get_cs_bucket]).
 
 get_user_with_pbc(MasterPbc, Key) ->
-    case riak_cs_config:fast_user_get() of
-        true ->
-            StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-            Timeout = riak_cs_config:get_user_timeout(),
-            case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
-                                 Timeout, [riakc, get_cs_user_strong]) of
-                {ok, Obj} ->
-                    %% since we read from all primaries, we're less
-                    %% concerned with there being an 'out-of-date'
-                    %% replica that we might conflict with (and not be
-                    %% able to properly resolve conflicts).
-                    KeepDeletedBuckets = false,
-                    {ok, {Obj, KeepDeletedBuckets}};
-                {error, Reason0} ->
-                    _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
-                    weak_get_user_with_pbc(MasterPbc, Key)
-            end;
-        false ->
+    get_user_with_pbc(MasterPbc, Key, riak_cs_config:fast_user_get()).
+
+get_user_with_pbc(MasterPbc, Key, true) ->
+    weak_get_user_with_pbc(MasterPbc, Key);
+get_user_with_pbc(MasterPbc, Key, false) ->
+    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
+    Timeout = riak_cs_config:get_user_timeout(),
+    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
+                         Timeout, [riakc, get_cs_user_strong]) of
+        {ok, Obj} ->
+            %% since we read from all primaries, we're less concerned
+            %% with there being an 'out-of-date' replica that we might
+            %% conflict with (and not be able to properly resolve
+            %% conflicts).
+            KeepDeletedBuckets = false,
+            {ok, {Obj, KeepDeletedBuckets}};
+        {error, Reason0} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
             weak_get_user_with_pbc(MasterPbc, Key)
     end.
 
