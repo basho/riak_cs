@@ -216,8 +216,9 @@
 %% to omit PR=all get at retrieving user object. When this is turned
 %% on, instead gets are performed with R=quorum and PR=one to avoid
 %% waiting for responses from slow node. The price for this option is
-%% a very slight possibility of stale user object (such as a list of
-%% owned buckets) being read.
+%% possibility to read stale user object (such as a list of owned
+%% buckets) being read, as well as the list of buckets in a user
+%% record never pruned.
 {mapping, "fast_user_get", "riak_cs.fast_user_get", [
   {default, off},
   {datatype, flag}

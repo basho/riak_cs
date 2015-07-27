@@ -329,6 +329,14 @@ get_user_with_pbc(MasterPbc, Key) ->
 get_user_with_pbc(MasterPbc, Key, true) ->
     weak_get_user_with_pbc(MasterPbc, Key);
 get_user_with_pbc(MasterPbc, Key, false) ->
+    case strong_get_user_with_pbc(MasterPbc, Key) of
+        {ok, _} = OK -> OK;
+        {error, Reason} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason]),
+            weak_get_user_with_pbc(MasterPbc, Key)
+    end.
+
+strong_get_user_with_pbc(MasterPbc, Key) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     Timeout = riak_cs_config:get_user_timeout(),
     case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
@@ -340,9 +348,8 @@ get_user_with_pbc(MasterPbc, Key, false) ->
             %% conflicts).
             KeepDeletedBuckets = false,
             {ok, {Obj, KeepDeletedBuckets}};
-        {error, Reason0} ->
-            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
-            weak_get_user_with_pbc(MasterPbc, Key)
+        {error, _} = Error ->
+            Error
     end.
 
 weak_get_user_with_pbc(MasterPbc, Key) ->

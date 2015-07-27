@@ -30,6 +30,7 @@
          is_admin/1,
          get_user/2,
          get_user_by_index/3,
+         from_riakc_obj/2,
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
@@ -145,26 +146,33 @@ get_user(KeyId, RcPid) ->
     BinKey = list_to_binary(KeyId),
     case riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
-            case riakc_obj:value_count(Obj) of
-                1 ->
-                    Value = binary_to_term(riakc_obj:get_value(Obj)),
-                    User = update_user_record(Value),
-                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
-                0 ->
-                    {error, no_value};
-                N ->
-                    _ = lager:warning("User object of '~s' has ~p siblings", [KeyId, N]),
-                    Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj),
-                                 Value /= <<>>  % tombstone
-                             ],
-                    User = update_user_record(hd(Values)),
-                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-            end;
+            {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
         Error ->
             Error
+    end.
+
+-spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
+from_riakc_obj(Obj, KeepDeletedBuckets) ->
+    case riakc_obj:value_count(Obj) of
+        1 ->
+            Value = binary_to_term(riakc_obj:get_value(Obj)),
+            User = update_user_record(Value),
+            Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+            User?RCS_USER{buckets=Buckets};
+        0 ->
+            error(no_value);
+        N ->
+            Values = [binary_to_term(Value) ||
+                         Value <- riakc_obj:get_values(Obj),
+                         Value /= <<>>  % tombstone
+                     ],
+            User = update_user_record(hd(Values)),
+
+            KeyId = User?RCS_USER.key_id,
+            _ = lager:warning("User object of '~s' has ~p siblings", [KeyId, N]),
+
+            Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
+            User?RCS_USER{buckets=Buckets}
     end.
 
 %% @doc Retrieve a Riak CS user's information based on their
