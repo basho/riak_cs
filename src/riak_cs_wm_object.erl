@@ -399,18 +399,20 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                     {true, _RD, _OtherCtx} ->
                         %% access to source object not authorized
                         %% TODO: check the return value / http status
-                        _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
-                        {{halt, 403}, RD, Ctx};
-
+                        ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
+                    {{halt, 403}, _RD, _OtherCtx} = Error ->
+                        %% access to source object not authorized either, but
+                        %% in different return value
+                        ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
                     {Result, _, _} = Error ->
                         _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
                         Error
 
                 end;
             {error, notfound} ->
-                ResponseMod:api_error(no_such_key, RD, Ctx);
+                ResponseMod:api_error(no_copy_source_key, RD, Ctx);
             {error, no_active_manifest} ->
-                ResponseMod:api_error(no_such_key, RD, Ctx);
+                ResponseMod:api_error(no_copy_source_key, RD, Ctx);
             {error, Err} ->
                 ResponseMod:api_error(Err, RD, Ctx)
         end

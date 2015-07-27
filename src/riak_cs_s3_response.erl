@@ -26,7 +26,6 @@
          error_message/1,
          error_code/1,
          error_response/1,
-         error_response/5,
          copy_object_response/3,
          copy_part_response/3,
          no_such_upload_response/3,
@@ -52,6 +51,8 @@ error_message(invalid_access_key_id) ->
 error_message(invalid_email_address) ->
     "The email address you provided is not a valid.";
 error_message(access_denied) ->
+    "Access Denied";
+error_message(copy_source_access_denied) ->
     "Access Denied";
 error_message(reqtime_tooskewed) ->
     "The difference between the request time and the current time is too large.";
@@ -88,6 +89,7 @@ error_message(malformed_policy_principal) -> "Invalid principal in policy";
 error_message(malformed_policy_action) -> "Policy has invalid action";
 error_message(malformed_policy_condition) -> "Policy has invalid condition";
 error_message(no_such_key) -> "The specified key does not exist.";
+error_message(no_copy_source_key) -> "The specified key does not exist.";
 error_message(no_such_bucket_policy) -> "The specified bucket does not have a bucket policy.";
 error_message(no_such_upload) ->
     "The specified upload does not exist. The upload ID may be invalid, "
@@ -111,6 +113,7 @@ error_message(ErrorName) ->
 -spec error_code(error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(access_denied) -> "AccessDenied";
+error_code(copy_source_access_denied) -> "AccessDenied";
 error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
@@ -123,6 +126,7 @@ error_code(bad_etag_order) -> "InvalidPartOrder";
 error_code(invalid_user_update) -> "InvalidUserUpdate";
 error_code(no_such_bucket) -> "NoSuchBucket";
 error_code(no_such_key) -> "NoSuchKey";
+error_code(no_copy_source_key) -> "NoSuchKey";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
 error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
@@ -161,6 +165,7 @@ error_code(ErrorName) ->
 status_code(invalid_access_key_id) -> 403;
 status_code(invalid_email_address) -> 400;
 status_code(access_denied) ->  403;
+status_code(copy_source_access_denied) ->  403;
 status_code(reqtime_tooskewed) -> 403;
 status_code(bucket_not_empty) ->  409;
 status_code(bucket_already_exists) -> 409;
@@ -174,6 +179,7 @@ status_code(bad_etag_order) -> 400;
 status_code(invalid_user_update) -> 400;
 status_code(no_such_bucket) -> 404;
 status_code(no_such_key) -> 404;
+status_code(no_copy_source_key) -> 404;
 status_code({riak_connect_failed, _}) -> 503;
 status_code(admin_key_undefined) -> 503;
 status_code(admin_secret_undefined) -> 503;
@@ -224,7 +230,8 @@ respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
 api_error(Error, RD, Ctx) when is_atom(Error) ->
-    error_response(status_code(Error),
+    error_response(Error,
+                   status_code(Error),
                    error_code(Error),
                    error_message(Error),
                    RD,
@@ -233,7 +240,8 @@ api_error({Tag, _}=Error, RD, Ctx)
   when Tag =:= riak_connect_failed orelse
        Tag =:= malformed_policy_version orelse
        Tag =:= auth_not_supported ->
-    error_response(status_code(Error),
+    error_response(Tag,
+                   status_code(Error),
                    error_code(Error),
                    error_message(Error),
                    RD,
@@ -248,13 +256,22 @@ error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
 error_response(ErrorDoc) ->
     {error, error_code_to_atom(xml_error_code(ErrorDoc))}.
 
-error_response(StatusCode, Code, Message, RD, Ctx) ->
-    {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
+error_response(ErrorTag, StatusCode, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
                          {'Message', [Message]},
-                         {'Resource', [string:strip(OrigResource, right, $/)]},
+                         {'Resource', [error_resource(ErrorTag, RD)]},
                          {'RequestId', [""]}]}],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+
+-spec error_resource(atom(), #wm_reqdata{}) -> iodata().
+error_resource(Tag, RD)
+  when Tag =:= no_copy_source_key;
+       Tag =:= copy_source_access_denied->
+    {B, K} = riak_cs_copy_object:get_copy_source(RD),
+    <<$/, B/binary, $/, K/binary>>;
+error_resource(_Tag, RD) ->
+    {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
+    OrigResource.
 
 toomanybuckets_response(Current,BucketLimit,RD,Ctx) ->
     XmlDoc = {'Error',
