@@ -284,7 +284,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                                     riak_cs_riak_client:checkin(ReadRcPid)
                                 end
                         end;
-                    {error, notfond} ->
+                    {error, notfound} ->
                         riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
                     {error, Reason} ->
                         riak_cs_s3_response:api_error(Reason, RD, Ctx0)
