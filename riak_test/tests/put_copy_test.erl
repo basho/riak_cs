@@ -59,6 +59,7 @@ confirm() ->
     ok = verify_others_copy(UserConfig, UserConfig2),
     ok = verify_multipart_copy(UserConfig),
     ok = verify_security(UserConfig, UserConfig2, UserConfig3),
+    ok = verify_source_not_found(UserConfig),
 
     ?assertEqual([{delete_marker, false}, {version_id, "null"}],
                  erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig)),
@@ -237,3 +238,13 @@ verify_security(Alice, Bob, Charlie) ->
     ?assertEqual("403", Status),
 
     ok.
+
+verify_source_not_found(UserConfig) ->
+    NonExistingKey = "non-existent-source",
+    {'EXIT', {{aws_error, {http_error, 404, _, ErrorXml}}, _Stack}} =
+        (catch erlcloud_s3:copy_object(?BUCKET2, ?KEY2,
+                                       ?BUCKET, NonExistingKey, UserConfig)),
+    lager:debug("ErrorXml: ~s", [ErrorXml]),
+    ?assert(string:str(ErrorXml,
+                       "<Resource>/" ++ ?BUCKET ++
+                           "/" ++ NonExistingKey ++ "</Resource>") > 0).
