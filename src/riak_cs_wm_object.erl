@@ -89,25 +89,14 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
-    case wrq:method(RD) of
-        'PUT' ->
-            case catch(
-                   list_to_integer(
-                     wrq:get_req_header("Content-Length", RD))) of
-                Length when is_integer(Length) ->
-                    case Length =< riak_cs_lfs_utils:max_content_len() of
-                        false ->
-                            ResponseMod:api_error(
-                              entity_too_large, RD, Ctx);
-                        true ->
-                            check_0length_metadata_update(Length, RD, Ctx)
-                    end;
-                _ ->
-                    {false, RD, Ctx}
-            end;
-        _ ->
-            {true, RD, Ctx}
+valid_entity_length(RD, Ctx) ->
+    MaxLen = riak_cs_lfs_utils:max_content_len(),
+    case riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx) of
+        {true, NewRD, NewCtx} ->
+            check_0length_metadata_update(riak_cs_wm_utils:content_length(RD),
+                                          NewRD, NewCtx);
+        Other ->
+            Other
     end.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
