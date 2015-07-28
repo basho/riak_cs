@@ -155,6 +155,14 @@
   {datatype, flag}
 ]}.
 
+%% @doc Max number of manifests that can be in the
+%% `scheduled_delete' state for a given key. `unlimited' means there
+%% is no maximum, and pruning will not happen based on count.
+{mapping, "max_scheduled_delete_manifests", "riak_cs.max_scheduled_delete_manifests", [
+  {default, 50},
+  {datatype, [integer, {atom, unlimited}]}
+]}.
+
 %% == Garbage Collection ==
 
 %% @doc The time to retain the block for an object after it has been

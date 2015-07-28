@@ -311,7 +311,7 @@ set_leeway_seconds(_LeewaySeconds) ->
 max_scheduled_delete_manifests() ->
     case application:get_env(riak_cs, max_scheduled_delete_manifests) of
         undefined ->
-            unlimited;
+            ?DEFAULT_MAX_SCHEDULED_DELETE_MANIFESTS;
         {ok, MaxCount} ->
             MaxCount
     end.

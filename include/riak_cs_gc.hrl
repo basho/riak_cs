@@ -94,6 +94,7 @@
 -define(DEFAULT_GC_BATCH_SIZE, 1000).
 -define(DEFAULT_GC_WORKERS, 2).
 -define(EPOCH_START, <<"0">>).
+-define(DEFAULT_MAX_SCHEDULED_DELETE_MANIFESTS, 50).
 
 -record(gc_manager_state, {
           next :: undefined | non_neg_integer(),
