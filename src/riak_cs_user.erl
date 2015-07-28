@@ -30,7 +30,6 @@
          is_admin/1,
          get_user/2,
          get_user_by_index/3,
-         from_riakc_obj/2,
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
