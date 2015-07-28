@@ -92,7 +92,11 @@ confirm_initial_stats(stanchion, UserConfig, Port) ->
     confirm_stat_count(Stats, <<"user_create_one">>, 1),
     confirm_stat_count(Stats, <<"riakc_put_cs_user_one">>, 1),
 
-    ?assert(proplists:is_defined(<<"memory_atom">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_mean">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_median">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_95">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_99">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_100">>, Stats)),
     ?assert(proplists:is_defined(<<"sys_process_count">>, Stats)),
     ?assert(proplists:is_defined(<<"webmachine_mochiweb_active_sockets">>, Stats)),
     ok.
