@@ -1020,16 +1020,22 @@ pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, Opts) ->
     rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, Opts).
 
 make_authorization(Method, Resource, ContentType, Config, Date) ->
-    make_authorization(s3, Method, Resource, ContentType, Config, Date).
+    make_authorization(Method, Resource, ContentType, Config, Date, []).
 
-make_authorization(Type, Method, Resource, ContentType, Config, Date) ->
-    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n, Resource],
-    Signature =
-        base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
+make_authorization(Method, Resource, ContentType, Config, Date, AmzHeaders) ->
+    make_authorization(s3, Method, Resource, ContentType, Config, Date, AmzHeaders).
+
+make_authorization(Type, Method, Resource, ContentType, Config, Date, AmzHeaders) ->
     Prefix = case Type of
                  s3 -> "AWS";
                  velvet -> "MOSS"
              end,
+    StsAmzHeaderPart = [[K, $:, V, $\n] || {K, V} <- AmzHeaders],
+    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n,
+                    StsAmzHeaderPart, Resource],
+    lager:debug("StringToSign~n~s~n", [StringToSign]),
+    Signature =
+        base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
     lists:flatten([Prefix, " ", Config#aws_config.access_key_id, $:, Signature]).
 
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
