@@ -324,31 +324,47 @@ get_bucket_with_pbc(MasterPbc, BucketName) ->
                     [riakc, get_cs_bucket]).
 
 get_user_with_pbc(MasterPbc, Key) ->
+    get_user_with_pbc(MasterPbc, Key, riak_cs_config:fast_user_get()).
+
+get_user_with_pbc(MasterPbc, Key, true) ->
+    weak_get_user_with_pbc(MasterPbc, Key);
+get_user_with_pbc(MasterPbc, Key, false) ->
+    case strong_get_user_with_pbc(MasterPbc, Key) of
+        {ok, _} = OK -> OK;
+        {error, Reason} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason]),
+            weak_get_user_with_pbc(MasterPbc, Key)
+    end.
+
+strong_get_user_with_pbc(MasterPbc, Key) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     Timeout = riak_cs_config:get_user_timeout(),
     case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
                          Timeout, [riakc, get_cs_user_strong]) of
         {ok, Obj} ->
-            %% since we read from all primaries, we're
-            %% less concerned with there being an 'out-of-date'
-            %% replica that we might conflict with (and not
-            %% be able to properly resolve conflicts).
+            %% since we read from all primaries, we're less concerned
+            %% with there being an 'out-of-date' replica that we might
+            %% conflict with (and not be able to properly resolve
+            %% conflicts).
             KeepDeletedBuckets = false,
             {ok, {Obj, KeepDeletedBuckets}};
-        {error, Reason0} ->
-            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
-            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions,
-                                 Timeout, [riakc, get_cs_user]) of
-                {ok, Obj} ->
-                    %% We weren't able to read from all primary
-                    %% vnodes, so don't risk losing information
-                    %% by pruning the bucket list.
-                    KeepDeletedBuckets = true,
-                    {ok, {Obj, KeepDeletedBuckets}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+        {error, _} = Error ->
+            Error
+    end.
+
+weak_get_user_with_pbc(MasterPbc, Key) ->
+    Timeout = riak_cs_config:get_user_timeout(),
+    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions,
+                         Timeout, [riakc, get_cs_user]) of
+        {ok, Obj} ->
+            %% We weren't able to read from all primary vnodes, so
+            %% don't risk losing information by pruning the bucket
+            %% list.
+            KeepDeletedBuckets = true,
+            {ok, {Obj, KeepDeletedBuckets}};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 save_user_with_pbc(MasterPbc, User, OldUserObj) ->
