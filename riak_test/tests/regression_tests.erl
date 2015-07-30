@@ -79,7 +79,7 @@ verify_cs347(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
             Result ->
                 Result
         end,
-    ?assert(rtcs:check_no_such_bucket(ListObjectRes1, "/"++?TEST_BUCKET_CS347)),
+    ?assert(rtcs:check_no_such_bucket(ListObjectRes1, "/" ++ ?TEST_BUCKET_CS347 ++ "/")),
 
     lager:info("creating bucket ~p", [BucketName]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
@@ -97,7 +97,7 @@ verify_cs347(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
             Result2 ->
                 Result2
         end,
-    ?assert(rtcs:check_no_such_bucket(ListObjectRes2, "/"++?TEST_BUCKET_CS347)),
+    ?assert(rtcs:check_no_such_bucket(ListObjectRes2, "/" ++ ?TEST_BUCKET_CS347 ++ "/")),
     ok.
 
 

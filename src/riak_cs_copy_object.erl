@@ -50,7 +50,7 @@ test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
     %% TODO: write tests around these conditions, any kind of test is okay
     case condition_check(RD, ETag, LastUpdate) of
         ok ->
-            _ = authorize_on_src(RcPid, SrcManifest, RD, Ctx);
+            authorize_on_src(RcPid, SrcManifest, RD, Ctx);
         Other ->
             {Other, RD, Ctx}
     end.

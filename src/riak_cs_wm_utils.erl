@@ -65,7 +65,9 @@
          fetch_bucket_owner/2,
          bucket_owner/1,
          extract_date/1,
-         check_timeskew/1
+         check_timeskew/1,
+         content_length/1,
+         valid_entity_length/3
         ]).
 
 -include("riak_cs.hrl").
@@ -1045,6 +1047,49 @@ check_timeskew(ReqTimestamp) when is_tuple(ReqTimestamp)->
     end;
 check_timeskew(_) ->
     false.
+
+-spec content_length(#wm_reqdata{}) -> undefined | non_neg_integer() | {error, term()}.
+content_length(RD) ->
+    case wrq:get_req_header("Content-Length", RD) of
+        undefined -> undefined;
+        CL ->
+            case (catch list_to_integer(CL)) of
+                Length when is_integer(Length) andalso 0 =< Length -> Length;
+                _Other -> {error, CL}
+            end
+    end.
+
+%% `valid_entity_length' helper.
+%% Other than PUT, any Content-Length is allowed including undefined.
+%% For PUT, not Copy, Content-Length is mandatory (at least in v2 auth
+%% scheme) and the value should be smaller than the upper bound of
+%% single request entity size.
+%% On the other hand, for PUT Copy, Content-Length is not mandatory.
+%% If it exists, however, it should be ZERO.
+valid_entity_length(MaxLen, RD, #context{response_module=ResponseMod,
+                                         local_context=LocalCtx} = Ctx) ->
+    case {wrq:method(RD), wrq:get_req_header("x-amz-copy-source", RD)} of
+        {'PUT', undefined} ->
+            MaxLen = riak_cs_lfs_utils:max_content_len(),
+            case riak_cs_wm_utils:content_length(RD) of
+                Length when is_integer(Length) andalso
+                            Length =< MaxLen ->
+                    UpdLocalCtx = LocalCtx#key_context{size=Length},
+                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                Length when is_integer(Length) ->
+                    ResponseMod:api_error(entity_too_large, RD, Ctx);
+                _ -> {false, RD, Ctx}
+            end;
+        {'PUT', _Source} ->
+            case riak_cs_wm_utils:content_length(RD) of
+                CL when CL =:= 0 orelse CL =:= undefined ->
+                    UpdLocalCtx = LocalCtx#key_context{size=0},
+                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                _ -> {false, RD, Ctx}
+            end;
+        _ ->
+            {true, RD, Ctx}
+    end.
 
 %% ===================================================================
 %% Internal functions

@@ -141,27 +141,9 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     end.
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->
-    case wrq:method(RD) of
-        'PUT' ->
-            case catch(
-                   list_to_integer(
-                     wrq:get_req_header("Content-Length", RD))) of
-                Length when is_integer(Length) ->
-                    case Length =< riak_cs_lfs_utils:max_content_len() of
-                        false ->
-                            riak_cs_s3_response:api_error(
-                              entity_too_large, RD, Ctx);
-                        true ->
-                            UpdLocalCtx = LocalCtx#key_context{size=Length},
-                            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
-                    end;
-                _ ->
-                    {false, RD, Ctx}
-            end;
-        _ ->
-            {true, RD, Ctx}
-    end.
+valid_entity_length(RD, Ctx) ->
+    MaxLen = riak_cs_lfs_utils:max_content_len(),
+    riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx).
 
 -spec delete_resource(#wm_reqdata{}, #context{}) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
@@ -284,7 +266,7 @@ accept_body(RD, Ctx0=#context{local_context=LocalCtx0,
                                     riak_cs_riak_client:checkin(ReadRcPid)
                                 end
                         end;
-                    {error, notfond} ->
+                    {error, notfound} ->
                         riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
                     {error, Reason} ->
                         riak_cs_s3_response:api_error(Reason, RD, Ctx0)
