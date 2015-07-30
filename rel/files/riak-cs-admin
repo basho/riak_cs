@@ -15,7 +15,7 @@ cd $RUNNER_BASE_DIR
 SCRIPT=`basename $0`
 
 usage() {
-    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | check-users-buckets}"
+    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
 }
 
 # Check the first argument for instructions
@@ -107,10 +107,10 @@ case "$1" in
 
         $NODETOOL rpc riak_cs_console cleanup_orphan_multipart "$@"
         ;;
-    check[_-]users[_-]buckets)
+    audit[_-]bucket[_-]ownership)
         shift
         node_up_check
-        $NODETOOL rpc riak_cs_console check_users_buckets "$@"
+        $NODETOOL rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
         usage
