@@ -349,8 +349,8 @@ start_batch(Options, Time, State) ->
     %% connection, and avoids duplicating the configuration lookup code
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
     Batch =
-        case riak_cs_user:fetch_user_list(RcPid) of
-            {ok, Users} -> Users;
+        case riak_cs_user:fetch_user_keys(RcPid) of
+            {ok, UserKeys} -> UserKeys;
             {error, Error} ->
                 _ = lager:error("Storage calculator was unable"
                                 " to fetch list of users (~p)",
