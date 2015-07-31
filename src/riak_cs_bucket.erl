@@ -38,7 +38,8 @@
          update_bucket_record/1,
          delete_all_uploads/2,
          delete_old_uploads/3,
-         fold_all_buckets/3
+         fold_all_buckets/3,
+         fetch_bucket_keys/1
         ]).
 
 -include("riak_cs.hrl").
@@ -778,3 +779,11 @@ update_user_buckets(User, Bucket) ->
                     {ok, ignore}
             end
     end.
+
+%% @doc Grab the whole list of Riak CS bucket keys.
+-spec fetch_bucket_keys(riak_client()) -> {ok, [binary()]} | {error, term()}.
+fetch_bucket_keys(RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Timeout = riak_cs_config:list_keys_list_buckets_timeout(),
+    riak_cs_pbc:list_keys(MasterPbc, ?BUCKETS_BUCKET, Timeout,
+                          [riakc, list_all_bucket_keys]).

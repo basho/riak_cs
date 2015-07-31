@@ -348,7 +348,15 @@ start_batch(Options, Time, State) ->
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
-    Batch = fetch_user_list(RcPid),
+    Batch =
+        case riak_cs_user:fetch_user_keys(RcPid) of
+            {ok, UserKeys} -> UserKeys;
+            {error, Error} ->
+                _ = lager:error("Storage calculator was unable"
+                                " to fetch list of users (~p)",
+                                [Error]),
+                []
+        end,
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
@@ -360,20 +368,6 @@ start_batch(Options, Time, State) ->
                 recalc=Recalc,
                 detailed=Detailed,
                 leeway_edge=LeewayEdge}.
-
-%% @doc Grab the whole list of Riak CS users.
-fetch_user_list(RcPid) ->
-    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Timeout = riak_cs_config:list_keys_list_users_timeout(),
-    case riak_cs_pbc:list_keys(MasterPbc, ?USER_BUCKET, Timeout,
-                               [riakc, list_all_user_keys]) of
-        {ok, Users} -> Users;
-        {error, Error} ->
-            _ = lager:error("Storage calculator was unable"
-                            " to fetch list of users (~p)",
-                            [Error]),
-            []
-    end.
 
 %% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak_client=RcPid,

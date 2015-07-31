@@ -23,6 +23,7 @@
 -export([
          status/1,
          cluster_info/1,
+         audit_bucket_ownership/1,
          cleanup_orphan_multipart/0,
          cleanup_orphan_multipart/1
         ]).
@@ -61,6 +62,88 @@ cluster_info([OutFile]) ->
             io:format("Cluster_info failed, see log for details~n"),
             error
     end.
+
+%% @doc Audit bucket ownership by comparing information between
+%%      users bucket and buckets bucket.
+audit_bucket_ownership(_Args) when is_list(_Args) ->
+    audit_bucket_ownership().
+
+audit_bucket_ownership() ->
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    try audit_bucket_ownership0(RcPid) of
+        [] ->
+            io:format("No Inconsistencies found.~n");
+        Inconsistencies ->
+            io:format("~p.~n", [Inconsistencies])
+    after
+        riak_cs_riak_client:stop(RcPid)
+    end.
+
+%% Construct two sets of {User, Bucket} tuples and
+%% return differences of subtraction in both directions, also output logs.
+audit_bucket_ownership0(RcPid) ->
+    FromUsers = ownership_from_users(RcPid),
+    {FromBuckets, OwnedBy} = ownership_from_buckets(RcPid),
+    lager:debug("FromUsers: ~p~n", [lists:usort(gb_sets:to_list(FromUsers))]),
+    lager:debug("FromBuckets: ~p~n", [lists:usort(gb_sets:to_list(FromBuckets))]),
+    lager:debug("OwnedBy: ~p~n", [lists:usort(gb_trees:to_list(OwnedBy))]),
+    Inconsistencies0 =
+        gb_sets:fold(
+          fun ({U, B}, Acc) ->
+                  lager:info(
+                    "Bucket is not tracked by user: {User, Bucket} = {~s, ~s}",
+                    [U, B]),
+                  [{not_tracked, {U, B}} | Acc]
+          end, [], gb_sets:subtract(FromBuckets, FromUsers)),
+    gb_sets:fold(
+      fun({U,B}, Acc) ->
+              case gb_trees:lookup(B, OwnedBy) of
+                  none ->
+                      lager:info(
+                        "Bucket does not exist: {User, Bucket} = {~s, ~s}", [U, B]),
+                      [{no_bucket_object, {U, B}} | Acc];
+                  {value, DifferentUser} ->
+                      lager:info(
+                        "Bucket is owned by different user: {User, Bucket, DifferentUser} = "
+                        "{~s, ~s, ~s}", [U, B, DifferentUser]),
+                      [{different_user, {U, B, DifferentUser}} | Acc]
+              end
+      end, Inconsistencies0, gb_sets:subtract(FromUsers, FromBuckets)).
+
+ownership_from_users(RcPid) ->
+    {ok, UserKeys} = riak_cs_user:fetch_user_keys(RcPid),
+    lists:foldl(
+      fun(UserKey, Ownership) ->
+              UserStr = binary_to_list(UserKey),
+              {ok, {RCSUser, _Obj}} = riak_cs_user:get_user(UserStr, RcPid),
+              ?RCS_USER{buckets=Buckets} = RCSUser,
+              lists:foldl(
+                fun(?RCS_BUCKET{name=BucketStr}, InnerOwnership) ->
+                        gb_sets:add_element({UserKey, list_to_binary(BucketStr)},
+                                            InnerOwnership)
+                end, Ownership, Buckets)
+      end, gb_sets:new(), UserKeys).
+
+ownership_from_buckets(RcPid) ->
+    {ok, BucketKeys} = riak_cs_bucket:fetch_bucket_keys(RcPid),
+    lists:foldl(
+      fun(BucketKey, {Ownership, OwnedBy}) ->
+              case riak_cs_bucket:fetch_bucket_object(BucketKey, RcPid) of
+                  {error, no_such_bucket} ->
+                      {Ownership, OwnedBy};
+                  {ok, BucketObj} ->
+                      OwnerIds = riakc_obj:get_values(BucketObj),
+                      %% Raise badmatch when something wrong, too sloppy?
+                      {ok, Owner} =
+                          case lists:usort(OwnerIds) of
+                              [Uniq] -> {ok, Uniq};
+                              [] ->     {error, {no_bucket_owner, BucketKey}};
+                              Owners -> {error, {multiple_owners, BucketKey, Owners}}
+                          end,
+                      {gb_sets:add_element({Owner, BucketKey}, Ownership),
+                       gb_trees:enter(BucketKey, Owner, OwnedBy)}
+              end
+      end, {gb_sets:new(), gb_trees:empty()}, BucketKeys).
 
 %% @doc This function is for operation, esp cleaning up multipart
 %% uploads which not completed nor aborted, and after that - bucket

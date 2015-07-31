@@ -88,6 +88,7 @@
          delete_gckey_timeout/0,
          list_keys_list_objects_timeout/0,
          list_keys_list_users_timeout/0,
+         list_keys_list_buckets_timeout/0,
          storage_calc_timeout/0,
          list_objects_timeout/0, %% using mapred (v0)
          fold_objects_timeout/0, %% for cs_bucket_fold
@@ -466,6 +467,7 @@ local_get_block_timeout() ->
 ?TIMEOUT_CONFIG_FUNC(delete_gckey_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_keys_list_objects_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_keys_list_users_timeout).
+?TIMEOUT_CONFIG_FUNC(list_keys_list_buckets_timeout).
 ?TIMEOUT_CONFIG_FUNC(storage_calc_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_objects_timeout).
 ?TIMEOUT_CONFIG_FUNC(fold_objects_timeout).

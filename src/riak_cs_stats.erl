@@ -125,6 +125,7 @@ duration_metrics() ->
          [riakc, fold_manifest_objs],
          [riakc, mapred_storage],
          [riakc, list_all_user_keys],
+         [riakc, list_all_bucket_keys],
          [riakc, list_all_manifest_keys],
          [riakc, list_users_receive_chunk],
          [riakc, get_uploads_by_index],
