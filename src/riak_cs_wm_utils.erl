@@ -741,6 +741,7 @@ handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
     shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
+    %% Policy says no
     #context{riak_client=RcPid,
              response_module=ResponseMod,
              user=User,
