@@ -70,9 +70,11 @@ audit_bucket_ownership(_Args) when is_list(_Args) ->
 
 audit_bucket_ownership() ->
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
-    try
-        Inconsistencies = audit_bucket_ownership0(RcPid),
-        io:format("~p", [Inconsistencies])
+    try audit_bucket_ownership0(RcPid) of
+        [] ->
+            io:format("No Inconsistencies found.~n");
+        Inconsistencies ->
+            io:format("~p.~n", [Inconsistencies])
     after
         riak_cs_riak_client:stop(RcPid)
     end.
