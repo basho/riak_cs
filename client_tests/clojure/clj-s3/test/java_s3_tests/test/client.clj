@@ -50,16 +50,20 @@
   (let [b (md5-byte-array input-byte-array)]
     (String. (Hex/encodeHex b))))
 
+(defn user-to-cred
+  [user]
+  {:endpoint "http://s3.amazonaws.com"
+   :access-key (:key_id user)
+   :secret-key (:key_secret user)
+   :proxy {:host riak-cs-host
+           :port (get-riak-cs-port)}})
+
 (defn random-cred
   []
-  (let [new-creds (user-creation/create-random-user
+  (let [new-cred (user-creation/create-random-user
                    riak-cs-host-with-protocol
                    (get-riak-cs-port))]
-    {:endpoint "http://s3.amazonaws.com"
-     :access-key (:key_id new-creds)
-     :secret-key (:key_secret new-creds)
-     :proxy {:host riak-cs-host
-             :port (get-riak-cs-port)}}))
+    (user-to-cred new-cred)))
 
 (defmacro with-random-cred
   "Execute `form` with a random-cred
@@ -84,13 +88,9 @@
     (.delete f)))
 
 (fact "bogus creds raises an exception"
-      (let [bogus-cred
-            {:endpoint "http://s3.amazonaws.com"
-             :access-key "goo"
-             :secret-key "bar"
-             :proxy {:host riak-cs-host
-                     :port (get-riak-cs-port)}}]
-        (s3/list-buckets bogus-cred))
+      (let [bogus-user {:key_id "foo"
+                        :key_secret "bar"}]
+        (s3/list-buckets (user-to-cred bogus-user)))
       => (throws AmazonS3Exception))
 
 (fact "new users have no buckets"
@@ -251,16 +251,15 @@
         the ACL"
         (with-random-cred c
           (do
-            ;; TODO: not created with ACL, should extend s3/create-bucket
-            (s3/create-bucket c bucket-name)
-            (s3/update-bucket-acl c bucket-name
-                                  (s3/grant :all-users :read))
+            (s3/create-bucket c bucket-name {}
+                              (s3/grant :all-users :read))
             (contains?
              (:grants (s3/get-bucket-acl c bucket-name))
              public-read-grant)))
         => truthy))
 
-(let [bucket-name (random-string)]
+(let [bucket-name (random-string)
+      object-name (random-string)]
   (fact "Creating a bucket with an (non-canned) ACL returns the same ACL
         when you read the ACL"
         (with-random-cred c
@@ -272,10 +271,8 @@
                   user-two-name (:display_name user-two)
                   acl-grant {:grantee {:id user-two-id, :display-name user-two-name},
                              :permission :write}]
-              ;; TODO: not created with ACL, should extend s3/create-bucket
-              (s3/create-bucket c bucket-name)
-              (s3/update-bucket-acl c bucket-name
-                                    (s3/grant {:id user-two-id} :write))
+              (s3/create-bucket c bucket-name {}
+                                (s3/grant {:id user-two-id} :write))
               (contains?
                (:grants (s3/get-bucket-acl c bucket-name))
                acl-grant))))

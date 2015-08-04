@@ -22,6 +22,7 @@
            com.amazonaws.services.s3.model.Bucket
            com.amazonaws.services.s3.model.Grant
            com.amazonaws.services.s3.model.CanonicalGrantee
+           com.amazonaws.services.s3.model.CreateBucketRequest
            com.amazonaws.services.s3.model.CopyObjectResult
            com.amazonaws.services.s3.model.EmailAddressGrantee
            com.amazonaws.services.s3.model.GetObjectRequest
@@ -108,10 +109,20 @@
   [cred name]
   (.doesBucketExist (s3-client cred) name))
 
+(defn- ^CreateBucketRequest ->CreateBucketRequest
+  "Create a PutBucketRequest instance from a bucket name."
+  [^String bucket ^String key request]
+  (CreateBucketRequest. bucket))
+
+(declare create-acl) ; used by create-bucket and put-object
+
 (defn create-bucket
   "Create a new S3 bucket with the supplied name."
-  [cred ^String name]
-  (to-map (.createBucket (s3-client cred) name)))
+  [cred ^String name & [metadata & permissions]]
+  (let [req (CreateBucketRequest. name)]
+    (when permissions
+      (.setAccessControlList req (create-acl permissions)))
+    (.createBucket (s3-client cred) req)))
 
 (defn delete-bucket
   "Delete the S3 bucket with the supplied name."
@@ -188,8 +199,6 @@
       bucket key
       (:input-stream request)
       (map->ObjectMetadata (dissoc request :input-stream)))))
-
-(declare create-acl) ; used by put-object
 
 (defn put-object
   "Put a value into an S3 bucket at the specified key. The value can be
