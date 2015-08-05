@@ -2,10 +2,10 @@
 
 ## Overview
 
-These tests are written using a [fork](https://github.com/reiddraper/clj-aws-s3)
-of [clj-aws-s3](https://github.com/weavejester/clj-aws-s3). The fork adds proxy
-configuration needed to test Riak CS. You can see that, and the other
-dependencies in `project.clj`. There is code for creating Riak CS users in:
+These tests are written using a copy of
+[clj-aws-s3](https://github.com/weavejester/clj-aws-s3) at tag 0.3.10,
+for S3 API call. On the other hand, Riak CS specific administrative API
+call is implemented in
 
 ```bash
 client_tests/clojure/clj-s3/src/java_s3_tests/user_creation.clj

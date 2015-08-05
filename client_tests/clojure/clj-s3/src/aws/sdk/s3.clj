@@ -1,3 +1,8 @@
+;; Copyright (c) 2014 James Reeves
+;; Distributed under the Eclipse Public License, the same as Clojure.
+;;
+;; Original repository is https://github.com/weavejester/clj-aws-s3.
+
 (ns aws.sdk.s3
   "Functions to access the Amazon S3 storage service.
 
