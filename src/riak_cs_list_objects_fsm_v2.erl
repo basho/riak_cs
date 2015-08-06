@@ -348,7 +348,9 @@ make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
                                     fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
-    EndKey = big_end_key(128),
+    EndKey = make_end_key(StartKey),
+
+
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=BatchSize},
     NewStateData2 = update_profiling_state_with_start(NewStateData,
@@ -425,6 +427,13 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
             <<Prefix/binary, Group/binary>>
     end.
 
+-spec make_end_key(state()) -> binary().
+make_end_key(<<0>>) ->         
+    binary:copy(<<255>>,?MAX_S3_KEY_LENGTH);
+make_end_key(StartKey) ->
+    Padding = binary:copy(<<255>>,?MAX_S3_KEY_LENGTH - byte_size(StartKey)),
+    <<StartKey/binary, Padding/binary>>.
+
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
     make_start_key_from_marker_and_prefix(Request);
@@ -468,10 +477,6 @@ make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
         _Else ->
             Marker
     end.
-
-big_end_key(NumBytes) ->
-    MaxByte = <<255:8/integer>>,
-    iolist_to_binary([MaxByte || _ <- lists:seq(1, NumBytes)]).
 
 -spec map_active_manifests([orddict:orddict()]) -> list(lfs_manifest()).
 map_active_manifests(Manifests) ->
