@@ -7,7 +7,7 @@ BIN = env/bin
 all: test
 
 s3-tests:
-	@git clone --quiet https://github.com/basho/s3-tests -b riakcs-2.0
+	@git clone --quiet https://github.com/basho/s3-tests -b riakcs-2.1
 
 env:
 	@cd s3-tests && virtualenv env
