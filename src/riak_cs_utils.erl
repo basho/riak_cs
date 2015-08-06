@@ -440,7 +440,9 @@ key_exists(RcPid, Bucket, Key) ->
 big_end_key() ->
     big_end_key(<<>>).
 
--spec big_end_key(Prefix::binary()) -> binary().
+-spec big_end_key(Prefix::binary() | undefined) -> binary().
+big_end_key(undefined) ->
+    big_end_key(<<>>);
 big_end_key(Prefix) ->
     Padding = binary:copy(<<255>>, ?MAX_S3_KEY_LENGTH - byte_size(Prefix)),
     <<Prefix/binary, Padding/binary>>.
