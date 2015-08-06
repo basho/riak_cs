@@ -427,7 +427,7 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
             <<Prefix/binary, Group/binary>>
     end.
 
--spec make_end_key(state()) -> binary().
+-spec make_end_key(undefined|binary()) -> binary().
 make_end_key(undefined) ->         
     binary:copy(<<255>>,?MAX_S3_KEY_LENGTH);
 make_end_key(Prefix) ->
