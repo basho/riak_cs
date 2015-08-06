@@ -344,11 +344,11 @@ response_from_manifests_and_common_prefixes(Request,
 
 -spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
+make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName,prefix=Prefix},
                                     fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
-    EndKey = make_end_key(StartKey),
+    EndKey = make_end_key(Prefix),
 
 
     NewStateData = State#state{last_request_start_key=StartKey,
@@ -428,11 +428,11 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
     end.
 
 -spec make_end_key(state()) -> binary().
-make_end_key(<<0>>) ->         
+make_end_key(undefined) ->         
     binary:copy(<<255>>,?MAX_S3_KEY_LENGTH);
-make_end_key(StartKey) ->
-    Padding = binary:copy(<<255>>,?MAX_S3_KEY_LENGTH - byte_size(StartKey)),
-    <<StartKey/binary, Padding/binary>>.
+make_end_key(Prefix) ->
+    Padding = binary:copy(<<255>>,?MAX_S3_KEY_LENGTH - byte_size(Prefix)),
+    <<Prefix/binary, Padding/binary>>.
 
 -spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
