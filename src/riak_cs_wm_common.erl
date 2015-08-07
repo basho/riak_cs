@@ -506,6 +506,8 @@ post_authentication({error, Reason}, RD, Ctx, _, _) ->
 
 update_stats_inflow(_RD, undefined = _StatsPrefix) ->
     ok;
+update_stats_inflow(_RD, no_stats = _StatsPrefix) ->
+    ok;
 update_stats_inflow(RD, StatsPrefix) ->
     Method = riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
     Key = [StatsPrefix, Method],
