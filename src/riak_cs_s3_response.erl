@@ -222,6 +222,8 @@ respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
 respond({error, _}=Error, RD, Ctx) ->
     api_error(Error, RD, Ctx).
 
+respond(404 = _StatusCode, Body, ReqData, Ctx) ->
+    respond({404, "Not Found"}, Body, ReqData, Ctx);
 respond(StatusCode, Body, ReqData, Ctx) ->
      UpdReqData = wrq:set_resp_body(Body,
                                     wrq:set_resp_header("Content-Type",
