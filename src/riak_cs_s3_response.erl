@@ -304,12 +304,16 @@ copy_response(Manifest, TagName, RD, Ctx) ->
     respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 
-no_such_upload_response(UploadId, RD, Ctx) ->
+no_such_upload_response(InternalUploadId, RD, Ctx) ->
+    UploadId = case InternalUploadId of
+                   {raw, ReqUploadId} -> ReqUploadId;
+                   _ -> base64url:encode(InternalUploadId)
+               end,
     XmlDoc = {'Error',
               [
                {'Code', [error_code(no_such_upload)]},
                {'Message', [error_message(no_such_upload)]},
-               {'UploadId', [base64url:encode(UploadId)]},
+               {'UploadId', [UploadId]},
                {'HostId', ["host-id"]}
               ]},
     Body = riak_cs_xml:to_xml([XmlDoc]),
