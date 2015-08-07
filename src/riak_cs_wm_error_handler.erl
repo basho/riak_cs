@@ -35,17 +35,15 @@ render_error(500, Req, Reason) ->
     ErrorFour = <<"this request</body></html>">>,
     IOList = [ErrorOne, ErrorTwo, ErrorThree, ErrorFour],
     {erlang:iolist_to_binary(IOList), ReqState};
-render_error(405, Req, Reason) ->
+render_error(405, Req, _Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
     {Path,_} = Req:path(),
-    error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
     {xml_error_body(Path, <<"MethodNotAllowed">>, <<"The specified method is not allowed against this resource.">>, <<"12345">>), ReqState};
-render_error(412, Req, Reason) ->
+render_error(412, Req, _Reason) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
     {Path,_} = Req:path(),
-    error_logger:error_msg("webmachine error: path=~p~n~p~n", [Path, {error, {error, Reason, erlang:get_stacktrace()}}]),
     {xml_error_body(Path,
                     <<"PreconditionFailed">>,
                     <<"At least one of the pre-conditions you specified did not hold">>,
