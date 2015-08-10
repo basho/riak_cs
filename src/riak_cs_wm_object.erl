@@ -370,10 +370,12 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
                                         [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
 
-                        Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+                        {ContentType, Metadata} =
+                            riak_cs_copy_object:new_metadata(SrcManifest, RD),
                         NewAcl = Acl?ACL{creation_time=os:timestamp()},
-                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
-                                                                            Metadata, NewAcl, RcPid),
+                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(
+                                            Bucket, Key, SrcManifest?MANIFEST.content_length,
+                                            ContentType, Metadata, NewAcl, RcPid),
 
                         %% Prepare for connection loss or client close
                         FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
