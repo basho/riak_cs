@@ -403,6 +403,7 @@ make_action(Method, Target) ->
         {'PUT', object_acl} -> {ok, 's3:PutObjectAcl'};
         {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
         {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
+        {'PUT', bucket_request_payment} -> {ok, 's3:PutBucketRequestPayment'};
 
         {'GET', object} ->     {ok, 's3:GetObject'};
         {'GET', object_part} -> {ok, 's3:ListMultipartUploadParts'};
@@ -412,6 +413,7 @@ make_action(Method, Target) ->
         {'GET', bucket_acl} -> {ok, 's3:GetBucketAcl'};
         {'GET', bucket_policy} -> {ok, 's3:GetBucketPolicy'};
         {'GET', bucket_location} -> {ok, 's3:GetBucketLocation'};
+        {'GET', bucket_request_payment} -> {ok, 's3:GetBucketRequestPayment'};
         {'GET', bucket_uploads} -> {ok, 's3:ListBucketMultipartUploads'};
 
         {'DELETE', object} ->  {ok, 's3:DeleteObject'};

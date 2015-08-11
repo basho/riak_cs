@@ -65,6 +65,7 @@ duration_metrics() ->
          [bucket_policy, delete],
          [bucket_location, get],
          [bucket_versioning, get],
+         [bucket_request_payment, get],
          [list_uploads, get],
          [multiple_delete, post],
          [list_objects, get],
