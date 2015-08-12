@@ -239,7 +239,8 @@ validate_copy_header(RD, #context{response_module=ResponseMod,
                         ResponseMod:api_error(no_copy_source_key, RD, Ctx);
                     {ok, SrcManifest} ->
                         {Start,End} = riak_cs_copy_object:copy_range(RD, SrcManifest),
-                        validate_part_size(RD, Ctx,
+                        validate_part_size(RD,
+                                           Ctx#context{stats_key=[multipart_upload, put_copy]},
                                            End - Start + 1,
                                            SrcManifest, ReadRcPid)
                 end
