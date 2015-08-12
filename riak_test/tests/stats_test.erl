@@ -73,7 +73,7 @@ confirm_initial_stats(cs, UserConfig, Port) ->
 confirm_initial_stats(stanchion, UserConfig, Port) ->
     Stats = query_stats(stanchion, UserConfig, Port),
     lager:debug("length(Stats) = ~p", [length(Stats)]),
-    ?assert(160 < length(Stats)),
+    ?assert(130 < length(Stats)),
     [begin
          StatKey = list_to_binary(StatType ++ "_one"),
          lager:debug("StatKey: ~p~n", [StatKey]),
@@ -84,10 +84,9 @@ confirm_initial_stats(stanchion, UserConfig, Port) ->
                          "bucket_delete",
                          "bucket_put_acl",
                          "riakc_get_cs_bucket",
-                         "riakc_delete_cs_bucket",
-                         "riakc_get_cs_user",
-                         "riakc_list_all_manifest_keys",
-                         "riakc_list_all_user_keys"
+                         "riakc_put_cs_bucket",
+                         "riakc_get_cs_user_strong",
+                         "riakc_list_all_manifest_keys"
                         ]],
     confirm_stat_count(Stats, <<"user_create_one">>, 1),
     confirm_stat_count(Stats, <<"riakc_put_cs_user_one">>, 1),
@@ -117,7 +116,8 @@ confirm_stats(stanchion, UserConfig, Port) ->
     confirm_stat_count(Stats, <<"riakc_put_cs_user_one">>, 1),
     confirm_stat_count(Stats, <<"riakc_put_cs_bucket_one">>, 3),
     %% this heavy list/gets can be reduced to ONE per delete-bucket (/-o-)/ ⌒ ┤
-    confirm_stat_count(Stats, <<"riakc_list_all_manifest_keys_one">>, 2).
+    confirm_stat_count(Stats, <<"riakc_list_all_manifest_keys_one">>, 2),
+    confirm_stat_count(Stats, <<"riakc_get_user_by_index_one">>, 1).
 
 do_some_api_calls(UserConfig, Bucket1, Bucket2) ->
     ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket1, UserConfig)),
