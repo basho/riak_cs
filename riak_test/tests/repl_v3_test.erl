@@ -262,7 +262,7 @@ confirm() ->
 
     Object6 = crypto:rand_bytes(4194304),
     erlcloud_s3:put_object(?TEST_BUCKET, "object_six", Object6, U1C1Config),
-    timer:sleep(1000), % Sorry, but could you please wait for a while
+    repl_helpers:wait_until_realtime_sync_complete(ANodes),
     lager:info("The object can be downloaded from sink cluster"),
     Obj16 = erlcloud_s3:get_object(?TEST_BUCKET, "object_six", U1C2Config),
     ?assertEqual(Object6, proplists:get_value(content, Obj16)),
