@@ -43,7 +43,7 @@
 %% - key streaming instead of key listing, or use 2i streaming to keep result sorted
 
 -export([main/1]).
--export([list_buckets/1, list_objects/2, print_object/3, list_blocks/4]).
+-export([print_object/3, list_blocks/4]).
 -export([rec_pp_fun/2]).
 
 -mode(compile).
@@ -84,7 +84,7 @@
          {help, $H, "help", boolean, "Show this message"}
         ]).
 
--define(sort_opt_spec,   [{sort, $s, "sort", undefined, "Determine to sort results instead of streaming list keys"}]).
+-define(sort_opt_spec,   [{sort, $s, "sort", {boolean, false}, "Sort the results"}]).
 -define(bucket_opt_spec, [{bucket, undefined, undefined, string, "bucket name"}]).
 -define(object_opt_spec, [{object, undefined, undefined, string, "object name"}]).
 
@@ -230,10 +230,6 @@ e(Line) -> e(Line, []).
 heading(Fmt) -> e(Fmt, []).
 heading(Fmt, Args) -> e(Fmt, Args).
 
--spec list_buckets(pid()) -> any().
-list_buckets(RiakcPid) ->
-    list_buckets(RiakcPid, fun list_buckets/2).
-
 list_buckets(RiakcPid, ListFun) ->
     %% TODO(shino): Can include all names of [a-z][0-9a-zA-Z-]{2..4} ?
     KnownNames = [{riak_cs_utils:md5(list_to_binary(B)), B}
@@ -273,26 +269,6 @@ list_cs_buckets(RiakcPid, ListFun)->
                end,
     ListFun(RiakcPid, "moss.buckets", PrintFun).
 
-lookup_listbucket_fun(Opts) ->
-    case proplists:get_value(sort, Opts) of
-        true ->
-            fun pb_list_buckets/2;
-        _ ->
-            fun pb_stream_list_buckets/2
-    end.
-
-lookup_listkey_fun(Opts) ->
-    case proplists:get_value(sort, Opts) of
-        true ->
-            fun pb_list_keys/3;
-        _ ->
-            fun pb_stream_list_keys/3
-    end.
-
-% For Backward compatibility. Is this needed?
-list_objects(RiakcPid, Bucket)->
-    list_objects(RiakcPid, Bucket, fun pb_list_keys/3).
-
 list_objects(RiakcPid, Bucket, ListFun)->
     print_manifest_summary(pid, bucket, sibling_no, header),
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, Bucket),
@@ -302,50 +278,6 @@ list_objects(RiakcPid, Bucket, ListFun)->
                            {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)]
                end,
     ListFun(RiakcPid, ManifestBucketName, PrintFun).
-
-pb_list_buckets(RiakcPid, PrintFun) ->
-        case riakc_pb_socket:list_buckets(RiakcPid) of
-            {ok, Keys} ->
-                PrintFun(lists:sort(Keys));
-            Error ->
-                Error
-        end.
-
-pb_stream_list_buckets(RiakcPid, PrintFun) ->
-        case riakc_pb_socket:stream_list_buckets(RiakcPid) of
-            {ok, ReqId} ->
-                print_stream_list(ReqId, PrintFun);
-            Error ->
-                error(Error)
-        end.
-
-pb_list_keys(RiakcPid, BucketName, PrintFun) ->
-
-        case riakc_pb_socket:list_keys(RiakcPid, BucketName) of
-            {ok, Keys} ->
-                PrintFun(lists:sort(Keys));
-            Error ->
-                Error
-        end.
-
-pb_stream_list_keys(RiakcPid, BucketName, PrintFun) ->
-        case riakc_pb_socket:stream_list_keys(RiakcPid, BucketName) of
-            {ok, ReqId} ->
-                print_stream_list(ReqId, PrintFun);
-            Error ->
-                error(Error)
-        end.
-
-print_stream_list(ReqId, PrintFun) ->
-    receive
-        {ReqId, done} ->
-            ok;
-        {ReqId, {error, Reason}} ->
-            error(Reason);
-        {ReqId, {_, Res}} ->
-            PrintFun(Res),
-            print_stream_list(ReqId, PrintFun)
-    end.
 
 list_users(RiakcPid, ListFun)->
     heading("~-40..=s ~-8..=s: ~-40..=s ~-40..=s~n",
@@ -1095,6 +1027,66 @@ get_riak_object(RiakcPid, RiakBucket, RiakKey) ->
             [];
         {error, notfound, _VC} ->
             [{1, {tombstone, tombstone}}]
+    end.
+
+lookup_listbucket_fun(Opts) ->
+    case proplists:get_value(sort, Opts) of
+        true ->
+            fun pb_list_buckets/2;
+        _ ->
+            fun pb_stream_list_buckets/2
+    end.
+
+lookup_listkey_fun(Opts) ->
+    case proplists:get_value(sort, Opts) of
+        true ->
+            fun pb_list_keys/3;
+        _ ->
+            fun pb_stream_list_keys/3
+    end.
+
+pb_list_buckets(RiakcPid, PrintFun) ->
+        case riakc_pb_socket:list_buckets(RiakcPid) of
+            {ok, Keys} ->
+                PrintFun(lists:sort(Keys));
+            Error ->
+                Error
+        end.
+
+pb_stream_list_buckets(RiakcPid, PrintFun) ->
+        case riakc_pb_socket:stream_list_buckets(RiakcPid) of
+            {ok, ReqId} ->
+                print_stream_list(ReqId, PrintFun);
+            Error ->
+                error(Error)
+        end.
+
+pb_list_keys(RiakcPid, BucketName, PrintFun) ->
+
+        case riakc_pb_socket:list_keys(RiakcPid, BucketName) of
+            {ok, Keys} ->
+                PrintFun(lists:sort(Keys));
+            Error ->
+                Error
+        end.
+
+pb_stream_list_keys(RiakcPid, BucketName, PrintFun) ->
+        case riakc_pb_socket:stream_list_keys(RiakcPid, BucketName) of
+            {ok, ReqId} ->
+                print_stream_list(ReqId, PrintFun);
+            Error ->
+                error(Error)
+        end.
+
+print_stream_list(ReqId, PrintFun) ->
+    receive
+        {ReqId, done} ->
+            ok;
+        {ReqId, {error, Reason}} ->
+            error(Reason);
+        {ReqId, {_, Res}} ->
+            PrintFun(Res),
+            print_stream_list(ReqId, PrintFun)
     end.
 
 %% Other utilities
