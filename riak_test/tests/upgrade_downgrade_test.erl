@@ -41,7 +41,7 @@ confirm() ->
     AdminCreds = {UserConfig#aws_config.access_key_id,
                   UserConfig#aws_config.secret_access_key},
     {_, RiakCurrentVsn} =
-        rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
 
     %% Upgrade!!!
     [begin
@@ -66,7 +66,7 @@ confirm() ->
     {ok, Data2} = prepare_all_data(UserConfig),
 
     {_, RiakPrevVsn} =
-        rtcs:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
+        rt_cs_dev:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
 
 
     %% Downgrade!!

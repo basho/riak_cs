@@ -121,7 +121,7 @@ transition_to_cs15_with_kv20(State) ->
 
 migrate_nodes_to_cs15_with_kv20(AdminCreds, RiakNodes) ->
     {_, RiakCurrentVsn} =
-        rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
     [begin
          N = rt_cs_dev:node_id(RiakNode),
          rtcs:stop_cs(N, current),

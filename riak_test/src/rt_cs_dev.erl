@@ -28,19 +28,21 @@
 -define(BUILD_PATHS, (rt_config:get(build_paths))).
 -define(SRC_PATHS, (rt_config:get(src_paths))).
 
+-define(RIAK_ROOT, <<"build_paths.root">>).
+-define(EE_ROOT, <<"build_paths.ee_root">>).
+-define(CS_ROOT, <<"build_paths.cs_root">>).
+-define(STANCHION_ROOT, <<"build_paths.stanchion_root">>).
+
 get_deps() ->
     lists:flatten(io_lib:format("~s/dev/dev1/lib", [relpath(current)])).
 
 setup_harness(_Test, _Args) ->
     confirm_build_type(rt_config:get(build_type, oss)),
-    Path = relpath(root),
     %% Stop all discoverable nodes, not just nodes we'll be using for this test.
     rt:pmap(fun(X) -> stop_all(X ++ "/dev") end, devpaths()),
 
     %% Reset nodes to base state
-    lager:info("Resetting nodes to fresh state"),
-    rtdev:run_git(Path, "reset HEAD --hard"),
-    rtdev:run_git(Path, "clean -fd"),
+    reset_cluster(),
 
     lager:info("Cleaning up lingering pipe directories"),
     rt:pmap(fun(Dir) ->
@@ -114,6 +116,30 @@ upgrade(Node, NewVersion) ->
     rt_config:set(rt_versions, VersionMap),
     start(Node),
     rt:wait_until_pingable(Node),
+    ok.
+
+-spec riak_root_and_vsn(atom(), atom()) -> {binary(), atom()}.
+riak_root_and_vsn(current, oss) -> {?RIAK_ROOT, current};
+riak_root_and_vsn(current, ee) ->  {?EE_ROOT, ee_current};
+riak_root_and_vsn(previous, oss) -> {?RIAK_ROOT, previous};
+riak_root_and_vsn(previous, ee) -> {?EE_ROOT, ee_previous}.
+
+-spec reset_cluster() -> ok.
+reset_cluster() ->
+    [reset_nodes(Project, Path) ||
+        {Project, Path} <- [{riak,      rt_config:get(?RIAK_ROOT)},
+                            {riak_ee,   rt_config:get(?EE_ROOT)},
+                            {riak_cs,   rt_config:get(?CS_ROOT)},
+                            {stanchion, rt_config:get(?STANCHION_ROOT)}]],
+    ok.
+
+-spec reset_nodes(atom(), string()) -> ok.
+reset_nodes(Project, Path) ->
+    %% Reset nodes to base state
+    lager:info("Resetting ~p nodes to fresh state", [Project]),
+    lager:debug("Project path for reset: ~p", [Path]),
+    rtdev:run_git(Path, "reset HEAD --hard"),
+    rtdev:run_git(Path, "clean -fd"),
     ok.
 
 all_the_app_configs(DevPath) ->

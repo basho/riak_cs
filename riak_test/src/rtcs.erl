@@ -32,16 +32,12 @@
 -define(CSDEVS(N), lists:concat(["rcs-dev", N, "@127.0.0.1"])).
 -define(CSDEV(N), list_to_atom(?CSDEVS(N))).
 
--define(RIAK_ROOT, <<"build_paths.root">>).
 -define(RIAK_CURRENT, <<"build_paths.current">>).
 -define(RIAK_PREVIOUS, <<"build_paths.previous">>).
--define(EE_ROOT, <<"build_paths.ee_root">>).
 -define(EE_CURRENT, <<"build_paths.ee_current">>).
 -define(EE_PREVIOUS, <<"build_paths.ee_previous">>).
--define(CS_ROOT, <<"build_paths.cs_root">>).
 -define(CS_CURRENT, <<"build_paths.cs_current">>).
 -define(CS_PREVIOUS, <<"build_paths.cs_previous">>).
--define(STANCHION_ROOT, <<"build_paths.stanchion_root">>).
 -define(STANCHION_CURRENT, <<"build_paths.stanchion_current">>).
 -define(STANCHION_PREVIOUS, <<"build_paths.stanchion_previous">>).
 
@@ -474,11 +470,6 @@ stanchioncmd(Path, Cmd) ->
 stanchion_statuscmd(Path) ->
     lists:flatten(io_lib:format("~s-admin status", [stanchion_binpath(Path)])).
 
-riak_root_and_vsn(current, oss) -> {?RIAK_ROOT, current};
-riak_root_and_vsn(current, ee) ->  {?EE_ROOT, ee_current};
-riak_root_and_vsn(previous, oss) -> {?RIAK_ROOT, previous};
-riak_root_and_vsn(previous, ee) -> {?EE_ROOT, ee_previous}.
-
 cs_current() ->
     ?CS_CURRENT.
 
@@ -498,7 +489,7 @@ deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
     CSNodeMap = orddict:from_list(lists:zip(CSNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    {RiakRoot, RiakVsn} = riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
+    {_RiakRoot, RiakVsn} = rt_cs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
 
     lager:debug("setting rt_versions> ~p =>", [Vsn]),
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
@@ -512,11 +503,6 @@ deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
     lager:info("NodeList: ~p", [NodeList]),
 
     stop_all_nodes(NodeList, Vsn),
-
-    [reset_nodes(Project, Path) ||
-        {Project, Path} <- [{riak_ee, rt_config:get(RiakRoot)},
-                            {riak_cs, rt_config:get(?CS_ROOT)},
-                            {stanchion, rt_config:get(?STANCHION_ROOT)}]],
 
     rt_cs_dev:create_dirs(RiakNodes),
 
@@ -550,7 +536,7 @@ setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
     rt_config:set(rt_nodes, NodeMap),
     rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    {_RiakRoot, RiakVsn} = riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
+    {_RiakRoot, RiakVsn} = rt_cs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
     lager:debug("setting rt_versions> ~p => ~p", [Vsn, VersionMap]),
     rt_config:set(rt_versions, VersionMap),
@@ -708,13 +694,6 @@ set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
                                      AdminCreds)
             end,
             lists:zip(NodeList, Configs)).
-
-reset_nodes(Project, Path) ->
-    %% Reset nodes to base state
-    lager:info("Resetting ~p nodes to fresh state", [Project]),
-    lager:debug("Project path for reset: ~p", [Path]),
-    rtdev:run_git(Path, "reset HEAD --hard"),
-    rtdev:run_git(Path, "clean -fd").
 
 start_cs(N) -> start_cs(N, current).
 
