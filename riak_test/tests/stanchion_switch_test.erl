@@ -30,9 +30,9 @@
 -define(BACKUP_PORT, 9096).
 
 backup_stanchion_config() ->
-    rtcs:replace_stanchion_config(host,
+    rtcs_config:replace_stanchion_config(host,
                                   {"127.0.0.1", ?BACKUP_PORT},
-                                  rtcs:stanchion_config()).
+                                  rtcs_config:stanchion_config()).
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, Stanchion}} = rtcs:setup(1),
@@ -40,7 +40,7 @@ confirm() ->
     lists:foreach(fun(RiakNode) ->
                           N = rt_cs_dev:node_id(RiakNode),
                           ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9095\n",
-                                       rtcs:show_stanchion_cs(N))
+                                       rtcs_exec:show_stanchion_cs(N))
                   end, RiakNodes),
 
     %% stanchion ops ok
@@ -50,7 +50,7 @@ confirm() ->
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
 
     %% stop stanchion to check ops fails
-    _ = rtcs:stop_stanchion(),
+    _ = rtcs_exec:stop_stanchion(),
     rt:wait_until_unpingable(Stanchion),
 
     %% stanchion ops ng; we get 500 here for sure.
@@ -69,9 +69,9 @@ confirm() ->
     %% switch stanchion here, for all CS nodes
     lists:foreach(fun(RiakNode) ->
                           N = rt_cs_dev:node_id(RiakNode),
-                          rtcs:switch_stanchion_cs(N, "127.0.0.1", ?BACKUP_PORT),
+                          rtcs_exec:switch_stanchion_cs(N, "127.0.0.1", ?BACKUP_PORT),
                           ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9096\n",
-                                       rtcs:show_stanchion_cs(N))
+                                       rtcs_exec:show_stanchion_cs(N))
                   end, RiakNodes),
 
     %% stanchion ops ok again

@@ -31,9 +31,9 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
+    Config = [{riak, rtcs_config:riak_config()}, {stanchion, rtcs_config:stanchion_config()},
               {cs,
-               rtcs:cs_config([{storage_calc_timeout, 1},
+               rtcs_config:cs_config([{storage_calc_timeout, 1},
                                {storage_archive_period, 1}])}],
     {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
 

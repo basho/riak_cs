@@ -62,14 +62,14 @@ confirm(upgrade_with_reduced_ops) ->
     {ok, _FinalState}  = cs_suites:cleanup(EvolvedState),
     rtcs:pass();
 confirm(no_upgrade_with_reduced_ops) ->
-    SetupRes = rtcs:setup(2, rtcs:configs(custom_configs(current))),
+    SetupRes = rtcs:setup(2, rtcs_config:configs(custom_configs(current))),
     {ok, InitialState} = cs_suites:new(SetupRes, cs_suites:reduced_ops()),
     {ok, EvolvedState} = cs_suites:fold_with_state(InitialState, no_upgrade_history()),
     {ok, _FinalState}  = cs_suites:cleanup(EvolvedState),
     rtcs:pass().
 
 setup_previous() ->
-    PrevConfigs = rtcs:previous_configs(custom_configs(previous)),
+    PrevConfigs = rtcs_config:previous_configs(custom_configs(previous)),
     SetupRes = rtcs:setup(2, PrevConfigs, previous),
     lager:info("rt_nodes> ~p", [rt_config:get(rt_nodes)]),
     lager:info("rt_versions> ~p", [rt_config:get(rt_versions)]),
@@ -85,15 +85,15 @@ setup_previous() ->
 %% CS objects, run GC and merge+delete of bitcask.
 custom_configs(previous) ->
     [{riak,
-      rtcs:previous_riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
+      rtcs_config:previous_riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
      {cs,
-      rtcs:previous_cs_config([{leeway_seconds, 1}])}];
+      rtcs_config:previous_cs_config([{leeway_seconds, 1}])}];
 custom_configs(current) ->
     %% This branch is only for debugging this module
     [{riak,
-      rtcs:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
+      rtcs_config:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
      {cs,
-      rtcs:cs_config([{leeway_seconds, 1}])}].
+      rtcs_config:cs_config([{leeway_seconds, 1}])}].
 
 upgrade_history() ->
     [
@@ -114,9 +114,9 @@ no_upgrade_history() ->
     ].
 
 upgrade_stanchion(State) ->
-    rtcs:stop_stanchion(previous),
-    rtcs:migrate_stanchion(previous, current, cs_suites:admin_credential(State)),
-    rtcs:start_stanchion(current),
+    rtcs_exec:stop_stanchion(previous),
+    rtcs_config:migrate_stanchion(previous, current, cs_suites:admin_credential(State)),
+    rtcs_exec:start_stanchion(current),
     rtcs:assert_versions(stanchion, cs_suites:nodes_of(stanchion, State), "^2\."),
     {ok, State}.
 
@@ -152,11 +152,11 @@ upgrade_nodes(AdminCreds, RiakNodes) ->
         rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
     [begin
          N = rt_cs_dev:node_id(RiakNode),
-         rtcs:stop_cs(N, previous),
+         rtcs_exec:stop_cs(N, previous),
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
-         ok = rtcs:upgrade_cs(N, AdminCreds),
-         rtcs:start_cs(N, current)
+         ok = rtcs_config:upgrade_cs(N, AdminCreds),
+         rtcs_exec:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
     ok = rt:wait_until_ring_converged(RiakNodes),

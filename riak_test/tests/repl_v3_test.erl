@@ -20,13 +20,13 @@ confirm() ->
     {AccessKeyId2, SecretAccessKey2} = rtcs:create_user(BFirst, 2),
 
     %% User 1, Cluster 1 config
-    U1C1Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(ANodes))),
+    U1C1Config = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(hd(ANodes))),
     %% User 2, Cluster 1 config
-    U2C1Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(ANodes))),
+    U2C1Config = rtcs_config:config(AccessKeyId2, SecretAccessKey2, rtcs_config:cs_port(hd(ANodes))),
     %% User 1, Cluster 2 config
-    U1C2Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(BNodes))),
+    U1C2Config = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(hd(BNodes))),
     %% User 2, Cluster 2 config
-    U2C2Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(BNodes))),
+    U2C2Config = rtcs_config:config(AccessKeyId2, SecretAccessKey2, rtcs_config:cs_port(hd(BNodes))),
 
     lager:info("User 1 IS valid on the primary cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(U1C1Config)),

@@ -25,10 +25,10 @@
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 confirm() ->
-    Config = [{cs, rtcs:cs_config([{admin_auth_enabled, false}])}],
+    Config = [{cs, rtcs_config:cs_config([{admin_auth_enabled, false}])}],
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
     KeyId = UserConfig#aws_config.access_key_id,
-    Port = rtcs:cs_port(hd(RiakNodes)),
+    Port = rtcs_config:cs_port(hd(RiakNodes)),
 
     confirm_auth_bypass_for_stats("riak-cs", "stats", UserConfig, Port),
     confirm_auth_bypass("riak-cs", "users", UserConfig, Port),

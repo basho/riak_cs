@@ -42,7 +42,7 @@ confirm() ->
     user_listing_xml_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
 
     %% Create other 1003 users and re-run user listing test cases
-    Port = rtcs:cs_port(HeadRiakNode),
+    Port = rtcs_config:cs_port(HeadRiakNode),
     Users1 = [AdminUser |
               create_users(Port, [{"bart@simpsons.com", "bart"},
                                   {"homer@simpsons.com", "homer"},
@@ -107,7 +107,7 @@ user_listing_many_times(Users, UserConfig, Node) ->
 
 user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Resource = "/riak-cs/users",
-    Port = rtcs:cs_port(Node),
+    Port = rtcs_config:cs_port(Node),
     Users = parse_user_info(
               rtcs:list_users(UserConfig, Port, Resource, ContentType)),
     ?assertEqual(ExpectedUsers, Users).
@@ -126,12 +126,12 @@ update_user_xml_test_case(AdminConfig, Node) ->
 
 update_user_test(AdminConfig, Node, ContentType, Users) ->
     [{Email1, User1}, {Email2, User2}, {Email3, User3}]= Users,
-    Port = rtcs:cs_port(Node),
+    Port = rtcs_config:cs_port(Node),
     {Key, Secret, _} = rtcs:create_user(Port, Email1, User1),
     {BadUserKey, BadUserSecret, _} = rtcs:create_user(Port, Email3, User3),
 
-    UserConfig = rtcs:config(Key, Secret, Port),
-    BadUserConfig = rtcs:config(BadUserKey, BadUserSecret, Port),
+    UserConfig = rtcs_config:config(Key, Secret, Port),
+    BadUserConfig = rtcs_config:config(BadUserKey, BadUserSecret, Port),
 
     UserResource = "/riak-cs/user",
     AdminResource = UserResource ++ "/" ++ UserConfig#aws_config.access_key_id,
@@ -221,7 +221,7 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     {_, _, _, UpdSecret1, _} = parse_user_record(UpdateResult, ContentType),
 
     %% Generate an updated user config with the new secret
-    UserConfig2 = rtcs:config(Key, UpdSecret1, Port),
+    UserConfig2 = rtcs_config:config(Key, UpdSecret1, Port),
 
     %% Fetch the user record using the user's own credentials
     UserResult7 = parse_user_record(

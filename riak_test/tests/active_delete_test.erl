@@ -26,7 +26,7 @@
 
 confirm() ->
     %% 10MB threshold, for 3MB objects are used in cs_suites:run/2
-    CSConfig = rtcs:cs_config([{active_delete_threshold, 10000000}]),
+    CSConfig = rtcs_config:cs_config([{active_delete_threshold, 10000000}]),
     Setup = rtcs:setup(1, [{cs, CSConfig}]),
 
     %% Just do verify on typical normal case

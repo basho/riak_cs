@@ -109,13 +109,13 @@ upload_id_present(UploadId, UploadList) ->
 
 cs_config() ->
     [
-     rtcs:lager_config(),
+     rtcs_config:lager_config(),
      {riak_cs,
       [
        {proxy_get, enabled},
        {anonymous_user_creation, true},
        {riak_host, {"127.0.0.1", 10017}},
-       {stanchion_host, {"127.0.0.1", rtcs:stanchion_port()}},
+       {stanchion_host, {"127.0.0.1", rtcs_config:stanchion_port()}},
        {cs_version, 010300},
        {max_content_length, 1000},
        {enforce_multipart_part_size, false}

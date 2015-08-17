@@ -28,14 +28,14 @@ confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     lager:info("Confirming initial stats"),
-    confirm_initial_stats(cs, UserConfig, rtcs:cs_port(hd(RiakNodes))),
-    confirm_initial_stats(stanchion, UserConfig, rtcs:stanchion_port()),
+    confirm_initial_stats(cs, UserConfig, rtcs_config:cs_port(hd(RiakNodes))),
+    confirm_initial_stats(stanchion, UserConfig, rtcs_config:stanchion_port()),
 
     do_some_api_calls(UserConfig, "bucket1", "bucket2"),
 
     lager:info("Confirming stats after some operations"),
-    confirm_stats(cs, UserConfig, rtcs:cs_port(hd(RiakNodes))),
-    confirm_stats(stanchion, UserConfig, rtcs:stanchion_port()),
+    confirm_stats(cs, UserConfig, rtcs_config:cs_port(hd(RiakNodes))),
+    confirm_stats(stanchion, UserConfig, rtcs_config:stanchion_port()),
     rtcs:pass().
 
 confirm_initial_stats(cs, UserConfig, Port) ->
@@ -65,9 +65,9 @@ confirm_initial_stats(cs, UserConfig, Port) ->
                          "riakc_delete_block_constrained"
                         ]],
     ?assertEqual(1, proplists:get_value(<<"velvet_create_user_in_one">>, StatData)),
-    ?assertEqual(rtcs:request_pool_size() - 1,
+    ?assertEqual(rtcs_config:request_pool_size() - 1,
                  proplists:get_value(<<"request_pool_workers">>, StatData)),
-    ?assertEqual(rtcs:bucket_list_pool_size(),
+    ?assertEqual(rtcs_config:bucket_list_pool_size(),
                  proplists:get_value(<<"bucket_list_pool_workers">>, StatData));
 
 confirm_initial_stats(stanchion, UserConfig, Port) ->
@@ -159,9 +159,9 @@ confirm_stat_count(StatData, StatType, ExpectedCount) ->
 confirm_status_cmd(Type, ExpectedToken) ->
     Cmd = case Type of
               cs ->
-                  rtcs:riakcs_statuscmd(rtcs:get_rt_config(cs, current), 1);
+                  rtcs_exec:riakcs_statuscmd(rtcs_config:get_rt_config(cs, current), 1);
               stanchion ->
-                  rtcs:stanchion_statuscmd(rtcs:get_rt_config(stanchion, current))
+                  rtcs_exec:stanchion_statuscmd(rtcs_config:get_rt_config(stanchion, current))
           end,
     Res = os:cmd(Cmd),
     ?assert(string:str(Res, ExpectedToken) > 0).

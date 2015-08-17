@@ -40,9 +40,9 @@ confirm() ->
     %% Set up to grep logs to verify messages
     rt:setup_log_capture(hd(CSNodes)),
 
-    rtcs:gc(1, "set-interval infinity"),
-    rtcs:gc(1, "set-leeway 1"),
-    rtcs:gc(1, "cancel"),
+    rtcs_exec:gc(1, "set-interval infinity"),
+    rtcs_exec:gc(1, "set-leeway 1"),
+    rtcs_exec:gc(1, "cancel"),
 
     lager:info("Test GC run under an invalid state manifest..."),
     {GCKey, {BKey, UUID}} = setup_obj(RiakNodes, UserConfig),
@@ -50,7 +50,7 @@ confirm() ->
     %% Ensure the leeway has expired
     timer:sleep(2000),
 
-    Result = rtcs:gc(1, "earliest-keys"),
+    Result = rtcs_exec:gc(1, "earliest-keys"),
     lager:debug("~p", [Result]),
     ?assert(string:str(Result, "GC keys in") > 0),
 
@@ -183,8 +183,8 @@ put_more_bad_keys(Pbc, [GCKey|Rest], BadGCKeys) ->
     end.
 
 repair_gc_bucket(RiakNodeID) ->
-    PbPort = integer_to_list(rtcs:pb_port(RiakNodeID)),
-    Res = rtcs:repair_gc_bucket(1, "--host 127.0.0.1 --port " ++ PbPort ++
+    PbPort = integer_to_list(rtcs_config:pb_port(RiakNodeID)),
+    Res = rtcs_exec:repair_gc_bucket(1, "--host 127.0.0.1 --port " ++ PbPort ++
                                 " --leeway-seconds 1 --page-size 5 --debug"),
     Lines = binary:split(list_to_binary(Res), [<<"\n">>], [global]),
     lager:info("Repair script result: ==== BEGIN", []),
@@ -193,7 +193,7 @@ repair_gc_bucket(RiakNodeID) ->
     ok.
 
 verify_gc_run(Node, GCKey) ->
-    rtcs:gc(1, "batch 1"),
+    rtcs_exec:gc(1, "batch 1"),
     lager:info("Check log, warning for invalid state and info for GC finish"),
     true = rt:expect_in_log(Node,
                             "Invalid state manifest in GC bucket at <<\""
@@ -207,7 +207,7 @@ verify_gc_run(Node, GCKey) ->
     ok.
 
 verify_gc_run2(Node) ->
-    rtcs:gc(1, "batch 1"),
+    rtcs_exec:gc(1, "batch 1"),
     lager:info("Check collected count =:= 101, 1 from setup_obj, "
                "100 from put_more_bad_keys."),
     true = rt:expect_in_log(Node,
@@ -250,7 +250,7 @@ verify_partial_gc_run(CSNode, RiakNodes,
          S = rtcs:iso8601(S0),
          E = rtcs:iso8601(E0),
          BatchCmd = "batch -s " ++ S ++ " -e " ++ E,
-         rtcs:gc(1, BatchCmd),
+         rtcs_exec:gc(1, BatchCmd),
 
          true = rt:expect_in_log(CSNode,
                                  "Finished garbage collection: \\d+ seconds, "

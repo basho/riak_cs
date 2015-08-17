@@ -52,15 +52,15 @@ confirm() ->
     Duration = proplists:get_value(duration_sec, RTConfig, 16),
     ?assert(is_integer(Duration) andalso Duration >= 0),
 
-    CSConfig0 = rtcs:replace_cs_config(connection_pools,
+    CSConfig0 = rtcs_config:replace_cs_config(connection_pools,
                                        [
                                         {request_pool, {Concurrency*2 + 5, 0} },
-                                        {bucket_list_pool, {rtcs:bucket_list_pool_size(), 0} }
+                                        {bucket_list_pool, {rtcs_config:bucket_list_pool_size(), 0} }
                                        ],
-                                       rtcs:cs_config()),
-    CSConfig1 = rtcs:replace_cs_config(leeway_seconds,
+                                       rtcs_config:cs_config()),
+    CSConfig1 = rtcs_config:replace_cs_config(leeway_seconds,
                                        5, CSConfig0),
-    CSConfig = rtcs:replace_cs_config(gc_interval,
+    CSConfig = rtcs_config:replace_cs_config(gc_interval,
                                       10, CSConfig1),
     ConnConfig = [{cs, CSConfig}],
 
@@ -71,7 +71,7 @@ confirm() ->
                 rtcs:setup(4, ConnConfig);
             previous ->
                 put(version, previous),
-                PrevConfig =  ConnConfig ++ rtcs:previous_configs(),
+                PrevConfig =  ConnConfig ++ rtcs_config:previous_configs(),
                 rtcs:setup(4, PrevConfig, previous)
         end,
 

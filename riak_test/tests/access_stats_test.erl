@@ -33,8 +33,8 @@
 -define(KEY, "a").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
+    Config = [{riak, rtcs_config:riak_config()}, {stanchion, rtcs_config:stanchion_config()},
+              {cs, rtcs_config:cs_config([{fold_objects_for_list_keys, true}])}],
     {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
     rt:setup_log_capture(hd(CSNodes)),
 
@@ -69,7 +69,7 @@ generate_some_accesses(UserConfig) ->
     {Begin, End}.
 
 flush_access_stats() ->
-    Res = rtcs:flush_access(1),
+    Res = rtcs_exec:flush_access(1),
     lager:info("riak-cs-access flush result: ~s", [Res]),
     ExpectRegexp = "All access logs were flushed.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)).

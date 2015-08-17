@@ -118,7 +118,7 @@ new({AdminConfig, {RiakNodes, CSNodes, StanchionNode}}) ->
 -spec new(term(), [op()]) -> {ok, state()}.
 new({AdminConfig, {RiakNodes, CSNodes, StanchionNode}}, Ops) ->
     rt:setup_log_capture(hd(CSNodes)),
-    rtcs:gc(1, "set-interval infinity"),
+    rtcs_exec:gc(1, "set-interval infinity"),
     Begin = rtcs:datetime(),
     %% FIXME: workaround for riak_cs#766
     timer:sleep(timer:seconds(1)),
@@ -167,12 +167,12 @@ nodes_of(stanchion, State) -> State#state.stanchion_nodes;
 nodes_of(cs,        State) -> State#state.cs_nodes.
 
 init_circle(Tag, #state{admin_config=AdminConfig, riak_nodes = [RiakNode|_]} = _State) ->
-    Port = rtcs:cs_port(RiakNode),
+    Port = rtcs_config:cs_port(RiakNode),
     Name = concat("user-", Tag),
     Email = concat(Name, "@example.com"),
     {AccessKeyId, SecretAccessKey, _Id} =
         rtcs:create_user(Port, AdminConfig, Email, Name),
-    UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, Port),
+    UserConfig = rtcs_config:config(AccessKeyId, SecretAccessKey, Port),
     #circle{tag = Tag, user_config = UserConfig}.
 
 -spec apply_operations(circle(), state(), [op()]) -> {ok, state()}.
@@ -221,7 +221,7 @@ apply_operation(delete_bucket_old, CurrentCircle, #state{circles=Circles} = Stat
     NewCircles = [delete_first_bucket(Circle) || Circle <- Circles],
     {ok, CurrentCircle, State#state{circles=NewCircles}};
 apply_operation(stats_access, Circle, State) ->
-    Res = rtcs:flush_access(1),
+    Res = rtcs_exec:flush_access(1),
     lager:info("riak-cs-access flush result: ~s", [Res]),
     ExpectRegexp = "All access logs were flushed.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)),
@@ -231,7 +231,7 @@ apply_operation(stats_access, Circle, State) ->
 apply_operation(stats_storage, CurrentCircle,
                 #state{admin_config=AdminConfig, begin_at=Begin,
                        cs_nodes=[CSNode|_], circles=Circles} = State) ->
-    Res = rtcs:calculate_storage(1),
+    Res = rtcs_exec:calculate_storage(1),
     lager:info("riak-cs-storage batch result: ~s", [Res]),
     ExpectRegexp = "Batch storage calculation started.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)),
@@ -243,11 +243,11 @@ apply_operation(stats_storage, CurrentCircle,
     {ok, CurrentCircle, State};
 apply_operation(gc, Circle, #state{cs_nodes=[CSNode|_]} = State) ->
     timer:sleep(timer:seconds(?GC_LEEWAY + 1)),
-    rtcs:gc(1, "batch 1"),
+    rtcs_exec:gc(1, "batch 1"),
     ok = rt:wait_until(
            CSNode,
            fun(_N) ->
-                   Res = rtcs:gc(1, "status"),
+                   Res = rtcs_exec:gc(1, "status"),
                    ExpectSubstr = "There is no garbage collection in progress",
                    case string:str(Res, ExpectSubstr) of
                        0 ->
@@ -501,8 +501,8 @@ bitcask_data_root() -> "./data/bitcask".
 %% For example: "548063113999088594326381812268606132370974703616"
 -spec bitcask_vnode_names(atom(), previous | current) -> [string()].
 bitcask_vnode_names(Node, Vsn) ->
-    Prefix = rtcs:get_rt_config(riak, Vsn),
-    BitcaskAbsRoot = rtcs:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
+    Prefix = rtcs_config:get_rt_config(riak, Vsn),
+    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
     {ok, VnodeDirNames} = file:list_dir(BitcaskAbsRoot),
     VnodeDirNames.
 
@@ -513,8 +513,8 @@ bitcask_vnode_names(Node, Vsn) ->
 -spec bitcask_data_files(node(), previous | current, string(), abs | rel) ->
                                 [string()].
 bitcask_data_files(Node, Vsn, VnodeName, AbsOrRel) ->
-    Prefix = rtcs:get_rt_config(riak, Vsn),
-    BitcaskAbsRoot = rtcs:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
+    Prefix = rtcs_config:get_rt_config(riak, Vsn),
+    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
     VnodeAbsPath = filename:join(BitcaskAbsRoot, VnodeName),
     {ok, Fs0} = file:list_dir(VnodeAbsPath),
     [case AbsOrRel of
