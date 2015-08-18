@@ -33,9 +33,7 @@
 -define(KEY, "a").
 
 confirm() ->
-    Config = [{riak, rtcs_config:riak_config()}, {stanchion, rtcs_config:stanchion_config()},
-              {cs, rtcs_config:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
     rt:setup_log_capture(hd(CSNodes)),
 
     {Begin, End} = generate_some_accesses(UserConfig),

@@ -39,8 +39,7 @@
 confirm() ->
     Config = [{riak, rtcs_config:riak_config()},
               {stanchion, rtcs_config:stanchion_config()},
-              {cs, rtcs_config:cs_config([{fold_objects_for_list_keys, true},
-                                   {detailed_storage_calc, true}])}],
+              {cs, rtcs_config:cs_config([{detailed_storage_calc, true}])}],
     SetupRes = rtcs:setup(1, Config),
     {AdminConfig, {RiakNodes, CSNodes, _Stanchion}} = SetupRes,
     RiakNode = hd(RiakNodes),
