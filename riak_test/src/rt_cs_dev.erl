@@ -142,6 +142,63 @@ reset_nodes(Project, Path) ->
     rtdev:run_git(Path, "clean -fd"),
     ok.
 
+-spec set_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
+set_conf(all, NameValuePairs) ->
+    lager:info("rt_cs_dev:set_conf(all, ~p)", [NameValuePairs]),
+    [ set_conf(DevPath, NameValuePairs) || DevPath <- devpaths()],
+    ok;
+set_conf(Name, NameValuePairs) when Name =:= riak orelse
+                                    Name =:= cs orelse
+                                    Name =:= stanchion ->
+    set_conf({Name, current}, NameValuePairs),
+    ok;
+set_conf({Name, Vsn}, NameValuePairs) ->
+    lager:info("rt_cs_dev:set_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    set_conf(devpath(Name, Vsn), NameValuePairs),
+    ok;
+set_conf(Node, NameValuePairs) when is_atom(Node) ->
+    rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
+    ok;
+set_conf(DevPath, NameValuePairs) ->
+    [rtdev:append_to_conf_file(RiakConf, NameValuePairs) || RiakConf <- rtdev:all_the_files(DevPath, "etc/*.conf")],
+    ok.
+
+-spec set_advanced_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
+set_advanced_conf(all, NameValuePairs) ->
+    lager:info("rtdev:set_advanced_conf(all, ~p)", [NameValuePairs]),
+    [ set_advanced_conf(DevPath, NameValuePairs) || DevPath <- devpaths()],
+    ok;
+set_advanced_conf(Name, NameValuePairs) when Name =:= riak orelse
+                                             Name =:= cs orelse
+                                             Name =:= stanchion ->
+    set_advanced_conf({Name, current}, NameValuePairs),
+    ok;
+set_advanced_conf({Name, Vsn}, NameValuePairs) ->
+    lager:info("rt_cs_dev:set_advanced_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    set_advanced_conf(devpath(Name, Vsn), NameValuePairs),
+    ok;
+set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
+    rtdev:append_to_conf_file(rtdev:get_advanced_riak_conf(Node), NameValuePairs),
+    ok;
+set_advanced_conf(DevPath, NameValuePairs) ->
+    AdvancedConfs = case rtdev:all_the_files(DevPath, "etc/advanced.config") of
+                        [] ->
+                            %% no advanced conf? But we _need_ them, so make 'em
+                            rtdev:make_advanced_confs(DevPath);
+                        Confs ->
+                            Confs
+                    end,
+    lager:info("AdvancedConfs = ~p~n", [AdvancedConfs]),
+    [update_app_config_file(RiakConf, NameValuePairs) || RiakConf <- AdvancedConfs],
+    ok.
+
+get_conf(Node) ->
+    N = node_id(Node),
+    Path = relpath(node_version(N)),
+    WildCard = io_lib:format("~s/dev/dev~b/etc/*.conf", [Path, N]),
+    [Conf] = filelib:wildcard(WildCard),
+    Conf.
+
 all_the_app_configs(DevPath) ->
     lager:error("The dev path is ~p", [DevPath]),
     case filelib:is_dir(DevPath) of
@@ -519,6 +576,9 @@ devpaths() ->
     lists:usort([ DevPath || {Name, DevPath} <- rt_config:get(build_paths),
                              not lists:member(Name, [root, ee_root, cs_root, stanchion_root])
                 ]).
+
+devpath(Name, Vsn) ->
+    rt_config:get(rtcs_config:get_rt_config(Name, Vsn)).
 
 versions() ->
     proplists:get_keys(rt_config:get(build_paths)) -- [root].
