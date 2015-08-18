@@ -178,7 +178,7 @@ set_advanced_conf({Name, Vsn}, NameValuePairs) ->
     set_advanced_conf(devpath(Name, Vsn), NameValuePairs),
     ok;
 set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
-    rtdev:append_to_conf_file(rtdev:get_advanced_riak_conf(Node), NameValuePairs),
+    rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
     ok;
 set_advanced_conf(DevPath, NameValuePairs) ->
     AdvancedConfs = case rtdev:all_the_files(DevPath, "etc/advanced.config") of
@@ -578,7 +578,7 @@ devpaths() ->
                 ]).
 
 devpath(Name, Vsn) ->
-    rt_config:get(rtcs_config:get_rt_config(Name, Vsn)).
+    rtcs_config:get_rt_config(Name, Vsn).
 
 versions() ->
     proplists:get_keys(rt_config:get(build_paths)) -- [root].
