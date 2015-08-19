@@ -33,7 +33,8 @@ confirm() ->
     CsSrcDir = rt_cs_dev:srcpath(cs_src_root),
     lager:debug("cs_src_root = ~p", [CsSrcDir]),
 
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, [{cs, cs_config()}]),
+    rt_cs_dev:set_advanced_conf(cs, cs_config()),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
     ok = erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig),
     CsPortStr = integer_to_list(rtcs_config:cs_port(hd(RiakNodes))),
 
@@ -54,14 +55,8 @@ confirm() ->
 
 cs_config() ->
     [
-     rtcs_config:lager_config(),
      {riak_cs,
       [
-       {proxy_get, enabled},
-       {anonymous_user_creation, true},
-       {riak_host, {"127.0.0.1", 10017}},
-       {stanchion_host, {"127.0.0.1", rtcs_config:stanchion_port()}},
-       {cs_version, 010300},
        {enforce_multipart_part_size, false},
        {max_buckets_per_user, 150},
        {rewrite_module, riak_cs_s3_rewrite_legacy}

@@ -50,10 +50,10 @@ confirm() ->
     confirm_1(false).
 
 confirm_1(Use2iForStorageCalc) when is_boolean(Use2iForStorageCalc) ->
-    Config = [{riak, rtcs_config:riak_config([{riak_kv, [{delete_mode, keep}]}])},
-              {stanchion, rtcs_config:stanchion_config()},
-              {cs, rtcs_config:cs_config([{use_2i_for_storage_calc, Use2iForStorageCalc}])}],
-    SetupRes = rtcs:setup(1, Config),
+    rt_cs_dev:set_advanced_conf(riak, [{riak_kv, [{delete_mode, keep}]}]),
+    rt_cs_dev:set_advanced_conf(cs, [{riak_cs,
+                                      [{use_2i_for_storage_calc, Use2iForStorageCalc}]}]),
+    SetupRes = rtcs:setup(1),
     confirm_2(SetupRes).
 
 confirm_2({UserConfig, {RiakNodes, CSNodes, _Stanchion}}) ->

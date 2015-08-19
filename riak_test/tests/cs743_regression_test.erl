@@ -31,11 +31,9 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    Config = [{riak, rtcs_config:riak_config()}, {stanchion, rtcs_config:stanchion_config()},
-              {cs,
-               rtcs_config:cs_config([{storage_calc_timeout, 1},
-                               {storage_archive_period, 1}])}],
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    rt_cs_dev:set_conf(cs, [{"stats.storage.archive_period", "1s"}]),
+    rt_cs_dev:set_advanced_conf(cs, [{riak_cs, [{storage_calc_timeout, 1}]}]),
+    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
 
     Begin = rtcs:datetime(),
     run_storage_batch(hd(CSNodes)),

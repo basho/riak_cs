@@ -37,10 +37,8 @@
 -define(KEY3, "3").
 
 confirm() ->
-    Config = [{riak, rtcs_config:riak_config()},
-              {stanchion, rtcs_config:stanchion_config()},
-              {cs, rtcs_config:cs_config([{detailed_storage_calc, true}])}],
-    SetupRes = rtcs:setup(1, Config),
+    rt_cs_dev:set_advanced_conf(cs, [{riak_cs, [{detailed_storage_calc, true}]}]),
+    SetupRes = rtcs:setup(1),
     {AdminConfig, {RiakNodes, CSNodes, _Stanchion}} = SetupRes,
     RiakNode = hd(RiakNodes),
     {AccessKeyId, SecretAccessKey} = rtcs:create_user(RiakNode, 1),

@@ -23,10 +23,12 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
+config() ->
+    [{riak_cs, [{admin_auth_enabled, false}]}].
 
 confirm() ->
-    Config = [{cs, rtcs_config:cs_config([{admin_auth_enabled, false}])}],
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    rt_cs_dev:set_advanced_conf(cs, config()),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
     KeyId = UserConfig#aws_config.access_key_id,
     Port = rtcs_config:cs_port(hd(RiakNodes)),
 
