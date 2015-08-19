@@ -153,12 +153,9 @@ create_admin_user(Node) ->
 deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
-    NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
-    RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
-    CSNodes = [?CSDEV(N) || N <- lists:seq(1, NumNodes)],
-    StanchionNode = 'stanchion@127.0.0.1',
-
-    lager:info("RiakNodes: ~p", [RiakNodes]),
+    {RiakNodes, CSNodes, StanchionNode} = Nodes = {riak_nodes(NumNodes),
+                                                   cs_nodes(NumNodes),
+                                                   stanchion_node()},
 
     NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_nodes, NodeMap),
@@ -166,33 +163,30 @@ deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
     rt_config:set(rt_cs_nodes, CSNodeMap),
 
     {_RiakRoot, RiakVsn} = rt_cs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
-
     lager:debug("setting rt_versions> ~p =>", [Vsn]),
+
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
     rt_config:set(rt_versions, VersionMap),
 
-    lager:info("VersionMap: ~p", [VersionMap]),
-
-    NL0 = lists:zip(CSNodes, RiakNodes),
-    {CS1, R1} = hd(NL0),
-    NodeList = [{CS1, R1, StanchionNode} | tl(NL0)],
-    lager:info("NodeList: ~p", [NodeList]),
-
+    NodeList = node_list(NumNodes),
     rtcs_exec:stop_all_nodes(NodeList, Vsn),
 
     rt_cs_dev:create_dirs(RiakNodes),
 
-    {_Versions, Configs} = lists:unzip(NodeConfig),
-
     %% Set initial config
-    rtcs_config:set_configs(NodeList, Configs, ConfigFun, Vsn),
+    rtcs_config:set_configs(NodeList,
+                            lists:duplicate(NumNodes, InitialConfig),
+                            ConfigFun,
+                            Vsn),
     rtcs_exec:start_all_nodes(NodeList, Vsn),
 
-    Nodes = {RiakNodes, CSNodes, StanchionNode},
     [ok = rt:wait_until_pingable(N) || N <- RiakNodes ++ CSNodes ++ [StanchionNode]],
     [ok = rt:check_singleton_node(N) || N <- RiakNodes],
-
     rt:wait_until_nodes_ready(RiakNodes),
+
+    lager:info("NodeMap: ~p", [ NodeMap ]),
+    lager:info("VersionMap: ~p", [VersionMap]),
+    lager:info("Deployed nodes: ~p", [Nodes]),
 
     Nodes.
 
@@ -202,33 +196,13 @@ node_id(Node) ->
 
 setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
-    lager:info("Initial Config: ~p", [InitialConfig]),
-    NodeConfig = [{current, InitialConfig} || _ <- lists:seq(1,NumNodes)],
-    RiakNodes = [?DEV(N) || N <- lists:seq(1, NumNodes)],
-    CSNodes = [?CSDEV(N) || N <- lists:seq(1, NumNodes)],
-    StanchionNode = 'stanchion@127.0.0.1',
-    NodeMap = orddict:from_list(lists:zip(RiakNodes, lists:seq(1, NumNodes))),
-    CSNodeMap = orddict:from_list(lists:zip(CSNodes, lists:seq(1, NumNodes))),
-    rt_config:set(rt_nodes, NodeMap),
-    rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    {_RiakRoot, RiakVsn} = rt_cs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
-    VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
-    lager:debug("setting rt_versions> ~p => ~p", [Vsn, VersionMap]),
-    rt_config:set(rt_versions, VersionMap),
-
-    NL0 = lists:zip(CSNodes, RiakNodes),
-    {CS1, R1} = hd(NL0),
-    NodeList = [{CS1, R1, StanchionNode} | tl(NL0)],
-
-    {_Versions, Configs} = lists:unzip(NodeConfig),
-
-    Nodes = {RiakNodes, CSNodes, StanchionNode},
+    {KeyID, KeySecret} = AdminCreds = create_admin_user(1),
 
     %% Create admin user and set in cs and stanchion configs
-    {KeyID, KeySecret} = AdminCreds = create_admin_user(hd(RiakNodes)),
-
-    rtcs_config:set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn),
+    rtcs_config:set_admin_creds_in_configs(node_list(NumNodes),
+                                           lists:duplicate(NumNodes, InitialConfig),
+                                           ConfigFun, AdminCreds, Vsn),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
@@ -236,22 +210,12 @@ setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
                         ok = rpc:call(Node, application, set_env,
                                       [App, admin_secret, KeySecret])
                 end,
-    ZippedNodes = [{StanchionNode, stanchion} |
-             [ {CSNode, riak_cs} || CSNode <- CSNodes ]],
+    ZippedNodes = [{stanchion_node(), stanchion} |
+                  [{CSNode, riak_cs} || CSNode <- cs_nodes(NumNodes) ]],
     lists:foreach(UpdateFun, ZippedNodes),
 
-    lager:info("NodeConfig: ~p", [ NodeConfig ]),
-    lager:info("RiakNodes: ~p", [RiakNodes]),
-    lager:info("CSNodes: ~p", [CSNodes]),
-    lager:info("NodeMap: ~p", [ NodeMap ]),
-    lager:info("VersionMap: ~p", [VersionMap]),
-    lager:info("NodeList: ~p", [NodeList]),
-    lager:info("Nodes: ~p", [Nodes]),
     lager:info("AdminCreds: ~p", [AdminCreds]),
-    lager:info("Deployed nodes: ~p", [Nodes]),
-
     AdminCreds.
-
 
 create_user(Port, EmailAddr, Name) ->
     create_user(Port, undefined, EmailAddr, Name).
@@ -454,3 +418,20 @@ reset_log(Node) ->
     ok = rpc:call(Node, gen_event, add_handler,
                   [lager_event, riak_test_lager_backend,
                    [rt_config:get(lager_level, info), false]]).
+
+%% private
+
+riak_nodes(NumNodes) ->
+    [?DEV(N) || N <- lists:seq(1, NumNodes)].
+
+cs_nodes(NumNodes) ->
+    [?CSDEV(N) || N <- lists:seq(1, NumNodes)].
+
+stanchion_node() ->
+    'stanchion@127.0.0.1'.
+
+node_list(NumNodes) ->
+    NL0 = lists:zip(cs_nodes(NumNodes),
+                    riak_nodes(NumNodes)),
+    {CS1, R1} = hd(NL0),
+    [{CS1, R1, stanchion_node()} | tl(NL0)].
