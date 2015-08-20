@@ -289,7 +289,7 @@ assert_error_log_empty(N) ->
     assert_error_log_empty(current, N).
 
 assert_error_log_empty(Vsn, N) ->
-    ErrorLog = rtcs_config:riakcs_logpath(rtcs_config:get_rt_config(cs, Vsn), N, "error.log"),
+    ErrorLog = rtcs_config:riakcs_logpath(rtcs_config:devpath(cs, Vsn), N, "error.log"),
     case file:read_file(ErrorLog) of
         {error, enoent} -> ok;
         {ok, <<>>} -> ok;

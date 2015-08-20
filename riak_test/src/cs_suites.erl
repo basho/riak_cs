@@ -501,7 +501,7 @@ bitcask_data_root() -> "./data/bitcask".
 %% For example: "548063113999088594326381812268606132370974703616"
 -spec bitcask_vnode_names(atom(), previous | current) -> [string()].
 bitcask_vnode_names(Node, Vsn) ->
-    Prefix = rtcs_config:get_rt_config(riak, Vsn),
+    Prefix = rtcs_config:devpath(riak, Vsn),
     BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
     {ok, VnodeDirNames} = file:list_dir(BitcaskAbsRoot),
     VnodeDirNames.
@@ -513,7 +513,7 @@ bitcask_vnode_names(Node, Vsn) ->
 -spec bitcask_data_files(node(), previous | current, string(), abs | rel) ->
                                 [string()].
 bitcask_data_files(Node, Vsn, VnodeName, AbsOrRel) ->
-    Prefix = rtcs_config:get_rt_config(riak, Vsn),
+    Prefix = rtcs_config:devpath(riak, Vsn),
     BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
     VnodeAbsPath = filename:join(BitcaskAbsRoot, VnodeName),
     {ok, Fs0} = file:list_dir(VnodeAbsPath),

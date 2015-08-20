@@ -56,7 +56,7 @@ confirm1() ->
         [setup_objects(RiakNodes, UserConfig, Bucket, mp,
                        ?KEY_ALIVE_MP, ?KEY_ORPHANED_MP, ?KEY_FALSE_ORPHANED_MP) ||
             Bucket <- [?BUCKET1, ?BUCKET2]],
-    Home = rtcs_config:riakcs_home(rtcs_config:get_rt_config(cs, current), 1),
+    Home = rtcs_config:riakcs_home(rtcs_config:devpath(cs, current), 1),
     os:cmd("rm -rf " ++ filename:join([Home, "maybe-orphaned-blocks"])),
     os:cmd("rm -rf " ++ filename:join([Home, "actual-orphaned-blocks"])),
     Res1 = rtcs_exec:exec_priv_escript(1, "internal/block_audit.erl",
@@ -106,7 +106,7 @@ fake_false_orphans(RiakNodes, FalseOrphans) ->
         {B, K, O} <- FalseOrphans].
 
 assert_result(Bucket) ->
-    Home = rtcs_config:riakcs_home(rtcs_config:get_rt_config(cs, current), 1),
+    Home = rtcs_config:riakcs_home(rtcs_config:devpath(cs, current), 1),
     OutFile1 = filename:join([Home, "actual-orphaned-blocks", Bucket]),
     {ok, Bin} = file:read_file(OutFile1),
     KeySeqs = [begin

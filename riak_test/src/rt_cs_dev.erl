@@ -538,7 +538,7 @@ all_the_files(DevPath, File) ->
     end.
 
 devpath(Name, Vsn) ->
-    rtcs_config:get_rt_config(Name, Vsn).
+    rtcs_config:devpath(Name, Vsn).
 
 versions() ->
     proplists:get_keys(rt_config:get(build_paths)) -- [root].

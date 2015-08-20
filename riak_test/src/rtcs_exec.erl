@@ -81,7 +81,7 @@ stop_all_nodes(NodeList, Vsn) ->
 start_cs(N) -> start_cs(N, current).
 
 start_cs(N, Vsn) ->
-    NodePath = rtcs_config:get_rt_config(cs, Vsn),
+    NodePath = rtcs_config:devpath(cs, Vsn),
     Cmd = riakcscmd(NodePath, N, "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
@@ -89,7 +89,7 @@ start_cs(N, Vsn) ->
 stop_cs(N) -> stop_cs(N, current).
 
 stop_cs(N, Vsn) ->
-    Cmd = riakcscmd(rtcs_config:get_rt_config(cs, Vsn), N, "stop"),
+    Cmd = riakcscmd(rtcs_config:devpath(cs, Vsn), N, "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
@@ -150,7 +150,7 @@ stanchion_etcpath(Prefix) ->
 repair_gc_bucket(N, Options) -> repair_gc_bucket(N, Options, current).
 
 repair_gc_bucket(N, Options, Vsn) ->
-    Prefix = rtcs_config:get_rt_config(cs, Vsn),
+    Prefix = rtcs_config:devpath(cs, Vsn),
     RepairScriptWild = string:join([riakcs_libpath(Prefix, N), "riak_cs*",
                                     "priv/tools/repair_gc_bucket.erl"] , "/"),
     [RepairScript] = filelib:wildcard(RepairScriptWild),
@@ -163,8 +163,8 @@ exec_priv_escript(N, Command, Options) ->
     exec_priv_escript(N, Command, Options, cs).
 
 exec_priv_escript(N, Command, Options, ByWhom) ->
-    CsPrefix = rtcs_config:get_rt_config(cs, current),
-    ExecuterPrefix = rtcs_config:get_rt_config(ByWhom, current),
+    CsPrefix = rtcs_config:devpath(cs, current),
+    ExecuterPrefix = rtcs_config:devpath(ByWhom, current),
     ScriptWild = string:join([riakcs_libpath(CsPrefix, N), "riak_cs*",
                               "priv/tools/"] , "/"),
     [ToolsDir] = filelib:wildcard(ScriptWild),
@@ -185,58 +185,58 @@ switch_stanchion_cs(N, Host, Port) -> switch_stanchion_cs(N, Host, Port, current
 
 switch_stanchion_cs(N, Host, Port, Vsn) ->
     SubCmd = io_lib:format("switch ~s ~p", [Host, Port]),
-    Cmd = riakcs_switchcmd(rtcs_config:get_rt_config(cs, Vsn), N, SubCmd),
+    Cmd = riakcs_switchcmd(rtcs_config:devpath(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 show_stanchion_cs(N) -> show_stanchion_cs(N, current).
 
 show_stanchion_cs(N, Vsn) ->
-    Cmd = riakcs_switchcmd(rtcs_config:get_rt_config(cs, Vsn), N, "show"),
+    Cmd = riakcs_switchcmd(rtcs_config:devpath(cs, Vsn), N, "show"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 start_stanchion() -> start_stanchion(current).
 
 start_stanchion(Vsn) ->
-    Cmd = stanchioncmd(rtcs_config:get_rt_config(stanchion, Vsn), "start"),
+    Cmd = stanchioncmd(rtcs_config:devpath(stanchion, Vsn), "start"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 stop_stanchion() -> stop_stanchion(current).
 
 stop_stanchion(Vsn) ->
-    Cmd = stanchioncmd(rtcs_config:get_rt_config(stanchion, Vsn), "stop"),
+    Cmd = stanchioncmd(rtcs_config:devpath(stanchion, Vsn), "stop"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 flush_access(N) -> flush_access(N, current).
 
 flush_access(N, Vsn) ->
-    Cmd = riakcs_accesscmd(rtcs_config:get_rt_config(cs, Vsn), N, "flush"),
+    Cmd = riakcs_accesscmd(rtcs_config:devpath(cs, Vsn), N, "flush"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 gc(N, SubCmd) -> gc(N, SubCmd, current).
 
 gc(N, SubCmd, Vsn) ->
-    Cmd = riakcs_gccmd(rtcs_config:get_rt_config(cs, Vsn), N, SubCmd),
+    Cmd = riakcs_gccmd(rtcs_config:devpath(cs, Vsn), N, SubCmd),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 calculate_storage(N) -> calculate_storage(N, current).
 
 calculate_storage(N, Vsn) ->
-    Cmd = riakcs_storagecmd(rtcs_config:get_rt_config(cs, Vsn), N, "batch -r"),
+    Cmd = riakcs_storagecmd(rtcs_config:devpath(cs, Vsn), N, "batch -r"),
     lager:info("Running ~p", [Cmd]),
     os:cmd(Cmd).
 
 enable_proxy_get(SrcN, Vsn, SinkCluster) ->
-    rtdev:run_riak_repl(SrcN, rtcs_config:get_rt_config(riak, Vsn),
+    rtdev:run_riak_repl(SrcN, rtcs_config:devpath(riak, Vsn),
                         "proxy_get enable " ++ SinkCluster).
 
 disable_proxy_get(SrcN, Vsn, SinkCluster) ->
-    rtdev:run_riak_repl(SrcN, rtcs_config:get_rt_config(riak, Vsn),
+    rtdev:run_riak_repl(SrcN, rtcs_config:devpath(riak, Vsn),
                         "proxy_get disable " ++ SinkCluster).
 
 %% TODO: this is added as riak-1.4 branch of riak_test/src/rt_cs_dev.erl

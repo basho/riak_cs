@@ -347,28 +347,28 @@ cs_current() ->
 stanchion_current() ->
     ?STANCHION_CURRENT.
 
-get_rt_config(riak, current) ->
+devpath(riak, current) ->
     case rt_config:get(build_type, oss) of
         oss -> rt_config:get(?RIAK_CURRENT);
         ee  -> rt_config:get(?EE_CURRENT)
     end;
-get_rt_config(riak, previous) ->
+devpath(riak, previous) ->
     case rt_config:get(build_type, oss) of
         oss -> rt_config:get(?RIAK_PREVIOUS);
         ee  -> rt_config:get(?EE_PREVIOUS)
     end;
-get_rt_config(cs, current) -> rt_config:get(?CS_CURRENT);
-get_rt_config(cs, previous) -> rt_config:get(?CS_PREVIOUS);
-get_rt_config(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
-get_rt_config(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
+devpath(cs, current) -> rt_config:get(?CS_CURRENT);
+devpath(cs, previous) -> rt_config:get(?CS_PREVIOUS);
+devpath(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
+devpath(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
 set_configs(NumNodes, Config, ConfigFun, Vsn) ->
     rt:pmap(fun(N) ->
                     rt_cs_dev:update_app_config(rtcs:riak_node(N), proplists:get_value(riak, Config)),
-                    update_cs_config(get_rt_config(cs, Vsn), N,
+                    update_cs_config(devpath(cs, Vsn), N,
                                      proplists:get_value(cs, Config), ConfigFun),
                     case N of
-                        1 -> update_stanchion_config(get_rt_config(stanchion, Vsn),
+                        1 -> update_stanchion_config(devpath(stanchion, Vsn),
                                                      proplists:get_value(stanchion, Config),
                                                      ConfigFun);
                         _ -> ok
@@ -382,17 +382,17 @@ set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
                     ok;
                ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(get_rt_config(cs, Vsn),
+                    update_cs_config(devpath(cs, Vsn),
                                      N,
                                      proplists:get_value(cs, Config),
                                      ConfigFun,
                                      AdminCreds),
-                    update_stanchion_config(get_rt_config(stanchion, Vsn),
+                    update_stanchion_config(devpath(stanchion, Vsn),
                                             proplists:get_value(stanchion, Config),
                                             ConfigFun, AdminCreds);
                ({{_CSNode, RiakNode}, Config}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(get_rt_config(cs, Vsn),
+                    update_cs_config(devpath(cs, Vsn),
                                      N,
                                      proplists:get_value(cs, Config),
                                      ConfigFun,
@@ -402,7 +402,7 @@ set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
 
 
 read_config(Vsn, N, Who) ->
-    Prefix = get_rt_config(Who, Vsn),
+    Prefix = devpath(Who, Vsn),
     EtcPath = case Who of
                   cs -> riakcs_etcpath(Prefix, N);
                   stanchion -> stanchion_etcpath(Prefix)
@@ -487,7 +487,7 @@ update_app_config(Path, Config) ->
     ok.
 
 enable_zdbbl(Vsn) ->
-    Fs = filelib:wildcard(filename:join([get_rt_config(riak, Vsn),
+    Fs = filelib:wildcard(filename:join([devpath(riak, Vsn),
                                          "dev", "dev*", "etc", "vm.args"])),
     lager:info("rtcs:enable_zdbbl for vm.args : ~p~n", [Fs]),
     [os:cmd("sed -i -e 's/##+zdbbl /+zdbbl /g' " ++ F) || F <- Fs],
@@ -506,8 +506,8 @@ migrate(From, To, N, AdminCreds, Who) when
       orelse ( From =:= previous andalso To =:= current) ->
     Config0 = read_config(From, N, Who),
     Config1 = migrate_config(From, To, Config0, Who),
-    Prefix = get_rt_config(Who, To),
-    lager:debug("migrating ~s => ~s", [get_rt_config(Who, From), Prefix]),
+    Prefix = devpath(Who, To),
+    lager:debug("migrating ~s => ~s", [devpath(Who, From), Prefix]),
     case Who of
         cs -> update_cs_config(Prefix, N, Config1, AdminCreds);
         stanchion -> update_stanchion_config(Prefix, Config1, AdminCreds)

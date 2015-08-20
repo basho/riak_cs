@@ -159,9 +159,9 @@ confirm_stat_count(StatData, StatType, ExpectedCount) ->
 confirm_status_cmd(Type, ExpectedToken) ->
     Cmd = case Type of
               cs ->
-                  rtcs_exec:riakcs_statuscmd(rtcs_config:get_rt_config(cs, current), 1);
+                  rtcs_exec:riakcs_statuscmd(rtcs_config:devpath(cs, current), 1);
               stanchion ->
-                  rtcs_exec:stanchion_statuscmd(rtcs_config:get_rt_config(stanchion, current))
+                  rtcs_exec:stanchion_statuscmd(rtcs_config:devpath(stanchion, current))
           end,
     Res = os:cmd(Cmd),
     ?assert(string:str(Res, ExpectedToken) > 0).
