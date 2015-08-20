@@ -362,26 +362,19 @@ get_rt_config(cs, previous) -> rt_config:get(?CS_PREVIOUS);
 get_rt_config(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
 get_rt_config(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
-set_configs(NodeList, Configs, ConfigFun, Vsn) ->
-    rt:pmap(fun({_, default}) ->
-                    ok;
-               ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    rt_cs_dev:update_app_config(RiakNode, proplists:get_value(riak,
-                                                                              Config)),
+set_configs(NumNodes, Config, ConfigFun, Vsn) ->
+    rt:pmap(fun(N) ->
+                    rt_cs_dev:update_app_config(rtcs:riak_node(N), proplists:get_value(riak, Config)),
                     update_cs_config(get_rt_config(cs, Vsn), N,
                                      proplists:get_value(cs, Config), ConfigFun),
-                    update_stanchion_config(get_rt_config(stanchion, Vsn),
-                                            proplists:get_value(stanchion, Config),
-                                            ConfigFun);
-               ({{_CSNode, RiakNode}, Config}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    rt_cs_dev:update_app_config(RiakNode,
-                                                proplists:get_value(riak, Config)),
-                    update_cs_config(get_rt_config(cs, Vsn), N,
-                                     proplists:get_value(cs, Config), ConfigFun)
+                    case N of
+                        1 -> update_stanchion_config(get_rt_config(stanchion, Vsn),
+                                                     proplists:get_value(stanchion, Config),
+                                                     ConfigFun);
+                        _ -> ok
+                    end
             end,
-            lists:zip(NodeList, Configs)),
+            lists:seq(1, NumNodes)),
     enable_zdbbl(Vsn).
 
 set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->

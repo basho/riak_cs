@@ -168,17 +168,16 @@ deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
     rt_config:set(rt_versions, VersionMap),
 
-    NodeList = node_list(NumNodes),
-    rtcs_exec:stop_all_nodes(NodeList, Vsn),
+    rtcs_exec:stop_all_nodes(node_list(NumNodes), Vsn),
 
     rt_cs_dev:create_dirs(RiakNodes),
 
     %% Set initial config
-    rtcs_config:set_configs(NodeList,
-                            lists:duplicate(NumNodes, InitialConfig),
+    rtcs_config:set_configs(NumNodes,
+                            InitialConfig,
                             ConfigFun,
                             Vsn),
-    rtcs_exec:start_all_nodes(NodeList, Vsn),
+    rtcs_exec:start_all_nodes(node_list(NumNodes), Vsn),
 
     [ok = rt:wait_until_pingable(N) || N <- RiakNodes ++ CSNodes ++ [StanchionNode]],
     [ok = rt:check_singleton_node(N) || N <- RiakNodes],
@@ -419,6 +418,15 @@ reset_log(Node) ->
                   [lager_event, riak_test_lager_backend,
                    [rt_config:get(lager_level, info), false]]).
 
+riak_node(N) ->
+    ?DEV(N).
+
+cs_node(N) ->
+    ?CSDEV(N).
+
+stanchion_node() ->
+    'stanchion@127.0.0.1'.
+
 %% private
 
 riak_nodes(NumNodes) ->
@@ -426,9 +434,6 @@ riak_nodes(NumNodes) ->
 
 cs_nodes(NumNodes) ->
     [?CSDEV(N) || N <- lists:seq(1, NumNodes)].
-
-stanchion_node() ->
-    'stanchion@127.0.0.1'.
 
 node_list(NumNodes) ->
     NL0 = lists:zip(cs_nodes(NumNodes),
