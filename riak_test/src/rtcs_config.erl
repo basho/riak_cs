@@ -364,17 +364,15 @@ devpath(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
 set_configs(NumNodes, Config, ConfigFun, Vsn) ->
     rt:pmap(fun(N) ->
-                    rt_cs_dev:update_app_config(rtcs:riak_node(N), proplists:get_value(riak, Config)),
+                    rt_cs_dev:update_app_config(rtcs:riak_node(N),
+                                                proplists:get_value(riak, Config)),
                     update_cs_config(devpath(cs, Vsn), N,
-                                     proplists:get_value(cs, Config), ConfigFun),
-                    case N of
-                        1 -> update_stanchion_config(devpath(stanchion, Vsn),
-                                                     proplists:get_value(stanchion, Config),
-                                                     ConfigFun);
-                        _ -> ok
-                    end
+                                     proplists:get_value(cs, Config), ConfigFun)
             end,
             lists:seq(1, NumNodes)),
+    update_stanchion_config(devpath(stanchion, Vsn),
+                            proplists:get_value(stanchion, Config),
+                            ConfigFun),
     enable_zdbbl(Vsn).
 
 set_admin_creds_in_configs(NodeList, Configs, ConfigFun, AdminCreds, Vsn) ->
