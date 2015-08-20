@@ -160,7 +160,8 @@ set_conf(Node, NameValuePairs) when is_atom(Node) ->
     rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
     ok;
 set_conf(DevPath, NameValuePairs) ->
-    [rtdev:append_to_conf_file(RiakConf, NameValuePairs) || RiakConf <- rtdev:all_the_files(DevPath, "etc/*.conf")],
+    lager:info("rt_cs_dev:set_conf(~p, ~p)", [DevPath, NameValuePairs]),
+    [rtdev:append_to_conf_file(RiakConf, NameValuePairs) || RiakConf <- all_the_files(DevPath, "etc/*.conf")],
     ok.
 
 -spec set_advanced_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
@@ -181,7 +182,7 @@ set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
     rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
     ok;
 set_advanced_conf(DevPath, NameValuePairs) ->
-    AdvancedConfs = case rtdev:all_the_files(DevPath, "etc/advanced.config") of
+    AdvancedConfs = case all_the_files(DevPath, "etc/advanced.config") of
                         [] ->
                             %% no advanced conf? But we _need_ them, so make 'em
                             rtdev:make_advanced_confs(DevPath);
@@ -527,6 +528,16 @@ devpaths() ->
     lists:usort([ DevPath || {Name, DevPath} <- rt_config:get(build_paths),
                              not lists:member(Name, [root, ee_root, cs_root, stanchion_root])
                 ]).
+
+all_the_files(DevPath, File) ->
+    case filelib:is_dir(DevPath) of
+        true ->
+            Wildcard = io_lib:format("~s/dev/*/~s", [DevPath, File]),
+            filelib:wildcard(Wildcard);
+        _ ->
+            lager:debug("~s is not a directory.", [DevPath]),
+            []
+    end.
 
 devpath(Name, Vsn) ->
     rtcs_config:get_rt_config(Name, Vsn).
