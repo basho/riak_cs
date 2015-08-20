@@ -88,10 +88,8 @@ setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn) ->
     application:load(sasl),
     application:set_env(sasl, sasl_error_logger, false),
 
-    Cfgs = rtcs_config:configs(Configs),
-    lager:info("Configs = ~p", [ Cfgs]),
     {RiakNodes, _CSNodes, _Stanchion} = Nodes =
-        deploy_nodes(NumNodes, Cfgs, ConfigFun, Vsn),
+        deploy_nodes(NumNodes, rtcs_config:configs(Configs), ConfigFun, Vsn),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
     JoinFun(RiakNodes),
