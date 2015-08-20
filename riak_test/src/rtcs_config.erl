@@ -460,29 +460,14 @@ update_app_config(Path, Config) ->
     FileFormatString = "~s/~s.config",
     AppConfigFile = io_lib:format(FileFormatString, [Path, "app"]),
     AdvConfigFile = io_lib:format(FileFormatString, [Path, "advanced"]),
-
-    {BaseConfig, ConfigFile} = case file:consult(AppConfigFile) of
-        {ok, [ValidConfig]} ->
-            {ValidConfig, AppConfigFile};
-        {error, enoent} ->
-            {ok, [ValidConfig]} = file:consult(AdvConfigFile),
-            {ValidConfig, AdvConfigFile}
-    end,
-    lager:debug("updating ~s", [ConfigFile]),
-
-    MergeA = orddict:from_list(Config),
-    MergeB = orddict:from_list(BaseConfig),
-    NewConfig =
-        orddict:merge(fun(_, VarsA, VarsB) ->
-                              MergeC = orddict:from_list(VarsA),
-                              MergeD = orddict:from_list(VarsB),
-                              orddict:merge(fun(_, ValA, _ValB) ->
-                                                    ValA
-                                            end, MergeC, MergeD)
-                      end, MergeA, MergeB),
-    NewConfigOut = io_lib:format("~p.", [NewConfig]),
-    ?assertEqual(ok, file:write_file(ConfigFile, NewConfigOut)),
-    ok.
+    %% If there's an app.config, do it old style
+    %% if not, use cuttlefish's adavnced.config
+    case filelib:is_file(AppConfigFile) of
+        true ->
+            rt_cs_dev:update_app_config_file(AppConfigFile, Config);
+        _ ->
+            rt_cs_dev:update_app_config_file(AdvConfigFile, Config)
+    end.
 
 enable_zdbbl(Vsn) ->
     Fs = filelib:wildcard(filename:join([devpath(riak, Vsn),
