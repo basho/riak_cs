@@ -29,11 +29,6 @@
 
 -define(BACKUP_PORT, 9096).
 
-backup_stanchion_config() ->
-    rtcs_config:replace_stanchion_config(host,
-                                  {"127.0.0.1", ?BACKUP_PORT},
-                                  rtcs_config:stanchion_config()).
-
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, Stanchion}} = rtcs:setup(1),
 
@@ -58,7 +53,8 @@ confirm() ->
     ?assertException(error, {aws_error, {http_error, 500, _, _}},
                     erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
 
-    ok = rtcs:deploy_stanchion(backup_stanchion_config()),
+    rt_cs_dev:set_advanced_conf(stanchion, [{stanchion, [{host, {"127.0.0.1", ?BACKUP_PORT}}]}]),
+    _ = rtcs_exec:start_stanchion(),
     rt:wait_until_pingable(Stanchion),
 
     %% stanchion ops ng; we get 500 here for sure.

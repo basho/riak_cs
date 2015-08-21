@@ -121,14 +121,6 @@ riak_id_per_cluster(NumNodes) ->
         {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
     end.
 
-deploy_stanchion(Config) ->
-    %% Set initial config
-    ConfigFun = fun(_, Config0, _) -> Config0 end,
-    rtcs_config:update_stanchion_config(rt_config:get(rtcs_config:stanchion_current()), Config, ConfigFun),
-
-    rtcs_exec:start_stanchion(),
-    lager:info("Stanchion started").
-
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
     User = "Test User" ++ integer_to_list(UserIndex),
