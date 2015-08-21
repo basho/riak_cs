@@ -77,10 +77,6 @@ flavored_setup(NumNodes, {multibag, _} = Flavor, Configs, Vsn)
     rtcs_bag:flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
 setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
-    ConfigFun = fun(_Type, Config, _Node) -> Config end,
-    setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn).
-
-setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn) ->
     %% Start the erlcloud app
     erlcloud:start(),
 
@@ -89,14 +85,14 @@ setup_clusters(Configs, ConfigFun, JoinFun, NumNodes, Vsn) ->
     application:set_env(sasl, sasl_error_logger, false),
 
     {RiakNodes, _CSNodes, _Stanchion} = Nodes =
-        deploy_nodes(NumNodes, rtcs_config:configs(Configs), ConfigFun, Vsn),
+        deploy_nodes(NumNodes, rtcs_config:configs(Configs), Vsn),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
     JoinFun(RiakNodes),
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Cfgs, ConfigFun, Vsn),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Configs, Vsn),
     AdminConfig = rtcs_config:config(AdminKeyId,
                                      AdminSecretKey,
                                      rtcs_config:cs_port(hd(RiakNodes))),
@@ -139,8 +135,8 @@ create_admin_user(Node) ->
     lager:info("Id = ~p",[Id]),
     {KeyId, Secret}.
 
--spec deploy_nodes(list(), list(), fun(), current|previous) -> any().
-deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
+-spec deploy_nodes(list(), list(), current|previous) -> any().
+deploy_nodes(NumNodes, InitialConfig, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
     lager:info("Initial Config: ~p", [InitialConfig]),
     {RiakNodes, CSNodes, StanchionNode} = Nodes = {riak_nodes(NumNodes),
@@ -165,7 +161,6 @@ deploy_nodes(NumNodes, InitialConfig, ConfigFun, Vsn)
     %% Set initial config
     rtcs_config:set_configs(NumNodes,
                             InitialConfig,
-                            ConfigFun,
                             Vsn),
     rtcs_exec:start_all_nodes(node_list(NumNodes), Vsn),
 
@@ -183,7 +178,7 @@ node_id(Node) ->
     NodeMap = rt_config:get(rt_cs_nodes),
     orddict:fetch(Node, NodeMap).
 
-setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
+setup_admin_user(NumNodes, InitialConfig, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
 
     {KeyID, KeySecret} = AdminCreds = create_admin_user(1),
@@ -191,7 +186,7 @@ setup_admin_user(NumNodes, InitialConfig, ConfigFun, Vsn)
     %% Create admin user and set in cs and stanchion configs
     rtcs_config:set_admin_creds_in_configs(node_list(NumNodes),
                                            lists:duplicate(NumNodes, InitialConfig),
-                                           ConfigFun, AdminCreds, Vsn),
+                                           AdminCreds, Vsn),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
