@@ -154,6 +154,10 @@ set_conf({Name, Vsn}, NameValuePairs) ->
     lager:info("rt_cs_dev:set_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
     set_conf(devpath(Name, Vsn), NameValuePairs),
     ok;
+set_conf({Name, Vsn, N}, NameValuePairs) ->
+    lager:info("rt_cs_dev:set_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    rtdev:append_to_conf_file(get_conf(devpath(Name, Vsn), N), NameValuePairs),
+    ok;
 set_conf(Node, NameValuePairs) when is_atom(Node) ->
     rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
     ok;
@@ -176,8 +180,12 @@ set_advanced_conf({Name, Vsn}, NameValuePairs) ->
     lager:info("rt_cs_dev:set_advanced_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
     set_advanced_conf(devpath(Name, Vsn), NameValuePairs),
     ok;
+set_advanced_conf({Name, Vsn, N}, NameValuePairs) ->
+    lager:info("rt_cs_dev:set_advanced_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    update_app_config_file(get_app_config(devpath(Name, Vsn), N), NameValuePairs),
+    ok;
 set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
-    rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
+    update_app_config_file(get_app_config(Node), NameValuePairs),
     ok;
 set_advanced_conf(DevPath, NameValuePairs) ->
     AdvancedConfs = case all_the_files(DevPath, "etc/advanced.config") of
@@ -194,7 +202,20 @@ set_advanced_conf(DevPath, NameValuePairs) ->
 get_conf(Node) ->
     N = node_id(Node),
     Path = relpath(node_version(N)),
-    WildCard = io_lib:format("~s/dev/dev~b/etc/*.conf", [Path, N]),
+    get_conf(Path, N).
+
+get_conf(DevPath, N) ->
+    WildCard = io_lib:format("~s/dev/dev~b/etc/*.conf", [DevPath, N]),
+    [Conf] = filelib:wildcard(WildCard),
+    Conf.
+
+get_app_config(Node) ->
+    N = node_id(Node),
+    Path = relpath(node_version(N)),
+    get_conf(Path, N).
+
+get_app_config(DevPath, N) ->
+    WildCard = io_lib:format("~s/dev/dev~b/etc/a*.config", [DevPath, N]),
     [Conf] = filelib:wildcard(WildCard),
     Conf.
 
