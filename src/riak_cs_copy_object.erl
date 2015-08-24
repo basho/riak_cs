@@ -27,6 +27,7 @@
 -include("riak_cs.hrl").
 
 -export([test_condition_and_permission/4,
+         malformed_request/1,
          new_metadata/2,
          get_copy_source/1,
          start_put_fsm/7,
@@ -102,6 +103,17 @@ authorize_on_src(RcPid, SrcManifest, RD,
     _ = riak_cs_wm_utils:object_access_authorize_helper(object, false,
                                                         OtherRD, OtherCtx).
 
+-spec malformed_request(#wm_reqdata{}) ->
+                               false |
+                               {true, {invalid_argument, string(), string()}}.
+malformed_request(RD) ->
+    MDDirectiveKey = "x-amz-metadata-directive",
+    case wrq:get_req_header(MDDirectiveKey, RD) of
+        undefined -> false;
+        "REPLACE" -> false;
+        "COPY"    -> false;
+        Value     -> {true, {invalid_argument, MDDirectiveKey, Value}}
+    end.
 
 %% @doc just kicks up put fsm
 -spec new_metadata(lfs_manifest(), #wm_reqdata{}) -> {binary(), [{string(), string()}]}.

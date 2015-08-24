@@ -98,6 +98,8 @@ error_message(invalid_digest) ->
     "The Content-MD5 you specified was invalid.";
 error_message(bad_request) -> "Bad Request";
 error_message(invalid_argument) -> "Invalid Argument";
+error_message({invalid_argument, "x-amz-metadata-directive"}) ->
+    "Unknown metadata directive.";
 error_message(unresolved_grant_email) -> "The e-mail address you provided does not match any account on record.";
 error_message(invalid_range) -> "The requested range is not satisfiable";
 error_message(invalid_bucket_name) -> "The specified bucket is not valid.";
@@ -253,6 +255,8 @@ api_error({Tag, _}=Error, RD, Ctx)
                    Ctx);
 api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
     toomanybuckets_response(Current, BucketLimit, RD, Ctx);
+api_error({invalid_argument, Name, Value}, RD, Ctx) ->
+    invalid_argument_response(Name, Value, RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
@@ -288,6 +292,18 @@ toomanybuckets_response(Current,BucketLimit,RD,Ctx) ->
               ]},
     Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(toomanybuckets), Body, RD, Ctx).
+
+invalid_argument_response(Name, Value, RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(invalid_argument)]},
+               {'Message', [error_message({invalid_argument, Name})]},
+               {'ArgumentName', [Name]},
+               {'ArgumentValue', [Value]},
+               {'RequestId', [""]}
+              ]},
+    Body = riak_cs_xml:to_xml([XmlDoc]),
+    respond(status_code(invalid_argument), Body, RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     copy_response(Manifest, 'CopyObjectResult', RD, Ctx).
