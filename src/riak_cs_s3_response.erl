@@ -43,7 +43,8 @@
 
 -type error_reason() :: atom()
                       | {'riak_connect_failed', term()}
-                      | {'malformed_policy_version', string()}.
+                      | {'malformed_policy_version', string()}
+                      | {'invalid_argument', string()}.
 
 -spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
