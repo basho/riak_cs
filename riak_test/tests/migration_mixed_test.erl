@@ -101,7 +101,7 @@ transition_to_cs20_with_kv14(State) ->
 
 migrate_nodes_to_cs20_with_kv14(AdminCreds, RiakNodes) ->
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          rtcs_exec:stop_cs(N, previous),
          ok = rtcs_config:upgrade_cs(N, AdminCreds),
          rtcs_exec:start_cs(N, current)
@@ -121,9 +121,9 @@ transition_to_cs15_with_kv20(State) ->
 
 migrate_nodes_to_cs15_with_kv20(AdminCreds, RiakNodes) ->
     {_, RiakCurrentVsn} =
-        rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          rtcs_exec:stop_cs(N, current),
          %% to check error log emptyness afterwards, truncate it here.
          rtcs:truncate_error_log(N),

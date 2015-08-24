@@ -41,11 +41,11 @@ confirm() ->
     AdminCreds = {UserConfig#aws_config.access_key_id,
                   UserConfig#aws_config.secret_access_key},
     {_, RiakCurrentVsn} =
-        rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
 
     %% Upgrade!!!
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          lager:debug("upgrading ~p", [N]),
          rtcs_exec:stop_cs(N, previous),
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
@@ -66,7 +66,7 @@ confirm() ->
     {ok, Data2} = prepare_all_data(UserConfig),
 
     {_, RiakPrevVsn} =
-        rt_cs_dev:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
 
 
     %% Downgrade!!
@@ -74,14 +74,14 @@ confirm() ->
     rtcs_config:migrate_stanchion(current, previous, AdminCreds),
     rtcs_exec:start_stanchion(previous),
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          lager:debug("downgrading ~p", [N]),
          rtcs_exec:stop_cs(N, current),
          rt:stop(RiakNode),
          rt:wait_until_unpingable(RiakNode),
 
          %% get the bitcask directory
-         BitcaskDataDir = filename:join([rt_cs_dev:node_path(RiakNode), "data", "bitcask"]),
+         BitcaskDataDir = filename:join([rtcs_dev:node_path(RiakNode), "data", "bitcask"]),
          lager:info("downgrading Bitcask datadir ~s...", [BitcaskDataDir]),
          %% and run the downgrade script:
          %% Downgrading from 2.0 does not work...

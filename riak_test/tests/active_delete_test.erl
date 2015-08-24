@@ -28,7 +28,7 @@ config() ->
 
 confirm() ->
     %% 10MB threshold, for 3MB objects are used in cs_suites:run/2
-    rt_cs_dev:set_advanced_conf(cs, config()),
+    rtcs_dev:set_advanced_conf(cs, config()),
     Setup = rtcs:setup(1),
 
     %% Just do verify on typical normal case

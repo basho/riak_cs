@@ -502,7 +502,7 @@ bitcask_data_root() -> "./data/bitcask".
 -spec bitcask_vnode_names(atom(), previous | current) -> [string()].
 bitcask_vnode_names(Node, Vsn) ->
     Prefix = rtcs_config:devpath(riak, Vsn),
-    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
+    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rtcs_dev:node_id(Node)),
     {ok, VnodeDirNames} = file:list_dir(BitcaskAbsRoot),
     VnodeDirNames.
 
@@ -514,7 +514,7 @@ bitcask_vnode_names(Node, Vsn) ->
                                 [string()].
 bitcask_data_files(Node, Vsn, VnodeName, AbsOrRel) ->
     Prefix = rtcs_config:devpath(riak, Vsn),
-    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rt_cs_dev:node_id(Node)),
+    BitcaskAbsRoot = rtcs_config:riak_bitcaskroot(Prefix, rtcs_dev:node_id(Node)),
     VnodeAbsPath = filename:join(BitcaskAbsRoot, VnodeName),
     {ok, Fs0} = file:list_dir(VnodeAbsPath),
     [case AbsOrRel of

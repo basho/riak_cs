@@ -149,9 +149,9 @@ upgrade_remaining(UpgradeFirstCount, State) ->
 %% Upgrade Riak and Riak CS pairs of nodes
 upgrade_nodes(AdminCreds, RiakNodes) ->
     {_, RiakCurrentVsn} =
-        rt_cs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          rtcs_exec:stop_cs(N, previous),
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),

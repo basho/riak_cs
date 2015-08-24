@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @private
--module(rt_cs_dev).
+-module(rtcs_dev).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -142,7 +142,7 @@ reset_nodes(Project, Path) ->
 
 -spec set_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
 set_conf(all, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_conf(all, ~p)", [NameValuePairs]),
+    lager:info("rtcs_dev:set_conf(all, ~p)", [NameValuePairs]),
     [ set_conf(DevPath, NameValuePairs) || DevPath <- devpaths()],
     ok;
 set_conf(Name, NameValuePairs) when Name =:= riak orelse
@@ -151,18 +151,18 @@ set_conf(Name, NameValuePairs) when Name =:= riak orelse
     set_conf({Name, current}, NameValuePairs),
     ok;
 set_conf({Name, Vsn}, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    lager:info("rtcs_dev:set_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
     set_conf(devpath(Name, Vsn), NameValuePairs),
     ok;
 set_conf({Name, Vsn, N}, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    lager:info("rtcs_dev:set_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
     rtdev:append_to_conf_file(get_conf(devpath(Name, Vsn), N), NameValuePairs),
     ok;
 set_conf(Node, NameValuePairs) when is_atom(Node) ->
     rtdev:append_to_conf_file(get_conf(Node), NameValuePairs),
     ok;
 set_conf(DevPath, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_conf(~p, ~p)", [DevPath, NameValuePairs]),
+    lager:info("rtcs_dev:set_conf(~p, ~p)", [DevPath, NameValuePairs]),
     [rtdev:append_to_conf_file(RiakConf, NameValuePairs) || RiakConf <- all_the_files(DevPath, "etc/*.conf")],
     ok.
 
@@ -177,11 +177,11 @@ set_advanced_conf(Name, NameValuePairs) when Name =:= riak orelse
     set_advanced_conf({Name, current}, NameValuePairs),
     ok;
 set_advanced_conf({Name, Vsn}, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_advanced_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    lager:info("rtcs_dev:set_advanced_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
     set_advanced_conf(devpath(Name, Vsn), NameValuePairs),
     ok;
 set_advanced_conf({Name, Vsn, N}, NameValuePairs) ->
-    lager:info("rt_cs_dev:set_advanced_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    lager:info("rtcs_dev:set_advanced_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
     update_app_config_file(get_app_config(devpath(Name, Vsn), N), NameValuePairs),
     ok;
 set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->

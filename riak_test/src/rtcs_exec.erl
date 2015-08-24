@@ -22,58 +22,58 @@
 
 start_cs_and_stanchion_nodes(NodeList, Vsn) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     start_stanchion(Vsn),
                     start_cs(N, Vsn);
                ({_CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     start_cs(N, Vsn)
             end, NodeList).
 
 stop_cs_and_stanchion_nodes(NodeList, Vsn) ->
     rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     stop_cs(N, Vsn),
                     stop_stanchion(Vsn),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(Stanchion);
                ({CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     stop_cs(N, Vsn),
                     rt:wait_until_unpingable(CSNode)
             end, NodeList).
 
 start_all_nodes(NodeList, Vsn) ->
     rt:pmap(fun({_CSNode, RiakNode, _Stanchion}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    NodeVersion = rt_cs_dev:node_version(N),
+                    N = rtcs_dev:node_id(RiakNode),
+                    NodeVersion = rtcs_dev:node_version(N),
                     lager:debug("starting riak #~p > ~p => ~p",
                                 [N,  NodeVersion,
-                                 rt_cs_dev:relpath(NodeVersion)]),
-                    rtdev:run_riak(N, rt_cs_dev:relpath(NodeVersion), "start"),
+                                 rtcs_dev:relpath(NodeVersion)]),
+                    rtdev:run_riak(N, rtcs_dev:relpath(NodeVersion), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
                     spawn(fun() -> start_stanchion(Vsn) end),
                     spawn(fun() -> start_cs(N, Vsn) end);
                ({_CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "start"),
+                    N = rtcs_dev:node_id(RiakNode),
+                    rtdev:run_riak(N, rtcs_dev:relpath(rtcs_dev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
                     spawn(fun() -> start_cs(N, Vsn) end)
             end, NodeList).
 
 stop_all_nodes(NodeList, Vsn) ->
     rt:pmap(fun({CSNode, RiakNode, Stanchion}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     stop_cs(N, Vsn),
                     stop_stanchion(Vsn),
-                    rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "stop"),
+                    rtdev:run_riak(N, rtcs_dev:relpath(rtcs_dev:node_version(N)), "stop"),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(Stanchion),
                     rt:wait_until_unpingable(RiakNode);
                ({CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     stop_cs(N, Vsn),
-                    rtdev:run_riak(N, rt_cs_dev:relpath(rt_cs_dev:node_version(N)), "stop"),
+                    rtdev:run_riak(N, rtcs_dev:relpath(rtcs_dev:node_version(N)), "stop"),
                     rt:wait_until_unpingable(CSNode),
                     rt:wait_until_unpingable(RiakNode)
             end, NodeList).
@@ -239,7 +239,7 @@ disable_proxy_get(SrcN, Vsn, SinkCluster) ->
     rtdev:run_riak_repl(SrcN, rtcs_config:devpath(riak, Vsn),
                         "proxy_get disable " ++ SinkCluster).
 
-%% TODO: this is added as riak-1.4 branch of riak_test/src/rt_cs_dev.erl
+%% TODO: this is added as riak-1.4 branch of riak_test/src/rtcs_dev.erl
 %% throws out the return value. Let's get rid of these functions when
 %% we entered to Riak CS 2.0 dev, updating to riak_test master branch
 cmd(Cmd, Opts) ->

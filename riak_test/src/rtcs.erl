@@ -148,7 +148,7 @@ deploy_nodes(NumNodes, InitialConfig, Vsn)
     CSNodeMap = orddict:from_list(lists:zip(CSNodes, lists:seq(1, NumNodes))),
     rt_config:set(rt_cs_nodes, CSNodeMap),
 
-    {_RiakRoot, RiakVsn} = rt_cs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
+    {_RiakRoot, RiakVsn} = rtcs_dev:riak_root_and_vsn(Vsn, rt_config:get(build_type, oss)),
     lager:debug("setting rt_versions> ~p =>", [Vsn]),
 
     VersionMap = lists:zip(lists:seq(1, NumNodes), lists:duplicate(NumNodes, RiakVsn)),
@@ -156,7 +156,7 @@ deploy_nodes(NumNodes, InitialConfig, Vsn)
 
     rtcs_exec:stop_all_nodes(node_list(NumNodes), Vsn),
 
-    rt_cs_dev:create_dirs(RiakNodes),
+    rtcs_dev:create_dirs(RiakNodes),
 
     %% Set initial config
     rtcs_config:set_configs(NumNodes,
@@ -186,9 +186,9 @@ setup_admin_user(NumNodes, Vsn)
 
     AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
     rt:pmap(fun(N) ->
-                    rt_cs_dev:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
+                    rtcs_dev:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
             end, lists:seq(1, NumNodes)),
-    rt_cs_dev:set_advanced_conf({stanchion, Vsn}, [{stanchion, AdminConf}]),
+    rtcs_dev:set_advanced_conf({stanchion, Vsn}, [{stanchion, AdminConf}]),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,

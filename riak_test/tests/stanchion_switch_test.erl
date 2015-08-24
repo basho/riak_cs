@@ -33,7 +33,7 @@ confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, Stanchion}} = rtcs:setup(1),
 
     lists:foreach(fun(RiakNode) ->
-                          N = rt_cs_dev:node_id(RiakNode),
+                          N = rtcs_dev:node_id(RiakNode),
                           ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9095\n",
                                        rtcs_exec:show_stanchion_cs(N))
                   end, RiakNodes),
@@ -53,7 +53,7 @@ confirm() ->
     ?assertException(error, {aws_error, {http_error, 500, _, _}},
                     erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
 
-    rt_cs_dev:set_advanced_conf(stanchion, [{stanchion, [{host, {"127.0.0.1", ?BACKUP_PORT}}]}]),
+    rtcs_dev:set_advanced_conf(stanchion, [{stanchion, [{host, {"127.0.0.1", ?BACKUP_PORT}}]}]),
     _ = rtcs_exec:start_stanchion(),
     rt:wait_until_pingable(Stanchion),
 
@@ -64,7 +64,7 @@ confirm() ->
 
     %% switch stanchion here, for all CS nodes
     lists:foreach(fun(RiakNode) ->
-                          N = rt_cs_dev:node_id(RiakNode),
+                          N = rtcs_dev:node_id(RiakNode),
                           rtcs_exec:switch_stanchion_cs(N, "127.0.0.1", ?BACKUP_PORT),
                           ?assertEqual("Current Stanchion Adderss: http://127.0.0.1:9096\n",
                                        rtcs_exec:show_stanchion_cs(N))

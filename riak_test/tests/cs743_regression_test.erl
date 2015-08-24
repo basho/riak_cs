@@ -31,8 +31,8 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    rt_cs_dev:set_conf(cs, [{"stats.storage.archive_period", "1s"}]),
-    rt_cs_dev:set_advanced_conf(cs, [{riak_cs, [{storage_calc_timeout, 1}]}]),
+    rtcs_dev:set_conf(cs, [{"stats.storage.archive_period", "1s"}]),
+    rtcs_dev:set_advanced_conf(cs, [{riak_cs, [{storage_calc_timeout, 1}]}]),
     {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
 
     Begin = rtcs:datetime(),

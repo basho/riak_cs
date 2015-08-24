@@ -78,12 +78,12 @@ config(Key, Secret, Port) ->
 pb_port(N) when is_integer(N) ->
     10000 + (N * 10) + 7;
 pb_port(Node) ->
-    pb_port(rt_cs_dev:node_id(Node)).
+    pb_port(rtcs_dev:node_id(Node)).
 
 cs_port(N) when is_integer(N) ->
     15008 + 10 * N;
 cs_port(Node) ->
-    cs_port(rt_cs_dev:node_id(Node)).
+    cs_port(rtcs_dev:node_id(Node)).
 
 stanchion_port() -> 9095.
 
@@ -364,7 +364,7 @@ devpath(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
 set_configs(NumNodes, Config, Vsn) ->
     rt:pmap(fun(N) ->
-                    rt_cs_dev:update_app_config(rtcs:riak_node(N),
+                    rtcs_dev:update_app_config(rtcs:riak_node(N),
                                                 proplists:get_value(riak, Config)),
                     update_cs_config(devpath(cs, Vsn), N,
                                      proplists:get_value(cs, Config))
@@ -427,9 +427,9 @@ update_app_config(Path, Config) ->
     %% if not, use cuttlefish's adavnced.config
     case filelib:is_file(AppConfigFile) of
         true ->
-            rt_cs_dev:update_app_config_file(AppConfigFile, Config);
+            rtcs_dev:update_app_config_file(AppConfigFile, Config);
         _ ->
-            rt_cs_dev:update_app_config_file(AdvConfigFile, Config)
+            rtcs_dev:update_app_config_file(AdvConfigFile, Config)
     end.
 
 enable_zdbbl(Vsn) ->
