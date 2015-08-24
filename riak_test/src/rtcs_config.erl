@@ -374,28 +374,6 @@ set_configs(NumNodes, Config, Vsn) ->
                             proplists:get_value(stanchion, Config)),
     enable_zdbbl(Vsn).
 
-set_admin_creds_in_configs(NodeList, Configs, AdminCreds, Vsn) ->
-    rt:pmap(fun({_, default}) ->
-                    ok;
-               ({{_CSNode, RiakNode, _Stanchion}, Config}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(devpath(cs, Vsn),
-                                     N,
-                                     proplists:get_value(cs, Config),
-                                     AdminCreds),
-                    update_stanchion_config(devpath(stanchion, Vsn),
-                                            proplists:get_value(stanchion, Config),
-                                            AdminCreds);
-               ({{_CSNode, RiakNode}, Config}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    update_cs_config(devpath(cs, Vsn),
-                                     N,
-                                     proplists:get_value(cs, Config),
-                                     AdminCreds)
-            end,
-            lists:zip(NodeList, Configs)).
-
-
 read_config(Vsn, N, Who) ->
     Prefix = devpath(Who, Vsn),
     EtcPath = case Who of

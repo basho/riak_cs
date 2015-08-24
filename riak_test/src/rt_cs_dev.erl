@@ -188,7 +188,7 @@ set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
     update_app_config_file(get_app_config(Node), NameValuePairs),
     ok;
 set_advanced_conf(DevPath, NameValuePairs) ->
-    AdvancedConfs = case all_the_files(DevPath, "etc/advanced.config") of
+    AdvancedConfs = case all_the_files(DevPath, "etc/a*.config") of
                         [] ->
                             %% no advanced conf? But we _need_ them, so make 'em
                             rtdev:make_advanced_confs(DevPath);

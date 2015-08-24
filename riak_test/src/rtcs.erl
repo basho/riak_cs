@@ -92,7 +92,7 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, rtcs_config:configs(Configs), Vsn),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Vsn),
     AdminConfig = rtcs_config:config(AdminKeyId,
                                      AdminSecretKey,
                                      rtcs_config:cs_port(hd(RiakNodes))),
@@ -178,15 +178,17 @@ node_id(Node) ->
     NodeMap = rt_config:get(rt_cs_nodes),
     orddict:fetch(Node, NodeMap).
 
-setup_admin_user(NumNodes, InitialConfig, Vsn)
+setup_admin_user(NumNodes, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
 
+    %% Create admin user and set in cs and stanchion configs
     {KeyID, KeySecret} = AdminCreds = create_admin_user(1),
 
-    %% Create admin user and set in cs and stanchion configs
-    rtcs_config:set_admin_creds_in_configs(node_list(NumNodes),
-                                           lists:duplicate(NumNodes, InitialConfig),
-                                           AdminCreds, Vsn),
+    AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
+    rt:pmap(fun(N) ->
+                    rt_cs_dev:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
+            end, lists:seq(1, NumNodes)),
+    rt_cs_dev:set_advanced_conf({stanchion, Vsn}, [{stanchion, AdminConf}]),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
