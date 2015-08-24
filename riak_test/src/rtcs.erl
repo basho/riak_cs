@@ -230,6 +230,7 @@ riak_config() ->
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
 
+
 riak_config(CsVsn, oss, Backend) ->
     riak_oss_config(CsVsn, Backend);
 riak_config(CsVsn, ee, Backend) ->
@@ -248,26 +249,33 @@ riak_oss_config(CsVsn, Backend) ->
       [{pb_backlog, 256}]},
      {riak_kv,
       [{add_paths, AddPaths}] ++
-          backend_config(Backend)
+          backend_config(CsVsn, Backend)
       }
     ].
 
-backend_config(memory) ->
-      [{storage_backend, riak_kv_memory_backend}];
-backend_config({multi_backend, BlocksBackend}) ->
-      [
-       {storage_backend, riak_cs_kv_multi_backend},
-       {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
-       {multi_backend_default, be_default},
-       {multi_backend,
-        [{be_default, riak_kv_eleveldb_backend,
-          [
-           {max_open_files, 20},
-           {data_root, "./data/leveldb"}
-          ]},
-         blocks_backend_config(BlocksBackend)
-        ]}
-      ].
+backend_config(_CsVsn, memory) ->
+    [{storage_backend, riak_kv_memory_backend}];
+backend_config(_CsVsn, {multi_backend, BlocksBackend}) ->
+    [
+     {storage_backend, riak_cs_kv_multi_backend},
+     {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
+     {multi_backend_default, be_default},
+     {multi_backend,
+      [{be_default, riak_kv_eleveldb_backend,
+        [
+         {max_open_files, 20},
+         {data_root, "./data/leveldb"}
+        ]},
+       blocks_backend_config(BlocksBackend)
+      ]}
+    ];
+backend_config(?CS_CURRENT, prefix_multi) ->
+    [
+     {storage_backend, riak_kv_multi_prefix_backend},
+     {riak_cs_version, 20000}
+    ];
+backend_config(OlderCsVsn, prefix_multi) ->
+    backend_config(OlderCsVsn, {multi_backend, bitcask}).
 
 blocks_backend_config(fs) ->
     {be_blocks, riak_kv_fs2_backend, [{data_root, "./data/fs2"},
