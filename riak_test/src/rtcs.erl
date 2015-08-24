@@ -92,7 +92,7 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Configs, Vsn),
+    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, rtcs_config:configs(Configs), Vsn),
     AdminConfig = rtcs_config:config(AdminKeyId,
                                      AdminSecretKey,
                                      rtcs_config:cs_port(hd(RiakNodes))),
