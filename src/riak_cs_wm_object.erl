@@ -46,14 +46,19 @@ init(Ctx) ->
 stats_prefix() -> object.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD, Ctx) ->
+malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
     ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
     case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
         true ->
-            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
-                                          RD, ContextWithKey);
+            ResponseMod:api_error(canned_acl_and_header_grant,
+                                  RD, ContextWithKey);
         false ->
-            {false, RD, ContextWithKey}
+            case riak_cs_copy_object:malformed_request(RD) of
+                {true, Reason} ->
+                    ResponseMod:api_error(Reason, RD, ContextWithKey);
+                false ->
+                    {false, RD, ContextWithKey}
+            end
     end.
 
 %% @doc Get the type of access requested and the manifest with the
@@ -370,10 +375,12 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
                                         [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
 
-                        Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+                        {ContentType, Metadata} =
+                            riak_cs_copy_object:new_metadata(SrcManifest, RD),
                         NewAcl = Acl?ACL{creation_time=os:timestamp()},
-                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
-                                                                            Metadata, NewAcl, RcPid),
+                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(
+                                            Bucket, Key, SrcManifest?MANIFEST.content_length,
+                                            ContentType, Metadata, NewAcl, RcPid),
 
                         %% Prepare for connection loss or client close
                         FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),

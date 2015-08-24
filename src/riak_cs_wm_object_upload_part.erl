@@ -149,9 +149,10 @@ valid_entity_length(RD, Ctx) ->
                              {boolean() | {'halt', term()}, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{local_context=LocalCtx,
                                  riak_client=RcPid}) ->
-    case (catch base64url:decode(wrq:path_info('uploadId', RD))) of
+    ReqUploadId = wrq:path_info('uploadId', RD),
+    case (catch base64url:decode(ReqUploadId)) of
         {'EXIT', _Reason} ->
-            {{halt, 404}, RD, Ctx};
+            riak_cs_s3_response:no_such_upload_response({raw, ReqUploadId}, RD, Ctx);
         UploadId ->
             #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
             Key = list_to_binary(KeyStr),

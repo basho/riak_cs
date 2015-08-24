@@ -27,7 +27,10 @@
 -include("riak_cs.hrl").
 
 -export([test_condition_and_permission/4,
-         start_put_fsm/6, get_copy_source/1,
+         malformed_request/1,
+         new_metadata/2,
+         get_copy_source/1,
+         start_put_fsm/7,
          copy/4, copy/5,
          copy_range/2]).
 
@@ -100,17 +103,42 @@ authorize_on_src(RcPid, SrcManifest, RD,
     _ = riak_cs_wm_utils:object_access_authorize_helper(object, false,
                                                         OtherRD, OtherCtx).
 
+-spec malformed_request(#wm_reqdata{}) ->
+                               false |
+                               {true, {invalid_argument, string(), string()}}.
+malformed_request(RD) ->
+    MDDirectiveKey = "x-amz-metadata-directive",
+    case wrq:get_req_header(MDDirectiveKey, RD) of
+        undefined -> false;
+        "REPLACE" -> false;
+        "COPY"    -> false;
+        Value     -> {true, {invalid_argument, MDDirectiveKey, Value}}
+    end.
 
 %% @doc just kicks up put fsm
--spec start_put_fsm(binary(), binary(), lfs_manifest(),
+-spec new_metadata(lfs_manifest(), #wm_reqdata{}) -> {binary(), [{string(), string()}]}.
+new_metadata(SrcManifest, RD) ->
+    case wrq:get_req_header("x-amz-metadata-directive", RD) of
+        "REPLACE" ->
+            {case wrq:get_req_header("content-type", RD) of
+                 undefined -> SrcManifest?MANIFEST.content_type;
+                 ReqCT -> list_to_binary(ReqCT)
+             end,
+             riak_cs_wm_utils:extract_user_metadata(RD)};
+        _ ->
+            {SrcManifest?MANIFEST.content_type,
+             orddict:to_list(SrcManifest?MANIFEST.metadata)}
+    end.
+
+-spec start_put_fsm(binary(), binary(), non_neg_integer(), binary(),
                     proplists:proplist(), acl(), riak_client()) -> {ok, pid()}.
-start_put_fsm(Bucket, Key, M, Metadata, Acl, RcPid) ->
+start_put_fsm(Bucket, Key, ContentLength, ContentType, Metadata, Acl, RcPid) ->
     BlockSize = riak_cs_lfs_utils:block_size(),
     riak_cs_put_fsm_sup:start_put_fsm(node(),
                                       [{Bucket,
                                         Key,
-                                        M?MANIFEST.content_length,
-                                        M?MANIFEST.content_type,
+                                        ContentLength,
+                                        ContentType,
                                         Metadata,
                                         BlockSize,
                                         Acl,
@@ -122,7 +150,7 @@ start_put_fsm(Bucket, Key, M, Metadata, Acl, RcPid) ->
 %% @doc check "x-amz-copy-source" to know whether it requests copying
 %% from another object
 -spec get_copy_source(#wm_reqdata{}) -> undefined | {binary(), binary()} |
-    {error, atom()}.
+                                        {error, atom()}.
 get_copy_source(RD) ->
     %% for oos (TODO)
     %% case wrq:get_req_header("x-copy-from", RD) of

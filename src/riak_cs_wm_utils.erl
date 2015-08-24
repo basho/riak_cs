@@ -947,7 +947,7 @@ actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->
-    {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
+    {{halt, {404, "Not Found"}}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
 
 -spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
                                         RD :: term(),
@@ -975,7 +975,7 @@ actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->
-    {{halt, 404}, RD, Ctx}.
+    {{halt, {404, "Not Found"}}, RD, Ctx}.
 
 -spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
                                             OwnerId :: string(),

@@ -73,6 +73,7 @@ base_resources() ->
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
+     {["buckets", bucket, "versions"], riak_cs_wm_common, props(riak_cs_wm_not_implemented)},
      %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
      {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}

@@ -155,7 +155,8 @@ list_objects_response_to_xml(Resp) ->
                 %% the `NextMarker' element if it's not `undefined'
                [make_external_node('NextMarker', NextMarker) ||
                 NextMarker <- [Resp?LORESP.next_marker],
-                NextMarker =/= undefined] ++
+                NextMarker =/= undefined,
+                Resp?LORESP.is_truncated] ++
                [make_external_node('MaxKeys', Resp?LORESP.max_keys),
                 make_external_node('Delimiter', Resp?LORESP.delimiter),
                 make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++

@@ -568,7 +568,7 @@ class BucketPolicyTest(S3ApiVerificationTestBase):
             self.fail()
         except S3ResponseError as e:
             self.assertEqual(e.status, 404)
-            self.assertEqual(e.reason, 'Object Not Found')
+            self.assertEqual(e.reason, 'Not Found')
 
         policy = '''
 {"Version":"2008-10-17","Statement":[{"Sid":"Stmtaaa","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::%s/*","Condition":{"IpAddress":{"aws:SourceIp":"%s"}}}]}
@@ -877,7 +877,7 @@ class SimpleCopyTest(S3ApiVerificationTestBase):
         except S3ResponseError as e:
             print e
             self.assertEqual(e.status, 404)
-            self.assertEqual(e.reason, 'Object Not Found')
+            self.assertEqual(e.reason, 'Not Found')
     
 if __name__ == "__main__":
     unittest.main(verbosity=2)

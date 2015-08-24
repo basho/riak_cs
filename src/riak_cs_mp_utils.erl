@@ -278,7 +278,7 @@ upload_part_1blob(PutPid, Blob) ->
 
 %% Once upon a time, in a naive land far away, I thought that it would
 %% be sufficient to use each part's UUID as the ETag when the part
-%% upload was finished, and thus the clietn would use that UUID to
+%% upload was finished, and thus the client would use that UUID to
 %% complete the uploaded object.  However, 's3cmd' want to use the
 %% ETag of each uploaded part to be the MD5(part content) and will
 %% issue a warning if that checksum expectation isn't met.  So, now we
@@ -693,26 +693,29 @@ comb_parts(MpM, PartETags) ->
             [{{PM?PART_MANIFEST.part_number, PM?PART_MANIFEST.content_md5}, PM} ||
                 PM <- Parts]),
     Keep0 = dict:new(),
-    Delete0 = dict:new(),
-    {_, Keep, _Delete, _, KeepBytes, KeepPMs, MD5Context} =
+    {_, _Keep, _, _, KeepBytes, KeepPMs, MD5Context} =
         lists:foldl(fun comb_parts_fold/2,
-                    {All, Keep0, Delete0, 0, 0, [], riak_cs_utils:md5_init()}, PartETags),
-    ToDelete = [PM || {_, PM} <-
-                          dict:to_list(
-                            dict:filter(fun(K, _V) ->
-                                             not dict:is_key(K, Keep) end,
-                                        All))],
+                    {All, Keep0, 0, undefined, 0, [], riak_cs_utils:md5_init()}, PartETags),
+    %% To extract parts to be deleted, use ?PART_MANIFEST.part_id because
+    %% {PartNum, ETag} pair is NOT unique in the set of ?PART_MANIFEST's.
+    KeepPartIDs = [PM?PART_MANIFEST.part_id || PM <- KeepPMs],
+    ToDelete = [PM || PM <- Parts,
+                      not lists:member(PM?PART_MANIFEST.part_id, KeepPartIDs)],
+    lager:debug("Part count to be deleted at completion = ~p~n", [length(ToDelete)]),
     {KeepBytes, riak_cs_utils:md5_final(MD5Context), lists:reverse(KeepPMs), ToDelete}.
 
+comb_parts_fold({LastPartNum, LastPartETag} = _K,
+                {_All, _Keep, LastPartNum, LastPartETag, _Bytes, _KeepPMs, _} = Acc) ->
+    Acc;
 comb_parts_fold({PartNum, _ETag} = _K,
-                {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs, _})
+                {_All, _Keep, LastPartNum, _LastPartETag, _Bytes, _KeepPMs, _})
   when PartNum =< LastPartNum orelse PartNum < 1 ->
     throw(bad_etag_order);
 comb_parts_fold({PartNum, ETag} = K,
-                {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs, MD5Context}) ->
+                {All, Keep, _LastPartNum, _LastPartETag, Bytes, KeepPMs, MD5Context}) ->
     case {dict:find(K, All), dict:is_key(K, Keep)} of
         {{ok, PM}, false} ->
-            {All, dict:store(K, true, Keep), Delete, PartNum,
+            {All, dict:store(K, true, Keep), PartNum, ETag,
              Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs],
              riak_cs_utils:md5_update(MD5Context, ETag)};
         _X ->
