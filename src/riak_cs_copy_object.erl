@@ -149,7 +149,8 @@ start_put_fsm(Bucket, Key, ContentLength, ContentType, Metadata, Acl, RcPid) ->
 
 %% @doc check "x-amz-copy-source" to know whether it requests copying
 %% from another object
--spec get_copy_source(#wm_reqdata{}) -> undefined | {binary(), binary()} |
+-spec get_copy_source(#wm_reqdata{}) -> undefined |
+                                        {binary(), binary()} |
                                         {error, atom()}.
 get_copy_source(RD) ->
     %% for oos (TODO)
@@ -159,21 +160,28 @@ get_copy_source(RD) ->
 
 handle_copy_source(undefined) ->
     undefined;
+handle_copy_source([$/, $/ | _Path]) ->
+    {error, bad_request};
 handle_copy_source([$/|Path]) ->
     handle_copy_source(Path);
 handle_copy_source(Path0) when is_list(Path0) ->
     Path = mochiweb_util:unquote(Path0),
-
-    Offset = string:chr(Path, $/),
-    Bucket = string:substr(Path, 1, Offset-1),
-    SplitKey = string:substr(Path, Offset+1),
-
-    case SplitKey of
-        [] ->
-            {error, invalid_x_copy_from_path};
-        _ ->
-            {iolist_to_binary(Bucket),
-             iolist_to_binary(SplitKey)}
+    Length = length(Path),
+    case string:chr(Path, $/) of
+        0 ->
+            {error, bad_request};
+        Length ->
+            {error, bad_request};
+        Offset ->
+            Bucket = string:substr(Path, 1, Offset-1),
+            SplitKey = string:substr(Path, Offset+1),
+            case SplitKey of
+                [] ->
+                    {error, bad_request};
+                _ ->
+                    {iolist_to_binary(Bucket),
+                     iolist_to_binary(SplitKey)}
+            end
     end.
 
 %% @doc runs copy

@@ -50,8 +50,6 @@
          list_parts/5, list_parts/6,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
-         make_special_error/1,
-         make_special_error/4,
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
@@ -167,21 +165,6 @@ make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callb
                  RD)),
              Ctx}
     end.
-
-make_special_error(Error) ->
-    make_special_error(Error, Error, "request-id", "host-id").
-
-make_special_error(Code, Message, RequestId, HostId) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [Code]},
-               {'Message', [Message]},
-               {'RequestId', [RequestId]},
-               {'HostId', [HostId]}
-              ]
-             },
-    riak_cs_xml:to_xml([XmlDoc]).
-
 
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).

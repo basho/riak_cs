@@ -77,11 +77,12 @@ duration_metrics() ->
          [object_acl, get],
          [object_acl, put],
 
-         [multipart, post],          % Initiate
-         [multipart_upload, put],    % Upload Part (Copy)
-         [multipart_upload, post],   % Complete
-         [multipart_upload, delete], % Abort
-         [multipart_upload, get],    % List Parts
+         [multipart, post],            % Initiate
+         [multipart_upload, put],      % Upload Part
+         [multipart_upload, put_copy], % Upload Part (Copy)
+         [multipart_upload, post],     % Complete
+         [multipart_upload, delete],   % Abort
+         [multipart_upload, get],      % List Parts
 
          [velvet, create_user],
          [velvet, update_user],
