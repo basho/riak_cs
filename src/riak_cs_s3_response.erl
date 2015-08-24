@@ -45,7 +45,6 @@
                       | {'riak_connect_failed', term()}
                       | {'malformed_policy_version', string()}
                       | {'invalid_argument', string()}.
-
 -spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
@@ -167,54 +166,54 @@ error_code(ErrorName) ->
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
 
 -spec status_code(error_reason()) -> pos_integer().
-status_code(invalid_access_key_id) -> 403;
-status_code(invalid_email_address) -> 400;
-status_code(access_denied) ->  403;
-status_code(copy_source_access_denied) ->  403;
-status_code(reqtime_tooskewed) -> 403;
-status_code(bucket_not_empty) ->  409;
-status_code(bucket_already_exists) -> 409;
-status_code(user_already_exists) -> 409;
-status_code(toomanybuckets) -> 400;
+status_code(invalid_access_key_id)         -> 403;
+status_code(invalid_email_address)         -> 400;
+status_code(access_denied)                 -> 403;
+status_code(copy_source_access_denied)     -> 403;
+status_code(reqtime_tooskewed)             -> 403;
+status_code(bucket_not_empty)              -> 409;
+status_code(bucket_already_exists)         -> 409;
+status_code(user_already_exists)           -> 409;
+status_code(toomanybuckets)                -> 400;
 %% yes, 400, really, not 413
-status_code(entity_too_large) -> 400;
-status_code(entity_too_small) -> 400;
-status_code(bad_etag) -> 400;
-status_code(bad_etag_order) -> 400;
-status_code(invalid_user_update) -> 400;
-status_code(no_such_bucket) -> 404;
-status_code(no_such_key) -> 404;
-status_code(no_copy_source_key) -> 404;
-status_code({riak_connect_failed, _}) -> 503;
-status_code(admin_key_undefined) -> 503;
-status_code(admin_secret_undefined) -> 503;
-status_code(bucket_owner_unavailable) -> 503;
-status_code(multiple_bucket_owners) -> 503;
-status_code(econnrefused) -> 503;
-status_code(unsatisfied_constraint) -> 503;
-status_code(malformed_policy_json) -> 400;
+status_code(entity_too_large)              -> 400;
+status_code(entity_too_small)              -> 400;
+status_code(bad_etag)                      -> 400;
+status_code(bad_etag_order)                -> 400;
+status_code(invalid_user_update)           -> 400;
+status_code(no_such_bucket)                -> 404;
+status_code(no_such_key)                   -> 404;
+status_code(no_copy_source_key)            -> 404;
+status_code({riak_connect_failed, _})      -> 503;
+status_code(admin_key_undefined)           -> 503;
+status_code(admin_secret_undefined)        -> 503;
+status_code(bucket_owner_unavailable)      -> 503;
+status_code(multiple_bucket_owners)        -> 503;
+status_code(econnrefused)                  -> 503;
+status_code(unsatisfied_constraint)        -> 503;
+status_code(malformed_policy_json)         -> 400;
 status_code({malformed_policy_version, _}) -> 400;
-status_code(malformed_policy_missing) -> 400;
-status_code(malformed_policy_resource) -> 400;
-status_code(malformed_policy_principal) -> 400;
-status_code(malformed_policy_action) -> 400;
-status_code(malformed_policy_condition) -> 400;
-status_code({auth_not_supported, _}) -> 400;
-status_code(no_such_bucket_policy) -> 404;
-status_code(no_such_upload) -> 404;
-status_code(invalid_digest) -> 400;
-status_code(bad_request) -> 400;
-status_code(invalid_argument) -> 400;
-status_code(unresolved_grant_email) -> 400;
-status_code(invalid_range) -> 416;
-status_code(invalid_bucket_name) -> 400;
-status_code(invalid_part_number) -> 400;
-status_code(unexpected_content) -> 400;
-status_code(canned_acl_and_header_grant) -> 400;
-status_code(malformed_acl_error) -> 400;
-status_code(malformed_xml) -> 400;
-status_code(remaining_multipart_upload) -> 409;
-status_code(not_implemented) -> 501;
+status_code(malformed_policy_missing)      -> 400;
+status_code(malformed_policy_resource)     -> 400;
+status_code(malformed_policy_principal)    -> 400;
+status_code(malformed_policy_action)       -> 400;
+status_code(malformed_policy_condition)    -> 400;
+status_code({auth_not_supported, _})       -> 400;
+status_code(no_such_bucket_policy)         -> 404;
+status_code(no_such_upload)                -> 404;
+status_code(invalid_digest)                -> 400;
+status_code(bad_request)                   -> 400;
+status_code(invalid_argument)              -> 400;
+status_code(unresolved_grant_email)        -> 400;
+status_code(invalid_range)                 -> 416;
+status_code(invalid_bucket_name)           -> 400;
+status_code(invalid_part_number)           -> 400;
+status_code(unexpected_content)            -> 400;
+status_code(canned_acl_and_header_grant)   -> 400;
+status_code(malformed_acl_error)           -> 400;
+status_code(malformed_xml)                 -> 400;
+status_code(remaining_multipart_upload)    -> 409;
+status_code(not_implemented)               -> 501;
 status_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
     503.
@@ -283,7 +282,7 @@ error_resource(_Tag, RD) ->
     {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
     OrigResource.
 
-toomanybuckets_response(Current,BucketLimit,RD,Ctx) ->
+toomanybuckets_response(Current, BucketLimit, RD, Ctx) ->
     XmlDoc = {'Error',
               [
                {'Code', [error_code(toomanybuckets)]},
@@ -394,5 +393,3 @@ process_xml_error([HeadElement | RestElements]) ->
         _ ->
             process_xml_error(RestElements)
     end.
-
-
