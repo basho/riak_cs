@@ -146,7 +146,10 @@ extract_summary(MRRes, false) ->
     {struct, [{<<"Objects">>, Objects},
               {<<"Bytes">>, Bytes}]};
 extract_summary(MRRes, true) ->
-    {1, [Summary]} = lists:keyfind(1, 1, MRRes),
+    Summary = case lists:keyfind(1, 1, MRRes) of
+                  {1, [[]]} -> riak_cs_storage_mr:empty_summary();
+                  {1, [NonEmptyValue]} -> NonEmptyValue
+              end,
     {struct, detailed_result_json_struct(Summary, [])}.
 
 detailed_result_json_struct([], Acc) ->
