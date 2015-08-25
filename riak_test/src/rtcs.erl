@@ -92,10 +92,7 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    {AdminKeyId, AdminSecretKey} = setup_admin_user(NumNodes, Vsn),
-    AdminConfig = rtcs_config:config(AdminKeyId,
-                                     AdminSecretKey,
-                                     rtcs_config:cs_port(hd(RiakNodes))),
+    AdminConfig = setup_admin_user(NumNodes, Vsn),
     {AdminConfig, Nodes}.
 
 
@@ -164,7 +161,9 @@ setup_admin_user(NumNodes, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
 
     %% Create admin user and set in cs and stanchion configs
-    {KeyID, KeySecret} = AdminCreds = rtcs_admin:create_admin_user(1),
+    AdminCreds = rtcs_admin:create_admin_user(1),
+    #aws_config{access_key_id=KeyID,
+                secret_access_key=KeySecret} = AdminCreds,
 
     AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
     rt:pmap(fun(N) ->

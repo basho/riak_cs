@@ -91,8 +91,12 @@ collect_users(N, Acc) ->
 create_users(_Port, [], Acc) ->
     ordsets:from_list(Acc);
 create_users(Port, [{Email, Name} | Users], Acc) ->
-    {Key, Secret, _Id} = rtcs_admin:create_user(Port, Email, Name),
-    create_users(Port, Users, [{Email, Name, Key, Secret, "enabled"} | Acc]).
+    {UserConfig, _Id} = rtcs_admin:create_user(Port, Email, Name),
+    create_users(Port, Users, [{Email,
+                                Name,
+                                UserConfig#aws_config.access_key_id,
+                                UserConfig#aws_config.secret_access_key,
+                                "enabled"} | Acc]).
 
 user_listing_json_test_case(Users, UserConfig, Node) ->
     user_listing_test(Users, UserConfig, Node, ?JSON).
@@ -109,7 +113,7 @@ user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Resource = "/riak-cs/users",
     Port = rtcs_config:cs_port(Node),
     Users = parse_user_info(
-              rtcs:list_users(UserConfig, Port, Resource, ContentType)),
+              rtcs_admin:list_users(UserConfig, Port, Resource, ContentType)),
     ?assertEqual(ExpectedUsers, Users).
 
 update_user_json_test_case(AdminConfig, Node) ->
@@ -127,14 +131,13 @@ update_user_xml_test_case(AdminConfig, Node) ->
 update_user_test(AdminConfig, Node, ContentType, Users) ->
     [{Email1, User1}, {Email2, User2}, {Email3, User3}]= Users,
     Port = rtcs_config:cs_port(Node),
-    {Key, Secret, _} = rtcs_admin:create_user(Port, Email1, User1),
-    {BadUserKey, BadUserSecret, _} = rtcs_admin:create_user(Port, Email3, User3),
+    {UserConfig, _} = rtcs_admin:create_user(Port, Email1, User1),
+    {BadUserConfig, _} = rtcs_admin:create_user(Port, Email3, User3),
 
-    UserConfig = rtcs_config:config(Key, Secret, Port),
-    BadUserConfig = rtcs_config:config(BadUserKey, BadUserSecret, Port),
+    #aws_config{access_key_id=Key, secret_access_key=Secret} = UserConfig,
 
     UserResource = "/riak-cs/user",
-    AdminResource = UserResource ++ "/" ++ UserConfig#aws_config.access_key_id,
+    AdminResource = UserResource ++ "/" ++ Key,
 
     %% Fetch the user record using the user's own credentials
     UserResult1 = parse_user_record(
@@ -149,11 +152,11 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
 
     %% Attempt to update the user's email to be the same as the admin
     %% user and verify that the update attempt returns an error.
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    Resource = "/riak-cs/user/" ++ Key,
     InvalidUpdateDoc = update_email_and_name_doc(ContentType, "admin@me.com", "admin"),
 
     ErrorResult = parse_error_code(
-                    rtcs:update_user(UserConfig,
+                    rtcs_admin:update_user(UserConfig,
                                      Port,
                                      Resource,
                                      ContentType,
@@ -162,7 +165,7 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
 
     %% Test updating the user's name and email
     UpdateDoc = update_email_and_name_doc(ContentType, Email2, User2),
-    _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc),
+    _ = rtcs_admin:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc),
 
     %% Fetch the user record using the user's own credentials
     UserResult3 = parse_user_record(
@@ -178,9 +181,9 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     %% Test that attempting to update another user's status with a
     %% non-admin account is disallowed
     UpdateDoc2 = update_status_doc(ContentType, "disabled"),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    Resource = "/riak-cs/user/" ++ Key,
     ErrorResult2 = parse_error_code(
-                    rtcs:update_user(BadUserConfig,
+                    rtcs_admin:update_user(BadUserConfig,
                                      Port,
                                      Resource,
                                      ContentType,
@@ -188,8 +191,8 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     ?assertEqual("AccessDenied", ErrorResult2),
 
     %% Test updating a user's own status
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc2),
+    Resource = "/riak-cs/user/" ++ Key,
+    _ = rtcs_admin:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc2),
 
     %% Fetch the user record using the user's own credentials. Since
     %% the user is now disabled this should return an error.
@@ -207,13 +210,13 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
 
     %% Re-enable the user
     UpdateDoc3 = update_status_doc(ContentType, "enabled"),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    _ = rtcs:update_user(AdminConfig, Port, Resource, ContentType, UpdateDoc3),
+    Resource = "/riak-cs/user/" ++ Key,
+    _ = rtcs_admin:update_user(AdminConfig, Port, Resource, ContentType, UpdateDoc3),
 
     %% Test issuing a new key_secret
     UpdateDoc4 = new_key_secret_doc(ContentType),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    UpdateResult = rtcs:update_user(AdminConfig,
+    Resource = "/riak-cs/user/" ++ Key,
+    UpdateResult = rtcs_admin:update_user(AdminConfig,
                                     Port,
                                     Resource,
                                     ContentType,
@@ -221,7 +224,7 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     {_, _, _, UpdSecret1, _} = parse_user_record(UpdateResult, ContentType),
 
     %% Generate an updated user config with the new secret
-    UserConfig2 = rtcs_config:config(Key, UpdSecret1, Port),
+    UserConfig2 = rtcs_admin:aws_config(UserConfig, [{secret, UpdSecret1}]),
 
     %% Fetch the user record using the user's own credentials
     UserResult7 = parse_user_record(
@@ -243,7 +246,7 @@ get_user_record(UserConfig, Port, Resource, ContentType) ->
         "' -H 'Accept: " ++ ContentType ++
         "' -H 'Content-Type: " ++ ContentType ++
         "' -H 'Authorization: " ++
-        rtcs:make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
+        rtcs_admin:make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
         "' http://localhost:" ++
         integer_to_list(Port) ++ Resource,
     lager:info("User retrieval cmd: ~p", [Cmd]),

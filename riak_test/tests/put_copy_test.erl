@@ -51,10 +51,8 @@ confirm() ->
                  erlcloud_s3:put_object(?BUCKET, ?KEY2, Data, UserConfig)),
 
     RiakNode = hd(RiakNodes),
-    {AccessKeyId, SecretAccessKey} = rtcs_admin:create_user(RiakNode, 1),
-    UserConfig2 = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(RiakNode)),
-    {AccessKeyId1, SecretAccessKey1} = rtcs_admin:create_user(RiakNode, 1),
-    UserConfig3 = rtcs_config:config(AccessKeyId1, SecretAccessKey1, rtcs_config:cs_port(RiakNode)),
+    UserConfig2 = rtcs_admin:create_user(RiakNode, 1),
+    UserConfig3 = rtcs_admin:create_user(RiakNode, 1),
 
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET2, UserConfig)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET3, UserConfig2)),
@@ -304,7 +302,7 @@ verify_without_cl_header(UserConfig, mp, Data) ->
 exec_curl(#aws_config{s3_port=Port} = UserConfig, Method, Resource, AmzHeaders) ->
     ContentType = "application/octet-stream",
     Date = httpd_util:rfc1123_date(),
-    Auth = rtcs:make_authorization(Method, Resource, ContentType, UserConfig, Date,
+    Auth = rtcs_admin:make_authorization(Method, Resource, ContentType, UserConfig, Date,
                                    AmzHeaders),
     HeaderArgs = [fmt("-H '~s: ~s' ", [K, V]) ||
                      {K, V} <- [{"Date", Date}, {"Authorization", Auth},

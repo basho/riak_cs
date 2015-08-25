@@ -30,10 +30,7 @@
 -define(STANCHION_CURRENT, <<"build_paths.stanchion_current">>).
 -define(STANCHION_PREVIOUS, <<"build_paths.stanchion_previous">>).
 
--define(PROXY_HOST, "localhost").
--define(S3_HOST, "s3.amazonaws.com").
 -define(S3_PORT, 80).
--define(DEFAULT_PROTO, "http").
 
 -define(REQUEST_POOL_SIZE, 8).
 -define(BUCKET_LIST_POOL_SIZE, 2).
@@ -64,16 +61,6 @@ default_configs() ->
     [{riak, riak_config()},
      {stanchion, stanchion_config()},
      {cs, cs_config()}].
-
-config(Key, Secret, Port) ->
-    erlcloud_s3:new(Key,
-                    Secret,
-                    ?S3_HOST,
-                    Port, % inets issue precludes using ?S3_PORT
-                    ?DEFAULT_PROTO,
-                    ?PROXY_HOST,
-                    Port,
-                    []).
 
 pb_port(N) when is_integer(N) ->
     10000 + (N * 10) + 7;

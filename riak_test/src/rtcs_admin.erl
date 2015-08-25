@@ -26,11 +26,20 @@
          create_user/4,
          create_admin_user/1,
          update_user/5,
-         list_users/4]).
+         list_users/4,
+         make_authorization/5,
+         make_authorization/6,
+         make_authorization/7,
+         aws_config/2,
+         aws_config/3]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
+
+-define(S3_HOST, "s3.amazonaws.com").
+-define(DEFAULT_PROTO, "http").
+-define(PROXY_HOST, "localhost").
 
 -spec storage_stats_json_request(#aws_config{}, #aws_config{}, string(), string()) ->
                                         [{string(), {non_neg_integer(), non_neg_integer()}}].
@@ -40,31 +49,33 @@ storage_stats_json_request(AdminConfig, UserConfig, Begin, End) ->
     {struct, Slice} = latest(Samples, undefined),
     by_bucket_list(Slice, []).
 
--spec(create_admin_user(atom()) -> {string(), string()}).
+-spec(create_admin_user(atom()) -> #aws_config{}).
 create_admin_user(Node) ->
     User = "admin",
     Email = "admin@me.com",
-    {KeyId, Secret, Id} = create_user(rtcs_config:cs_port(Node), Email, User),
+    {UserConfig, Id} = create_user(rtcs_config:cs_port(Node), Email, User),
     lager:info("Riak CS Admin account created with ~p",[Email]),
-    lager:info("KeyId = ~p",[KeyId]),
-    lager:info("KeySecret = ~p",[Secret]),
+    lager:info("KeyId = ~p",[UserConfig#aws_config.access_key_id]),
+    lager:info("KeySecret = ~p",[UserConfig#aws_config.secret_access_key]),
     lager:info("Id = ~p",[Id]),
-    {KeyId, Secret}.
+    UserConfig.
 
--spec(create_user(atom(), non_neg_integer()) -> {string(), string()}).
+-spec(create_user(atom(), non_neg_integer()) -> #aws_config{}).
 create_user(Node, UserIndex) ->
     {A, B, C} = erlang:now(),
     User = "Test User" ++ integer_to_list(UserIndex),
     Email = lists:flatten(io_lib:format("~p~p~p@basho.com", [A, B, C])),
-    {KeyId, Secret, _Id} = create_user(rtcs_config:cs_port(Node), Email, User),
-    lager:info("Created user ~p with keys ~p ~p", [Email, KeyId, Secret]),
-    {KeyId, Secret}.
+    {UserConfig, _Id} = create_user(rtcs_config:cs_port(Node), Email, User),
+    lager:info("Created user ~p with keys ~p ~p", [Email,
+                                                   UserConfig#aws_config.access_key_id,
+                                                   UserConfig#aws_config.secret_access_key]),
+    UserConfig.
 
--spec(create_user(non_neg_integer(), string(), string()) -> {string(), string(), string()}).
+-spec(create_user(non_neg_integer(), string(), string()) -> {#aws_config{}, string()}).
 create_user(Port, EmailAddr, Name) ->
     create_user(Port, undefined, EmailAddr, Name).
 
--spec(create_user(non_neg_integer(), string(), string(), string()) -> {string(), string(), string()}).
+-spec(create_user(non_neg_integer(), string(), string(), string()) -> {#aws_config{}, string()}).
 create_user(Port, UserConfig, EmailAddr, Name) ->
     lager:debug("Trying to create user ~p", [EmailAddr]),
     Resource = "/riak-cs/user",
@@ -97,7 +108,7 @@ create_user(Port, UserConfig, EmailAddr, Name) ->
     KeyId = binary_to_list(proplists:get_value(<<"key_id">>, JsonData)),
     KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, JsonData)),
     Id = binary_to_list(proplists:get_value(<<"id">>, JsonData)),
-    {KeyId, KeySecret, Id}.
+    {aws_config(KeyId, KeySecret, Port), Id}.
 
 -spec(update_user(#aws_config{}, non_neg_integer(), string(), string(), string()) -> string()).
 update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
@@ -133,7 +144,75 @@ list_users(UserConfig, Port, Resource, AcceptContentType) ->
     lager:debug("List users output=~p~n",[Output]),
     Output.
 
+-spec(make_authorization(string(), string(), string(), #aws_config{}, string()) -> string()).
+make_authorization(Method, Resource, ContentType, Config, Date) ->
+    make_authorization(Method, Resource, ContentType, Config, Date, []).
+
+-spec(make_authorization(string(), string(), string(), #aws_config{}, string(), [{string(), string()}]) -> string()).
+make_authorization(Method, Resource, ContentType, Config, Date, AmzHeaders) ->
+    make_authorization(s3, Method, Resource, ContentType, Config, Date, AmzHeaders).
+
+-spec(make_authorization(atom(), string(), string(), string(), #aws_config{}, string(), [{string(), string()}]) -> string()).
+make_authorization(Type, Method, Resource, ContentType, Config, Date, AmzHeaders) ->
+    Prefix = case Type of
+                 s3 -> "AWS";
+                 velvet -> "MOSS"
+             end,
+    StsAmzHeaderPart = [[K, $:, V, $\n] || {K, V} <- AmzHeaders],
+    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n,
+                    StsAmzHeaderPart, Resource],
+    lager:debug("StringToSign~n~s~n", [StringToSign]),
+    Signature =
+        base64:encode_to_string(rtcs:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
+    lists:flatten([Prefix, " ", Config#aws_config.access_key_id, $:, Signature]).
+
+-spec(aws_config(string(), string(), non_neg_integer()) -> #aws_config{}).
+aws_config(Key, Secret, Port) ->
+    erlcloud_s3:new(Key,
+                    Secret,
+                    ?S3_HOST,
+                    Port, % inets issue precludes using ?S3_PORT
+                    ?DEFAULT_PROTO,
+                    ?PROXY_HOST,
+                    Port,
+                    []).
+
+-spec(aws_config(#aws_config{}, [{atom(), term()}]) -> #aws_config{}).
+aws_config(UserConfig, []) ->
+    UserConfig;
+aws_config(UserConfig, [{port, Port}|Props]) ->
+    UpdConfig = erlcloud_s3:new(UserConfig#aws_config.access_key_id,
+                                UserConfig#aws_config.secret_access_key,
+                                ?S3_HOST,
+                                Port, % inets issue precludes using ?S3_PORT
+                                ?DEFAULT_PROTO,
+                                ?PROXY_HOST,
+                                Port,
+                                []),
+    aws_config(UpdConfig, Props);
+aws_config(UserConfig, [{key, KeyId}|Props]) ->
+    UpdConfig = erlcloud_s3:new(KeyId,
+                                UserConfig#aws_config.secret_access_key,
+                                ?S3_HOST,
+                                UserConfig#aws_config.s3_port, % inets issue precludes using ?S3_PORT
+                                ?DEFAULT_PROTO,
+                                ?PROXY_HOST,
+                                UserConfig#aws_config.s3_port,
+                                []),
+    aws_config(UpdConfig, Props);
+aws_config(UserConfig, [{secret, Secret}|Props]) ->
+    UpdConfig = erlcloud_s3:new(UserConfig#aws_config.access_key_id,
+                                Secret,
+                                ?S3_HOST,
+                                UserConfig#aws_config.s3_port, % inets issue precludes using ?S3_PORT
+                                ?DEFAULT_PROTO,
+                                ?PROXY_HOST,
+                                UserConfig#aws_config.s3_port,
+                                []),
+    aws_config(UpdConfig, Props).
+
 %% private
+
 
 latest([], {_, Candidate}) ->
     Candidate;
@@ -166,21 +245,3 @@ samples_from_json_request(AdminConfig, UserConfig, {Begin, End}) ->
     Usage = mochijson2:decode(proplists:get_value(content, GetResult)),
     rtcs:json_get([<<"Storage">>, <<"Samples">>], Usage).
 
-make_authorization(Method, Resource, ContentType, Config, Date) ->
-    make_authorization(Method, Resource, ContentType, Config, Date, []).
-
-make_authorization(Method, Resource, ContentType, Config, Date, AmzHeaders) ->
-    make_authorization(s3, Method, Resource, ContentType, Config, Date, AmzHeaders).
-
-make_authorization(Type, Method, Resource, ContentType, Config, Date, AmzHeaders) ->
-    Prefix = case Type of
-                 s3 -> "AWS";
-                 velvet -> "MOSS"
-             end,
-    StsAmzHeaderPart = [[K, $:, V, $\n] || {K, V} <- AmzHeaders],
-    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n,
-                    StsAmzHeaderPart, Resource],
-    lager:debug("StringToSign~n~s~n", [StringToSign]),
-    Signature =
-        base64:encode_to_string(rtcs:sha_mac(Config#aws_config.secret_access_key, StringToSign)),
-    lists:flatten([Prefix, " ", Config#aws_config.access_key_id, $:, Signature]).

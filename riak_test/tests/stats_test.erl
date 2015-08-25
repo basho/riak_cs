@@ -143,7 +143,7 @@ query_stats(Type, UserConfig, Port) ->
                                stanchion -> {"/stats", velvet}
                            end,
     Cmd="curl -s -H 'Date: " ++ Date ++ "' -H 'Authorization: " ++
-        rtcs:make_authorization(SignType, "GET", Resource, [], UserConfig, Date, []) ++
+        rtcs_admin:make_authorization(SignType, "GET", Resource, [], UserConfig, Date, []) ++
         "' http://localhost:" ++
         integer_to_list(Port) ++ Resource,
     lager:info("Stats query cmd: ~p", [Cmd]),
