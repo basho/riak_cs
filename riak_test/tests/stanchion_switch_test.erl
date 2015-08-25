@@ -53,7 +53,7 @@ confirm() ->
     ?assertException(error, {aws_error, {http_error, 500, _, _}},
                     erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
 
-    rtcs_dev:set_advanced_conf(stanchion, [{stanchion, [{host, {"127.0.0.1", ?BACKUP_PORT}}]}]),
+    rtcs:set_advanced_conf(stanchion, [{stanchion, [{host, {"127.0.0.1", ?BACKUP_PORT}}]}]),
     _ = rtcs_exec:start_stanchion(),
     rt:wait_until_pingable(Stanchion),
 

@@ -13,7 +13,7 @@ confirm() ->
     CsSrcDir = rtcs_dev:srcpath(cs_src_root),
     lager:debug("cs_src_root = ~p", [CsSrcDir]),
 
-    rtcs_dev:set_advanced_conf(cs, cs_config()),
+    rtcs:set_advanced_conf(cs, cs_config()),
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2),
     ok = erlcloud_s3:create_bucket("external-client-test", UserConfig),
     CsPortStr = integer_to_list(rtcs_config:cs_port(hd(RiakNodes))),

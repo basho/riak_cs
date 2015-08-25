@@ -167,9 +167,9 @@ setup_admin_user(NumNodes, Vsn)
 
     AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
     rt:pmap(fun(N) ->
-                    rtcs_dev:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
+                    rtcs:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
             end, lists:seq(1, NumNodes)),
-    rtcs_dev:set_advanced_conf({stanchion, Vsn}, [{stanchion, AdminConf}]),
+    rtcs:set_advanced_conf({stanchion, Vsn}, [{stanchion, AdminConf}]),
 
     UpdateFun = fun({Node, App}) ->
                         ok = rpc:call(Node, application, set_env,
@@ -183,6 +183,65 @@ setup_admin_user(NumNodes, Vsn)
 
     lager:info("AdminCreds: ~p", [AdminCreds]),
     AdminCreds.
+
+-spec set_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
+set_conf(all, NameValuePairs) ->
+    lager:info("rtcs:set_conf(all, ~p)", [NameValuePairs]),
+    [ set_conf(DevPath, NameValuePairs) || DevPath <- rtcs_dev:devpaths()],
+    ok;
+set_conf(Name, NameValuePairs) when Name =:= riak orelse
+                                    Name =:= cs orelse
+                                    Name =:= stanchion ->
+    set_conf({Name, current}, NameValuePairs),
+    ok;
+set_conf({Name, Vsn}, NameValuePairs) ->
+    lager:info("rtcs:set_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    set_conf(rtcs_dev:devpath(Name, Vsn), NameValuePairs),
+    ok;
+set_conf({Name, Vsn, N}, NameValuePairs) ->
+    lager:info("rtcs:set_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    rtdev:append_to_conf_file(rtcs_dev:get_conf(rtcs_dev:devpath(Name, Vsn), N), NameValuePairs),
+    ok;
+set_conf(Node, NameValuePairs) when is_atom(Node) ->
+    rtdev:append_to_conf_file(rtcs_dev:get_conf(Node), NameValuePairs),
+    ok;
+set_conf(DevPath, NameValuePairs) ->
+    lager:info("rtcs:set_conf(~p, ~p)", [DevPath, NameValuePairs]),
+    [rtdev:append_to_conf_file(RiakConf, NameValuePairs) || RiakConf <- rtcs_dev:all_the_files(DevPath, "etc/*.conf")],
+    ok.
+
+-spec set_advanced_conf(atom() | {atom(), atom()} | string(), [{string(), string()}]) -> ok.
+set_advanced_conf(all, NameValuePairs) ->
+    lager:info("rtcs:set_advanced_conf(all, ~p)", [NameValuePairs]),
+    [ set_advanced_conf(DevPath, NameValuePairs) || DevPath <- rtcs_dev:devpaths()],
+    ok;
+set_advanced_conf(Name, NameValuePairs) when Name =:= riak orelse
+                                             Name =:= cs orelse
+                                             Name =:= stanchion ->
+    set_advanced_conf({Name, current}, NameValuePairs),
+    ok;
+set_advanced_conf({Name, Vsn}, NameValuePairs) ->
+    lager:info("rtcs:set_advanced_conf({~p, ~p}, ~p)", [Name, Vsn, NameValuePairs]),
+    set_advanced_conf(rtcs_dev:devpath(Name, Vsn), NameValuePairs),
+    ok;
+set_advanced_conf({Name, Vsn, N}, NameValuePairs) ->
+    lager:info("rtcs:set_advanced_conf({~p, ~p, ~p}, ~p)", [Name, Vsn, N, NameValuePairs]),
+    rtcs_dev:update_app_config_file(rtcs_dev:get_app_config(rtcs_dev:devpath(Name, Vsn), N), NameValuePairs),
+    ok;
+set_advanced_conf(Node, NameValuePairs) when is_atom(Node) ->
+    rtcs_dev:update_app_config_file(rtcs_dev:get_app_config(Node), NameValuePairs),
+    ok;
+set_advanced_conf(DevPath, NameValuePairs) ->
+    AdvancedConfs = case rtcs_dev:all_the_files(DevPath, "etc/a*.config") of
+                        [] ->
+                            %% no advanced conf? But we _need_ them, so make 'em
+                            rtdev:make_advanced_confs(DevPath);
+                        Confs ->
+                            Confs
+                    end,
+    lager:info("AdvancedConfs = ~p~n", [AdvancedConfs]),
+    [rtcs_dev:update_app_config_file(RiakConf, NameValuePairs) || RiakConf <- AdvancedConfs],
+    ok.
 
 
 assert_error_log_empty(N) ->

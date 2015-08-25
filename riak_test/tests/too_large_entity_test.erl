@@ -34,7 +34,7 @@
 -define(BAD_PART_SIZE, 2*1024*1024).
 
 confirm() ->
-    rtcs_dev:set_advanced_conf(cs, cs_config()),
+    rtcs:set_advanced_conf(cs, cs_config()),
     {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
     lager:info("User is valid on the cluster, and has no buckets"),

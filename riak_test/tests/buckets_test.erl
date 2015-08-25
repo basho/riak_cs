@@ -36,7 +36,7 @@ config() ->
     [{riak_cs, [{region, ?REGION}]}].
 
 confirm() ->
-    rtcs_dev:set_advanced_conf(cs, config()),
+    rtcs:set_advanced_conf(cs, config()),
     {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1),
 
 
