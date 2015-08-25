@@ -41,7 +41,7 @@ confirm() ->
     SetupRes = rtcs:setup(1),
     {AdminConfig, {RiakNodes, CSNodes, _Stanchion}} = SetupRes,
     RiakNode = hd(RiakNodes),
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(RiakNode, 1),
+    {AccessKeyId, SecretAccessKey} = rtcs_admin:create_user(RiakNode, 1),
     UserConfig = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(RiakNode)),
 
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),

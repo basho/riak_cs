@@ -16,8 +16,8 @@ confirm() ->
     AFirst = hd(ANodes),
     BFirst = hd(BNodes),
 
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(AFirst, 1),
-    {AccessKeyId2, SecretAccessKey2} = rtcs:create_user(BFirst, 2),
+    {AccessKeyId, SecretAccessKey} = rtcs_admin:create_user(AFirst, 1),
+    {AccessKeyId2, SecretAccessKey2} = rtcs_admin:create_user(BFirst, 2),
 
     %% User 1, Cluster 1 config
     U1C1Config = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(hd(ANodes))),

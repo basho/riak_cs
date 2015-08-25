@@ -51,9 +51,9 @@ confirm() ->
                  erlcloud_s3:put_object(?BUCKET, ?KEY2, Data, UserConfig)),
 
     RiakNode = hd(RiakNodes),
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(RiakNode, 1),
+    {AccessKeyId, SecretAccessKey} = rtcs_admin:create_user(RiakNode, 1),
     UserConfig2 = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(RiakNode)),
-    {AccessKeyId1, SecretAccessKey1} = rtcs:create_user(RiakNode, 1),
+    {AccessKeyId1, SecretAccessKey1} = rtcs_admin:create_user(RiakNode, 1),
     UserConfig3 = rtcs_config:config(AccessKeyId1, SecretAccessKey1, rtcs_config:cs_port(RiakNode)),
 
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET2, UserConfig)),

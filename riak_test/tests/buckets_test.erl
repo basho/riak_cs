@@ -41,7 +41,7 @@ confirm() ->
 
 
     %% User 1, Cluster 1 config
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(hd(RiakNodes), 1),
+    {AccessKeyId, SecretAccessKey} = rtcs_admin:create_user(hd(RiakNodes), 1),
     UserConfig1 = rtcs_config:config(AccessKeyId, SecretAccessKey, rtcs_config:cs_port(hd(RiakNodes))),
 
     ok = verify_create_delete(UserConfig),

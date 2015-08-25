@@ -171,7 +171,7 @@ init_circle(Tag, #state{admin_config=AdminConfig, riak_nodes = [RiakNode|_]} = _
     Name = concat("user-", Tag),
     Email = concat(Name, "@example.com"),
     {AccessKeyId, SecretAccessKey, _Id} =
-        rtcs:create_user(Port, AdminConfig, Email, Name),
+        rtcs_admin:create_user(Port, AdminConfig, Email, Name),
     UserConfig = rtcs_config:config(AccessKeyId, SecretAccessKey, Port),
     #circle{tag = Tag, user_config = UserConfig}.
 

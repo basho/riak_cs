@@ -117,24 +117,6 @@ riak_id_per_cluster(NumNodes) ->
         {multibag, _} = Flavor -> rtcs_bag:riak_id_per_cluster(NumNodes, Flavor)
     end.
 
-create_user(Node, UserIndex) ->
-    {A, B, C} = erlang:now(),
-    User = "Test User" ++ integer_to_list(UserIndex),
-    Email = lists:flatten(io_lib:format("~p~p~p@basho.com", [A, B, C])),
-    {KeyId, Secret, _Id} = create_user(rtcs_config:cs_port(Node), Email, User),
-    lager:info("Created user ~p with keys ~p ~p", [Email, KeyId, Secret]),
-    {KeyId, Secret}.
-
-create_admin_user(Node) ->
-    User = "admin",
-    Email = "admin@me.com",
-    {KeyId, Secret, Id} = create_user(rtcs_config:cs_port(Node), Email, User),
-    lager:info("Riak CS Admin account created with ~p",[Email]),
-    lager:info("KeyId = ~p",[KeyId]),
-    lager:info("KeySecret = ~p",[Secret]),
-    lager:info("Id = ~p",[Id]),
-    {KeyId, Secret}.
-
 -spec deploy_nodes(list(), list(), current|previous) -> any().
 deploy_nodes(NumNodes, InitialConfig, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
@@ -182,7 +164,7 @@ setup_admin_user(NumNodes, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
 
     %% Create admin user and set in cs and stanchion configs
-    {KeyID, KeySecret} = AdminCreds = create_admin_user(1),
+    {KeyID, KeySecret} = AdminCreds = rtcs_admin:create_admin_user(1),
 
     AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
     rt:pmap(fun(N) ->
@@ -203,74 +185,6 @@ setup_admin_user(NumNodes, Vsn)
     lager:info("AdminCreds: ~p", [AdminCreds]),
     AdminCreds.
 
-create_user(Port, EmailAddr, Name) ->
-    create_user(Port, undefined, EmailAddr, Name).
-
-create_user(Port, UserConfig, EmailAddr, Name) ->
-    lager:debug("Trying to create user ~p", [EmailAddr]),
-    Resource = "/riak-cs/user",
-    Date = httpd_util:rfc1123_date(),
-    Cmd="curl -s -H 'Content-Type: application/json' " ++
-        "-H 'Date: " ++ Date ++ "' " ++
-        case UserConfig of
-            undefined -> "";
-            _ ->
-                "-H 'Authorization: " ++
-                    make_authorization("POST", Resource, "application/json",
-                                       UserConfig, Date) ++
-                    "' "
-        end ++
-        "http://localhost:" ++
-        integer_to_list(Port) ++
-        Resource ++
-        " --data '{\"email\":\"" ++ EmailAddr ++  "\", \"name\":\"" ++ Name ++"\"}'",
-    lager:debug("Cmd: ~p", [Cmd]),
-    Delay = rt_config:get(rt_retry_delay),
-    Retries = rt_config:get(rt_max_wait_time) div Delay,
-    OutputFun = fun() -> rt:cmd(Cmd) end,
-    Condition = fun({Status, Res}) ->
-                        lager:debug("Return (~p), Res: ~p", [Status, Res]),
-                        Status =:= 0 andalso Res /= []
-                end,
-    {_Status, Output} = wait_until(OutputFun, Condition, Retries, Delay),
-    lager:debug("Create user output=~p~n",[Output]),
-    {struct, JsonData} = mochijson2:decode(Output),
-    KeyId = binary_to_list(proplists:get_value(<<"key_id">>, JsonData)),
-    KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, JsonData)),
-    Id = binary_to_list(proplists:get_value(<<"id">>, JsonData)),
-    {KeyId, KeySecret, Id}.
-
-update_user(UserConfig, Port, Resource, ContentType, UpdateDoc) ->
-    Date = httpd_util:rfc1123_date(),
-    Cmd="curl -s -X PUT -H 'Date: " ++ Date ++
-        "' -H 'Content-Type: " ++ ContentType ++
-        "' -H 'Authorization: " ++
-        make_authorization("PUT", Resource, ContentType, UserConfig, Date) ++
-        "' http://localhost:" ++ integer_to_list(Port) ++
-        Resource ++ " --data-binary " ++ UpdateDoc,
-    Delay = rt_config:get(rt_retry_delay),
-    Retries = rt_config:get(rt_max_wait_time) div Delay,
-    OutputFun = fun() -> os:cmd(Cmd) end,
-    Condition = fun(Res) -> Res /= [] end,
-    Output = wait_until(OutputFun, Condition, Retries, Delay),
-    lager:debug("Update user output=~p~n",[Output]),
-    Output.
-
-list_users(UserConfig, Port, Resource, AcceptContentType) ->
-    Date = httpd_util:rfc1123_date(),
-    Cmd="curl -s -H 'Date: " ++ Date ++
-        "' -H 'Accept: " ++ AcceptContentType ++
-        "' -H 'Authorization: " ++
-        make_authorization("GET", Resource, "", UserConfig, Date) ++
-        "' http://localhost:" ++ integer_to_list(Port) ++
-        Resource,
-    Delay = rt_config:get(rt_retry_delay),
-    Retries = rt_config:get(rt_max_wait_time) div Delay,
-    OutputFun = fun() -> os:cmd(Cmd) end,
-    Condition = fun(Res) -> Res /= [] end,
-    Output = wait_until(OutputFun, Condition, Retries, Delay),
-    lager:debug("List users output=~p~n",[Output]),
-    Output.
 
 assert_error_log_empty(N) ->
     assert_error_log_empty(current, N).
@@ -314,25 +228,6 @@ pbc(basic, _ObjectKind, RiakNodes, _Opts) ->
     rt:pbc(hd(RiakNodes));
 pbc({multibag, _} = Flavor, ObjectKind, RiakNodes, Opts) ->
     rtcs_bag:pbc(Flavor, ObjectKind, RiakNodes, Opts).
-
-make_authorization(Method, Resource, ContentType, Config, Date) ->
-    make_authorization(Method, Resource, ContentType, Config, Date, []).
-
-make_authorization(Method, Resource, ContentType, Config, Date, AmzHeaders) ->
-    make_authorization(s3, Method, Resource, ContentType, Config, Date, AmzHeaders).
-
-make_authorization(Type, Method, Resource, ContentType, Config, Date, AmzHeaders) ->
-    Prefix = case Type of
-                 s3 -> "AWS";
-                 velvet -> "MOSS"
-             end,
-    StsAmzHeaderPart = [[K, $:, V, $\n] || {K, V} <- AmzHeaders],
-    StringToSign = [Method, $\n, [], $\n, ContentType, $\n, Date, $\n,
-                    StsAmzHeaderPart, Resource],
-    lager:debug("StringToSign~n~s~n", [StringToSign]),
-    Signature =
-        base64:encode_to_string(sha_mac(Config#aws_config.secret_access_key, StringToSign)),
-    lists:flatten([Prefix, " ", Config#aws_config.access_key_id, $:, Signature]).
 
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 sha(Bin) -> crypto:hash(sha, Bin).

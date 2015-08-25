@@ -91,7 +91,7 @@ collect_users(N, Acc) ->
 create_users(_Port, [], Acc) ->
     ordsets:from_list(Acc);
 create_users(Port, [{Email, Name} | Users], Acc) ->
-    {Key, Secret, _Id} = rtcs:create_user(Port, Email, Name),
+    {Key, Secret, _Id} = rtcs_admin:create_user(Port, Email, Name),
     create_users(Port, Users, [{Email, Name, Key, Secret, "enabled"} | Acc]).
 
 user_listing_json_test_case(Users, UserConfig, Node) ->
@@ -127,8 +127,8 @@ update_user_xml_test_case(AdminConfig, Node) ->
 update_user_test(AdminConfig, Node, ContentType, Users) ->
     [{Email1, User1}, {Email2, User2}, {Email3, User3}]= Users,
     Port = rtcs_config:cs_port(Node),
-    {Key, Secret, _} = rtcs:create_user(Port, Email1, User1),
-    {BadUserKey, BadUserSecret, _} = rtcs:create_user(Port, Email3, User3),
+    {Key, Secret, _} = rtcs_admin:create_user(Port, Email1, User1),
+    {BadUserKey, BadUserSecret, _} = rtcs_admin:create_user(Port, Email3, User3),
 
     UserConfig = rtcs_config:config(Key, Secret, Port),
     BadUserConfig = rtcs_config:config(BadUserKey, BadUserSecret, Port),

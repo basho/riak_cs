@@ -57,7 +57,7 @@ confirm_1(Use2iForStorageCalc) when is_boolean(Use2iForStorageCalc) ->
     confirm_2(SetupRes).
 
 confirm_2({UserConfig, {RiakNodes, CSNodes, _Stanchion}}) ->
-    {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
+    {AccessKey2, SecretKey2} = rtcs_admin:create_user(hd(RiakNodes), 1),
     UserConfig2 = rtcs_config:config(AccessKey2, SecretKey2, rtcs_config:cs_port(hd(RiakNodes))),
 
     TestSpecs = [store_object(?BUCKET1, UserConfig),
