@@ -76,13 +76,13 @@ $ git commit -m "Add 1.4 series Riak EE"
                       ]}
         ]}.
 
-{rt_cs_dev, [
+{rtcs_dev, [
   {rt_project, "riak_cs"},
      {rt_deps, [
                 "/home/kuenishi/cs-2.0/riak_cs/deps"
                ]},
      {rt_retry_delay, 500},
-     {rt_harness, rt_cs_dev},
+     {rt_harness, rtcs_dev},
      {build_paths, [{root,              "/home/kuenishi/rt/riak_ee"},
                     {current,           "/home/kuenishi/rt/riak_ee/current"},
                     {ee_root,           "/home/kuenishi/rt/riak_ee"},
@@ -108,7 +108,7 @@ $ git commit -m "Add 1.4 series Riak EE"
 ```
 
 Running the RiakCS tests for `riak_test` use a different test harness
-(`rt_cs_dev`) than running the Riak tests and so requires a separate
+(`rtcs_dev`) than running the Riak tests and so requires a separate
 configuration section. Notice the extra `riak_cs/deps` in the
 `rt_deps` section. `RT_DEST_DIR` should be replaced by the path used
 when setting up `riak_test` builds for Riak (by default
@@ -174,5 +174,5 @@ commands `make clean-client-test` and then `make compile-client-test`.
 1. To execute a test, run the following from the `riak_test` repo:
 
     ```shell
-    ./riak_test -c rt_cs_dev -t TEST_NAME
+    ./riak_test -c rtcs_dev -t TEST_NAME
     ```

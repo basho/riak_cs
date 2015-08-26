@@ -37,15 +37,11 @@
 -define(KEY3, "3").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()},
-              {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true},
-                                   {detailed_storage_calc, true}])}],
-    SetupRes = rtcs:setup(1, Config),
+    rtcs:set_advanced_conf(cs, [{riak_cs, [{detailed_storage_calc, true}]}]),
+    SetupRes = rtcs:setup(1),
     {AdminConfig, {RiakNodes, CSNodes, _Stanchion}} = SetupRes,
     RiakNode = hd(RiakNodes),
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(RiakNode, 1),
-    UserConfig = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(RiakNode)),
+    UserConfig = rtcs_admin:create_user(RiakNode, 1),
 
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
     lager:info("Investigating stats for this empty bucket..."),

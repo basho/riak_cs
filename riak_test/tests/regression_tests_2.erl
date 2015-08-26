@@ -30,9 +30,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2),
 
     ok = verify_cs631(UserConfig, "cs-631-test-bukcet"),
     ok = verify_cs654(UserConfig),

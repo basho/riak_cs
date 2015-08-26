@@ -28,7 +28,7 @@
 -define(KEY_MULTIPLE_BLOCK, "riak_test_key2").
 
 confirm() ->
-    PrevConfig = rtcs:previous_configs(),
+    PrevConfig = rtcs_config:previous_configs(),
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
         rtcs:setup(2, PrevConfig, previous),
 
@@ -41,23 +41,23 @@ confirm() ->
     AdminCreds = {UserConfig#aws_config.access_key_id,
                   UserConfig#aws_config.secret_access_key},
     {_, RiakCurrentVsn} =
-        rtcs:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(current, rt_config:get(build_type, oss)),
 
     %% Upgrade!!!
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          lager:debug("upgrading ~p", [N]),
-         rtcs:stop_cs(N, previous),
+         rtcs_exec:stop_cs(N, previous),
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
-         ok = rtcs:upgrade_cs(N, AdminCreds),
-         rtcs:start_cs(N, current)
+         ok = rtcs_config:upgrade_cs(N, AdminCreds),
+         rtcs_exec:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
     rt:wait_until_ring_converged(RiakNodes),
-    rtcs:stop_stanchion(previous),
-    rtcs:migrate_stanchion(previous, current, AdminCreds),
-    rtcs:start_stanchion(current),
+    rtcs_exec:stop_stanchion(previous),
+    rtcs_config:migrate_stanchion(previous, current, AdminCreds),
+    rtcs_exec:start_stanchion(current),
 
     ok = verify_all_data(UserConfig, Data),
     ok = cleanup_all_data(UserConfig),
@@ -66,22 +66,22 @@ confirm() ->
     {ok, Data2} = prepare_all_data(UserConfig),
 
     {_, RiakPrevVsn} =
-        rtcs:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
+        rtcs_dev:riak_root_and_vsn(previous, rt_config:get(build_type, oss)),
 
 
     %% Downgrade!!
-    rtcs:stop_stanchion(current),
-    rtcs:migrate_stanchion(current, previous, AdminCreds),
-    rtcs:start_stanchion(previous),
+    rtcs_exec:stop_stanchion(current),
+    rtcs_config:migrate_stanchion(current, previous, AdminCreds),
+    rtcs_exec:start_stanchion(previous),
     [begin
-         N = rt_cs_dev:node_id(RiakNode),
+         N = rtcs_dev:node_id(RiakNode),
          lager:debug("downgrading ~p", [N]),
-         rtcs:stop_cs(N, current),
+         rtcs_exec:stop_cs(N, current),
          rt:stop(RiakNode),
          rt:wait_until_unpingable(RiakNode),
 
          %% get the bitcask directory
-         BitcaskDataDir = filename:join([rt_cs_dev:node_path(RiakNode), "data", "bitcask"]),
+         BitcaskDataDir = filename:join([rtcs_dev:node_path(RiakNode), "data", "bitcask"]),
          lager:info("downgrading Bitcask datadir ~s...", [BitcaskDataDir]),
          %% and run the downgrade script:
          %% Downgrading from 2.0 does not work...
@@ -93,8 +93,8 @@ confirm() ->
 
          ok = rt:upgrade(RiakNode, RiakPrevVsn),
          rt:wait_for_service(RiakNode, riak_kv),
-         ok = rtcs:migrate_cs(current, previous, N, AdminCreds),
-         rtcs:start_cs(N, previous)
+         ok = rtcs_config:migrate_cs(current, previous, N, AdminCreds),
+         rtcs_exec:start_cs(N, previous)
      end
      || RiakNode <- RiakNodes],
     rt:wait_until_ring_converged(RiakNodes),

@@ -48,8 +48,8 @@ confirm1() ->
 
     BlockKeysFile = "/tmp/select_gc.txt",
     os:cmd("rm -f " ++ BlockKeysFile),
-    rtcs:gc(1, "set-interval infinity"),
-    rtcs:gc(1, "cancel"),
+    rtcs_exec:gc(1, "set-interval infinity"),
+    rtcs_exec:gc(1, "cancel"),
 
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
     [upload_object(UserConfig, ?BUCKET, normal, K) ||
@@ -60,7 +60,7 @@ confirm1() ->
         K <- [?KEY_DELETED_S, ?KEY_DELETED_L1, ?KEY_DELETED_L2]],
 
     timer:sleep(1000),
-    Res1 = rtcs:exec_priv_escript(1, "internal/select_gc_bucket.erl",
+    Res1 = rtcs_exec:exec_priv_escript(1, "internal/select_gc_bucket.erl",
                                   "-h 127.0.0.1 -p 10017 -e today "
                                   "-o " ++ BlockKeysFile),
     lager:debug("select_gc_bucket.erl log:\n~s", [Res1]),

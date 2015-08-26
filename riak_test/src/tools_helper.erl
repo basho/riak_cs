@@ -44,7 +44,7 @@ offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList) ->
          Res = rtcs:exec_priv_escript(
                  1, "internal/offline_delete.erl",
                  "-r 8 --yes " ++
-                     rtcs:riak_bitcaskroot(rtcs:get_rt_config(riak, current), 1) ++
+                     rtcs:riak_bitcaskroot(rtcs:devpath(riak, current), 1) ++
                      " " ++ BlockKeysFile,
                  riak),
          lager:debug("offline_delete.erl log:\n~s", [Res]),

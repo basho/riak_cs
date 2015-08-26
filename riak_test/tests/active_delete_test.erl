@@ -23,11 +23,13 @@
 %% @doc `riak_test' module for testing active delete situation behavior.
 
 -export([confirm/0]).
+config() ->
+    [{riak_cs, [{active_delete_threshold, 10000000}]}].
 
 confirm() ->
     %% 10MB threshold, for 3MB objects are used in cs_suites:run/2
-    CSConfig = rtcs:cs_config([{active_delete_threshold, 10000000}]),
-    Setup = rtcs:setup(1, [{cs, CSConfig}]),
+    rtcs:set_advanced_conf(cs, config()),
+    Setup = rtcs:setup(1),
 
     %% Just do verify on typical normal case
     History = [{cs_suites, run, ["run-1"]}],

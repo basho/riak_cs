@@ -47,7 +47,7 @@ list_to_non_existent_bucket_many_times(RiakNodes) ->
     ok.
 
 list_objects_by_anonymous(RiakNodes, Bucket) ->
-    Port = rtcs:cs_port(hd(RiakNodes)),
+    Port = rtcs_config:cs_port(hd(RiakNodes)),
     %% --write-out '%{http_code}': output http response status code to stdout
     Cmd = "curl -s --write-out '%{http_code}' -o /dev/null http://localhost:" ++
         integer_to_list(Port) ++ "/" ++ Bucket,

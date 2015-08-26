@@ -32,16 +32,16 @@
 
 %% keys for multipart uploaded objects
 -define(KEY_MP,        "riak_test_mp").  % single part, single block
-
+config() ->
+    [{riak_cs, [{region, ?REGION}]}].
 
 confirm() ->
-    SetupConfig =  [{cs, rtcs:cs_config([{region, ?REGION}])}],
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, SetupConfig),
+    rtcs:set_advanced_conf(cs, config()),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1),
 
 
     %% User 1, Cluster 1 config
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(hd(RiakNodes), 1),
-    UserConfig1 = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(RiakNodes))),
+    UserConfig1 = rtcs_admin:create_user(hd(RiakNodes), 1),
 
     ok = verify_create_delete(UserConfig),
 
