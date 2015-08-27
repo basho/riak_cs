@@ -13,8 +13,7 @@ confirm() ->
     CsSrcDir = rtcs_dev:srcpath(cs_src_root),
     lager:debug("cs_src_root = ~p", [CsSrcDir]),
 
-    rtcs:set_advanced_conf(cs, cs_config()),
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(2, [{cs, cs_config()}]),
     ok = erlcloud_s3:create_bucket("external-client-test", UserConfig),
     CsPortStr = integer_to_list(rtcs_config:cs_port(hd(RiakNodes))),
 
@@ -35,7 +34,8 @@ confirm() ->
 
 cs_config() ->
     [{riak_cs,
-      [{enforce_multipart_part_size, false},
+      [{connection_pools, [{request_pool, {32, 0}}]},
+       {enforce_multipart_part_size, false},
        {max_buckets_per_user, 300},
        {auth_v4_enabled, true}
       ]
