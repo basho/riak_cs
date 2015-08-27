@@ -71,8 +71,8 @@ base_resources() ->
      {["buckets", bucket, "objects"], riak_cs_wm_common, props(riak_cs_wm_objects)},
      {["buckets", bucket, "delete"], riak_cs_wm_common, props(riak_cs_wm_bucket_delete)},
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
-     %% Just stub, no dynamic contents
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
+     %% No dynamic contents, almost stub
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
      {["buckets", bucket, "requestPayment"], riak_cs_wm_common, props(riak_cs_wm_bucket_request_payment)},
      %% NYI
