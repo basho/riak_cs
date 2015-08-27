@@ -2,7 +2,7 @@
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [org.clojure/tools.logging "0.3.1"]
                  ;; aws-sdk-java deps
-                 [com.amazonaws/aws-java-sdk "1.10.8" :exclusions [joda-time]]
+                 [com.amazonaws/aws-java-sdk-s3 "1.10.8" :exclusions [joda-time]]
                  [joda-time "2.8.1"]
                  [com.fasterxml.jackson.core/jackson-core "2.5.3"]
                  [com.fasterxml.jackson.core/jackson-databind "2.5.3"]
