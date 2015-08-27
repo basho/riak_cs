@@ -52,27 +52,20 @@ confirm() ->
     Duration = proplists:get_value(duration_sec, RTConfig, 16),
     ?assert(is_integer(Duration) andalso Duration >= 0),
 
-    CSConfig0 = rtcs_config:replace_cs_config(connection_pools,
-                                       [
-                                        {request_pool, {Concurrency*2 + 5, 0} },
-                                        {bucket_list_pool, {rtcs_config:bucket_list_pool_size(), 0} }
-                                       ],
-                                       rtcs_config:cs_config()),
-    CSConfig1 = rtcs_config:replace_cs_config(leeway_seconds,
-                                       5, CSConfig0),
-    CSConfig = rtcs_config:replace_cs_config(gc_interval,
-                                      10, CSConfig1),
-    ConnConfig = [{cs, CSConfig}],
-
+    Config = [{cs,
+               [{riak_cs,
+                 [{leeway_seconds, 5},
+                  {gc_interval, 10},
+                  {connection_pools, [{request_pool, {Concurrency*2 + 5, 0}}]}
+                 ]}]}],
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
         case proplists:get_value(version, RTConfig, current) of
             current ->
                 put(version, current),
-                rtcs:setup(4, ConnConfig);
+                rtcs:setup(4, Config);
             previous ->
                 put(version, previous),
-                PrevConfig =  ConnConfig ++ rtcs_config:previous_configs(),
-                rtcs:setup(4, PrevConfig, previous)
+                rtcs:setup(4, Config, previous)
         end,
 
     %% setting up the stage
