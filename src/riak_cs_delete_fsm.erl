@@ -18,8 +18,8 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Module to manage storage of objects and files
-
+%% @doc Module to manage deletion process of objects, including
+%%      both manifests and blocks.
 -module(riak_cs_delete_fsm).
 
 -behaviour(gen_fsm).
@@ -73,8 +73,8 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
-start_link(BagId, Manifest, GCWorkerPid, GCKey, Options) ->
-    Args = [BagId, Manifest, GCWorkerPid, GCKey, Options],
+start_link(BagId, Manifest, FinishedCallback, GCKey, Options) ->
+    Args = [BagId, Manifest, FinishedCallback, GCKey, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% @doc Let the fsm start deleting
