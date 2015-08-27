@@ -157,6 +157,7 @@ initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
     %% skip an object to GC, we can change the epoch start
     %% time in app.config
     link(Pid),
+    riak_cs_delete_fsm:delete(Pid),
     {next_state, waiting_file_delete, State?STATE{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
