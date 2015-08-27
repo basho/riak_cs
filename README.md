@@ -4,7 +4,7 @@ Welcome to Riak CS.
 
 Riak CS is an object storage system built on top of Riak. It
 facilitates storing large objects in Riak and presents an
-S3-compatible interface. It also provides muti-tenancy features such
+S3-compatible interface. It also provides multi-tenancy features such
 as user accounts, authentication, access control mechanisms, and
 per account usage reporting.
 
@@ -36,7 +36,7 @@ tested with Riak CS:
 
 The Riak CS administrative interface is accessible via HTTP just like
 the object storage interface. All functions can be accessed under the
-`/riak-cs/` resource. The admiqnistrative interface features the
+`/riak-cs/` resource. The administrative interface features the
 following capabilities:
 
 - Create user accounts
