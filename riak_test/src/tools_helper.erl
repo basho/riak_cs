@@ -38,13 +38,13 @@ offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList) ->
     NL0 = lists:zip(CSNodes, RiakNodes),
     {CS1, R1} = hd(NL0),
     NodeList = [{CS1, R1, Stanchion} | tl(NL0)],
-    rtcs:stop_all_nodes(NodeList, current),
+    rtcs_exec:stop_all_nodes(NodeList, current),
 
     [begin
-         Res = rtcs:exec_priv_escript(
+         Res = rtcs_exec:exec_priv_escript(
                  1, "internal/offline_delete.erl",
                  "-r 8 --yes " ++
-                     rtcs:riak_bitcaskroot(rtcs:devpath(riak, current), 1) ++
+                     rtcs_config:riak_bitcaskroot(rtcs_config:devpath(riak, current), 1) ++
                      " " ++ BlockKeysFile,
                  riak),
          lager:debug("offline_delete.erl log:\n~s", [Res]),
@@ -52,7 +52,7 @@ offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList) ->
      end || BlockKeysFile <- BlockKeysFileList],
 
     lager:info("Assert all blocks are non-existent now"),
-    rtcs:start_all_nodes(NodeList, current),
+    rtcs_exec:start_all_nodes(NodeList, current),
     [assert_any_blocks_not_exists(RiakNodes, BlockKeysFile) ||
         BlockKeysFile <- BlockKeysFileList],
     lager:info("All cleaned up!"),
