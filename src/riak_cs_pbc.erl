@@ -34,7 +34,8 @@
          get_index_eq/6,
          get_index_range/7,
          get_cluster_id/1,
-         check_connection_status/2
+         check_connection_status/2,
+         pause_to_reconnect/3
         ]).
 
 %% Lower level APIs, which don't update stats.
@@ -213,4 +214,33 @@ check_connection_status(Pbc, Where) ->
         Type:Error ->
             _ = lager:warning("Connection status of ~p at ~p: ~p",
                               [Pbc, Where, {Type, Error}])
+    end.
+
+%% @doc Pause for a while so that underlying `riaic_pb_socket' can have
+%%      room for reconnection.
+%%
+%% If `Reason' (second argument) is `timeout' or `disconnected', loop
+%% until the connection will be reconnected. Otherwise, do nothing.
+%% This function return always `ok' even in the case of timeout.
+-spec pause_to_reconnect(pid(), term(), non_neg_integer()) -> ok.
+pause_to_reconnect(Pbc, Reason, Timeout)
+  when Reason =:= timeout orelse Reason =:= disconnected ->
+    pause_to_reconnect0(Pbc, Timeout, os:timestamp());
+pause_to_reconnect(_Pbc, _Other, _Timeout) ->
+    ok.
+
+pause_to_reconnect0(Pbc, Timeout, Start) ->
+    lager:debug("riak_cs_pbc:pause_to_reconnect0"),
+    case riakc_pb_socket:is_connected(Pbc, ?FIRST_RECONNECT_INTERVAL) of
+        true -> ok;
+        {false, _} ->
+            Remaining = Timeout - timer:now_diff(os:timestamp(), Start) div 1000,
+            case Remaining of
+                Positive when 0 < Positive ->
+                    %% sleep to avoid busy-loop calls of `is_connected'
+                    _ = timer:sleep(?FIRST_RECONNECT_INTERVAL),
+                    pause_to_reconnect0(Pbc, Timeout, Start);
+                _ ->
+                    ok
+            end
     end.
