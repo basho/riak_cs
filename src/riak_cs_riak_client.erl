@@ -331,6 +331,8 @@ get_user_with_pbc(MasterPbc, Key, true) ->
 get_user_with_pbc(MasterPbc, Key, false) ->
     case strong_get_user_with_pbc(MasterPbc, Key) of
         {ok, _} = OK -> OK;
+        {error, <<"{pr_val_unsatisfied,", _/binary>>} ->
+            weak_get_user_with_pbc(MasterPbc, Key);
         {error, Reason} ->
             _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason]),
             weak_get_user_with_pbc(MasterPbc, Key)
