@@ -144,11 +144,7 @@ initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
     Args = [BagId, Manifest,
             fun(Msg) -> gen_fsm:sync_send_event(Self, Msg, infinity) end,
             CurrentFileSetKey, []],
-    %% The delete FSM is hard-coded to send a sync event to our registered
-    %% name upon terminate(), so we do not have to pass our pid to it
-    %% in order to get a reply.
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
-
     %% Link to the delete fsm, so that if it dies,
     %% we go down too. In the future we might want to do
     %% something more complicated like retry
@@ -157,6 +153,7 @@ initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
     %% skip an object to GC, we can change the epoch start
     %% time in app.config
     link(Pid),
+    riak_cs_delete_fsm:delete(Pid),
     {next_state, waiting_file_delete, State?STATE{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.

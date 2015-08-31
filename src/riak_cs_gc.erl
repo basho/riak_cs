@@ -412,39 +412,27 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
 
 -spec try_delete_blocks(binary(), cs_uuid_and_manifest()) -> ok | {error, term()}.
 try_delete_blocks(BagId, {UUID, _} = UUIDManifest) ->
-    Self = self(),
-    FinishedFun = fun(Msg) -> Self ! Msg end,
-    Args = [BagId, UUIDManifest, FinishedFun,
+    Args = [BagId, UUIDManifest, undefined,
             dummy_gc_key_in_sync_delete,
             [{cleanup_manifests, false}]],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
-    Ref = erlang:monitor(process, Pid),
-    receive
+    case riak_cs_delete_fsm:sync_delete(Pid) of
         {Pid, {ok, {_, _, _, TotalBlocks, TotalBlocks}}} ->
-            %% successfully deleted
-            erlang:demonitor(Ref, [flush]),
+            %% all the blocks are successfully deleted
             _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
             ok;
         {Pid, {ok, {_, _, _, NumDeleted, TotalBlocks}}} ->
-            erlang:demonitor(Ref, [flush]),
             _ = lager:debug("Only ~p/~p blocks of ~p deleted",
                             [NumDeleted, TotalBlocks, UUID]),
             {error, partially_deleted};
         {Pid, {error, _} = E} ->
-            erlang:demonitor(Ref, [flush]),
             _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
                               [UUID, E]),
             E;
-        {'DOWN', Ref, _Type, Pid, Reason} ->
-            _ = lager:warning("Delete FSM for ~p crashed. Reason: ~p", [Reason]),
-            {error, Reason};
         Other ->
-            %% Handling unknown error, or died unexpectedly
-            erlang:demonitor(Ref, [flush]),
             _ = lager:error("Active deletion failed. Reason: ~p", [Other]),
             {error, Other}
     end.
-
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
