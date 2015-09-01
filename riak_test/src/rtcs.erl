@@ -33,7 +33,7 @@
 -define(CSDEV(N), list_to_atom(?CSDEVS(N))).
 
 setup(NumNodes) ->
-    setup(NumNodes, rtcs_config:default_configs(), current).
+    setup(NumNodes, [], current).
 
 setup(NumNodes, Configs) ->
     setup(NumNodes, Configs, current).
@@ -44,7 +44,7 @@ setup(NumNodes, Configs, Vsn) ->
     flavored_setup(NumNodes, Flavor, Configs, Vsn).
 
 setup2x2() ->
-    setup2x2(rtcs_config:default_configs()).
+    setup2x2([]).
 
 setup2x2(Configs) ->
     JoinFun = fun(Nodes) ->
@@ -56,7 +56,7 @@ setup2x2(Configs) ->
 
 %% 1 cluster with N nodes + M cluster with 1 node
 setupNxMsingles(N, M) ->
-    setupNxMsingles(N, M, rtcs_config:default_configs(), current).
+    setupNxMsingles(N, M, [], current).
 
 setupNxMsingles(N, M, Configs, Vsn)
   when Vsn =:= current orelse Vsn =:= previous ->
@@ -85,7 +85,7 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     application:set_env(sasl, sasl_error_logger, false),
 
     {RiakNodes, _CSNodes, _Stanchion} = Nodes =
-        deploy_nodes(NumNodes, rtcs_config:configs(Configs), Vsn),
+        deploy_nodes(NumNodes, rtcs_config:configs(Configs, Vsn), Vsn),
     rt:wait_until_nodes_ready(RiakNodes),
     lager:info("Make cluster"),
     JoinFun(RiakNodes),

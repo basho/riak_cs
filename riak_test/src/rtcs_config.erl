@@ -42,25 +42,28 @@ bucket_list_pool_size() ->
     ?BUCKET_LIST_POOL_SIZE.
 
 configs(CustomConfigs) ->
-    [{riak, proplists:get_value(riak, CustomConfigs, riak_config())},
-     {cs, proplists:get_value(cs, CustomConfigs, cs_config())},
-     {stanchion, proplists:get_value(stanchion,
-                                     CustomConfigs,
-                                     stanchion_config())}].
+    configs(CustomConfigs, current).
+
+configs(CustomConfigs, current) ->
+    merge(default_configs(), CustomConfigs);
+configs(CustomConfigs, previous) ->
+    merge(previous_default_configs(), CustomConfigs).
 
 previous_configs() ->
     previous_configs([]).
 
 previous_configs(CustomConfigs) ->
-    [{riak, proplists:get_value(riak, CustomConfigs, previous_riak_config())},
-     {cs, proplists:get_value(cs, CustomConfigs, previous_cs_config())},
-     {stanchion, proplists:get_value(stanchion, CustomConfigs,
-                                     previous_stanchion_config())}].
+    merge(previous_default_configs(), CustomConfigs).
 
 default_configs() ->
     [{riak, riak_config()},
      {stanchion, stanchion_config()},
      {cs, cs_config()}].
+
+previous_default_configs() ->
+    [{riak, previous_riak_config()},
+     {stanchion, previous_stanchion_config()},
+     {cs, previous_cs_config()}].
 
 pb_port(N) when is_integer(N) ->
     10000 + (N * 10) + 7;
@@ -216,19 +219,9 @@ cs_config(UserExtra, OtherApps) ->
           ]
      }] ++ OtherApps.
 
-replace_cs_config(Key, Value, Config) ->
-    CSConfig0 = proplists:get_value(riak_cs, Config),
-    CSConfig = replace(Key, Value, CSConfig0),
-    replace(riak_cs, CSConfig, Config).
-
 replace(Key, Value, Config0) ->
     Config1 = proplists:delete(Key, Config0),
     [proplists:property(Key, Value)|Config1].
-
-replace_stanchion_config(Key, Value, Config) ->
-    CSConfig0 = proplists:get_value(stanchion, Config),
-    CSConfig = replace(Key, Value, CSConfig0),
-    replace(stanchion, CSConfig, Config).
 
 previous_stanchion_config() ->
     [
@@ -240,11 +233,6 @@ previous_stanchion_config() ->
       ]
      }].
 
-previous_stanchion_config(UserExtra) ->
-    lists:foldl(fun({Key,Value}, Config0) ->
-                        replace_stanchion_config(Key,Value,Config0)
-                end, previous_stanchion_config(), UserExtra).
-
 stanchion_config() ->
     [
      lager_config(),
@@ -254,11 +242,6 @@ stanchion_config() ->
        {riak_host, {"127.0.0.1", 10017}}
       ]
      }].
-
-stanchion_config(UserExtra) ->
-    lists:foldl(fun({Key,Value}, Config0) ->
-                        replace_stanchion_config(Key,Value,Config0)
-                end, stanchion_config(), UserExtra).
 
 lager_config() ->
     {lager,
@@ -425,6 +408,24 @@ enable_zdbbl(Vsn) ->
     lager:info("rtcs:enable_zdbbl for vm.args : ~p~n", [Fs]),
     [os:cmd("sed -i -e 's/##+zdbbl /+zdbbl /g' " ++ F) || F <- Fs],
     ok.
+
+merge(BaseConfig, undefined) ->
+    BaseConfig;
+merge(BaseConfig, Config) ->
+    lager:debug("Merging Config: BaseConfig=~p", [BaseConfig]),
+    lager:debug("Merging Config: Config=~p", [Config]),
+    MergeA = orddict:from_list(Config),
+    MergeB = orddict:from_list(BaseConfig),
+    MergedConfig = orddict:merge(fun internal_merge/3, MergeA, MergeB),
+    lager:debug("Merged config: ~p", [MergedConfig]),
+    MergedConfig.
+
+internal_merge(_Key, [{_, _}|_] = VarsA, [{_, _}|_] = VarsB) ->
+    MergeC = orddict:from_list(VarsA),
+    MergeD = orddict:from_list(VarsB),
+    orddict:merge(fun internal_merge/3, MergeC, MergeD);
+internal_merge(_Key, VarsA, _VarsB) ->
+    VarsA.
 
 %% @doc update current app.config, assuming CS is already stopped
 upgrade_cs(N, AdminCreds) ->
