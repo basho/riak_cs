@@ -372,7 +372,6 @@ if [ 1 -eq $get_syscmds ]; then
     dump netstat_rn netstat -rn
     dump pfctl_rules pfctl -s rules
     dump pfctl_nat pfctl -s nat
-    dump java_version java -version
     dump zfs_list zfs list
     dump zpool_list zpool list
 
@@ -574,7 +573,7 @@ if [ 1 -eq $get_cfgs ]; then
 
     # Compose the `find` command that will exclude the above list of files,
     # being aware that an empty `\( \)` will cause a failure in the `find`.
-    if [ -n $exclude ]; then
+    if [ -n "$exclude" ]; then
         run="find . -type f -exec sh -c '
                 mkdir -p \"\$0/\${1%/*}\";
                 cp \"\$1\" \"\$0/\$1\"
