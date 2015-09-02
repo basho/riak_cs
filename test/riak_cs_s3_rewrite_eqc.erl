@@ -94,7 +94,7 @@ prop_s3_rewrite(Style) ->
                 %% <<"0o:", hash(Bucket)/binary>> and Key - The key should be exactly
                 %% same as the original one in the client-app before URL encoding.
                 Ctx = #context{local_context=#key_context{}},
-                #context{local_context=LocalCtx} = riak_cs_wm_utils:extract_key(RD, Ctx),
+                {ok, #context{local_context=LocalCtx}} = riak_cs_wm_utils:extract_key(RD, Ctx),
 
                 %% ?debugVal(CSKey),
                 {CSBucket, CSKey} =:=

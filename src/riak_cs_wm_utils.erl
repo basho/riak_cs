@@ -420,17 +420,25 @@ iso_8601_to_erl_date(Date)  ->
              {b2i(Hr), b2i(Mn), b2i(Sc)}}
     end.
 
-%% @doc Return a new context where the bucket and key for the s3 object
-%% have been inserted.
--spec extract_key(#wm_reqdata{}, #context{}) -> #context{}.
+%% @doc Return a new context where the bucket and key for the s3
+%% object have been inserted. It also does key length check. TODO: do
+%% we check if the key is valid Unicode string or not?
+-spec extract_key(#wm_reqdata{}, #context{}) ->
+                         {ok, #context{}} | {error, {key_too_long, pos_integer()}}.
 extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
+    MaxKeyLen = riak_cs_config:max_key_length(),
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    Ctx#context{bucket=Bucket,
-                local_context=LocalCtx}.
+    case byte_size(unicode:characters_to_binary(Key)) of
+        KeyLen when KeyLen > MaxKeyLen ->
+            {error, {key_too_long, KeyLen}};
+        _ ->
+            LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+            {ok, Ctx#context{bucket=Bucket,
+                             local_context=LocalCtx}}
+    end.
 
 extract_name(User) when is_list(User) ->
     User;

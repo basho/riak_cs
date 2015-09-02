@@ -22,6 +22,7 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),
     cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.max_buckets_per_user", 100),
+    cuttlefish_unit:assert_config(Config, "riak_cs.max_key_length", 1024),
     cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.leeway_seconds", 86400),
     cuttlefish_unit:assert_config(Config, "riak_cs.max_scheduled_delete_manifests", 50),

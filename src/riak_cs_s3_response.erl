@@ -44,7 +44,8 @@
 -type error_reason() :: atom()
                       | {'riak_connect_failed', term()}
                       | {'malformed_policy_version', string()}
-                      | {'invalid_argument', string()}.
+                      | {'invalid_argument', string()}
+                      | {'key_too_long', pos_integer()}.
 -spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
@@ -62,6 +63,8 @@ error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
 error_message(toomanybuckets) ->
     "You have attempted to create more buckets than allowed";
+error_message({key_too_long, _}) ->
+    "Your key is too long";
 error_message(user_already_exists) ->
     "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
 error_message(entity_too_large) ->
@@ -121,6 +124,7 @@ error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
 error_code(toomanybuckets) -> "TooManyBuckets";
+error_code({key_too_long, _}) -> "KeyTooLongError";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
 error_code(entity_too_small) -> "EntityTooSmall";
@@ -175,6 +179,7 @@ status_code(bucket_not_empty)              -> 409;
 status_code(bucket_already_exists)         -> 409;
 status_code(user_already_exists)           -> 409;
 status_code(toomanybuckets)                -> 400;
+status_code({key_too_long, _})             -> 400;
 %% yes, 400, really, not 413
 status_code(entity_too_large)              -> 400;
 status_code(entity_too_small)              -> 400;
@@ -257,6 +262,8 @@ api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
     toomanybuckets_response(Current, BucketLimit, RD, Ctx);
 api_error({invalid_argument, Name, Value}, RD, Ctx) ->
     invalid_argument_response(Name, Value, RD, Ctx);
+api_error({key_too_long, Len}, RD, Ctx) ->
+    key_too_long(Len, RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
@@ -300,6 +307,18 @@ invalid_argument_response(Name, Value, RD, Ctx) ->
                {'Message', [error_message({invalid_argument, Name})]},
                {'ArgumentName', [Name]},
                {'ArgumentValue', [Value]},
+               {'RequestId', [""]}
+              ]},
+    Body = riak_cs_xml:to_xml([XmlDoc]),
+    respond(status_code(invalid_argument), Body, RD, Ctx).
+
+key_too_long(Len, RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code({key_too_long, Len})]},
+               {'Message', [error_message({key_too_long, Len})]},
+               {'Size', [Len]},
+               {'MaxSizeAllowed', [riak_cs_config:max_key_length()]},
                {'RequestId', [""]}
               ]},
     Body = riak_cs_xml:to_xml([XmlDoc]),
