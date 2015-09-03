@@ -60,7 +60,9 @@
 -export([idle/2, idle/3,
          running/2, running/3]).
 
--type statename() :: idle | running.
+-type statename() :: idle | running | finishing.
+-type manager_statename() :: idle | running.
+-type batch_statename() :: not_running | waiting_for_workers.
 -export_type([statename/0]).
 
 -include("riak_cs_gc.hrl").
@@ -77,18 +79,26 @@ start_batch(Options) ->
 cancel_batch() ->
     gen_fsm:sync_send_event(?SERVER, cancel, infinity).
 
--spec status() -> {ok, {statename(), #gc_manager_state{}}}.
+-spec status() -> {ok, {manager_statename(), batch_statename(), #gc_manager_state{}}}.
 status() ->
     gen_fsm:sync_send_all_state_event(?SERVER, status, infinity).
 
 -spec pp_status() -> {ok, {statename(), proplists:proplist()}}.
 pp_status() ->
-    {ok, {StateName, State}} = status(),
+    {ok, {ManagerStateName, BatchStateName, State}} = status(),
     D = lists:zip(record_info(fields, gc_manager_state),
                   tl(tuple_to_list(State))),
     Details = lists:flatten(lists:map(fun({Type, Value}) ->
                                               translate(Type, Value)
                                       end, D)),
+    StateName = case {ManagerStateName, BatchStateName} of
+                    {idle, _} -> idle;
+                    {running, not_running} ->
+                        %% riak_cs_gc_batch process has terminated,
+                        %% either successfully or abnormally, who knows?
+                        finishing;
+                    {running, _} -> running
+                end,
     {ok, {StateName,
           [{leeway, riak_cs_gc:leeway_seconds()}] ++ Details}}.
 
@@ -188,9 +198,9 @@ handle_sync_event({set_interval, Initerval}, _From, StateName, State) ->
     NewState = schedule_next(NewState0),
     {reply, ok, StateName, NewState};
 handle_sync_event(status, _From, StateName, #gc_manager_state{gc_batch_pid=Pid} = State) ->
-    {_GCDStateName, GCDState} = maybe_current_state(Pid),
+    {BatchState, GCDState} = maybe_current_state(Pid),
     NewState = State#gc_manager_state{current_batch=GCDState},
-    {reply, {ok, {StateName, NewState}}, StateName, NewState};
+    {reply, {ok, {StateName, BatchState, NewState}}, StateName, NewState};
 handle_sync_event(stop, _, _, State) ->
     %% for tests
     {stop, normal, ok, State};
@@ -280,7 +290,14 @@ maybe_current_state(mock_pid) -> {not_running, undefined}.
 -else.
 maybe_current_state(undefined) -> {not_running, undefined};
 maybe_current_state(Pid) when is_pid(Pid) ->
-    riak_cs_gc_batch:current_state(Pid).
+    try
+        riak_cs_gc_batch:current_state(Pid)
+    catch
+        exit:{noproc, _} ->
+            {not_running, undefined};
+        exit:{normal, _} ->
+            {not_running, undefined}
+    end.
 -endif.
 
 maybe_cancel_timer(#gc_manager_state{timer_ref=Ref}=State)
