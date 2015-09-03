@@ -25,7 +25,7 @@
 %%            +---(finish)----+
 %%            +---(cancel)----+
 %%
-%% Message excange chart (not a sequence, but just a list)
+%% Message exchange chart (not a sequence, but just a list)
 %%
 %%  Message\  sdr/rcver  gc_manager      gc_batch
 %%   start_link)                   ------>
@@ -102,9 +102,9 @@ pp_status() ->
     {ok, {StateName,
           [{leeway, riak_cs_gc:leeway_seconds()}] ++ Details}}.
 
-%% @doc Adjust the interval at which the daemon attempts to perform
+%% @doc Adjust the interval at which the manager attempts to perform
 %% a garbage collection sweep. Setting the interval to a value of
-%% `infinity' effectively disable garbage collection. The daemon still
+%% `infinity' effectively disable garbage collection. The manager still
 %% runs, but does not carry out any file deletion.
 -spec set_interval(term()) -> ok | {error, term()}.
 set_interval(Interval) when is_integer(Interval)
@@ -198,9 +198,9 @@ handle_sync_event({set_interval, Initerval}, _From, StateName, State) ->
     NewState = schedule_next(NewState0),
     {reply, ok, StateName, NewState};
 handle_sync_event(status, _From, StateName, #gc_manager_state{gc_batch_pid=Pid} = State) ->
-    {BatchState, GCDState} = maybe_current_state(Pid),
-    NewState = State#gc_manager_state{current_batch=GCDState},
-    {reply, {ok, {StateName, BatchState, NewState}}, StateName, NewState};
+    {BatchStateName, BatchState} = maybe_current_state(Pid),
+    NewState = State#gc_manager_state{current_batch=BatchState},
+    {reply, {ok, {StateName, BatchStateName, NewState}}, StateName, NewState};
 handle_sync_event(stop, _, _, State) ->
     %% for tests
     {stop, normal, ok, State};
@@ -268,18 +268,18 @@ start_batch(State, Options) ->
     DefaultEndKey = riak_cs_gc:default_batch_end(BatchStart, Leeway),
     EndKey = proplists:get_value('end', Options, DefaultEndKey),
 
-    %% set many items to GCDState here
-    GCDState = #gc_batch_state{
-                  batch_start=BatchStart,
-                  start_key=StartKey,
-                  end_key=EndKey,
-                  leeway=Leeway,
-                  max_workers=MaxWorkers},
+    %% set many items to GC batch state here
+    BatchState = #gc_batch_state{
+                    batch_start=BatchStart,
+                    start_key=StartKey,
+                    end_key=EndKey,
+                    leeway=Leeway,
+                    max_workers=MaxWorkers},
 
-    case riak_cs_gc_batch:start_link(GCDState) of
+    case riak_cs_gc_batch:start_link(BatchState) of
         {ok, Pid} ->
             {ok, State#gc_manager_state{gc_batch_pid=Pid,
-                                        current_batch=GCDState}};
+                                        current_batch=BatchState}};
         Error ->
             Error
     end.
@@ -341,8 +341,8 @@ translate(batch_history, [H|_]) ->
 translate(batch_history, #gc_batch_state{batch_start = Last}) ->
     [{last, Last}];
 translate(current_batch, undefined) -> [];
-translate(current_batch, GCDState) ->
-    riak_cs_gc_batch:status_data(GCDState);
+translate(current_batch, BatchState) ->
+    riak_cs_gc_batch:status_data(BatchState);
 translate(initial_delay, _) -> [];
 translate(timer_ref, _) -> [];
 translate(T, V) -> {T, V}.

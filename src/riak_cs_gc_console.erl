@@ -57,7 +57,7 @@
 batch(Opts) ->
     ?SAFELY(start_batch(parse_batch_opts(Opts)), "Starting garbage collection batch").
 
-%% @doc Find out what the gc daemon is up to.
+%% @doc Find out what the gc manager is up to.
 status(_Opts) ->
     ?SAFELY(get_status(), "Checking garbage collection status").
 
@@ -153,7 +153,7 @@ handle_batch_start(ok) ->
     output("Garbage collection batch started."),
     ok;
 handle_batch_start({error, running}) ->
-    output("The garbage collection daemon is already running."),
+    output("The garbage collection batch is already running."),
     error.
 
 handle_status({ok, {State, Details}}) ->
@@ -178,7 +178,7 @@ print_state(running) ->
 print_state(finishing) ->
     output("A garbage collection batch is finishing").
 
-%% @doc Pretty-print the status returned from the gc daemon.
+%% @doc Pretty-print the status returned from the gc manager.
 print_details(finishing, _Details) ->
     ok;
 print_details(_, Details) ->
