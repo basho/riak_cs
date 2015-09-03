@@ -535,11 +535,11 @@ if [ 1 -eq $get_logs ]; then
             fi
 
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
-            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'`"
+            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
                 ls -1 "${lager_dir}" | grep -q "${lager_file}"
                 if [ 0 -eq $? ]; then
-                    mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_${lager_level}
+                    mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_${lager_num}
                     find "${lager_dir}" -mtime -$log_mtime -name "${lager_file}*" \
                       -exec cp -p {} "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"/ \;
                 fi
@@ -574,7 +574,7 @@ if [ 1 -eq $get_cfgs ]; then
 
     # Compose the `find` command that will exclude the above list of files,
     # being aware that an empty `\( \)` will cause a failure in the `find`.
-    if [ -n "$exclude" ]; then
+    if [ -z "$exclude" ]; then
         run="find . -type f -exec sh -c '
                 mkdir -p \"\$0/\${1%/*}\";
                 cp \"\$1\" \"\$0/\$1\"
