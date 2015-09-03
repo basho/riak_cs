@@ -231,11 +231,6 @@ while [ -n "$1" ]; do
     shift
 done
 
-if [ 0 -eq $get_cfgs  -a  1 -eq $get_ssl_certs ]; then
-    echoerr "The --ssl-certs option is meaningless without --cfg. Ignoring."
-    get_ssl_certs=0
-fi
-
 ###
 ### Finish setting up variables and overrides
 ###
@@ -247,6 +242,11 @@ if [ 0 -eq $(( $get_cfgs + $get_logs + $get_riakcmds + $get_syscmds + $get_extra
     get_riakcmds=1
     get_syscmds=1
     get_extracmds=0
+fi
+
+if [ 0 -eq $get_cfgs  -a  1 -eq $get_ssl_certs ]; then
+    echoerr "The --ssl-certs option is meaningless without --cfg. Ignoring."
+    get_ssl_certs=0
 fi
 
 if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
