@@ -441,7 +441,7 @@ if [ 1 -eq $get_syscmds ]; then
     # A bit more complicated, but let's get all of limits.d if it's there
     if [ -d /etc/security/limits.d ]; then
         # check to ensure there is at least something to get
-        ls -1 /etc/security/limits.d | grep ".conf"
+        ls -1 /etc/security/limits.d | grep -q ".conf"
         if [ 0 -eq $? ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/commands/limits.d
 
