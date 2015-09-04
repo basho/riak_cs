@@ -38,7 +38,7 @@
 status([]) ->
     Stats = riak_cs_stats:get_stats(),
     _ = [io:format("~p : ~p~n", [Name, Value])
-     || {Name, Value} <- Stats],
+         || {Name, Value} <- Stats],
     ok.
 
 %% in progress.
@@ -58,8 +58,7 @@ cluster_info([OutFile]) ->
         error:{badmatch, {error, enotdir}} ->
             io:format("Cluster_info failed, not a directory ~p~n", [filename:dirname(OutFile)]);
         Exception:Reason ->
-            lager:error("Cluster_info failed ~p:~p",
-                [Exception, Reason]),
+            lager:error("Cluster_info failed ~p:~p", [Exception, Reason]),
             io:format("Cluster_info failed, see log for details~n"),
             error
     end.
