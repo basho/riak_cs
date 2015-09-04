@@ -37,8 +37,9 @@
 
 status([]) ->
     Stats = riak_cs_stats:get_stats(),
-    [io:format("~p : ~p~n", [Name, Value])
-     || {Name, Value} <- Stats].
+    _ = [io:format("~p : ~p~n", [Name, Value])
+     || {Name, Value} <- Stats],
+    ok.
 
 %% in progress.
 cluster_info([OutFile]) ->
