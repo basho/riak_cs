@@ -331,6 +331,7 @@ parse_time(HHMM) when is_list(HHMM) ->
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
 start_batch(Options, Time, State) ->
+    _ = lager:info("Starting storage calculation."),
     BatchStart = calendar:universal_time(),
     Recalc = true == proplists:get_value(recalc, Options),
     Detailed = proplists:get_value(detailed, Options,
