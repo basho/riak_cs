@@ -301,7 +301,10 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     fi
 fi
 
-vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+if [ -d "${cuttlefish_conf_dir}" ]; then
+    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+fi
+
 if [ -f "${vmargs}" ]; then
     node_name="`egrep '^\-s?name' "${vmargs}" 2>/dev/null | cut -d ' ' -f 2`"
 fi
@@ -489,7 +492,7 @@ if [ 1 -eq $get_logs ]; then
     cd "${start_dir}"/"${debug_dir}"/logs
 
     # if not already made, make a flat, searchable version of the app.config
-    if [ -z "$riak_epaths" ]; then
+    if [ -z "$riak_epaths" -a -d "cuttlefish_conf_dir" ]; then
       appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
       riak_epaths=`make_app_epaths "${appconfig}"`
     fi
@@ -520,7 +523,9 @@ if [ 1 -eq $get_logs ]; then
 
     # Lager info and error files
     new_format_lager_files="`epath 'lager handlers lager_file_backend file' "$riak_epaths" | sed -e 's/^"//' -e 's/".*$//'`"
-    if [ -z "$new_format_lager_files" ]; then
+    if [ -z "$riak_epath" ]; then
+        lager_files=""
+    elif [ -z "$new_format_lager_files" ]; then
         lager_files="`epath 'lager handlers lager_file_backend' "$riak_epaths" | cut -d' ' -f 1 | sed -e 's/^"//' -e 's/".*$//'`"
     else
         lager_files=$new_format_lager_files
