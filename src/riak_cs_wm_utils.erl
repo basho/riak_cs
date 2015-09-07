@@ -431,7 +431,7 @@ extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     %% order to trick webmachine dispatching
     MaxKeyLen = riak_cs_config:max_key_length(),
     Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    case byte_size(unicode:characters_to_binary(Key)) of
+    case byte_size(list_to_binary(Key)) of
         KeyLen when KeyLen > MaxKeyLen ->
             {error, {key_too_long, KeyLen}};
         _ ->
