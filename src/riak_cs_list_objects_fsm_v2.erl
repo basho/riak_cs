@@ -344,11 +344,12 @@ response_from_manifests_and_common_prefixes(Request,
 
 -spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
+make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName,prefix=Prefix},
                                     fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
-    EndKey = riak_cs_utils:big_end_key(128),
+    EndKey = riak_cs_utils:big_end_key(Prefix),
+
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=BatchSize},
     NewStateData2 = update_profiling_state_with_start(NewStateData,

@@ -42,14 +42,23 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD, Ctx) ->
-    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
-    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
-        true ->
-            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
+    case riak_cs_wm_utils:extract_key(RD, Ctx) of
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx);
+        {ok, ContextWithKey} ->
+            case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+                true ->
+                    ResponseMod:api_error(canned_acl_and_header_grant,
                                           RD, ContextWithKey);
-        false ->
-            {false, RD, ContextWithKey}
+                false ->
+                    case riak_cs_copy_object:malformed_request(RD) of
+                        {true, Reason} ->
+                            ResponseMod:api_error(Reason, RD, ContextWithKey);
+                        false ->
+                            {false, RD, ContextWithKey}
+                    end
+            end
     end.
 
 %% @doc Get the type of access requested and the manifest with the

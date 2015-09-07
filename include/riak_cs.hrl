@@ -504,3 +504,5 @@
 
 -define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
 -define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
+
+-define(MAX_S3_KEY_LENGTH, 1024).

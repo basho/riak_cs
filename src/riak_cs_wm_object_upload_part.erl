@@ -45,16 +45,20 @@ init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) ->
-    {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx) ->
+                               {false, #wm_reqdata{}, #context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #context{}}.
+malformed_request(RD,  #context{response_module=ResponseMod} = Ctx) ->
     Method = wrq:method(RD),
     case Method == 'PUT' andalso not valid_part_number(RD) of
         %% For multipart upload part,
         true ->
-            riak_cs_s3_response:api_error(invalid_part_number, RD, Ctx);
+            ResponseMod:api_error(invalid_part_number, RD, Ctx);
         false ->
-            NewCtx = riak_cs_wm_utils:extract_key(RD, Ctx),
-            {false, RD, NewCtx}
+            case riak_cs_wm_utils:extract_key(RD, Ctx) of
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx);
+                {ok, ContextWithKey} ->
+                    {false, RD, ContextWithKey}
+            end
     end.
 
 valid_part_number(RD)  ->
