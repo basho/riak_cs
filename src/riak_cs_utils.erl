@@ -443,11 +443,14 @@ big_end_key() ->
 -spec big_end_key(Prefix::binary() | undefined) -> binary().
 big_end_key(undefined) ->
     big_end_key(<<>>);
-big_end_key(Prefix) when byte_size(Prefix) > ?MAX_S3_KEY_LENGTH ->
-    Prefix;
 big_end_key(Prefix) ->
-    Padding = binary:copy(<<255>>, 1 + ?MAX_S3_KEY_LENGTH - byte_size(Prefix)),
-    <<Prefix/binary, Padding/binary>>.
+    Padding = case riak_cs_config:max_key_length() of
+                  MaxLen when byte_size(Prefix) > MaxLen ->
+                      <<>>;
+                  MaxLen ->
+                      binary:copy(<<255>>, MaxLen - byte_size(Prefix))
+              end,
+    <<Prefix/binary, 255, Padding/binary>>.
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.
