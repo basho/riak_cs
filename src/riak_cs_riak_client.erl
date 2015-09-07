@@ -335,6 +335,8 @@ get_user_with_pbc(MasterPbc, Key, false) ->
             weak_get_user_with_pbc(MasterPbc, Key);
         {error, Reason} ->
             _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason]),
+            Timeout = riak_cs_config:get_user_timeout(),
+            _ = riak_cs_pbc:pause_to_reconnect(MasterPbc, Reason, Timeout),
             weak_get_user_with_pbc(MasterPbc, Key)
     end.
 

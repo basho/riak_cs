@@ -294,6 +294,7 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
                           Why == disconnected;
                           Why == <<"{insufficient_vnodes,0,need,1}">>;
                           Why == {insufficient_vnodes,0,need,1} ->
+            _ = riak_cs_pbc:pause_to_reconnect(block_pbc(RcPid), Why, Timeout),
             handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                                   ProceedFun, RetryFun,
                                   [{local_one, Why}|ErrorReasons], UseProxyGet,
@@ -316,6 +317,7 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
         {error, Why} when Why == disconnected;
                           Why == timeout ->
             _ = lager:debug("get_block_local() failed: {error, ~p}", [Why]),
+            _ = riak_cs_pbc:pause_to_reconnect(block_pbc(RcPid), Why, Timeout),
             RetryFun([{local_quorum, Why}|ErrorReasons]);
 
         {error, notfound} when UseProxyGet andalso ProxyActive->
