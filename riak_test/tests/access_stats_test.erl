@@ -63,6 +63,9 @@ generate_some_accesses(UserConfig) ->
     _ = erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig),
     %% Delete bucket
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?BUCKET, UserConfig)),
+    %% Illegal URL such that riak_cs_access_log_handler:handle_event/2 gets {log_access, #wm_log_data{notes=undefined}}
+    ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("", "//a", UserConfig)), %% Path-style access
+    ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("riak-cs", "pong", UserConfig)),
     End = rtcs:datetime(),
     {Begin, End}.
 
