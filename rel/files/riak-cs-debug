@@ -22,6 +22,17 @@
 ##
 ## -------------------------------------------------------------------
 
+# /bin/sh on Solaris is not a POSIX compatible shell, but /usr/bin/ksh is.
+if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
+    POSIX_SHELL="true"
+    export POSIX_SHELL
+    # To support 'whoami' add /usr/ucb to path
+    PATH=/usr/ucb:$PATH
+    export PATH
+    exec /usr/bin/ksh $0 "$@"
+fi
+unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
+
 ###
 ### Function declarations
 ###
@@ -64,7 +75,12 @@ dump () {
     if [ 0 -eq $retval ]; then
         printf '.' 1>&2
     else
-        printf 'E' 1>&2
+        if [ $verbose_output -gt 0 ]; then
+            printf 'Command '\'"$*"\'' failed. Continuing.' 1>&2
+            echo '' 1>&2 # Cheap, easy, guaranteed newline.
+        else
+            printf 'E' 1>&2
+        fi
     fi
 
     return $retval
@@ -72,24 +88,42 @@ dump () {
 
 usage () {
 cat << 'EOF'
-riak-cs-debug: Gather info from a node for troubleshooting. See 'man riak-cs-debug'.
+Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [-v] [FILENAME | -]
 
-Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [FILENAME | -]
-
--c, --cfgs           Gather Riak CS configuration information.
+-c, --cfgs           Gather Riak configuration information (includes everything
+                     in platform_etc_dir).
+                     Please see the Privacy Note below.
+    --ssl-certs      Do not skip the capture of *potentially private* SSL
+                     certificates.
+                     By default files in the platform_etc_dir with the following
+                     extensions are not included in the riak-cs-debug archive:
+                     .pfx, .p12, .csr, .sst, .sto, .stl, .pem, .key.
+                     Please see the Privacy Note below.
 -l, --logs           Gather Riak CS logs.
 -r, --riakcmds       Gather Riak CS information and command output.
 -s, --syscmds        Gather general system commands.
--e, --extracmds      Gather extra command output. These commands are too intense to
-                     run on all nodes in a cluster but appropriate for a single node.
-    --log-mtime      Determine last modified time as n*24 hours, which riak-cs-debug gathers
-                     newer logs than the time. (default: 14)
+-e, --extracmds      Gather extra command output. These commands are too intense
+                     to run on all nodes in a cluster but appropriate for a
+                     single node.
+-v, --verbose        Print verbose failure messages to stdout
+    --log-mtime      Determine last modified time as n*24 hours, which
+                     riak-cs-debug gathers newer logs than the time.
+                     (default: 14)
     --skip-accesslog Exclude access.log from logs riak-cs-debug gathers.
 FILENAME             Output filename for the tar.gz archive. Use - to specify stdout.
 
 Defaults: Get configs, logs, riak-cs commands, and system commands.
           Output in current directory to NODE_NAME-riak-cs-debug.tar.gz or
           HOSTNAME-riak-cs-debug.tar.gz if NODE_NAME cannot be found.
+
+Privacy Note: When the -c flag is set (included in the defaults) every file in
+              the specified in Riak's `platform_etc_dir` will be copied into the
+              generated debug archive with the exceptions noted above. If there
+              are additional files that you wish to keep out of the archive, the
+              enviroment variable RIAK_EXCLUDE may be filled with a space
+              separated list of file patterns that will be passed into a `find
+              -name`. Any matches will be excluded from the generated archive.
+              E.g. `RIAK_EXCLUDE="'*.key' mySecretFile.txt" riak-cs-debug`
 EOF
 exit
 }
@@ -112,11 +146,13 @@ else
 fi
 
 get_cfgs=0
+get_ssl_certs=0
 get_logs=0
 get_riakcmds=0
 get_syscmds=0
 get_extracmds=0
 skip_accesslog=0
+verbose_output=0
 
 log_mtime=14
 
@@ -132,6 +168,9 @@ while [ -n "$1" ]; do
         -c|--cfgs)
             get_cfgs=1
             ;;
+           --ssl-certs)
+            get_ssl_certs=1
+            ;;
         -l|--logs)
             get_logs=1
             ;;
@@ -144,12 +183,15 @@ while [ -n "$1" ]; do
         -e|--extracmds)
             get_extracmds=1
             ;;
-        --log-mtime)
+           --log-mtime)
             shift
             log_mtime=$1
             ;;
-        --skip-accesslog)
+           --skip-accesslog)
             skip_accesslog=1
+            ;;
+        -v|--verbose)
+            verbose_output=`expr 1 + $verbose_output`
             ;;
         -)
             # If truly specifying stdout as the output file, it should be last
@@ -171,7 +213,7 @@ while [ -n "$1" ]; do
 
             # The filename shouldn't start with a '-'. The single character '-'
             # is handled as a special case above.
-            if [ '-' =  `echo "$1" | awk 'BEGIN {FS=""} {print $1}'` ]; then
+            if [ '-' =  `echo "$1" | cut -c1` ]; then
                 echoerr "Unrecognized option $1. Aborting"
                 echoerr "See 'riak-cs-debug -h' and manpage for help."
                 exit 1
@@ -179,15 +221,20 @@ while [ -n "$1" ]; do
 
             if [ $# -gt 1 ]; then
                 echoerr "Trailing options following filename $1. Aborting."
-                echoerr "See 'riak-cs-debug -h' and manpage for help." 
+                echoerr "See 'riak-cs-debug -h' and manpage for help."
                 exit 1
             fi
-            
+
             outfile="$1"
             ;;
     esac
     shift
 done
+
+if [ 0 -eq $get_cfgs  -a  1 -eq $get_ssl_certs ]; then
+    echoerr "The --ssl-certs option is meaningless without --cfg. Ignoring."
+    get_ssl_certs=0
+fi
 
 ###
 ### Finish setting up variables and overrides
@@ -198,7 +245,7 @@ if [ 0 -eq $(( $get_cfgs + $get_logs + $get_riakcmds + $get_syscmds + $get_extra
     get_cfgs=1
     get_logs=1
     get_riakcmds=1
-    get_syscmds=1
+    get_syscmds=0
     get_extracmds=0
 fi
 
@@ -216,7 +263,7 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 
     if [ ! -f "$epath_file" ]; then
         echoerr "Required file app_epath.sh not found. Expected here:"
-        echoerr "$epath_file" 
+        echoerr "$epath_file"
         echoerr "See 'riak-cs-debug -h' and manpage for help."
         exit 1
     fi
@@ -225,9 +272,9 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     # Allow overriding cs_base_dir and cs_etc_dir from the environment
     if [ -n "$cs_base_dir" ]; then
         cs_base_dir="$cs_base_dir"
-        if [ "/" != "`echo "$cs_base_dir" | awk 'BEGIN {FS=""} {print $1}'`" ]; then
+        if [ "/" != "`echo "$cs_base_dir" | cut -c1`" ]; then
             echoerr "Riak base directory should be an absolute path."
-            echoerr "$cs_base_dir" 
+            echoerr "$cs_base_dir"
             echoerr "See 'riak-cs-debug -h' and manpage for help."
             exit 1
         fi
@@ -235,9 +282,9 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 
     if [ -n "$cs_bin_dir" ]; then
         cs_bin_dir="$cs_bin_dir"
-        if [ "/" != "`echo "$cs_bin_dir" | awk 'BEGIN {FS=""} {print $1}'`" ]; then
+        if [ "/" != "`echo "$cs_bin_dir" | cut -c1`" ]; then
             echoerr "Riak bin directory should be an absolute path."
-            echoerr "$cs_bin_dir" 
+            echoerr "$cs_bin_dir"
             echoerr "See 'riak-cs-debug -h' and manpage for help."
             exit 1
         fi
@@ -245,9 +292,9 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 
     if [ -n "$cs_etc_dir" ]; then
         cs_etc_dir="$cs_etc_dir"
-        if [ "/" != "`echo "$cs_etc_dir" | awk 'BEGIN {FS=""} {print $1}'`" ]; then
+        if [ "/" != "`echo "$cs_etc_dir" | cut -c1`" ]; then
             echoerr "Riak etc directory should be an absolute path."
-            echoerr "$cs_etc_dir" 
+            echoerr "$cs_etc_dir"
             echoerr "See 'riak-cs-debug -h' and manpage for help."
             exit 1
         fi
@@ -277,7 +324,7 @@ debug_dir="${node_name}-riak-cs-debug"
 
 if [ -d "${start_dir}"/"${debug_dir}" ]; then
     echoerr "Temporary directory already exists. Aborting."
-    echoerr "${start_dir}"/"${debug_dir}" 
+    echoerr "${start_dir}"/"${debug_dir}"
     exit 1
 fi
 
@@ -288,7 +335,7 @@ fi
 
 if [ '-' != "$outfile" ] && [ -f "$outfile" ]; then
     echoerr "Output file already exists. Aborting."
-    echoerr "$outfile" 
+    echoerr "$outfile"
     exit 1
 fi
 
@@ -308,7 +355,7 @@ if [ 1 -eq $get_syscmds ]; then
     dump uname uname -a
     dump lsb_release lsb_release
     dump ps ps aux
-    dump vmstat vmstat
+    dump vmstat vmstat 1 5
     dump free free -m
     dump df df
     dump df_i df -i
@@ -325,12 +372,25 @@ if [ 1 -eq $get_syscmds ]; then
     dump netstat_rn netstat -rn
     dump pfctl_rules pfctl -s rules
     dump pfctl_nat pfctl -s nat
+    dump java_version java -version
+    dump zfs_list zfs list
+    dump zpool_list zpool list
 
     # If swapctl exists, prefer it over swapon
     if [ -n "`command -v swapctl`" ]; then
         dump swapctl swapctl -s
     else
         dump swapon swapon -s
+    fi
+
+    BLOCKDEV=/sbin/blockdev
+    if [ -e $BLOCKDEV ]; then
+        for mount_point in `mount | egrep '^/' | awk '{print $1}'`; do
+            flat_point=`echo $mount_point | sed 's:/:_:g'`
+            dump blockdev.$flat_point $BLOCKDEV --getra $mount_point
+        done
+    else
+        dump blockdev._ echo $BLOCKDEV is not available
     fi
 
     # Running iptables commands if the module is not loaded can automatically
@@ -368,6 +428,7 @@ if [ 1 -eq $get_syscmds ]; then
     [ -f /etc/security/limits.conf ] && dump limits.conf cat /etc/security/limits.conf
     [ -f /var/log/messages ] && dump messages cat /var/log/messages
     [ -f /var/log/syslog ] && dump messages cat /var/log/syslog
+    [ -f /var/log/kern.log ] && dump messages cat /var/log/kern.log
     [ -f /proc/diskstats ] && dump diskstats cat /proc/diskstats
     [ -f /proc/cpuinfo ] && dump cpuinfo cat /proc/cpuinfo
     [ -f /proc/meminfo ] && dump meminfo cat /proc/meminfo
@@ -381,7 +442,8 @@ if [ 1 -eq $get_syscmds ]; then
     # A bit more complicated, but let's get all of limits.d if it's there
     if [ -d /etc/security/limits.d ]; then
         # check to ensure there is at least something to get
-        if [ -n "`find /etc/security/limits.d -maxdepth 1 -name '*.conf' -print -quit`" ]; then
+        ls -1 /etc/security/limits.d | grep ".conf"
+        if [ 0 -eq $? ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/commands/limits.d
 
             # Mirror the directory, only copying files that match the pattern
@@ -439,7 +501,8 @@ if [ 1 -eq $get_logs ]; then
     # Get any logs in the platform_log_dir
     if [ -d "${cs_log_dir}" ]; then
         # check to ensure there is at least something to get
-        if [ -n "`find "${cs_log_dir}" -maxdepth 1 -mtime -$log_mtime -print -quit`" ]; then
+        ls -1 "${cs_log_dir}" | grep -q "log"
+        if [ 0 -eq $? ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/platform_log_dir
 
             # Mirror the directory, only copying files that match the pattern
@@ -456,23 +519,28 @@ if [ 1 -eq $get_logs ]; then
         fi
     fi
 
-    # Lager files
-    lager_paths="`epath 'lager handlers lager_file_backend file' "$riak_epaths" \
-                         | sed -e 's/^"//' -e 's/".*$//'`"
+    # Lager info and error files
+    new_format_lager_files="`epath 'lager handlers lager_file_backend file' "$riak_epaths" | sed -e 's/^"//' -e 's/".*$//'`"
+    if [ -z "$new_format_lager_files" ]; then
+        lager_files="`epath 'lager handlers lager_file_backend' "$riak_epaths" | cut -d' ' -f 1 | sed -e 's/^"//' -e 's/".*$//'`"
+    else
+        lager_files=$new_format_lager_files
+    fi
     lager_num=0
-    for lager_path in $lager_paths; do
+    for lager_path in $lager_files; do
         # Get lager logs if they weren't in platform_log_dir
         if [ -n "$lager_path" ]; then
-            if [ '.' = `echo "$lager_path" | awk 'BEGIN {FS=""} {print $1}'` ]; then
+            if [ '/' != `echo "$lager_path" | cut -c1` ]; then
                 # relative path. prepend base dir
                 lager_path="$cs_base_dir"/"$lager_path"
             fi
 
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
-            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
+            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
-                if [ -n "`find "${lager_dir}" -maxdepth 1 -mtime -$log_mtime -name "${lager_file}*" -print -quit`" ]; then
-                    mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"
+                ls -1 "${lager_dir}" | grep -q "${lager_file}"
+                if [ 0 -eq $? ]; then
+                    mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/lager_${lager_level}
                     find "${lager_dir}" -mtime -$log_mtime -name "${lager_file}*" \
                       -exec cp -p {} "${start_dir}"/"${debug_dir}"/logs/lager_"${lager_num}"/ \;
                 fi
@@ -488,23 +556,44 @@ fi
 
 if [ 1 -eq $get_cfgs ]; then
     mkdir_or_die "${start_dir}"/"${debug_dir}"/config/.info
+
+    # Capture the needed files from the `cs_etc_dir` directory.
+    cd $cs_etc_dir
+
+    # Convert the list of file blobs to a list of `"! -name <blob> `.
+    # For example if `RIAK_EXCLUDE="*.key mySecretFile"`, this will set
+    # `exclude="! -name *.key ! -name mySecretFile"`.
+    exclude=""
+    for i in `echo $RIAK_EXCLUDE`; do
+        exclude="${exclude}! -name $i "
+    done
+    if [ 0 -eq $get_ssl_certs ]; then
+        for i in `echo "'*.pfx' '*.p12' '*.csr' '*.sst' '*.sto' '*.stl' '*.pem' '*.key'"`; do
+            exclude="${exclude}! -name $i "
+        done
+    fi
+
+    # Compose the `find` command that will exclude the above list of files,
+    # being aware that an empty `\( \)` will cause a failure in the `find`.
+    if [ -n $exclude ]; then
+        run="find . -type f -exec sh -c '
+                mkdir -p \"\$0/\${1%/*}\";
+                cp \"\$1\" \"\$0/\$1\"
+            ' \"\${start_dir}\"/\"\${debug_dir}\"/config {} \;"
+    else
+        run="find . -type f \\( $exclude \\) -exec sh -c '
+                mkdir -p \"\$0/\${1%/*}\";
+                cp \"\$1\" \"\$0/\$1\"
+            ' \"\${start_dir}\"/\"\${debug_dir}\"/config {} \;"
+    fi
+    eval $run
+
+    # Copy the generated configurations into the archive.
     cd "${start_dir}"/"${debug_dir}"/config
 
     # Use dump to execute the copy. This will provide a progress dot and
     # capture any error messages.
-    dump cp_cfg cp -R "$cs_etc_dir"/*.conf* .
-
-    # If the copy succeeded, then the output will be empty and it is unneeded.
-    if [ 0 -eq $? ]; then
-        rm -f cp_cfg
-    fi
-
-    mkdir_or_die "${start_dir}"/"${debug_dir}"/generated.config/.info
-    cd "${start_dir}"/"${debug_dir}"/generated.config
-
-    # Use dump to execute the copy. This will provide a progress dot and
-    # capture any error messages.
-    dump cp_generated_cfg cp -R "$cuttlefish_conf_dir"/* .
+    dump cp_generated_cfg cp -R "$cuttlefish_conf_dir" .
 
     # If the copy succeeded, then the output will be empty and it is unneeded.
     if [ 0 -eq $? ]; then
@@ -536,4 +625,3 @@ rm -rf "${debug_dir}"
 
 # keep things looking pretty
 echoerr ""
-
