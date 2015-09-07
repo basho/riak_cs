@@ -145,6 +145,12 @@
   {datatype, [integer, {atom, unlimited}]}
 ]}.
 
+%% @doc Max length of a key. Default is 1024.
+{mapping, "max_key_length", "riak_cs.max_key_length", [
+  {default, 1024},
+  {datatype, [integer, {atom, unlimited}]}
+]}.
+
 %% @doc Switch whether Riak CS trusts 'X-Forwarded-For' header.
 %% If your load balancer adds 'X-Forwarded-For' header
 %% and it is reliable (able to gaurantee it is not added

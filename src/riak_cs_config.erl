@@ -57,6 +57,7 @@
          auto_reconnect/0,
          is_multibag_enabled/0,
          max_buckets_per_user/0,
+         max_key_length/0,
          read_before_last_manifest_write/0,
          region/0,
          stanchion/0,
@@ -369,6 +370,10 @@ is_multibag_enabled() ->
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
     get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
+
+-spec max_key_length() -> pos_integer() | unlimited.
+max_key_length() ->
+    get_env(riak_cs, max_key_length, ?MAX_S3_KEY_LENGTH).
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion() -> {string(), pos_integer(), boolean()}.
