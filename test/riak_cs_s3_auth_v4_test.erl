@@ -37,6 +37,8 @@ auth_v4_test_() ->
      fun teardown/1,
      [
       {"GET Object example"           , ?_test(auth_v4_GET_Object())},
+      {"GET Object example, with extra spaces in Authorization header",
+       ?_test(auth_v4_GET_Object_with_extra_spaces())},
       {"PUT Object example"           , ?_test(auth_v4_PUT_Object())},
       {"GET Object lifecycle example" , ?_test(auth_v4_GET_Object_Lifecycle())},
       {"GET Bucket example"           , ?_test(auth_v4_GET_Bucket())}
@@ -67,6 +69,31 @@ auth_v4_GET_Object() ->
                     {"x-amz-date", "20130524T000000Z"},
                     {"x-rcs-raw-url", OriginalPath},
                     authorization_header(AuthAttrs)]),
+    RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
+    Context = context_not_used,
+    ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
+                 riak_cs_s3_auth:identify(RD, Context)),
+    ?assertEqual(ok,
+                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                              {v4, AuthAttrs}, RD, Context)).
+
+auth_v4_GET_Object_with_extra_spaces() ->
+    Method = 'GET',
+    OriginalPath = "/test.txt",
+    AuthAttrs = [{"Credential",
+                  "AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"},
+                 {"SignedHeaders", "host;range;x-amz-content-sha256;x-amz-date"},
+                 {"Signature",
+                  "f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"}],
+    AllHeaders = mochiweb_headers:make(
+                   [{"Host", "examplebucket.s3.amazonaws.com"},
+                    {"Date", "Fri, 24 May 2013 00:00:00 GMT"},
+                    {"Range", "bytes=0-9"},
+                    {"x-amz-content-sha256",
+                     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+                    {"x-amz-date", "20130524T000000Z"},
+                    {"x-rcs-raw-url", OriginalPath},
+                    authorization_header(AuthAttrs, with_space)]),
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
@@ -142,6 +169,13 @@ auth_v4_GET_Bucket() ->
                                               {v4, AuthAttrs}, RD, Context)).
 
 authorization_header(AuthAttrs) ->
+    authorization_header(AuthAttrs, no_space).
+
+authorization_header(AuthAttrs, SpacesAfterComma) ->
+    Separator = case SpacesAfterComma of
+                    no_space -> ",";
+                    with_space -> ", "
+                end,
     {"Authorization",
      "AWS4-HMAC-SHA256 " ++
-         string:join([lists:flatten([K, $=, V]) || {K, V} <- AuthAttrs], ",")}.
+         string:join([lists:flatten([K, $=, V]) || {K, V} <- AuthAttrs], Separator)}.
