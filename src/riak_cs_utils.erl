@@ -445,6 +445,8 @@ big_end_key(undefined) ->
     big_end_key(<<>>);
 big_end_key(Prefix) ->
     Padding = case riak_cs_config:max_key_length() of
+                  unlimited ->
+                      <<>>;
                   MaxLen when byte_size(Prefix) > MaxLen ->
                       <<>>;
                   MaxLen ->

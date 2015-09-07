@@ -431,12 +431,12 @@ extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     %% order to trick webmachine dispatching
     MaxKeyLen = riak_cs_config:max_key_length(),
     case mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))) of
-        Key when length(Key) > MaxKeyLen ->
-            {error, {key_too_long, length(Key)}};
-        Key ->
+        Key when length(Key) =< MaxKeyLen ->
             LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
             {ok, Ctx#context{bucket=Bucket,
-                             local_context=LocalCtx}}
+                             local_context=LocalCtx}};
+        Key ->
+            {error, {key_too_long, length(Key)}}
     end.
 
 extract_name(User) when is_list(User) ->
