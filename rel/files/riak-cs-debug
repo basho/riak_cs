@@ -76,8 +76,7 @@ dump () {
         printf '.' 1>&2
     else
         if [ $verbose_output -gt 0 ]; then
-            printf 'Command '\'"$*"\'' failed. Continuing.' 1>&2
-            echo '' 1>&2 # Cheap, easy, guaranteed newline.
+            echoerr 'Command '\'"$*"\'' failed. Continuing.'
         else
             printf 'E' 1>&2
         fi
@@ -105,7 +104,7 @@ Usage: riak-cs-debug [-c] [-l] [-r] [-s] [-e] [-v] [FILENAME | -]
 -e, --extracmds      Gather extra command output. These commands are too intense
                      to run on all nodes in a cluster but appropriate for a
                      single node.
--v, --verbose        Print verbose failure messages to stdout
+-v, --verbose        Print verbose failure messages to stderr
     --log-mtime      Determine last modified time as n*24 hours, which
                      riak-cs-debug gathers newer logs than the time.
                      (default: 14)
@@ -429,8 +428,8 @@ if [ 1 -eq $get_syscmds ]; then
     [ -f /etc/debian_version ] && dump debian_version cat /etc/debian_version
     [ -f /etc/security/limits.conf ] && dump limits.conf cat /etc/security/limits.conf
     [ -f /var/log/messages ] && dump messages cat /var/log/messages
-    [ -f /var/log/syslog ] && dump messages cat /var/log/syslog
-    [ -f /var/log/kern.log ] && dump messages cat /var/log/kern.log
+    [ -f /var/log/syslog ] && dump syslog cat /var/log/syslog
+    [ -f /var/log/kern.log ] && dump kern.log cat /var/log/kern.log
     [ -f /proc/diskstats ] && dump diskstats cat /proc/diskstats
     [ -f /proc/cpuinfo ] && dump cpuinfo cat /proc/cpuinfo
     [ -f /proc/meminfo ] && dump meminfo cat /proc/meminfo
