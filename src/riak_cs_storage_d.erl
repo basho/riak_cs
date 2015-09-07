@@ -331,7 +331,6 @@ parse_time(HHMM) when is_list(HHMM) ->
 %% @doc Actually kick off the batch.  After calling this function, you
 %% must advance the FSM state to `calculating'.
 start_batch(Options, Time, State) ->
-    _ = lager:info("Starting storage calculation."),
     BatchStart = calendar:universal_time(),
     Recalc = true == proplists:get_value(recalc, Options),
     Detailed = proplists:get_value(detailed, Options,
@@ -339,6 +338,15 @@ start_batch(Options, Time, State) ->
     Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     LeewayEdgeTs = Now - riak_cs_gc:leeway_seconds(),
     LeewayEdge = {LeewayEdgeTs div 1000000, LeewayEdgeTs rem 1000000, 0},
+    _ = case Detailed of
+            true ->
+                lager:info("Starting storage calculation: "
+                           "recalc=~p, detailed=~p, leeway edge=~p",
+                           [Recalc, Detailed,
+                            calendar:now_to_universal_time(LeewayEdge)]);
+            _ ->
+                lager:info("Starting storage calculation: recalc=~p", [Recalc])
+        end,
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
 
