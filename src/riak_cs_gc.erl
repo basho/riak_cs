@@ -273,7 +273,7 @@ gc_max_workers() ->
     end.
 
 %% @doc Return the start of GC epoch represented as a binary.
-%% This is the time that the GC daemon uses to  begin collecting keys
+%% This is the time that the GC manager uses to  begin collecting keys
 %% from the `riak-cs-gc' bucket.
 -spec epoch_start() -> non_neg_integer().
 epoch_start() ->

@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Key listing logic for GC daemon.
+%% @doc Key listing logic for GC batch.
 
 -module(riak_cs_gc_key_list).
 

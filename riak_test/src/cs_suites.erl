@@ -250,10 +250,7 @@ apply_operation(gc, Circle, #state{cs_nodes=[CSNode|_]} = State) ->
                    ExpectSubstr = "There is no garbage collection in progress",
                    case string:str(Res, ExpectSubstr) of
                        0 ->
-                           {match, Captured} =
-                               re:run(Res, "Elapsed time of current run: [0-9]*\n",
-                                      [{capture, first, binary}]),
-                           lager:debug("riak-cs-gc status: ~s", [Captured]),
+                           lager:debug("riak-cs-gc status: ~s", [Res]),
                            false;
                        _ ->
                            lager:debug("GC completed"),

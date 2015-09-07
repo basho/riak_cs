@@ -20,7 +20,7 @@
 
 %% @doc A worker module that handles garbage collection of deleted
 %% file manifests and blocks at the direction of the garbace
-%% collection daemon.
+%% collection manager.
 
 -module(riak_cs_gc_worker).
 
@@ -63,7 +63,7 @@
 start_link(BagId, Keys) ->
     gen_fsm:start_link(?MODULE, [BagId, Keys], []).
 
-%% @doc Stop the daemon
+%% @doc Stop the process
 -spec stop(pid()) -> ok | {error, term()}.
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).

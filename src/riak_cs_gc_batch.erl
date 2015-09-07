@@ -72,7 +72,7 @@ start_link(Options) ->
 current_state(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, current_state, infinity).
 
-%% @doc Stop the daemon
+%% @doc Stop the process
 -spec stop(pid()) -> ok | {error, term()}.
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).

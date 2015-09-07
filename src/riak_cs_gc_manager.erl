@@ -25,7 +25,7 @@
 %%            +---(finish)----+
 %%            +---(cancel)----+
 %%
-%% Message excange chart (not a sequence, but just a list)
+%% Message exchange chart (not a sequence, but just a list)
 %%
 %%  Message\  sdr/rcver  gc_manager      gc_batch
 %%   start_link)                   ------>
@@ -60,7 +60,9 @@
 -export([idle/2, idle/3,
          running/2, running/3]).
 
--type statename() :: idle | running.
+-type statename() :: idle | running | finishing.
+-type manager_statename() :: idle | running.
+-type batch_statename() :: not_running | waiting_for_workers.
 -export_type([statename/0]).
 
 -include("riak_cs_gc.hrl").
@@ -77,24 +79,32 @@ start_batch(Options) ->
 cancel_batch() ->
     gen_fsm:sync_send_event(?SERVER, cancel, infinity).
 
--spec status() -> {ok, {statename(), #gc_manager_state{}}}.
+-spec status() -> {ok, {manager_statename(), batch_statename(), #gc_manager_state{}}}.
 status() ->
     gen_fsm:sync_send_all_state_event(?SERVER, status, infinity).
 
 -spec pp_status() -> {ok, {statename(), proplists:proplist()}}.
 pp_status() ->
-    {ok, {StateName, State}} = status(),
+    {ok, {ManagerStateName, BatchStateName, State}} = status(),
     D = lists:zip(record_info(fields, gc_manager_state),
                   tl(tuple_to_list(State))),
     Details = lists:flatten(lists:map(fun({Type, Value}) ->
                                               translate(Type, Value)
                                       end, D)),
+    StateName = case {ManagerStateName, BatchStateName} of
+                    {idle, _} -> idle;
+                    {running, not_running} ->
+                        %% riak_cs_gc_batch process has terminated,
+                        %% either successfully or abnormally, who knows?
+                        finishing;
+                    {running, _} -> running
+                end,
     {ok, {StateName,
           [{leeway, riak_cs_gc:leeway_seconds()}] ++ Details}}.
 
-%% @doc Adjust the interval at which the daemon attempts to perform
+%% @doc Adjust the interval at which the manager attempts to perform
 %% a garbage collection sweep. Setting the interval to a value of
-%% `infinity' effectively disable garbage collection. The daemon still
+%% `infinity' effectively disable garbage collection. The manager still
 %% runs, but does not carry out any file deletion.
 -spec set_interval(term()) -> ok | {error, term()}.
 set_interval(Interval) when is_integer(Interval)
@@ -188,9 +198,9 @@ handle_sync_event({set_interval, Initerval}, _From, StateName, State) ->
     NewState = schedule_next(NewState0),
     {reply, ok, StateName, NewState};
 handle_sync_event(status, _From, StateName, #gc_manager_state{gc_batch_pid=Pid} = State) ->
-    {_GCDStateName, GCDState} = maybe_current_state(Pid),
-    NewState = State#gc_manager_state{current_batch=GCDState},
-    {reply, {ok, {StateName, NewState}}, StateName, NewState};
+    {BatchStateName, BatchState} = maybe_current_state(Pid),
+    NewState = State#gc_manager_state{current_batch=BatchState},
+    {reply, {ok, {StateName, BatchStateName, NewState}}, StateName, NewState};
 handle_sync_event(stop, _, _, State) ->
     %% for tests
     {stop, normal, ok, State};
@@ -258,18 +268,18 @@ start_batch(State, Options) ->
     DefaultEndKey = riak_cs_gc:default_batch_end(BatchStart, Leeway),
     EndKey = proplists:get_value('end', Options, DefaultEndKey),
 
-    %% set many items to GCDState here
-    GCDState = #gc_batch_state{
-                  batch_start=BatchStart,
-                  start_key=StartKey,
-                  end_key=EndKey,
-                  leeway=Leeway,
-                  max_workers=MaxWorkers},
+    %% set many items to GC batch state here
+    BatchState = #gc_batch_state{
+                    batch_start=BatchStart,
+                    start_key=StartKey,
+                    end_key=EndKey,
+                    leeway=Leeway,
+                    max_workers=MaxWorkers},
 
-    case riak_cs_gc_batch:start_link(GCDState) of
+    case riak_cs_gc_batch:start_link(BatchState) of
         {ok, Pid} ->
             {ok, State#gc_manager_state{gc_batch_pid=Pid,
-                                        current_batch=GCDState}};
+                                        current_batch=BatchState}};
         Error ->
             Error
     end.
@@ -280,7 +290,14 @@ maybe_current_state(mock_pid) -> {not_running, undefined}.
 -else.
 maybe_current_state(undefined) -> {not_running, undefined};
 maybe_current_state(Pid) when is_pid(Pid) ->
-    riak_cs_gc_batch:current_state(Pid).
+    try
+        riak_cs_gc_batch:current_state(Pid)
+    catch
+        exit:{noproc, _} ->
+            {not_running, undefined};
+        exit:{normal, _} ->
+            {not_running, undefined}
+    end.
 -endif.
 
 maybe_cancel_timer(#gc_manager_state{timer_ref=Ref}=State)
@@ -324,8 +341,8 @@ translate(batch_history, [H|_]) ->
 translate(batch_history, #gc_batch_state{batch_start = Last}) ->
     [{last, Last}];
 translate(current_batch, undefined) -> [];
-translate(current_batch, GCDState) ->
-    riak_cs_gc_batch:status_data(GCDState);
+translate(current_batch, BatchState) ->
+    riak_cs_gc_batch:status_data(BatchState);
 translate(initial_delay, _) -> [];
 translate(timer_ref, _) -> [];
 translate(T, V) -> {T, V}.
