@@ -52,6 +52,7 @@ confirm() ->
     non_mp_get_cases(UserConfig),
     mp_get_cases(UserConfig),
     timestamp_skew_cases(UserConfig),
+    long_key_cases(UserConfig),
     rtcs:pass().
 
 non_mp_get_cases(UserConfig) ->
@@ -163,6 +164,18 @@ timestamp_skew_cases(UserConfig) ->
     after
         meck:unload(httpd_util)
     end.
+
+long_key_cases(UserConfig) ->
+    LongKey = binary_to_list(binary:copy(<<"a">>, 1024)),
+    TooLongKey = binary_to_list(binary:copy(<<"b">>, 1025)),
+    Data = <<"pocketburger">>,
+    ?assertEqual([{version_id,"null"}],
+                 erlcloud_s3:put_object(?TEST_BUCKET, LongKey, Data, UserConfig)),
+    ErrorString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error>"
+        "<Code>KeyTooLongError</Code><Message>Your key is too long</Message><Size>1025</Size>"
+        "<MaxSizeAllowed>1024</MaxSizeAllowed><RequestId></RequestId></Error>",
+    ?assertError({aws_error, {http_error, 400, [], ErrorString}},
+                 erlcloud_s3:put_object(?TEST_BUCKET, TooLongKey, Data, UserConfig)).
 
 mb(MegaBytes) ->
     MegaBytes * 1024 * 1024.

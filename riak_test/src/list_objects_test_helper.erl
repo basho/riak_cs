@@ -105,6 +105,13 @@ test(UserConfig) ->
     ?assert(lists:member([{prefix, "0/"}], CommonPrefixes3)),
     verify_object_list(ObjList4, 30),
 
+    %% Don't fail even if Prefix is longer than 1024, even if keys are
+    %% restricted to be shorter than it. That's S3.
+    TooLongKey = "0/" ++ binary_to_list(binary:copy(<<"b">>, 1025)) ++ "/",
+    OptionsX = [{prefix, TooLongKey}],
+    ObjListX = erlcloud_s3:list_objects(?TEST_BUCKET, OptionsX, UserConfig),
+    ?assertEqual([], proplists:get_value(contents, ObjListX)),
+
     delete_objects(?TEST_BUCKET, Count3, [], UserConfig),
     delete_objects(?TEST_BUCKET, 4, Prefix1, UserConfig),
     delete_objects(?TEST_BUCKET, 4, Prefix2, UserConfig),
