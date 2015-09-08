@@ -27,6 +27,8 @@
 REBAR ?= ./rebar
 REVISION ?= $(shell git rev-parse --short HEAD)
 PROJECT ?= $(shell basename `find src -name "*.app.src"` .app.src)
+SRC_PATH ?= ./src
+EMACS_TOOLS  = $(shell find $(shell dirname $(shell which erl))/../lib/erlang/lib/tools* -type d -name emacs)
 
 .PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
 		cleanplt upload-docs
@@ -36,6 +38,29 @@ compile-no-deps:
 
 test: compile
 	${REBAR} eunit skip_deps=true
+
+code-format:
+	@find "$(SRC_PATH)" -name \*.erl | xargs -n 50 \
+		emacs --batch --eval " \
+			(progn \
+				(add-to-list 'load-path \"$(EMACS_TOOLS)\") \
+				(require 'erlang-start) \
+				(setq-default tab-width 4 indent-tabs-mode nil) \
+				(defun fmt (filename) \
+					(find-file filename) \
+					(erlang-indent-region (point-min) (point-max)) \
+					(delete-trailing-whitespace) \
+					(save-buffer) \
+					(kill-buffer)) \
+				(defun fmtall (files) \
+					(when files \
+						(princ-list (format \"formatting \%s ...\" (car files))) \
+						(fmt (car files)) \
+						(fmtall (cdr files)))) \
+				(fmtall argv)) \
+			 ) \
+			" 2>/dev/null
+
 
 upload-docs: docs
 	@if [ -z "${BUCKET}" -o -z "${PROJECT}" -o -z "${REVISION}" ]; then \

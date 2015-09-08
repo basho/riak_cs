@@ -9,6 +9,7 @@ REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
+SRC_PATH         = "./src ./test ./riak_test/src ./riak_test/tests"
 
 .PHONY: rel stagedevrel deps test depgraph graphviz all compile compile-src
 
