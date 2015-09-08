@@ -243,7 +243,6 @@ set_advanced_conf(DevPath, NameValuePairs) ->
     [rtcs_dev:update_app_config_file(RiakConf, NameValuePairs) || RiakConf <- AdvancedConfs],
     ok.
 
-
 assert_error_log_empty(N) ->
     assert_error_log_empty(current, N).
 
