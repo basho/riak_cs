@@ -205,7 +205,7 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     Timeout = riak_cs_config:get_block_timeout(),
 
     %% do a get first to get the vclock (only do a head request though)
-    GetOptions = [head | r_one_options()],
+    GetOptions = [head | pr_quorum_options()],
     _ = case riak_cs_pbc:get(block_pbc(RcPid), FullBucket, FullKey,
                              GetOptions, Timeout, [riakc, head_block]) of
             {ok, RiakObject} ->
@@ -214,7 +214,13 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
                 %% If the block isn't found, assume it's been
                 %% previously deleted by another delete FSM, and
                 %% move on to the next block.
-                riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}})
+                riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}});
+            {error, _} = Error ->
+                %% Report errors in HEADs to prevent crashing block
+                %% servers, as crash logs forces lager to sync log
+                %% files at each line.
+                Result = format_delete_result(Error, {UUID, BlockNumber}),
+                riak_cs_delete_fsm:block_deleted(ReplyPid, Result)
         end,
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
@@ -536,7 +542,8 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RcPid, StatsKey, FailFun) -
     RiakObject = riakc_obj:set_vclock(
             riakc_obj:update_metadata(RiakObject0, MD), VClock),
     Timeout = riak_cs_config:put_block_timeout(),
-    case riak_cs_pbc:put(block_pbc(RcPid), RiakObject, Timeout, StatsKey) of
+    case riak_cs_pbc:put(block_pbc(RcPid), RiakObject,
+                         pw_one_options(), Timeout, StatsKey) of
         ok ->
             ok;
         Else ->
@@ -559,6 +566,12 @@ n_val_one_options() ->
 
 r_one_options() ->
     [{r, 1}, {notfound_ok, false}, {basic_quorum, false}].
+
+pw_one_options() ->
+    [{w, quorum}, {pw, 1}].
+
+pr_quorum_options() ->
+    [{r, quorum}, {pr, quorum}, {notfound_ok, false}, {basic_quorum, false}].
 
 -spec use_proxy_get(cluster_id(), bag_id()) -> boolean().
 use_proxy_get(undefined, _BagId) ->
