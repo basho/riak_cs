@@ -230,6 +230,8 @@ resolve_siblings(Pid, RawBucket, RawKey, GetOptions, GetTimeout, PutOptions, Put
                     R = riakc_pb_socket:put(Pid, RiakObj2, PutOptions, PutTimeout),
                     _ = lager:info("Resolution result: ~p~n", [R]),
                     R;
+                ok ->
+                    lager:info("No siblings in ~p:~p~n", [RawBucket, RawKey]);
                 {error, _} = E ->
                     _ = lager:info("Not updating ~p:~p: ~p~n", [RawBucket, RawKey, E]),
                     E
@@ -244,7 +246,9 @@ resolve_siblings(Pid, RawBucket, RawKey, GetOptions, GetTimeout, PutOptions, Put
 %%%===================================================================
 
 -spec resolve_ro_siblings(riakc_obj:riakc_obj(), binary(), binary()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+                                 {ok, riakc_obj:riakc_obj()} | %% Needs update to resolve siblings
+                                 ok | %% No siblings, no need to update
+                                 {error, term()}. %% Some other reason that prohibits update
 resolve_ro_siblings(_, ?USER_BUCKET, _) ->
     %% This is not supposed to happen unless something is messed up
     %% with Stanchion. Resolve logic is not obvious and needs operator decision.
@@ -276,8 +280,8 @@ resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
         {E, true} ->
             _ = lager:info("Cannot resolve: ~p~n", [E]),
             {error, E};
-        {E, false} ->
-            {error, E}
+        {_, false} ->
+            ok
     end;
 resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
     [{_, Manifest}|_] = Manifests =
