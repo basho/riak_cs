@@ -34,8 +34,8 @@
 -endif.
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
-                     {gb_tree(), string()}.
+-spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
+                     {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
@@ -63,7 +63,7 @@ parse_path(Path) ->
     {ApiVsn, Account, "/" ++ string:join(RestPath, "/")}.
 
 %% @doc Add headers for the raw path, the API version, and the account.
--spec rewrite_headers(gb_tree(), string(), string(), string()) -> gb_tree().
+-spec rewrite_headers(mochiweb_headers(), string(), string(), string()) -> mochiweb_headers().
 rewrite_headers(Headers, RawPath, ApiVsn, Account) ->
     UpdHdrs0 = mochiweb_headers:default(?RCS_REWRITE_HEADER, RawPath, Headers),
     UpdHdrs1 = mochiweb_headers:enter(?OOS_API_VSN_HEADER, ApiVsn, UpdHdrs0),

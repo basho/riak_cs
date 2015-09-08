@@ -53,7 +53,13 @@
          resolve/1
         ]).
 
--type twop_set() :: {set(), set()}.
+-ifdef(namespaced_types).
+-type stdlib_set() :: sets:set().
+-else.
+-type stdlib_set() :: set().
+-endif.
+
+-type twop_set() :: {stdlib_set(), stdlib_set()}.
 -export_type([twop_set/0]).
 
 %%%===================================================================
@@ -140,11 +146,11 @@ resolution_test() ->
 %%% Test API
 %%%===================================================================
 
--spec adds(twop_set()) -> set().
+-spec adds(twop_set()) -> stdlib_set().
 adds({Adds, _}) ->
     Adds.
 
--spec dels(twop_set()) -> set().
+-spec dels(twop_set()) -> stdlib_set().
 dels({_, Dels}) ->
     Dels.
 

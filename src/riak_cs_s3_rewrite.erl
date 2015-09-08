@@ -61,8 +61,8 @@
 -type subresources() :: [subresource()].
 
 %% @doc Function to rewrite headers prior to processing by webmachine.
--spec rewrite(atom(), atom(), {integer(), integer()}, gb_tree(), string()) ->
-                     {gb_tree(), string()}.
+-spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
+                     {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
@@ -86,8 +86,8 @@ raw_url(RD) ->
             {Path, mochiweb_util:parse_qs(QS)}
     end.
 
--spec rewrite_path_and_headers(atom(), gb_tree(), string(), string(), string()) ->
-                    {gb_tree(), string()}.
+-spec rewrite_path_and_headers(atom(), mochiweb_headers(), string(), string(), string()) ->
+                    {mochiweb_headers(), string()}.
 rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
