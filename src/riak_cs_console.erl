@@ -189,14 +189,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 resolve_siblings(RawBucket, RawKey) ->
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
     try
-        {ok, Pid} = case RawBucket of
-                        <<"0o:", _/binary>> ->
-                            riak_cs_riak_client:manifest_pbc(RcPid);
-                        <<"0b:", _/binary>> ->
-                            riak_cs_riak_client:block_pbc(RcPid);
-                        _ ->
-                            riak_cs_riak_client:master_pbc(RcPid)
-                    end,
+        {ok, Pid} = riak_cs_riak_client:master_pbc(RcPid),
         resolve_siblings(Pid, RawBucket, RawKey)
     after
         riak_cs_riak_client:stop(RcPid)
@@ -237,9 +230,8 @@ resolve_siblings(Pid, RawBucket, RawKey, GetOptions, GetTimeout, PutOptions, Put
                     R = riakc_pb_socket:put(Pid, RiakObj2, PutOptions, PutTimeout),
                     _ = lager:info("Resolution result: ~p~n", [R]),
                     R;
-                {error, R} = E ->
-                    _ = lager:info("Not updating ~p:~p: ~p~n",
-                                   [RawBucket, RawKey, R]),
+                {error, _} = E ->
+                    _ = lager:info("Not updating ~p:~p: ~p~n", [RawBucket, RawKey, E]),
                     E
             end;
         {error, Reason} = E ->
