@@ -26,6 +26,9 @@
 
 -define(assert403(X),
         ?assertError({aws_error, {http_error, 403, _, _}}, (X))).
+-define(assertHeader(Key, Expected, Props),
+        ?assertEqual(Expected,
+                     proplists:get_value(Key, proplists:get_value(headers, Props)))).
 
 -define(BUCKET, "put-copy-bucket-test").
 -define(KEY, "pocket").
@@ -40,6 +43,7 @@
 -define(SRC_KEY, "source").
 -define(TGT_KEY, "target").
 -define(MP_TGT_KEY, "mp-target").
+-define(REPLACE_KEY, "replace-target").
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _}} = rtcs:setup(1),
@@ -62,6 +66,7 @@ confirm() ->
     ok = verify_multipart_copy(UserConfig),
     ok = verify_security(UserConfig, UserConfig2, UserConfig3),
     ok = verify_source_not_found(UserConfig),
+    ok = verify_replace_usermeta(UserConfig),
     ok = verify_without_cl_header(UserConfig),
 
     ?assertEqual([{delete_marker, false}, {version_id, "null"}],
@@ -251,6 +256,38 @@ verify_source_not_found(UserConfig) ->
     ?assert(string:str(ErrorXml,
                        "<Resource>/" ++ ?BUCKET ++
                            "/" ++ NonExistingKey ++ "</Resource>") > 0).
+
+verify_replace_usermeta(UserConfig) ->
+    lager:info("Verify replacing usermeta using Put Copy"),
+
+    %% Put Initial Object
+    Headers0 = [{"Content-Type", "text/plain"}],
+    Options0 = [{meta, [{"key1", "val1"}, {"key2", "val2"}]}],
+    ?assertEqual([{version_id, "null"}],
+                 erlcloud_s3:put_object(?BUCKET, ?REPLACE_KEY, ?DATA0, Options0, Headers0, UserConfig)),
+    Props0 = erlcloud_s3:get_object(?BUCKET, ?REPLACE_KEY, UserConfig),
+    lager:debug("Initial Obj: ~p", [Props0]),
+    ?assertEqual("text/plain", proplists:get_value(content_type, Props0)),
+    ?assertHeader("x-amz-meta-key1", "val1", Props0),
+    ?assertHeader("x-amz-meta-key2", "val2", Props0),
+
+    %% Replace usermeta using Put Copy
+    Headers1 = [{"Content-Type", "application/octet-stream"}],
+    Options1 = [{metadata_directive, "REPLACE"},
+                {meta, [{"key3", "val3"}, {"key4", "val4"}]}],
+    ?assertEqual([{copy_source_version_id, "false"}, {version_id, "null"}],
+                 erlcloud_s3:copy_object(?BUCKET, ?REPLACE_KEY, ?BUCKET, ?REPLACE_KEY,
+                                         Options1, Headers1, UserConfig)),
+    Props1 = erlcloud_s3:get_object(?BUCKET, ?REPLACE_KEY, UserConfig),
+    lager:debug("Updated Obj: ~p", [Props1]),
+    ?assertEqual(?DATA0, proplists:get_value(content, Props1)),
+    ?assertEqual("application/octet-stream", proplists:get_value(content_type, Props1)),
+    ?assertHeader("x-amz-meta-key1", undefined, Props1),
+    ?assertHeader("x-amz-meta-key2", undefined, Props1),
+    ?assertHeader("x-amz-meta-key3", "val3", Props1),
+    ?assertHeader("x-amz-meta-key4", "val4", Props1),
+    ok.
+
 
 %% Verify reuqests without Content-Length header, they should succeed.
 %% To avoid automatic Content-Length header addition by HTTP client library,

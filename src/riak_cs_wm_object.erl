@@ -297,9 +297,9 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
-    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
+                                      Mfst?MANIFEST{metadata=Metadata, content_type=ContentType}, NewAcl,
                                       RcPid) of
         ok ->
             ETag = riak_cs_manifest:etag(Mfst),
