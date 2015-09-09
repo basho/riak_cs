@@ -93,9 +93,9 @@ prop_set_interval() ->
                 ok = application:set_env(riak_cs, initial_gc_delay, 0),
                 {ok, Pid} = riak_cs_gc_manager:test_link(),
                 try
-                    {ok, {_, State1}} = riak_cs_gc_manager:status(),
+                    {ok, {_, _, State1}} = riak_cs_gc_manager:status(),
                     ok = riak_cs_gc_manager:set_interval(Interval),
-                    {ok, {_, State2}} = riak_cs_gc_manager:status(),
+                    {ok, {_, _, State2}} = riak_cs_gc_manager:status(),
                     conjunction([{initial_interval,
                                   equals(?DEFAULT_GC_INTERVAL, State1#gc_manager_state.interval)},
                                  {updated_interval,
@@ -161,7 +161,7 @@ precondition(_From, _To, _S, _C) ->
     true.
 
 postcondition(From, To, S , {call, _M, ManualCommad, _A}=C, R) ->
-    {ok, {Actual, _}} = riak_cs_gc_manager:status(),
+    {ok, {Actual, _, _}} = riak_cs_gc_manager:status(),
     ?assertEqual(To, Actual),
     ExpectedRes = expected_result(From, To, ManualCommad),
     case R of
