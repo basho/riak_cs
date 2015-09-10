@@ -52,8 +52,14 @@
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
--record(eqc_state, {adds=sets:new() :: set(),
-                    deletes=sets:new() :: set(),
+-ifdef(namespaced_types).
+-type stdlib_set() :: sets:set().
+-else.
+-type stdlib_set() :: set().
+-endif.
+
+-record(eqc_state, {adds=sets:new() :: stdlib_set(),
+                    deletes=sets:new() :: stdlib_set(),
                     operation_count=0 :: non_neg_integer(),
                     operation_limit=500 :: pos_integer(),
                     set :: twop_set:twop_set(),
@@ -66,8 +72,8 @@
 eqc_test_() ->
     {spawn,
         [
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))},
-            {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_resolution()))))}
+            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))},
+            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_resolution()))))}
         ]
     }.
 

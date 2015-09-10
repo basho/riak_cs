@@ -67,6 +67,12 @@
 
 -type block_name() :: {binary(), integer()}.
 
+-ifdef(namespaced_types).
+-type block_queue() :: queue:queue().
+-else.
+-type block_queue() :: queue().
+-endif.
+
 -record(state, {from :: {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_fsm_pid :: pid(),
@@ -78,7 +84,7 @@
                 got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
                 blocks_order :: [block_name()],
-                blocks_intransit=queue:new() :: queue(),
+                blocks_intransit=queue:new() :: block_queue(),
                 test=false :: boolean(),
                 total_blocks :: pos_integer(),
                 num_sent=0 :: non_neg_integer(),

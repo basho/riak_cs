@@ -258,7 +258,7 @@ handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
 %% @doc Determine if a set of contents of a riak object has a tombstone.
--spec has_tombstone({dict(), binary()}) -> boolean().
+-spec has_tombstone({riakc_obj:metadata(), binary()}) -> boolean().
 has_tombstone({_, <<>>}) ->
     true;
 has_tombstone({MD, _V}) ->

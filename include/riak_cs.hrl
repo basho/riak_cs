@@ -518,3 +518,9 @@
 -define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
 
 -define(MAX_S3_KEY_LENGTH, 1024).
+
+-ifdef(namespaced_types).
+-type mochiweb_headers() :: gb_trees:tree().
+-else.
+-type mochiweb_headers() :: gb_tree().
+-endif.
