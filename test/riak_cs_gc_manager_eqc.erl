@@ -102,7 +102,7 @@ prop_set_interval() ->
                                   equals(Interval, State2#gc_manager_state.interval)}
                                 ])
                 after
-                    ok = gen_fsm:sync_send_all_state_event(Pid, stop)
+                    stop_and_hold_until_unregistered(Pid, riak_cs_gc_manager)
                 end
             end).
 
@@ -124,7 +124,7 @@ prop_manual_commands() ->
                                  end,
                                  equals(ok, Res)))
                 after
-                    ok = gen_fsm:sync_send_all_state_event(Pid, stop)
+                    stop_and_hold_until_unregistered(Pid, riak_cs_gc_manager)
                 end
             end).
 
@@ -196,5 +196,19 @@ expected_result(_From, idle, cancel_batch) ->
 %% weight(fetching_next_batch, feeding_workers, _) -> 5;
 %% weight(feeding_workers, waiting_for_workers, _) -> 3;
 %% weight(_, _, _) -> 1.
+
+stop_and_hold_until_unregistered(Pid, RegName) ->
+    ok = gen_fsm:sync_send_all_state_event(Pid, stop),
+    hold_until_unregisterd(RegName, 50).
+
+hold_until_unregisterd(_RegName, 0) ->
+    {error, not_unregistered_so_long_time};
+hold_until_unregisterd(RegName, N) ->
+    case whereis(RegName) of
+        undefined -> ok;
+        _ ->
+            timer:sleep(1),
+            hold_until_unregisterd(RegName, N - 1)
+    end.
 
 -endif.
