@@ -28,6 +28,8 @@
          cleanup_orphan_multipart/1
         ]).
 
+-export([resolve_siblings/2, resolve_siblings/3, resolve_siblings/7]).
+
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
@@ -183,10 +185,115 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = io:format("~nAll old unaborted orphan multipart uploads have been deleted.~n", []).
 
 
+-spec resolve_siblings(binary(), binary()) -> any().
+resolve_siblings(RawBucket, RawKey) ->
+    {ok, RcPid} = riak_cs_riak_client:start_link([]),
+    try
+        {ok, Pid} = riak_cs_riak_client:master_pbc(RcPid),
+        resolve_siblings(Pid, RawBucket, RawKey)
+    after
+        riak_cs_riak_client:stop(RcPid)
+    end.
+
+%% @doc Resolve siblings as quick operation. Assuming login via
+%% `riak-cs attach` RawKey and RawBucket should be provided via Riak
+%% log. Example usage is:
+%%
+%% > {ok, Pid} = riakc_pb_socket:start_link(Host, Port).
+%% > riak_cs_console:resolve_siblings(Pid, <<...>>, <<...>>).
+%% > riakc_pb_socket:stop(Pid).
+%%
+%% or, in case of manifests, for CS Bucket and Key name:
+%%
+%% > {ok, Pid} = riakc_pb_socket:start_link(Host, Port).
+%% > RawBucket = riak_cs_utils:to_bucket_name(objects, CSBucketName),
+%% > riak_cs_console:resolve_siblings(Pid, RawBucket, CSKey).
+%% > riakc_pb_socket:stop(Pid).
+%%
+-spec resolve_siblings(pid(), RawBucket::binary(), RawKey::binary()) -> ok | {error, term()}.
+resolve_siblings(Pid, RawBucket, RawKey) ->
+    GetOptions = [{r, all}],
+    PutOptions = [{w, all}],
+    resolve_siblings(Pid, RawBucket, RawKey,
+                     GetOptions, ?DEFAULT_RIAK_TIMEOUT,
+                     PutOptions, ?DEFAULT_RIAK_TIMEOUT).
+
+resolve_siblings(Pid, RawBucket, RawKey, GetOptions, GetTimeout, PutOptions, PutTimeout)
+  when is_integer(GetTimeout) andalso is_integer(PutTimeout) ->
+    _ = lager:info("Getting ~p:~p~n", [RawBucket, RawKey]),
+    case riakc_pb_socket:get(Pid, RawBucket, RawKey, GetOptions, GetTimeout) of
+        {ok, RiakObj} ->
+            _ = lager:info("Trying to resolve ~p sibling(s) of ~p:~p",
+                           [riakc_obj:value_count(RiakObj), RawBucket, RawKey]),
+            case resolve_ro_siblings(RiakObj, RawBucket, RawKey) of
+                {ok, RiakObj2} ->
+                    R = riakc_pb_socket:put(Pid, RiakObj2, PutOptions, PutTimeout),
+                    _ = lager:info("Resolution result: ~p~n", [R]),
+                    R;
+                ok ->
+                    lager:info("No siblings in ~p:~p~n", [RawBucket, RawKey]);
+                {error, _} = E ->
+                    _ = lager:info("Not updating ~p:~p: ~p~n", [RawBucket, RawKey, E]),
+                    E
+            end;
+        {error, Reason} = E ->
+            _ = lager:info("Failed to get an object before resolution: ~p~n", [Reason]),
+            E
+    end.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
+-spec resolve_ro_siblings(riakc_obj:riakc_obj(), binary(), binary()) ->
+                                 {ok, riakc_obj:riakc_obj()} | %% Needs update to resolve siblings
+                                 ok | %% No siblings, no need to update
+                                 {error, term()}. %% Some other reason that prohibits update
+resolve_ro_siblings(_, ?USER_BUCKET, _) ->
+    %% This is not supposed to happen unless something is messed up
+    %% with Stanchion. Resolve logic is not obvious and needs operator decision.
+    {error, {not_supported, ?USER_BUCKET}};
+resolve_ro_siblings(_, ?ACCESS_BUCKET, _) ->
+    %% To support access bucket, JSON'ized data should change its data
+    %% structure to G-set, or map(register -> P-counter)
+    {error, {not_supported, ?ACCESS_BUCKET}};
+resolve_ro_siblings(_, ?STORAGE_BUCKET, _) ->
+    %% Storage bucket access conflict resolution is not obvious; maybe
+    %% adopt max usage on each buckets.
+    {error, {not_supported, ?STORAGE_BUCKET}};
+resolve_ro_siblings(_, ?BUCKETS_BUCKET, _) ->
+    %% Bucket conflict resolution obvious, referring to all users
+    %% described in value and find out who's true user. If multiple
+    %% users are owner (that cannot happen unless Stanchion is messed
+    %% up), operator must choose who is true owner.
+    {error, {not_supported, ?BUCKETS_BUCKET}};
+resolve_ro_siblings(RO, ?GC_BUCKET, _) ->
+    Resolved = riak_cs_gc:decode_and_merge_siblings(RO, twop_set:new()),
+    Obj = riak_cs_utils:update_obj_value(RO,
+                                         riak_cs_utils:encode_term(Resolved)),
+    {ok, Obj};
+resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
+    case riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RO)) of
+        {{MD, Value}, true} when is_binary(Value) ->
+            RO1 = riakc_obj:update_metadata(RO, MD),
+            {ok, riakc_obj:update_value(RO1, Value)};
+        {E, true} ->
+            _ = lager:info("Cannot resolve: ~p~n", [E]),
+            {error, E};
+        {_, false} ->
+            ok
+    end;
+resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
+    [{_, Manifest}|_] = Manifests =
+        riak_cs_manifest:manifests_from_riak_object(RiakObject),
+    _ = lager:info("Number of histories after sibling resolution: ~p.~n",
+                   [length(Manifests)]),
+    ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                       RiakObject, riak_cs_utils:encode_term(Manifests)),
+
+    {B, K} = Manifest?MANIFEST.bkey,
+    RO = riak_cs_manifest_fsm:update_md_with_multipart_2i(ObjectToWrite0, Manifests, B, K),
+    {ok, RO}.
 
 -spec maybe_cleanup_csbucket(riak_client(),
                              binary(),

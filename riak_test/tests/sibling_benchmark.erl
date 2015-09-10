@@ -58,7 +58,7 @@ confirm() ->
                   {gc_interval, 10},
                   {connection_pools, [{request_pool, {Concurrency*2 + 5, 0}}]}
                  ]}]}],
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} =
         case proplists:get_value(version, RTConfig, current) of
             current ->
                 put(version, current),
@@ -100,6 +100,13 @@ confirm() ->
     ?assert(MaxSib =< Concurrency + 5),
 
     get_counts(RiakNodes, ?TEST_BUCKET, ?KEY_SINGLE_BLOCK),
+
+    %% Just test sibling resolver, for a major case of manifests
+    RawManifestBucket = rc_helper:to_riak_bucket(objects, ?TEST_BUCKET),
+    RawKey = ?KEY_SINGLE_BLOCK,
+    R0 = rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
+                  [RawManifestBucket, RawKey]),
+    ?assertEqual(ok, R0),
 
     %% tearing down the stage
     erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),
