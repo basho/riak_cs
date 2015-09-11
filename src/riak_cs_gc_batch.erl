@@ -147,14 +147,12 @@ waiting_for_workers(_Msg, _From, State) ->
 
 %% @doc there are no all-state events for this fsm
 handle_event({batch_complete, WorkerPid, WorkerState}, StateName, State0) ->
-    %%?debugFmt("~w", [State0]),%% WorkerState#gc_worker_state.batch_count,
-    State = handle_batch_complete(WorkerPid, WorkerState, State0),
-    %%?debugFmt("StateName ~p, ~p ~w", [StateName, has_batch_finished(State), State]),
-    case {has_batch_finished(State), StateName} of
+    State1 = handle_batch_complete(WorkerPid, WorkerState, State0),
+    State2 = maybe_start_workers(State1),
+    case {has_batch_finished(State2), StateName} of
         {true, _} ->
-            {stop, normal, State};
+            {stop, normal, State2};
         {false, waiting_for_workers} ->
-            State2 = maybe_start_workers(State),
             {next_state, waiting_for_workers, State2}
     end;
 handle_event(_Event, StateName, State) ->
