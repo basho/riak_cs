@@ -301,4 +301,4 @@ handle_delete_fsm_reply({error, _}, ?STATE{current_files=[_ | RestManifests]} = 
 %% @doc Get the current state of the fsm for debugging inspection
 -spec current_state(pid()) -> {atom(), ?STATE{}} | {error, term()}.
 current_state(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, current_state).
+    gen_fsm:sync_send_all_state_event(Pid, current_state, infinity).
