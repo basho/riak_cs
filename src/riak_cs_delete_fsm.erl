@@ -83,7 +83,7 @@ delete(Pid) ->
 
 %% @doc Let the fsm start deleting and wait for response
 sync_delete(Pid) ->
-    gen_fsm:sync_send_event(Pid, delete).
+    gen_fsm:sync_send_event(Pid, delete, infinity).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->

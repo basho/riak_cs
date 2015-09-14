@@ -88,7 +88,7 @@ start_link() ->
 %% calculating so far, and counts of how many users have been
 %% processed and how many are left.
 status() ->
-    gen_fsm:sync_send_event(?SERVER, status).
+    gen_fsm:sync_send_event(?SERVER, status, infinity).
 
 %% @doc Force a calculation and archival manually.  The `current'
 %% property returned from a {@link status/0} call will show the most
