@@ -250,7 +250,8 @@ batch_options() ->
      {'end',  $e, "end",    string,
       "End time (iso8601 format, like 20130420T094500Z)"},
      {'max-workers', $c, "max-workers", integer, "Number of concurrent workers"},
-     {'batch-size', $b, "batch-size", integer, "Unit size of each retrieval in a batch"}].
+     {'page-size', $p, "page-size", integer,
+      "Unit size of each GC bucket pagination in a batch"}].
 
 convert(Options) ->
     lists:map(fun({leeway, Leeway}) when Leeway >= 0 ->
@@ -261,7 +262,12 @@ convert(Options) ->
                       {'end', iso8601_to_epoch(End)};
                  ({'max-workers', Concurrency}) when Concurrency > 0 ->
                       {'max-workers', Concurrency};
-                 ({'batch-size', BatchSize}) when BatchSize > 0 ->
+                 ({'page-size', BatchSize}) when BatchSize > 0 ->
+                      %% Note that internal description is different
+                      %% and confusing: "batch" is also a unit of
+                      %% single GC execution, which may include
+                      %% multiple combination of pagenation &
+                      %% deletion.
                       {batch_size, BatchSize};
                  (BadArg) ->
                       error({bad_arg, BadArg})

@@ -102,7 +102,7 @@ init([#gc_batch_state{
             %% EndKey <= BatchStart - Leeway
             _ = lager:info("Starting garbage collection: "
                            "(start, end) = (~p, ~p), "
-                           "leeway=~p, batch_start=~p, max_workers=~p, batch_size=~p",
+                           "leeway=~p, batch_start=~p, max_workers=~p, page-size=~p",
                            [StartKey, EndKey, Leeway, BatchStart, MaxWorkers, BatchSize]),
             {ok, prepare, State, 0};
         DefaultEndKey ->
