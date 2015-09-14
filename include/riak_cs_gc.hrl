@@ -40,7 +40,8 @@
           block_count=0 :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
-          max_workers :: non_neg_integer(),
+          max_workers=1 :: pos_integer(),
+          batch_size=1 :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
@@ -72,6 +73,7 @@
           %% start of the current gc interval
           start_key :: binary(),
           end_key :: binary(),
+          batch_size=1 :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           continuation :: continuation()
          }).
