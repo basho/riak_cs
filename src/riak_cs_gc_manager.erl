@@ -267,6 +267,8 @@ start_batch(State, Options) ->
     StartKey = proplists:get_value(start, Options,riak_cs_gc:epoch_start()),
     DefaultEndKey = riak_cs_gc:default_batch_end(BatchStart, Leeway),
     EndKey = proplists:get_value('end', Options, DefaultEndKey),
+    BatchSize = proplists:get_value(batch_size, Options,
+                                    riak_cs_config:gc_batch_size()),
 
     %% set many items to GC batch state here
     BatchState = #gc_batch_state{
@@ -274,7 +276,8 @@ start_batch(State, Options) ->
                     start_key=StartKey,
                     end_key=EndKey,
                     leeway=Leeway,
-                    max_workers=MaxWorkers},
+                    max_workers=MaxWorkers,
+                    batch_size=BatchSize},
 
     case riak_cs_gc_batch:start_link(BatchState) of
         {ok, Pid} ->

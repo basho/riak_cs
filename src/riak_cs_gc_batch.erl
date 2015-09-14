@@ -88,7 +88,8 @@ init([#gc_batch_state{
          start_key=StartKey,
          end_key=EndKey,
          leeway=Leeway,
-         max_workers=MaxWorkers} = State])
+         max_workers=MaxWorkers,
+         batch_size=BatchSize} = State])
   when
       %% StartKey can be negative as <<"-">> is smaller than any numeric digits
       0 =< StartKey andalso
@@ -101,8 +102,8 @@ init([#gc_batch_state{
             %% EndKey <= BatchStart - Leeway
             _ = lager:info("Starting garbage collection: "
                            "(start, end) = (~p, ~p), "
-                           "leeway=~p, batch_start=~p, max_workers=~p",
-                           [StartKey, EndKey, Leeway, BatchStart, MaxWorkers]),
+                           "leeway=~p, batch_start=~p, max_workers=~p, page-size=~p",
+                           [StartKey, EndKey, Leeway, BatchStart, MaxWorkers, BatchSize]),
             {ok, prepare, State, 0};
         DefaultEndKey ->
             _ = lager:error("GC did not start: "
@@ -215,7 +216,8 @@ has_batch_finished(_) ->
 fetch_first_keys(?STATE{batch_start=_BatchStart,
                         start_key=StartKey,
                         end_key=EndKey,
-                        leeway=_Leeway} = State) ->
+                        leeway=_Leeway,
+                        batch_size=BatchSize} = State) ->
 
     %% [Fetch the first set of manifests for deletion]
     %% this does not check out a worker from the riak connection pool;
@@ -226,7 +228,7 @@ fetch_first_keys(?STATE{batch_start=_BatchStart,
     %% connection, and avoids duplicating the configuration lookup
     %% code.
     {KeyListRes, KeyListState} =
-        riak_cs_gc_key_list:new(StartKey, EndKey),
+        riak_cs_gc_key_list:new(StartKey, EndKey, BatchSize),
     #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
     _ = lager:debug("Initial batch keys: ~p", [Batch]),
     State?STATE{batch=Batch,

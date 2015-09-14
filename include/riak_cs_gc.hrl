@@ -25,6 +25,9 @@
 %% The name is general so declare local type for readability.
 -type index_result_keys() :: keys().
 
+-define(DEFAULT_GC_BATCH_SIZE, 1000).
+-define(DEFAULT_GC_WORKERS, 2).
+
 -record(gc_batch_state, {
           %% start of the current gc batch
           batch_start :: undefined | non_neg_integer(),
@@ -40,7 +43,8 @@
           block_count=0 :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
-          max_workers :: non_neg_integer(),
+          max_workers=?DEFAULT_GC_WORKERS :: pos_integer(),
+          batch_size=?DEFAULT_GC_BATCH_SIZE :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
@@ -72,6 +76,7 @@
           %% start of the current gc interval
           start_key :: binary(),
           end_key :: binary(),
+          batch_size=?DEFAULT_GC_BATCH_SIZE :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           continuation :: continuation()
          }).
@@ -91,8 +96,6 @@
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
--define(DEFAULT_GC_BATCH_SIZE, 1000).
--define(DEFAULT_GC_WORKERS, 2).
 -define(EPOCH_START, <<"0">>).
 -define(DEFAULT_MAX_SCHEDULED_DELETE_MANIFESTS, 50).
 
