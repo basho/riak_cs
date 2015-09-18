@@ -63,6 +63,10 @@ error_message(bucket_already_exists) ->
     "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
 error_message(toomanybuckets) ->
     "You have attempted to create more buckets than allowed";
+error_message(invalid_key) ->
+    "";
+error_message(cannot_parse_uri) ->
+    "Couldn't parse the specified URI.";
 error_message({key_too_long, _}) ->
     "Your key is too long";
 error_message(user_already_exists) ->
@@ -119,6 +123,8 @@ error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
 error_code(bucket_already_exists) -> "BucketAlreadyExists";
 error_code(toomanybuckets) -> "TooManyBuckets";
+error_code(invalid_key) -> "InvalidURI";
+error_code(cannot_parse_uri) -> "InvalidURI";
 error_code({key_too_long, _}) -> "KeyTooLongError";
 error_code(user_already_exists) -> "UserAlreadyExists";
 error_code(entity_too_large) -> "EntityTooLarge";
@@ -172,6 +178,8 @@ status_code(bucket_not_empty)              -> 409;
 status_code(bucket_already_exists)         -> 409;
 status_code(user_already_exists)           -> 409;
 status_code(toomanybuckets)                -> 400;
+status_code(invalid_key)                   -> 400;
+status_code(cannot_parse_uri)              -> 400;
 status_code({key_too_long, _})             -> 400;
 %% yes, 400, really, not 413
 status_code(entity_too_large) -> 400;

@@ -45,19 +45,30 @@ eqc_test_() ->
         [
          {timeout, ?TESTING_TIME*2,
           ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
+                                                          ?QC_OUT(prop_key_validation()))))},
+         {timeout, ?TESTING_TIME*2,
+          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
                                                           ?QC_OUT(prop_s3_rewrite(pathstyle)))))},
          {timeout, ?TESTING_TIME*2,
           ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
                                                           ?QC_OUT(prop_s3_rewrite(hoststyle)))))},
          {timeout, ?TESTING_TIME*2,
           ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
-                                                          ?QC_OUT(prop_extract_bucket_from_host()))))
-         }],
+                                                          ?QC_OUT(prop_extract_bucket_from_host()))))}
+        ],
     [{inparallel, Tests}].
 
 %% ====================================================================
 %% EQC Properties
 %% ====================================================================
+
+prop_key_validation() ->
+    ?FORALL(CSKey,
+            riak_cs_gen:file_name(),
+            begin
+                KeyString = unicode:characters_to_list(CSKey, utf8),
+                ok =:= riak_cs_wm_utils:validate_key(KeyString, 1024, true)
+            end).
 
 %% @doc This test verifies that the key for object manifest is exactly same as
 %% the key before URL encoding. This is also a regression test of riak_cs#1040.
@@ -67,7 +78,7 @@ prop_s3_rewrite(Style) ->
     ok = application:set_env(riak_cs, cs_root_host, RootHost),
     DispatchTable = riak_cs_web:object_api_dispatch_table(),
     ?FORALL({CSBucket, CSKey, Verb, Scheme, Version},
-            {riak_cs_gen:bucket(), riak_cs_gen:file_name(),
+            {riak_cs_gen:bucket(), riak_cs_gen:key(),
              riak_cs_gen:http_verb(), riak_cs_gen:http_scheme(),
              riak_cs_gen:http_version()},
             begin
@@ -96,10 +107,9 @@ prop_s3_rewrite(Style) ->
                 Ctx = #context{local_context=#key_context{}},
                 {ok, #context{local_context=LocalCtx}} = riak_cs_wm_utils:extract_key(RD, Ctx),
 
-                %% ?debugVal(CSKey),
                 {CSBucket, CSKey} =:=
                     {LocalCtx#key_context.bucket,
-                     unicode:characters_to_binary(LocalCtx#key_context.key)}
+                     list_to_binary(LocalCtx#key_context.key)}
             end).
 
 prop_extract_bucket_from_host() ->
@@ -122,12 +132,12 @@ prop_extract_bucket_from_host() ->
 %% @doc Create encoded HTTP URI suffix corresponding to the original key
 %% And create double-quoted Path to make wm dispatch
 build_original_path_info(hoststyle, CSBucket, CSKey, RootHost) ->
-    Encoded = mochiweb_util:quote_plus(unicode:characters_to_list(CSKey)),
+    Encoded = mochiweb_util:quote_plus(CSKey),
     Host = lists:flatten([binary_to_list(CSBucket), $. , RootHost]),
     {Encoded, Host};
 build_original_path_info(pathstyle, CSBucket, CSKey, RootHost) ->
-    Encoded0 = mochiweb_util:quote_plus(unicode:characters_to_list(CSKey)),
-    Encoded = lists:flatten([$/, unicode:characters_to_list(CSBucket), $/, Encoded0]),
+    Encoded0 = mochiweb_util:quote_plus(CSKey),
+    Encoded = lists:flatten([$/, binary_to_list(CSBucket), $/, Encoded0]),
     {Encoded, RootHost}.
 
 base_host() ->

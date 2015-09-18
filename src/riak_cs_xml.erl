@@ -35,7 +35,8 @@
 %% Public API
 -export([scan/1,
          export_xml/1,
-         to_xml/1]).
+         to_xml/1,
+         valid_string/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
@@ -96,6 +97,17 @@ to_xml(?RCS_USER{}=User) ->
     user_record_to_xml(User);
 to_xml({users, Users}) ->
     user_records_to_xml(Users).
+
+%% @doc Verifies whether all character in the string is defined char
+%% in XML 1.1 standard ( http://www.w3.org/TR/xml11/#charsets ). This
+%% is also subset of valid UTF-8 characters.
+valid_string(String) when is_list(String) ->
+    F = fun(C) ->
+                (1 =< C andalso C =< 16#7FF)
+                    orelse (16#E000 =< C andalso C =< 16#FFFD)
+                    orelse (16#10000 =< C andalso C =< 16#10FFFF)
+        end,
+    lists:all(F, String).
 
 %% ===================================================================
 %% Internal functions

@@ -43,7 +43,8 @@ init(Ctx) ->
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
-    case riak_cs_wm_utils:extract_key(RD, Ctx) of
+    DoStrictCheck = ('PUT' =:= wrq:method(RD)),
+    case riak_cs_wm_utils:extract_key(RD, Ctx, DoStrictCheck) of
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx);
         {ok, ContextWithKey} ->

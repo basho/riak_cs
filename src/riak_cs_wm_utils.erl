@@ -39,6 +39,7 @@
          deny_access/2,
          deny_invalid_key/2,
          extract_key/2,
+         extract_key/3,
          extract_name/1,
          extract_canonical_id/1,
          extract_object_acl/1,
@@ -66,6 +67,10 @@
          extract_date/1,
          check_timeskew/1
         ]).
+
+-ifdef(TEST).
+-export([validate_key/3]).
+-endif.
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -408,23 +413,54 @@ iso_8601_to_erl_date(Date)  ->
     end.
 
 %% @doc Return a new context where the bucket and key for the s3
-%% object have been inserted. It also does key length check. TODO: do
-%% we check if the key is valid Unicode string or not?
+%% object have been inserted.
 -spec extract_key(#wm_reqdata{}, #context{}) ->
                          {ok, #context{}} | {error, {key_too_long, pos_integer()}}.
-extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
+extract_key(RD,Ctx) ->
+    extract_key(RD,Ctx,false).
+
+-spec extract_key(#wm_reqdata{}, #context{}, boolean()) ->
+                         {ok, #context{}} | {error, {key_too_long, pos_integer()}}.
+extract_key(RD,Ctx=#context{local_context=LocalCtx0}, DoStrictCheck) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    MaxKeyLen = riak_cs_config:max_key_length(),
     %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
-    MaxKeyLen = riak_cs_config:max_key_length(),
-    case mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))) of
-        Key when length(Key) =< MaxKeyLen ->
+    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
+    %% Mochiweb Provides only iolist(), not a utf-8 string.
+    case validate_key(list_to_binary(Key), MaxKeyLen, DoStrictCheck) of
+        ok ->
             LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-            {ok, Ctx#context{bucket=Bucket,
-                             local_context=LocalCtx}};
-        Key ->
-            {error, {key_too_long, length(Key)}}
+            {ok,  Ctx#context{bucket=Bucket, local_context=LocalCtx}};
+        {error, _} = E ->
+            E
     end.
+
+%% Checks following validity of a key:
+%% * Should be a valid UTF-8 string
+%% * Should consist of valid XML 1.1 characters
+%% * Should not include null (0x00) char
+-spec validate_key(binary(), pos_integer(), boolean()) ->
+                          ok | {error, {key_too_long, pos_integer()}|
+                                invalid_key|
+                                cannot_parse_uri}.
+validate_key(Key, MaxKeyLen, _DoStrictCheck) when not(byte_size(Key) =< MaxKeyLen) ->
+    {error, {key_too_long, byte_size(Key)}};
+validate_key(Key, _, true) ->
+    lager:info(">>>>>>>>>>>>>> ~p", [Key]),
+    case unicode:characters_to_list(Key, utf8) of
+        String when is_list(String) ->
+            case riak_cs_xml:valid_string(String) of
+                true -> ok;
+                false -> {error, invalid_key}
+            end;
+        {error, _, _} ->
+            {error, cannot_parse_uri};
+        {incomplete, _, _} ->
+            {error, cannot_parse_uri}
+    end;
+validate_key(_, _, false) ->
+    ok.
 
 extract_name(User) when is_list(User) ->
     User;

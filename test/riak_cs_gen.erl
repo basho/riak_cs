@@ -34,6 +34,7 @@
          bucket/0,
          bucket_or_blank/0,
          file_name/0,
+         key/0,
          block_size/0,
          content_length/0,
          bounded_content_length/0,
@@ -73,7 +74,16 @@ bucket_or_blank() ->
     maybe_blank_string().
 
 file_name() ->
-    non_blank_string().
+    key().
+
+key() ->
+    ?LET(String, not_empty(list(xml11_char())),
+         unicode:characters_to_binary(String)).
+
+xml11_char() ->
+    oneof([choose(1, 16#7FF),
+           choose(16#E000, 16#FFFD),
+           choose(16#10000, 16#10FFFF)]).
 
 block_size() ->
     elements([bs(El) || El <- [8, 16, 32]]).
