@@ -106,7 +106,7 @@ to_xml({users, Users}) ->
 %% ===================================================================
 
 export_xml(XmlDoc) ->
-    xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]).
+    list_to_binary(xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
 %% @doc Convert simple form into XML.
 -spec simple_form_to_xml(simple_form()) -> iodata().
