@@ -76,8 +76,7 @@ scan(String) ->
 %% handling has been moved into this module.
 %% @TODO Remove this asap!
 export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+    xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]).
 
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
@@ -269,11 +268,11 @@ format_value(undefined) ->
 format_value(Val) when is_atom(Val) ->
     atom_to_list(Val);
 format_value(Val) when is_binary(Val) ->
-    unicode:characters_to_list(Val, unicode);
+    binary_to_list(Val);
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
-    format_value(list_to_binary(Val));
+    Val;
 format_value(Val) when is_float(Val) ->
     io_lib:format("~p", [Val]).
 
