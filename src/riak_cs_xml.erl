@@ -34,7 +34,6 @@
 
 %% Public API
 -export([scan/1,
-         export_xml/1,
          to_xml/1]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
@@ -72,13 +71,6 @@ scan(String) ->
         _E -> {error, malformed_xml}
     end.
 
-%% This function is temporary and should be removed once all XML
-%% handling has been moved into this module.
-%% @TODO Remove this asap!
-export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
-
 -spec to_xml(term()) -> binary().
 to_xml(undefined) ->
     [];
@@ -100,6 +92,10 @@ to_xml({users, Users}) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+export_xml(XmlDoc) ->
+    unicode:characters_to_binary(
+      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
 %% @doc Convert simple form into XML.
 simple_form_to_xml(Elements) ->
