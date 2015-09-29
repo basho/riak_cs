@@ -54,6 +54,17 @@
                     xmlPI() | xmlDocument().
 -export_type([xmlNode/0, xmlElement/0, xmlText/0]).
 
+%% Types for simple forms
+-type tag() :: atom().
+-type content() :: [element()].
+-type element() :: {tag(), attributes(), content()} |
+                   {tag(), content()} |
+                   tag() |
+                   iodata() |
+                   integer() |
+                   float().         % Really Needed?
+-type simple_form() :: content().
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -98,6 +109,7 @@ export_xml(XmlDoc) ->
       xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
 
 %% @doc Convert simple form into XML.
+-spec simple_form_to_xml(simple_form()) -> iodata().
 simple_form_to_xml(Elements) ->
     XmlDoc = format_elements(Elements),
     export_xml(XmlDoc).
