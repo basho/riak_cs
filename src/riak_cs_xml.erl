@@ -94,7 +94,8 @@ to_xml(#acl_v1{}=Acl) ->
 to_xml(?LBRESP{}=ListBucketsResp) ->
     list_buckets_response_to_xml(ListBucketsResp);
 to_xml(?LORESP{}=ListObjsResp) ->
-    list_objects_response_to_xml(ListObjsResp);
+    SimpleForm = list_objects_response_to_simple_form(ListObjsResp),
+    to_xml(SimpleForm);
 to_xml(?RCS_USER{}=User) ->
     user_record_to_xml(User);
 to_xml({users, Users}) ->
@@ -151,25 +152,34 @@ owner_content({OwnerName, OwnerId}) ->
     [make_external_node('ID', OwnerId),
      make_external_node('DisplayName', OwnerName)].
 
-list_objects_response_to_xml(Resp) ->
-    KeyContents = [key_content_to_xml(Content) ||
-                   Content <- (Resp?LORESP.contents)],
-    CommonPrefixes = [common_prefix_to_xml(Prefix) ||
-                         Prefix <- Resp?LORESP.common_prefixes],
-    Contents = [make_external_node('Name', Resp?LORESP.name),
-                make_external_node('Prefix', Resp?LORESP.prefix),
-                make_external_node('Marker', Resp?LORESP.marker)] ++
+list_objects_response_to_simple_form(Resp) ->
+    KeyContents = [{'Contents', key_content_to_simple_form(Content)} ||
+                      Content <- (Resp?LORESP.contents)],
+    CommonPrefixes = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
+                         CommonPrefix <- Resp?LORESP.common_prefixes],
+    Contents = [{'Name',       [Resp?LORESP.name]},
+                {'Prefix',     [Resp?LORESP.prefix]},
+                {'Marker',     [Resp?LORESP.marker]}] ++
                 %% use a list-comprehension trick to only include
                 %% the `NextMarker' element if it's not `undefined'
-               [make_external_node('NextMarker', NextMarker) ||
-                NextMarker <- [Resp?LORESP.next_marker],
-                NextMarker =/= undefined] ++
-               [make_external_node('MaxKeys', Resp?LORESP.max_keys),
-                make_external_node('Delimiter', Resp?LORESP.delimiter),
-                make_external_node('IsTruncated', Resp?LORESP.is_truncated)] ++
+               [{'NextMarker',  [NextMarker]} ||
+                   NextMarker <- [Resp?LORESP.next_marker],
+                   NextMarker =/= undefined] ++
+               [{'MaxKeys',     [Resp?LORESP.max_keys]},
+                {'Delimiter',   [Resp?LORESP.delimiter]},
+                {'IsTruncated', [Resp?LORESP.is_truncated]}] ++
         KeyContents ++ CommonPrefixes,
-    export_xml([make_internal_node('ListBucketResult', [{'xmlns', ?S3_XMLNS}],
-                                   Contents)]).
+    [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Contents}].
+
+key_content_to_simple_form(KeyContent) ->
+    #list_objects_owner_v1{id=Id, display_name=Name} = KeyContent?LOKC.owner,
+    [{'Key',          [KeyContent?LOKC.key]},
+     {'LastModified', [KeyContent?LOKC.last_modified]},
+     {'ETag',         [KeyContent?LOKC.etag]},
+     {'Size',         [KeyContent?LOKC.size]},
+     {'StorageClass', [KeyContent?LOKC.storage_class]},
+     {'Owner',        [{'ID', [Id]},
+                       {'DisplayName', [Name]}]}].
 
 list_buckets_response_to_xml(Resp) ->
     BucketsContent =
@@ -191,23 +201,8 @@ bucket_to_xml(Name, CreationDate) ->
                         make_external_node('CreationDate', CreationDate)]).
 
 user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
-    make_internal_node('Owner', [make_external_node('ID', CanonicalId),
-                                 make_external_node('DisplayName', Name)]).
-
-key_content_to_xml(KeyContent) ->
-    Contents =
-        [make_external_node('Key', KeyContent?LOKC.key),
-         make_external_node('LastModified', KeyContent?LOKC.last_modified),
-         make_external_node('ETag', KeyContent?LOKC.etag),
-         make_external_node('Size', KeyContent?LOKC.size),
-         make_external_node('StorageClass', KeyContent?LOKC.storage_class),
-         make_owner(KeyContent?LOKC.owner)],
-    make_internal_node('Contents', Contents).
-
--spec common_prefix_to_xml(binary()) -> internal_node().
-common_prefix_to_xml(CommonPrefix) ->
-    make_internal_node('CommonPrefixes',
-                       [make_external_node('Prefix', CommonPrefix)]).
+    make_internal_node('Owner', [make_external_node('ID', [CanonicalId]),
+                                 make_external_node('DisplayName', [Name])]).
 
 -spec make_internal_node(atom(), term()) -> internal_node().
 make_internal_node(Name, Content) ->
@@ -259,12 +254,6 @@ make_grant(DisplayName, CanonicalId, Permission) ->
         [make_internal_node('Grantee', Attributes, GranteeContent),
          make_external_node('Permission', Permission)],
     make_internal_node('Grant', GrantContent).
-
--spec make_owner(list_objects_owner()) -> internal_node().
-make_owner(#list_objects_owner_v1{id=Id, display_name=Name}) ->
-    Content = [make_external_node('ID', Id),
-               make_external_node('DisplayName', Name)],
-    make_internal_node('Owner', Content).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
 %% @doc Format value depending on its type
