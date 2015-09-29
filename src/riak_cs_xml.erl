@@ -106,8 +106,7 @@ to_xml({users, Users}) ->
 %% ===================================================================
 
 export_xml(XmlDoc) ->
-    unicode:characters_to_binary(
-      xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}]), unicode, unicode).
+    list_to_binary(xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
 
 %% @doc Convert simple form into XML.
 -spec simple_form_to_xml(simple_form()) -> iodata().
@@ -125,8 +124,7 @@ format_element({Tag, Attrs, Elements}) ->
 format_element(Value) ->
     format_value(Value).
 
-%% @doc Convert an internal representation of an ACL
-%% into XML.
+%% @doc Convert an internal representation of an ACL into XML.
 -spec acl_to_xml(acl()) -> binary().
 acl_to_xml(Acl) ->
     Content = [make_internal_node('Owner', owner_content(acl_owner(Acl))),
@@ -256,24 +254,17 @@ make_grant(DisplayName, CanonicalId, Permission) ->
     make_internal_node('Grant', GrantContent).
 
 -spec format_value(atom() | integer() | binary() | list()) -> string().
-%% @doc Format value depending on its type
-%% Handling of characters (binaries or lists of integers) are as follows:
-%% - For binaries, we assume that they are encoded by UTF-8.
-%% - For lists, we assume they are converted from UTF-8 encoded binaries
-%%   by applying binary_to_list/1.
-%%   This is tricky point but binary_to_list/1 treats binaries as if it is
-%%   Latin-1 encoded, so we should turn them back by list_to_binary first.
-%%   Then we can apply unicode:characters_to_binary safely.
+%% @doc Convert value depending on its type into strings
 format_value(undefined) ->
     [];
 format_value(Val) when is_atom(Val) ->
     atom_to_list(Val);
 format_value(Val) when is_binary(Val) ->
-    unicode:characters_to_list(Val, unicode);
+    binary_to_list(Val);
 format_value(Val) when is_integer(Val) ->
     integer_to_list(Val);
 format_value(Val) when is_list(Val) ->
-    format_value(list_to_binary(Val));
+    Val;
 format_value(Val) when is_float(Val) ->
     io_lib:format("~p", [Val]).
 
