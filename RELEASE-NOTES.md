@@ -32,17 +32,17 @@ New metrics have been added that enable you to determine the health of your Riak
 
 **Note:** stats item names from prior to 2.0.x are not preserved; they have been renamed or removed. No backward consistency is maintained. Please see [the documentation](http://docs.basho.com/riakcs/latest/cookbooks/Metrics/) for more information.
 
-     * [[PR 1189](https://github.com/basho/riak_cs/pull/1189)]
-     * [[PR 1180](https://github.com/basho/riak_cs/pull/1180)]
-     * [[PR 1214](https://github.com/basho/riak_cs/pull/1214)]
-     * [[PR 1194](https://github.com/basho/riak_cs/pull/1194)]
-     * [[PR 99](https://github.com/basho/stanchion/pull/99)]
+* [[PR 1189](https://github.com/basho/riak_cs/pull/1189)]
+* [[PR 1180](https://github.com/basho/riak_cs/pull/1180)]
+* [[PR 1214](https://github.com/basho/riak_cs/pull/1214)]
+* [[PR 1194](https://github.com/basho/riak_cs/pull/1194)]
+* [[PR 99](https://github.com/basho/stanchion/pull/99)]
 
 Additional storage usage metrics are also available. . These metrics are gathered during storage calculation. Gathering these metrics is off by default, but you can turn it on by setting `detailed_storage_calc` to `true` in advanced.config. When you enable this option, you have access to information about how many manifests are `writing`, `pending_delete`, `scheduled_delete` and `active` which is not visible via the API.
 
 **Note:** Metrics do not always correctly reflect actual disk usage. For instance, `writing` may indicate more space than is actually used. Or, for example, if an upload was cancelled in the middle, the calculation does not know how much actual storage space is consumed. In the same way, `scheduled_delete` also may not reflect the exact amount of disk usage because blocks might already be partially deleted by garbage collection.
 
-     * [[PR 1120](https://github.com/basho/riak_cs/pull/1120)]
+* [[PR 1120](https://github.com/basho/riak_cs/pull/1120)]
 
 ###`riak-cs-admin`
 The following administration CLIs have been replaced by the [`riak-cs-admin` command](http://docs.basho.com/riakcs/latest/cookbooks/command-line-tools/):
@@ -54,7 +54,7 @@ The following administration CLIs have been replaced by the [`riak-cs-admin` com
 
 The commands listed above are deprecated and will be removed in future releases.
 
-    * [[PR 1175](https://github.com/basho/riak_cs/pull/1175)]
+* [[PR 1175](https://github.com/basho/riak_cs/pull/1175)]
 
 ###Garbage Collection Refinements
 Several new options have been added to the `riak-cs-admin gc` command:
