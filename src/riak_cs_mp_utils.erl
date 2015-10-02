@@ -50,9 +50,6 @@
          list_parts/5, list_parts/6,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
-         make_special_error/1,
-         make_special_error/4,
-         new_manifest/5,
          upload_part/6, upload_part/7,
          upload_part_1blob/2,
          upload_part_finished/7, upload_part_finished/8,
@@ -169,21 +166,6 @@ make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callb
              Ctx}
     end.
 
-make_special_error(Error) ->
-    make_special_error(Error, Error, "request-id", "host-id").
-
-make_special_error(Code, Message, RequestId, HostId) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [Code]},
-               {'Message', [Message]},
-               {'RequestId', [RequestId]},
-               {'HostId', [HostId]}
-              ]
-             },
-    riak_cs_xml:to_xml([XmlDoc]).
-
-
 list_multipart_uploads(Bucket, Caller, Opts) ->
     list_multipart_uploads(Bucket, Caller, Opts, nopid).
 
@@ -219,13 +201,12 @@ list_multipart_uploads_with_2ikey(Bucket, Opts, RcPid, Key2i) ->
     HashBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_index_list_multipart_uploads_timeout(),
-    case riakc_pb_socket:get_index(ManifestPbc, HashBucket,
-                                   Key2i, <<"1">>, Timeout) of
-
+    case riak_cs_pbc:get_index_eq(ManifestPbc, HashBucket,
+                                  Key2i, <<"1">>, [{timeout, Timeout}],
+                                  [riakc, get_uploads_by_index]) of
         {ok, ?INDEX_RESULTS{keys=Names}} ->
             {ok, list_multipart_uploads2(Bucket, RcPid,
                                          Names, Opts)};
-
         Else2 ->
             Else2
     end.
@@ -242,7 +223,6 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RcPidUnW) ->
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = druuid:v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
-    %% TODO: add cluster_id ... which means calling new_manifest/11 not /9.
     MetaData = case proplists:get_value(meta_data, Opts) of
                    undefined -> [];
                    AsIsHdrs  -> AsIsHdrs
@@ -257,7 +237,11 @@ new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
                                        MetaData,
                                        riak_cs_lfs_utils:block_size(),
                                        %% ACL: needs Riak client pid, so we wait
-                                       no_acl_yet),
+                                       no_acl_yet,
+                                       [],
+                                       %% Cluster ID and Bag ID are added later
+                                       undefined,
+                                       undefined),
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
     M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
@@ -277,7 +261,7 @@ upload_part_1blob(PutPid, Blob) ->
 
 %% Once upon a time, in a naive land far away, I thought that it would
 %% be sufficient to use each part's UUID as the ETag when the part
-%% upload was finished, and thus the clietn would use that UUID to
+%% upload was finished, and thus the client would use that UUID to
 %% complete the uploaded object.  However, 's3cmd' want to use the
 %% ETag of each uploaded part to be the MD5(part content) and will
 %% issue a warning if that checksum expectation isn't met.  So, now we
@@ -294,7 +278,7 @@ upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
     do_part_common(upload_part_finished, Bucket, Key, UploadId,
                    Caller, [{upload_part_finished, Extra}], RcPidUnW).
 
-write_new_manifest(M, Opts, RcPidUnW) ->
+write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_client(RcPidUnW) of
@@ -302,21 +286,21 @@ write_new_manifest(M, Opts, RcPidUnW) ->
             try
                 Acl = case proplists:get_value(acl, Opts) of
                           undefined ->
-                              % 4th arg, pid(), unused but honor the contract
                               riak_cs_acl_utils:canned_acl("private", Owner, undefined);
                           AnAcl ->
                               AnAcl
                       end,
-                ClusterId = riak_cs_config:cluster_id(?PID(RcPid)),
-                M2 = M?MANIFEST{acl = Acl,
-                                cluster_id = ClusterId,
-                                write_start_time=os:timestamp()},
-                {Bucket, Key} = M?MANIFEST.bkey,
+                BagId = riak_cs_mb_helper:choose_bag_id(block, {Bucket, Key, UUID}),
+                M2 = riak_cs_lfs_utils:set_bag_id(BagId, M),
+                ClusterId = riak_cs_mb_helper:cluster_id(BagId),
+                M3 = M2?MANIFEST{acl = Acl,
+                                 cluster_id=ClusterId,
+                                 write_start_time=os:timestamp()},
                 {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key,
                                                                 ?PID(RcPid)),
                 try
-                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M2),
-                    {ok, M2?MANIFEST.uuid}
+                    ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M3),
+                    {ok, M3?MANIFEST.uuid}
                 after
                     ok = riak_cs_manifest_fsm:stop(ManiPid)
                 end
@@ -472,7 +456,7 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
                      {Bucket, Key, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RcPid},
-                     {false, BagId}),
+                     false, BagId),
     try
         ?MANIFEST{content_length = ContentLength,
                   props = MProps} = M,
@@ -692,26 +676,29 @@ comb_parts(MpM, PartETags) ->
             [{{PM?PART_MANIFEST.part_number, PM?PART_MANIFEST.content_md5}, PM} ||
                 PM <- Parts]),
     Keep0 = dict:new(),
-    Delete0 = dict:new(),
-    {_, Keep, _Delete, _, KeepBytes, KeepPMs, MD5Context} =
+    {_, _Keep, _, _, KeepBytes, KeepPMs, MD5Context} =
         lists:foldl(fun comb_parts_fold/2,
-                    {All, Keep0, Delete0, 0, 0, [], riak_cs_utils:md5_init()}, PartETags),
-    ToDelete = [PM || {_, PM} <-
-                          dict:to_list(
-                            dict:filter(fun(K, _V) ->
-                                             not dict:is_key(K, Keep) end,
-                                        All))],
+                    {All, Keep0, 0, undefined, 0, [], riak_cs_utils:md5_init()}, PartETags),
+    %% To extract parts to be deleted, use ?PART_MANIFEST.part_id because
+    %% {PartNum, ETag} pair is NOT unique in the set of ?PART_MANIFEST's.
+    KeepPartIDs = [PM?PART_MANIFEST.part_id || PM <- KeepPMs],
+    ToDelete = [PM || PM <- Parts,
+                      not lists:member(PM?PART_MANIFEST.part_id, KeepPartIDs)],
+    lager:debug("Part count to be deleted at completion = ~p~n", [length(ToDelete)]),
     {KeepBytes, riak_cs_utils:md5_final(MD5Context), lists:reverse(KeepPMs), ToDelete}.
 
+comb_parts_fold({LastPartNum, LastPartETag} = _K,
+                {_All, _Keep, LastPartNum, LastPartETag, _Bytes, _KeepPMs, _} = Acc) ->
+    Acc;
 comb_parts_fold({PartNum, _ETag} = _K,
-                {_All, _Keep, _Delete, LastPartNum, _Bytes, _KeepPMs, _})
+                {_All, _Keep, LastPartNum, _LastPartETag, _Bytes, _KeepPMs, _})
   when PartNum =< LastPartNum orelse PartNum < 1 ->
     throw(bad_etag_order);
 comb_parts_fold({PartNum, ETag} = K,
-                {All, Keep, Delete, _LastPartNum, Bytes, KeepPMs, MD5Context}) ->
+                {All, Keep, _LastPartNum, _LastPartETag, Bytes, KeepPMs, MD5Context}) ->
     case {dict:find(K, All), dict:is_key(K, Keep)} of
         {{ok, PM}, false} ->
-            {All, dict:store(K, true, Keep), Delete, PartNum,
+            {All, dict:store(K, true, Keep), PartNum, ETag,
              Bytes + PM?PART_MANIFEST.content_length, [PM|KeepPMs],
              riak_cs_utils:md5_update(MD5Context, ETag)};
         _X ->

@@ -153,8 +153,8 @@ write_uuids(Opts, Bucket, BlocksTable, _) ->
                                         [Bucket, mochihex:to_hex(UUID),
                                          length(Seqs), Seqs]),
                                 [ok = file:write(File,
-                                                 [Bucket, $ ,
-                                                  mochihex:to_hex(UUID), $ ,
+                                                 [Bucket, $\t,
+                                                  mochihex:to_hex(UUID), $\t,
                                                   integer_to_list(Seq), $\n]) ||
                                     Seq <- lists:sort(Seqs)],
                                 {TotalUUIDs + 1, TotalBlocks + length(Seqs)}

@@ -16,17 +16,15 @@ confirm() ->
     AFirst = hd(ANodes),
     BFirst = hd(BNodes),
 
-    {AccessKeyId, SecretAccessKey} = rtcs:create_user(AFirst, 1),
-    {AccessKeyId2, SecretAccessKey2} = rtcs:create_user(BFirst, 2),
-
     %% User 1, Cluster 1 config
-    U1C1Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(ANodes))),
-    %% User 2, Cluster 1 config
-    U2C1Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(ANodes))),
+    U1C1Config = rtcs_admin:create_user(AFirst, 1),
     %% User 1, Cluster 2 config
-    U1C2Config = rtcs:config(AccessKeyId, SecretAccessKey, rtcs:cs_port(hd(BNodes))),
+    U1C2Config = rtcs_admin:aws_config(U1C1Config, [{port, rtcs_config:cs_port(BFirst)}]),
+
     %% User 2, Cluster 2 config
-    U2C2Config = rtcs:config(AccessKeyId2, SecretAccessKey2, rtcs:cs_port(hd(BNodes))),
+    U2C2Config = rtcs_admin:create_user(BFirst, 2),
+    %% User 2, Cluster 1 config
+    U2C1Config = rtcs_admin:aws_config(U2C2Config, [{port, rtcs_config:cs_port(AFirst)}]),
 
     lager:info("User 1 IS valid on the primary cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(U1C1Config)),
@@ -254,6 +252,19 @@ confirm() ->
 
     Obj15 = erlcloud_s3:get_object(?TEST_BUCKET, "object_four", U1C2Config),
     ?assertEqual(Object4A, proplists:get_value(content,Obj15)),
+
+    lager:info("Disable proxy_get (not disconnect) "
+               "and enable realtime block replication"),
+    set_proxy_get(LeaderA, "disable", "B", ANodes, BNodes),
+    set_block_rt(RiakNodes),
+
+    Object6 = crypto:rand_bytes(4194304),
+    erlcloud_s3:put_object(?TEST_BUCKET, "object_six", Object6, U1C1Config),
+    repl_helpers:wait_until_realtime_sync_complete(ANodes),
+    lager:info("The object can be downloaded from sink cluster"),
+    Obj16 = erlcloud_s3:get_object(?TEST_BUCKET, "object_six", U1C2Config),
+    ?assertEqual(Object6, proplists:get_value(content, Obj16)),
+
     rtcs:pass().
 
 enable_pg(SourceLeader, SinkName, ANodes, BNodes, BPort) ->
@@ -279,3 +290,6 @@ set_proxy_get(SourceLeader, EnableOrDisable, SinkName, ANodes, BNodes) ->
     rt:wait_until_ring_converged(BNodes),
     ok.
 
+set_block_rt(RiakNodes) ->
+    rpc:multicall(RiakNodes, application, set_env,
+                  [riak_repl, replicate_cs_blocks_realtime, true]).

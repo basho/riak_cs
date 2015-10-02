@@ -18,8 +18,8 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Module to manage storage of objects and files
-
+%% @doc Module to manage deletion process of objects, including
+%%      both manifests and blocks.
 -module(riak_cs_delete_fsm).
 
 -behaviour(gen_fsm).
@@ -28,16 +28,18 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-
 -endif.
 
 %% API
 -export([start_link/5,
+         delete/1,
+         sync_delete/1,
          block_deleted/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
          prepare/2,
+         prepare/3,
          deleting/2,
          handle_event/3,
          handle_sync_event/4,
@@ -50,8 +52,10 @@
                 uuid :: binary(),
                 manifest :: lfs_manifest(),
                 riak_client :: riak_client(),
-                gc_worker_pid :: pid(),
-                %% Key in GC bucket which this manifest belongs to.
+                caller :: term(),
+                finished_callback :: fun(),
+                %% For GC, Key in GC bucket which this manifest belongs to.
+                %% For active deletion, not used.
                 %% Set only once at init and unchanged. Used only for logs.
                 gc_key :: binary(),
                 delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
@@ -59,7 +63,8 @@
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
                 deleted_blocks = 0 :: non_neg_integer(),
-                total_blocks = 0 :: non_neg_integer()}).
+                total_blocks = 0 :: non_neg_integer(),
+                cleanup_manifests = true :: boolean()}).
 
 -type state() :: #state{}.
 
@@ -68,9 +73,17 @@
 %% ===================================================================
 
 %% @doc Start a `riak_cs_delete_fsm'.
-start_link(BagId, Manifest, GCWorkerPid, GCKey, Options) ->
-    Args = [BagId, Manifest, GCWorkerPid, GCKey, Options],
+start_link(BagId, Manifest, FinishedCallback, GCKey, Options) ->
+    Args = [BagId, Manifest, FinishedCallback, GCKey, Options],
     gen_fsm:start_link(?MODULE, Args, []).
+
+%% @doc Let the fsm start deleting
+delete(Pid) ->
+    gen_fsm:send_event(Pid, delete).
+
+%% @doc Let the fsm start deleting and wait for response
+sync_delete(Pid) ->
+    gen_fsm:sync_send_event(Pid, delete, infinity).
 
 -spec block_deleted(pid(), {ok, {binary(), integer()}} | {error, binary()}) -> ok.
 block_deleted(Pid, Response) ->
@@ -80,24 +93,30 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([BagId, {UUID, Manifest}, GCWorkerPid, GCKey, _Options]) ->
+init([BagId, {UUID, Manifest}, FinishedCallback, GCKey, Options]) ->
     {Bucket, Key} = Manifest?MANIFEST.bkey,
     {ok, RcPid} = riak_cs_riak_client:checkout(),
     ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
     ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
+    CleanupManifests = proplists:get_value(cleanup_manifests,
+                                           Options, true),
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
                    uuid=UUID,
                    riak_client=RcPid,
-                   gc_worker_pid=GCWorkerPid,
-                   gc_key=GCKey},
-    {ok, prepare, State, 0}.
+                   finished_callback=FinishedCallback,
+                   gc_key=GCKey,
+                   cleanup_manifests=CleanupManifests},
+    {ok, prepare, State}.
 
 %% @TODO Make sure we avoid any race conditions here
 %% like we had in the other fsms.
-prepare(timeout, State) ->
+prepare(delete, State) ->
     handle_receiving_manifest(State).
+
+prepare(delete, From, State) ->
+    handle_receiving_manifest(State#state{caller=From}).
 
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
          State=#state{deleted_blocks=DeletedBlocks}) ->
@@ -121,15 +140,21 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
-terminate(Reason, _StateName, #state{all_delete_workers=AllDeleteWorkers,
-                                     manifest=?MANIFEST{state=ManifestState},
-                                     bucket=Bucket,
-                                     key=Key,
-                                     uuid=UUID,
-                                     riak_client=RcPid} = State) ->
-    manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid),
+terminate(Reason, _StateName,
+          #state{all_delete_workers=AllDeleteWorkers,
+                 manifest=?MANIFEST{state=ManifestState},
+                 bucket=Bucket,
+                 key=Key,
+                 uuid=UUID,
+                 riak_client=RcPid,
+                 cleanup_manifests=CleanupManifests} = State) ->
+    if CleanupManifests ->
+            manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid);
+       true ->
+            noop
+    end,
     _ = [riak_cs_block_server:stop(P) || P <- AllDeleteWorkers],
-    notify_gc_worker(Reason, State),
+    _ = reply_or_callback(Reason, State),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -240,18 +265,22 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
                                     free_deleters=NewFreeDeleters,
                                     delete_blocks_remaining=NewDeleteBlocksRemaining}).
 
--spec notify_gc_worker(term(), state()) -> term().
-notify_gc_worker(Reason, State) ->
-    gen_fsm:sync_send_event(State#state.gc_worker_pid,
-                            notification_msg(Reason, State),
-                            infinity).
+reply_or_callback(Reason, #state{caller=Caller}=State) when Caller =/= undefined ->
+    gen_fsm:reply(Caller, notification_msg(Reason, State));
+reply_or_callback(Reason, #state{finished_callback=Callback}=State) ->
+    Callback(notification_msg(Reason, State)).
 
 -spec notification_msg(term(), state()) -> {pid(),
                                             {ok, {non_neg_integer(), non_neg_integer()}} |
                                             {error, term()}}.
-notification_msg(normal, #state{deleted_blocks = DeletedBlocks,
-                                total_blocks = TotalBlocks}) ->
-    {self(), {ok, {DeletedBlocks, TotalBlocks}}};
+notification_msg(normal, #state{
+                            bucket=Bucket,
+                            key=Key,
+                            uuid=UUID,
+                            deleted_blocks = DeletedBlocks,
+                            total_blocks = TotalBlocks}) ->
+    Reply = {ok, {Bucket, Key, UUID, DeletedBlocks, TotalBlocks}},
+    {self(), Reply};
 notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 

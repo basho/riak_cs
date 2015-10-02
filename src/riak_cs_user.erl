@@ -34,7 +34,8 @@
          save_user/3,
          update_key_secret/1,
          update_user/3,
-         key_id/1
+         key_id/1,
+         fetch_user_keys/1
         ]).
 
 -include("riak_cs.hrl").
@@ -75,11 +76,15 @@ create_credentialed_user({error, _}=Error, _User) ->
 create_credentialed_user({ok, AdminCreds}, User) ->
     {StIp, StPort, StSSL} = riak_cs_utils:stanchion_data(),
     %% Make a call to the user request serialization service.
+    StatsKey = [velvet, create_user],
+    _ = riak_cs_stats:inflow(StatsKey),
+    StartTime = os:timestamp(),
     Result = velvet:create_user(StIp,
                                 StPort,
                                 "application/json",
                                 binary_to_list(riak_cs_json:to_json(User)),
                                 [{ssl, StSSL}, {auth_creds, AdminCreds}]),
+    _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
     handle_create_user(Result, User).
 
 handle_create_user(ok, User) ->
@@ -115,6 +120,9 @@ update_user(User, UserObj, RcPid) ->
     case riak_cs_config:admin_creds() of
         {ok, AdminCreds} ->
             Options = [{ssl, StSSL}, {auth_creds, AdminCreds}],
+            StatsKey = [velvet, update_user],
+            _ = riak_cs_stats:inflow(StatsKey),
+            StartTime = os:timestamp(),
             %% Make a call to the user request serialization service.
             Result = velvet:update_user(StIp,
                                         StPort,
@@ -122,6 +130,7 @@ update_user(User, UserObj, RcPid) ->
                                         User?RCS_USER.key_id,
                                         binary_to_list(riak_cs_json:to_json(User)),
                                         Options),
+            _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
             handle_update_user(Result, User, UserObj, RcPid);
         {error, _}=Error ->
             Error
@@ -137,25 +146,33 @@ get_user(KeyId, RcPid) ->
     BinKey = list_to_binary(KeyId),
     case riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
-            case riakc_obj:value_count(Obj) of
-                1 ->
-                    Value = binary_to_term(riakc_obj:get_value(Obj)),
-                    User = update_user_record(Value),
-                    Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}};
-                0 ->
-                    {error, no_value};
-                _ ->
-                    Values = [binary_to_term(Value) ||
-                                 Value <- riakc_obj:get_values(Obj),
-                                 Value /= <<>>  % tombstone
-                             ],
-                    User = update_user_record(hd(Values)),
-                    Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-                    {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-            end;
+            {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
         Error ->
             Error
+    end.
+
+-spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
+from_riakc_obj(Obj, KeepDeletedBuckets) ->
+    case riakc_obj:value_count(Obj) of
+        1 ->
+            Value = binary_to_term(riakc_obj:get_value(Obj)),
+            User = update_user_record(Value),
+            Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+            User?RCS_USER{buckets=Buckets};
+        0 ->
+            error(no_value);
+        N ->
+            Values = [binary_to_term(Value) ||
+                         Value <- riakc_obj:get_values(Obj),
+                         Value /= <<>>  % tombstone
+                     ],
+            User = update_user_record(hd(Values)),
+
+            KeyId = User?RCS_USER.key_id,
+            _ = lager:warning("User object of '~s' has ~p siblings", [KeyId, N]),
+
+            Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
+            User?RCS_USER{buckets=Buckets}
     end.
 
 %% @doc Retrieve a Riak CS user's information based on their
@@ -176,7 +193,9 @@ get_user_by_index(Index, Value, RcPid) ->
 -spec get_user_index(binary(), binary(), riak_client()) -> {ok, string()} | {error, term()}.
 get_user_index(Index, Value, RcPid) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riakc_pb_socket:get_index(MasterPbc, ?USER_BUCKET, Index, Value) of
+    %% TODO: Does adding max_results=1 help latency or load to riak cluster?
+    case riak_cs_pbc:get_index_eq(MasterPbc, ?USER_BUCKET, Index, Value,
+                                  [riakc, get_user_by_index]) of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->
@@ -217,6 +236,14 @@ update_key_secret(User=?RCS_USER{email=Email,
 display_name(Email) ->
     Index = string:chr(Email, $@),
     string:sub_string(Email, 1, Index-1).
+
+%% @doc Grab the whole list of Riak CS user keys.
+-spec fetch_user_keys(riak_client()) -> {ok, [binary()]} | {error, term()}.
+fetch_user_keys(RcPid) ->
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Timeout = riak_cs_config:list_keys_list_users_timeout(),
+    riak_cs_pbc:list_keys(MasterPbc, ?USER_BUCKET, Timeout,
+                          [riakc, list_all_user_keys]).
 
 %% ===================================================================
 %% Internal functions

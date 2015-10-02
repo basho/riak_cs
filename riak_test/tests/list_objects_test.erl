@@ -28,9 +28,8 @@
 -define(TEST_BUCKET, "riak-test-bucket").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, false}])}],
-    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1, Config),
+    rtcs:set_conf(cs, [{"fold_objects_for_list_keys", "off"}]),
+    {UserConfig, {_RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(1),
     assert_v1(CSNodes),
     list_objects_test_helper:test(UserConfig).
 

@@ -22,6 +22,7 @@
 
 -export([service_available/2,
          service_available/3,
+         lower_case_method/1,
          iso_8601_datetime/0,
          iso_8601_datetime/1,
          to_iso_8601/1,
@@ -64,7 +65,9 @@
          fetch_bucket_owner/2,
          bucket_owner/1,
          extract_date/1,
-         check_timeskew/1
+         check_timeskew/1,
+         content_length/1,
+         valid_entity_length/3
         ]).
 
 -include("riak_cs.hrl").
@@ -339,7 +342,7 @@ shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
 streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
-            ok = riak_cs_stats:update_with_start(object_get, StartTime),
+            ok = riak_cs_stats:update_with_start([object, get], StartTime),
             riak_cs_riak_client:checkin(RcPool, RcPid),
             riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
                                             [], [UserName, BFile_str]),
@@ -347,6 +350,16 @@ streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}
     end.
+
+-spec lower_case_method(atom()) -> atom().
+lower_case_method('GET') -> get;
+lower_case_method('HEAD') -> head;
+lower_case_method('POST') -> post;
+lower_case_method('PUT') -> put;
+lower_case_method('DELETE') -> delete;
+lower_case_method('TRACE') -> trace;
+lower_case_method('CONNECT') -> connect;
+lower_case_method('OPTIONS') -> options.
 
 %% @doc Get an ISO 8601 formatted timestamp representing
 %% current time.
@@ -407,17 +420,24 @@ iso_8601_to_erl_date(Date)  ->
              {b2i(Hr), b2i(Mn), b2i(Sc)}}
     end.
 
-%% @doc Return a new context where the bucket and key for the s3 object
-%% have been inserted.
--spec extract_key(#wm_reqdata{}, #context{}) -> #context{}.
+%% @doc Return a new context where the bucket and key for the s3
+%% object have been inserted. It also does key length check. TODO: do
+%% we check if the key is valid Unicode string or not?
+-spec extract_key(#wm_reqdata{}, #context{}) ->
+                         {ok, #context{}} | {error, {key_too_long, pos_integer()}}.
 extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
-    Key = mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))),
-    LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-    Ctx#context{bucket=Bucket,
-                local_context=LocalCtx}.
+    MaxKeyLen = riak_cs_config:max_key_length(),
+    case mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))) of
+        Key when length(Key) =< MaxKeyLen ->
+            LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
+            {ok, Ctx#context{bucket=Bucket,
+                             local_context=LocalCtx}};
+        Key ->
+            {error, {key_too_long, length(Key)}}
+    end.
 
 extract_name(User) when is_list(User) ->
     User;
@@ -728,6 +748,7 @@ handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
     shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
+    %% Policy says no
     #context{riak_client=RcPid,
              response_module=ResponseMod,
              user=User,
@@ -933,7 +954,7 @@ actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->
-    {{halt, 404}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
+    {{halt, {404, "Not Found"}}, riak_cs_access_log_handler:set_user(User, RD), Ctx}.
 
 -spec actor_is_owner_and_allowed_policy(User :: rcs_user(),
                                         RD :: term(),
@@ -961,7 +982,7 @@ actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->
-    {{halt, 404}, RD, Ctx}.
+    {{halt, {404, "Not Found"}}, RD, Ctx}.
 
 -spec actor_is_not_owner_but_allowed_policy(User :: rcs_user(),
                                             OwnerId :: string(),
@@ -1034,6 +1055,49 @@ check_timeskew(ReqTimestamp) when is_tuple(ReqTimestamp)->
     end;
 check_timeskew(_) ->
     false.
+
+-spec content_length(#wm_reqdata{}) -> undefined | non_neg_integer() | {error, term()}.
+content_length(RD) ->
+    case wrq:get_req_header("Content-Length", RD) of
+        undefined -> undefined;
+        CL ->
+            case (catch list_to_integer(CL)) of
+                Length when is_integer(Length) andalso 0 =< Length -> Length;
+                _Other -> {error, CL}
+            end
+    end.
+
+%% `valid_entity_length' helper.
+%% Other than PUT, any Content-Length is allowed including undefined.
+%% For PUT, not Copy, Content-Length is mandatory (at least in v2 auth
+%% scheme) and the value should be smaller than the upper bound of
+%% single request entity size.
+%% On the other hand, for PUT Copy, Content-Length is not mandatory.
+%% If it exists, however, it should be ZERO.
+valid_entity_length(MaxLen, RD, #context{response_module=ResponseMod,
+                                         local_context=LocalCtx} = Ctx) ->
+    case {wrq:method(RD), wrq:get_req_header("x-amz-copy-source", RD)} of
+        {'PUT', undefined} ->
+            MaxLen = riak_cs_lfs_utils:max_content_len(),
+            case riak_cs_wm_utils:content_length(RD) of
+                Length when is_integer(Length) andalso
+                            Length =< MaxLen ->
+                    UpdLocalCtx = LocalCtx#key_context{size=Length},
+                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                Length when is_integer(Length) ->
+                    ResponseMod:api_error(entity_too_large, RD, Ctx);
+                _ -> {false, RD, Ctx}
+            end;
+        {'PUT', _Source} ->
+            case riak_cs_wm_utils:content_length(RD) of
+                CL when CL =:= 0 orelse CL =:= undefined ->
+                    UpdLocalCtx = LocalCtx#key_context{size=0},
+                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                _ -> {false, RD, Ctx}
+            end;
+        _ ->
+            {true, RD, Ctx}
+    end.
 
 %% ===================================================================
 %% Internal functions

@@ -50,16 +50,14 @@ confirm() ->
     confirm_1(false).
 
 confirm_1(Use2iForStorageCalc) when is_boolean(Use2iForStorageCalc) ->
-    Config = [{riak, rtcs:riak_config([{riak_kv, [{delete_mode, keep}]}])},
-              {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true},
-                                   {use_2i_for_storage_calc, Use2iForStorageCalc}])}],
-    SetupRes = rtcs:setup(1, Config),
+    rtcs:set_advanced_conf(riak, [{riak_kv, [{delete_mode, keep}]}]),
+    rtcs:set_advanced_conf(cs, [{riak_cs,
+                                      [{use_2i_for_storage_calc, Use2iForStorageCalc}]}]),
+    SetupRes = rtcs:setup(1),
     confirm_2(SetupRes).
 
 confirm_2({UserConfig, {RiakNodes, CSNodes, _Stanchion}}) ->
-    {AccessKey2, SecretKey2} = rtcs:create_user(hd(RiakNodes), 1),
-    UserConfig2 = rtcs:config(AccessKey2, SecretKey2, rtcs:cs_port(hd(RiakNodes))),
+    UserConfig2 = rtcs_admin:create_user(hd(RiakNodes), 1),
 
     TestSpecs = [store_object(?BUCKET1, UserConfig),
                  delete_object(?BUCKET2, UserConfig),
@@ -239,7 +237,7 @@ calc_storage_stats(CSNode) ->
     Begin = rtcs:datetime(),
     %% FIXME: workaround for #766
     timer:sleep(1000),
-    Res = rtcs:calculate_storage(1),
+    Res = rtcs_exec:calculate_storage(1),
     lager:info("riak-cs-storage batch result: ~s", [Res]),
     ExpectRegexp = "Batch storage calculation started.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)),

@@ -27,5 +27,5 @@ echo " - Writing $RTCS_DEST_DIR/current/VERSION"
 echo -n $VERSION > $RTCS_DEST_DIR/current/VERSION
 cd $RTCS_DEST_DIR
 echo " - Reinitializing git state"
-git add .
-git commit -a -m "riak_test init" --amend > /dev/null 2>&1
+git add --all .
+git commit -a -m "riak_test init" --amend > /dev/null

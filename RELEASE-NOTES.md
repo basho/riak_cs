@@ -84,6 +84,7 @@ More information on garbage collection can be found in the [documentation](http:
     * log.error.size
 
 [[PR 1164](https://github.com/basho/riak_cs/pull/1164) and [PR 97](https://github.com/basho/stanchion/pull/97)]
+
 * `riak_cs_wm_common` now has a default callback of `multiple_choices`, which prevents `code_server` from becoming a bottleneck. [[PR 1181](https://github.com/basho/riak_cs/pull/1181)]
 * An option has been added to replace the `N=all user GET` option with `N=quorum` just before authentication. This option improves latency, especially in the presence of slow (or actually-failing) nodes blocking the whole request flow because of N=all. When enabled, a user's owned-bucket list is never pruned after a bucket is deleted, instead it is just marked as deleted. [[PR 1191](https://github.com/basho/riak_cs/pull/1191)]
 * An info log has been added when starting a storage calculation batch. [[PR 1238](https://github.com/basho/riak_cs/pull/1238)]
@@ -97,7 +98,7 @@ More information on garbage collection can be found in the [documentation](http:
   issues. [[PR 1145](https://github.com/basho/riak_cs/pull/1145),
   [PR 1134](https://github.com/basho/riak_cs/pull/1134), and
   [PR 1133](https://github.com/basho/riak_cs/pull/1133)]
-* * Added a generic function for manual operations to resolve siblings of manifests and blocks, which will assist Basho Client Service Engineers with troubleshooting and solving issues. [[PR 1188](https://github.com/basho/riak_cs/pull/1188)]
+* Added a generic function for manual operations to resolve siblings of manifests and blocks, which will assist Basho Client Service Engineers with troubleshooting and solving issues. [[PR 1188](https://github.com/basho/riak_cs/pull/1188)]
 
 
 ##Changes
@@ -132,14 +133,16 @@ More information on garbage collection can be found in the [documentation](http:
 
 # Riak CS 2.0.1 Release Notes
 
-## Bugs Fixed
+## General Information
+This is a bugfix release.
 
-- Fix config item `gc.interval` not working when `infinity` is set
-  [riak_cs/#1126](https://github.com/basho/riak_cs/pull/1126)
-- Add switch `log.access` to disable access logging
-  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
-- Add missing `riak-cs.conf` items: `max_buckets_per_user` and `gc.batch_size`
-  [riak_cs/#1115](https://github.com/basho/riak_cs/pull/1115)
+## Bug Fixes
+
+* Fix config item `gc.interval` not working when `infinity` is set ([#1125](https://github.com/basho/riak_cs/issues/1125)/[PR#1126](https://github.com/basho/riak_cs/pull/1126)).
+* Add `log.access` switch to disable access logging ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* Add missing riak-cs.conf items:` max_buckets_per_user` and `gc.batch_size` ([#1109](https://github.com/basho/riak_cs/issues/1109)/[PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* Fix bugs around subsequent space characters for Delete Multiple Objects API and user administration API with XML content ([#1129](https://github.com/basho/riak_cs/issues/1129)/[PR#1135](https://github.com/basho/riak_cs/pull/1135)).
+* Fix URL path resource and query parameters to work in AWS v4 header authentication. Previously, `+` was being input instead of `%20` for blank spaces. ([PR#1141](https://github.com/basho/riak_cs/pull/1141))
 
 # Riak CS 2.0.0 Release Notes
 
@@ -598,7 +601,7 @@ example is added.
 |`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |            |
 |`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |            |
 |(no explicit default)               |`stats.access.archiver.max_workers = 2` |            |
-|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|            |
+|`{storage_schedule, []}`            |`stats.storage.schedule.$time = 0600`   |            |
 |`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |            |
 |`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |            |
 |`{cs_version, 10300 }`              |`cs_version = 10300`                    |            |

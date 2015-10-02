@@ -42,7 +42,7 @@ confirm() ->
     user_listing_xml_test_case([AdminUser], AdminUserConfig, HeadRiakNode),
 
     %% Create other 1003 users and re-run user listing test cases
-    Port = rtcs:cs_port(HeadRiakNode),
+    Port = rtcs_config:cs_port(HeadRiakNode),
     Users1 = [AdminUser |
               create_users(Port, [{"bart@simpsons.com", "bart"},
                                   {"homer@simpsons.com", "homer"},
@@ -66,8 +66,8 @@ japanese_aiueo() ->
 
 create_200_users(Port) ->
     From = self(),
-    Processes = 10,
-    PerProcess = 20,
+    Processes = 5,
+    PerProcess = 40,
     [spawn(fun() ->
                    Users = create_users(
                              Port,
@@ -91,8 +91,12 @@ collect_users(N, Acc) ->
 create_users(_Port, [], Acc) ->
     ordsets:from_list(Acc);
 create_users(Port, [{Email, Name} | Users], Acc) ->
-    {Key, Secret, _Id} = rtcs:create_user(Port, Email, Name),
-    create_users(Port, Users, [{Email, Name, Key, Secret, "enabled"} | Acc]).
+    {UserConfig, _Id} = rtcs_admin:create_user(Port, Email, Name),
+    create_users(Port, Users, [{Email,
+                                Name,
+                                UserConfig#aws_config.access_key_id,
+                                UserConfig#aws_config.secret_access_key,
+                                "enabled"} | Acc]).
 
 user_listing_json_test_case(Users, UserConfig, Node) ->
     user_listing_test(Users, UserConfig, Node, ?JSON).
@@ -107,9 +111,9 @@ user_listing_many_times(Users, UserConfig, Node) ->
 
 user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Resource = "/riak-cs/users",
-    Port = rtcs:cs_port(Node),
+    Port = rtcs_config:cs_port(Node),
     Users = parse_user_info(
-              rtcs:list_users(UserConfig, Port, Resource, ContentType)),
+              rtcs_admin:list_users(UserConfig, Port, Resource, ContentType)),
     ?assertEqual(ExpectedUsers, Users).
 
 update_user_json_test_case(AdminConfig, Node) ->
@@ -120,57 +124,56 @@ update_user_json_test_case(AdminConfig, Node) ->
 
 update_user_xml_test_case(AdminConfig, Node) ->
     Users = [{"gru@despicable.me", "Gru"},
-             {"minion@despicable.me", "Minion"},
+             {"minion@despicable.me", "Minion  Minion"},
              {"dr.nefario@despicable.me", "DrNefario"}],
     update_user_test(AdminConfig, Node, ?XML, Users).
 
 update_user_test(AdminConfig, Node, ContentType, Users) ->
     [{Email1, User1}, {Email2, User2}, {Email3, User3}]= Users,
-    Port = rtcs:cs_port(Node),
-    {Key, Secret, _} = rtcs:create_user(Port, Email1, User1),
-    {BadUserKey, BadUserSecret, _} = rtcs:create_user(Port, Email3, User3),
+    Port = rtcs_config:cs_port(Node),
+    {UserConfig, _} = rtcs_admin:create_user(Port, Email1, User1),
+    {BadUserConfig, _} = rtcs_admin:create_user(Port, Email3, User3),
 
-    UserConfig = rtcs:config(Key, Secret, Port),
-    BadUserConfig = rtcs:config(BadUserKey, BadUserSecret, Port),
+    #aws_config{access_key_id=Key, secret_access_key=Secret} = UserConfig,
 
     UserResource = "/riak-cs/user",
-    AdminResource = UserResource ++ "/" ++ UserConfig#aws_config.access_key_id,
+    AdminResource = UserResource ++ "/" ++ Key,
 
     %% Fetch the user record using the user's own credentials
     UserResult1 = parse_user_record(
-                    get_user_record(UserConfig, Port, UserResource, ContentType),
+                    rtcs_admin:get_user(UserConfig, Port, UserResource, ContentType),
                     ContentType),
     %% Fetch the user record using the admin credentials
     UserResult2 = parse_user_record(
-                    get_user_record(AdminConfig, Port, AdminResource, ContentType),
+                    rtcs_admin:get_user(AdminConfig, Port, AdminResource, ContentType),
                     ContentType),
     ?assertMatch({Email1, User1, _, Secret, "enabled"}, UserResult1),
     ?assertMatch({Email1, User1, _, Secret, "enabled"}, UserResult2),
 
     %% Attempt to update the user's email to be the same as the admin
     %% user and verify that the update attempt returns an error.
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    Resource = "/riak-cs/user/" ++ Key,
     InvalidUpdateDoc = update_email_and_name_doc(ContentType, "admin@me.com", "admin"),
 
     ErrorResult = parse_error_code(
-                    rtcs:update_user(UserConfig,
-                                     Port,
-                                     Resource,
-                                     ContentType,
-                                     InvalidUpdateDoc)),
-    ?assertEqual("UserAlreadyExists", ErrorResult),
+                    catch rtcs_admin:update_user(UserConfig,
+                                                 Port,
+                                                 Resource,
+                                                 ContentType,
+                                                 InvalidUpdateDoc)),
+    ?assertEqual({409, "UserAlreadyExists"}, ErrorResult),
 
     %% Test updating the user's name and email
     UpdateDoc = update_email_and_name_doc(ContentType, Email2, User2),
-    _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc),
+    _ = rtcs_admin:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc),
 
     %% Fetch the user record using the user's own credentials
     UserResult3 = parse_user_record(
-                    get_user_record(UserConfig, Port, UserResource, ContentType),
+                    rtcs_admin:get_user(UserConfig, Port, UserResource, ContentType),
                     ContentType),
     %% Fetch the user record using the admin credentials
     UserResult4 = parse_user_record(
-                    get_user_record(AdminConfig, Port, AdminResource, ContentType),
+                    rtcs_admin:get_user(AdminConfig, Port, AdminResource, ContentType),
                     ContentType),
     ?assertMatch({Email2, User2, _, Secret, "enabled"}, UserResult3),
     ?assertMatch({Email2, User2, _, Secret, "enabled"}, UserResult4),
@@ -178,42 +181,43 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     %% Test that attempting to update another user's status with a
     %% non-admin account is disallowed
     UpdateDoc2 = update_status_doc(ContentType, "disabled"),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
+    Resource = "/riak-cs/user/" ++ Key,
     ErrorResult2 = parse_error_code(
-                    rtcs:update_user(BadUserConfig,
-                                     Port,
-                                     Resource,
-                                     ContentType,
-                                     UpdateDoc2)),
-    ?assertEqual("AccessDenied", ErrorResult2),
+                     catch rtcs_admin:update_user(BadUserConfig,
+                                                  Port,
+                                                  Resource,
+                                                  ContentType,
+                                                  UpdateDoc2)),
+    ?assertEqual({403, "AccessDenied"}, ErrorResult2),
 
     %% Test updating a user's own status
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    _ = rtcs:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc2),
+    Resource = "/riak-cs/user/" ++ Key,
+    _ = rtcs_admin:update_user(UserConfig, Port, Resource, ContentType, UpdateDoc2),
 
     %% Fetch the user record using the user's own credentials. Since
     %% the user is now disabled this should return an error.
     UserResult5 = parse_error_code(
-                    get_user_record(UserConfig, Port, UserResource, ContentType)),
+                    catch rtcs_admin:get_user(UserConfig, Port,
+                                               UserResource, ContentType)),
 
     %% Fetch the user record using the admin credentials. The user is
     %% not able to retrieve their own account information now that the
     %% account is disabled.
     UserResult6 = parse_user_record(
-                    get_user_record(AdminConfig, Port, AdminResource, ContentType),
+                    rtcs_admin:get_user(AdminConfig, Port, AdminResource, ContentType),
                     ContentType),
-    ?assertEqual("AccessDenied", UserResult5),
+    ?assertEqual({403, "AccessDenied"}, UserResult5),
     ?assertMatch({Email2, User2, _, Secret, "disabled"}, UserResult6),
 
     %% Re-enable the user
     UpdateDoc3 = update_status_doc(ContentType, "enabled"),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    _ = rtcs:update_user(AdminConfig, Port, Resource, ContentType, UpdateDoc3),
+    Resource = "/riak-cs/user/" ++ Key,
+    _ = rtcs_admin:update_user(AdminConfig, Port, Resource, ContentType, UpdateDoc3),
 
     %% Test issuing a new key_secret
     UpdateDoc4 = new_key_secret_doc(ContentType),
-    Resource = "/riak-cs/user/" ++ UserConfig#aws_config.access_key_id,
-    UpdateResult = rtcs:update_user(AdminConfig,
+    Resource = "/riak-cs/user/" ++ Key,
+    UpdateResult = rtcs_admin:update_user(AdminConfig,
                                     Port,
                                     Resource,
                                     ContentType,
@@ -221,51 +225,36 @@ update_user_test(AdminConfig, Node, ContentType, Users) ->
     {_, _, _, UpdSecret1, _} = parse_user_record(UpdateResult, ContentType),
 
     %% Generate an updated user config with the new secret
-    UserConfig2 = rtcs:config(Key, UpdSecret1, Port),
+    UserConfig2 = rtcs_admin:aws_config(UserConfig, [{secret, UpdSecret1}]),
 
     %% Fetch the user record using the user's own credentials
     UserResult7 = parse_user_record(
-                    get_user_record(UserConfig2, Port, UserResource, ContentType),
+                    rtcs_admin:get_user(UserConfig2, Port, UserResource, ContentType),
                     ContentType),
     %% Fetch the user record using the admin credentials
     UserResult8 = parse_user_record(
-                    get_user_record(AdminConfig, Port, AdminResource, ContentType),
+                    rtcs_admin:get_user(AdminConfig, Port, AdminResource, ContentType),
                     ContentType),
     ?assertMatch({_, _, _, UpdSecret1, _}, UserResult7),
     ?assertMatch({_, _, _, UpdSecret1, _}, UserResult8),
     ?assertMatch({Email2, User2, _, _, "enabled"}, UserResult7),
     ?assertMatch({Email2, User2, _, _, "enabled"}, UserResult8).
 
-get_user_record(UserConfig, Port, Resource, ContentType) ->
-    lager:debug("Retreiving user record"),
-    Date = httpd_util:rfc1123_date(),
-    Cmd="curl -s -H 'Date: " ++ Date ++
-        "' -H 'Accept: " ++ ContentType ++
-        "' -H 'Content-Type: " ++ ContentType ++
-        "' -H 'Authorization: " ++
-        rtcs:make_authorization("GET", Resource, ContentType, UserConfig, Date) ++
-        "' http://localhost:" ++
-        integer_to_list(Port) ++ Resource,
-    lager:info("User retrieval cmd: ~p", [Cmd]),
-    Output = os:cmd(Cmd),
-    lager:debug("User record=~p~n",[Output]),
-    Output.
-
 new_key_secret_doc(?JSON) ->
-    "'{\"new_key_secret\": true}'";
+    "{\"new_key_secret\": true}";
 new_key_secret_doc(?XML) ->
-    "'<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><NewKeySecret>true</NewKeySecret></User>'".
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><NewKeySecret>true</NewKeySecret></User>".
 
 update_status_doc(?JSON, Status) ->
-    "'{\"status\":\"" ++ Status ++ "\"}'";
+    "{\"status\":\"" ++ Status ++ "\"}";
 update_status_doc(?XML, Status) ->
-    "'<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Status>" ++ Status ++ "</Status></User>'".
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Status>" ++ Status ++ "</Status></User>".
 
 update_email_and_name_doc(?JSON, Email, Name) ->
-    "'{\"email\":\"" ++ Email ++  "\", \"name\":\"" ++ Name ++"\"}'";
+    "{\"email\":\"" ++ Email ++  "\", \"name\":\"" ++ Name ++"\"}";
 update_email_and_name_doc(?XML, Email, Name) ->
-    "'<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Email>" ++ Email ++
-        "</Email><Name>" ++ Name ++ "</Name><Status>enabled</Status></User>'".
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Email>" ++ Email ++
+        "</Email><Name>" ++ Name ++ "</Name><Status>enabled</Status></User>".
 
 parse_user_record(Output, ?JSON) ->
     {struct, JsonData} = mochijson2:decode(Output),
@@ -353,10 +342,11 @@ xml_text_value(XmlText) ->
     binary_to_list(unicode:characters_to_binary(XmlText#xmlText.value)).
 
 parse_error_code(Output) ->
-    {ParsedData, _Rest} = xmerl_scan:string(Output, []),
-    lists:foldl(fun error_code_from_xml/2,
-                undefined,
-                ParsedData#xmlElement.content).
+    {'EXIT', {{aws_error, {http_error, Status, _, Body}}, _Backtrace}} = Output,
+    {ParsedData, _Rest} = xmerl_scan:string(Body, []),
+    {Status, lists:foldl(fun error_code_from_xml/2,
+                         undefined,
+                         ParsedData#xmlElement.content)}.
 
 error_code_from_xml(#xmlText{}, Acc) ->
     Acc;
@@ -381,7 +371,7 @@ parse_user_info(Output) ->
 parse_user_info([_LastToken], _, Users) ->
     ordsets:from_list(Users);
 parse_user_info(["Content-Type: application/xml", RawXml | RestTokens],
-                 Boundary, Users) ->
+                Boundary, Users) ->
     UpdUsers = parse_user_records(RawXml, ?XML) ++ Users,
     parse_user_info(RestTokens, Boundary, UpdUsers);
 parse_user_info(["Content-Type: application/json", RawJson | RestTokens],

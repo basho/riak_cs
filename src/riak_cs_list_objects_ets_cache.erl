@@ -52,9 +52,15 @@
 
 -define(DICTMODULE, dict).
 
+-ifdef(namespaced_types).
+-type dictionary() :: dict:dict().
+-else.
+-type dictionary() :: dict().
+-endif.
+
 -record(state, {tid :: ets:tid(),
-                monitor_to_timer = ?DICTMODULE:new() :: ?DICTMODULE(),
-                key_to_monitor = ?DICTMODULE:new() :: ?DICTMODULE()}).
+                monitor_to_timer = ?DICTMODULE:new() :: dictionary(),
+                key_to_monitor = ?DICTMODULE:new() :: dictionary()}).
 
 -type state() :: #state{}.
 -type cache_lookup_result() :: {true, [binary()]} | false.
@@ -257,7 +263,7 @@ handle_down(MonitorRef, State=#state{monitor_to_timer=MonToTimer}) ->
     NewMonToTimer = remove_timer(MonitorRef, MonToTimer),
     State#state{monitor_to_timer=NewMonToTimer}.
 
--spec remove_monitor(binary(), ?DICTMODULE()) -> ?DICTMODULE().
+-spec remove_monitor(binary(), dictionary()) -> dictionary().
 remove_monitor(ExpiredKey, KeyToMon) ->
     RefResult = safe_fetch(ExpiredKey, KeyToMon),
     case RefResult of
@@ -268,7 +274,7 @@ remove_monitor(ExpiredKey, KeyToMon) ->
     end,
     ?DICTMODULE:erase(ExpiredKey, KeyToMon).
 
--spec remove_timer(reference(), ?DICTMODULE()) -> ?DICTMODULE().
+-spec remove_timer(reference(), dictionary()) -> dictionary().
 remove_timer(MonitorRef, MonToTimer) ->
     RefResult = safe_fetch(MonitorRef, MonToTimer),
     _ = case RefResult of
@@ -281,7 +287,7 @@ remove_timer(MonitorRef, MonToTimer) ->
     end,
     ?DICTMODULE:erase(MonitorRef, MonToTimer).
 
--spec safe_fetch(Key :: term(), Dict :: ?DICTMODULE()) ->
+-spec safe_fetch(Key :: term(), Dict :: dictionary()) ->
     {ok, term()} | {error, term()}.
 safe_fetch(Key, Dict) ->
     try

@@ -20,7 +20,8 @@
 
 -module(riak_cs_wm_buckets).
 
--export([allowed_methods/0,
+-export([stats_prefix/0,
+         allowed_methods/0,
          api_request/2,
          anon_ok/0]).
 
@@ -28,18 +29,19 @@
 -include("riak_cs_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
+-spec stats_prefix() -> service.
+stats_prefix() -> service.
+
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
     ['GET'].
 
 -spec api_request(#wm_reqdata{}, #context{}) -> ?LBRESP{}.
-api_request(_RD, #context{user=User,
-                          start_time=StartTime}) ->
+api_request(_RD, #context{user=User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_service_entry(?MODULE, <<"service_get_buckets">>, [], [UserName]),
     Res = riak_cs_api:list_buckets(User),
-    ok = riak_cs_stats:update_with_start(service_get_buckets, StartTime),
     riak_cs_dtrace:dt_service_return(?MODULE, <<"service_get_buckets">>, [], [UserName]),
     Res.
 

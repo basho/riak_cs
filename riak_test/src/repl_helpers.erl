@@ -342,6 +342,21 @@ wait_until_no_connection13(Node) ->
                 end
         end). %% 40 seconds is enough for repl
 
+wait_until_realtime_sync_complete(Nodes) ->
+    [wait_until_rtq_drained(Node)||Node <- Nodes].
+
+wait_until_rtq_drained(Node) ->
+    rt:wait_until(Node,
+        fun(_) ->
+                case rpc:call(Node, riak_repl2_rtq, dumpq, []) of
+                    [] ->
+                        true;
+                    _ ->
+                        false
+                end
+        end),
+    lager:info("Realtime sync on ~p complete", [Node]).
+
 connect_cluster13(Node, IP, Port) ->
     Res = rpc:call(Node, riak_repl_console, connect,
         [[IP, integer_to_list(Port)]]),

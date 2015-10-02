@@ -33,9 +33,7 @@
 -define(KEY, "a").
 
 confirm() ->
-    Config = [{riak, rtcs:riak_config()}, {stanchion, rtcs:stanchion_config()},
-              {cs, rtcs:cs_config([{fold_objects_for_list_keys, true}])}],
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2, Config),
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
     rt:setup_log_capture(hd(CSNodes)),
 
     {Begin, End} = generate_some_accesses(UserConfig),
@@ -65,11 +63,14 @@ generate_some_accesses(UserConfig) ->
     _ = erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig),
     %% Delete bucket
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?BUCKET, UserConfig)),
+    %% Illegal URL such that riak_cs_access_log_handler:handle_event/2 gets {log_access, #wm_log_data{notes=undefined}}
+    ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("", "//a", UserConfig)), %% Path-style access
+    ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("riak-cs", "pong", UserConfig)),
     End = rtcs:datetime(),
     {Begin, End}.
 
 flush_access_stats() ->
-    Res = rtcs:flush_access(1),
+    Res = rtcs_exec:flush_access(1),
     lager:info("riak-cs-access flush result: ~s", [Res]),
     ExpectRegexp = "All access logs were flushed.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)).

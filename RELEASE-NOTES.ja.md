@@ -1,3 +1,28 @@
+# Riak CS 2.0.1 リリースノート
+
+## General Information
+これはバグフィックスリリースです。
+
+## バグ修正
+
+* 設定項目 `gc.interval` に対して `infinity` を設定できないバグを修正
+  ([#1125](https://github.com/basho/riak_cs/issues/1125)
+  / [PR#1126](https://github.com/basho/riak_cs/pull/1126)).
+* アクセスログを無効化する設定項目 `log.access` を追加
+  ([#1109](https://github.com/basho/riak_cs/issues/1109)
+  / [PR#1115](https://github.com/basho/riak_cs/pull/1115)).
+* `riak-cs.conf` に不足していた項目 ` max_buckets_per_user` と `gc.batch_size` を追加
+  ([#1109](https://github.com/basho/riak_cs/issues/1109)
+  / [PR#1115](https://github.com/basho/riak_cs/pull/1115))
+* XML を HTTP ボディに持つ Delete Multiple Object API とユーザ管理 API において
+  連続する空白文字処理のバグを修正
+  ([#1129](https://github.com/basho/riak_cs/issues/1129)
+  /[PR#1135](https://github.com/basho/riak_cs/pull/1135))
+* AWS v4 ヘッダ認証での URL パスリソースとクエリパラメータのバグを修正。以前の
+  バージョンでは空白文字に対して `%20` ではなく `+` が使用されていた。
+  ([PR#1141](https://github.com/basho/riak_cs/pull/1141))
+
+
 # Riak CS 2.0.0 リリースノート
 
 ## 概要
@@ -433,7 +458,7 @@ Riak CS 2.0.0へのアップグレード時に `app.config` と `vm.args` は �
 |`{access_archive_period, 3600}`     |`stats.access.archive_period = 1h`      |
 |`{access_archiver_max_backlog, 2}`  |`stats.access.archiver.max_backlog = 2` |
 |(no explicit default)               |`stats.access.archiver.max_workers = 2` |
-|`{storage_schedule, []}`            |`stats.storage.schedule.$time = "06:00"`|
+|`{storage_schedule, []}`            |`stats.storage.schedule.$time = 0600`   |
 |`{storage_archive_period, 86400}`   |`stats.storage.archive_period = 1d`     |
 |`{usage_request_limit, 744}`        |`riak_cs.usage_request_limit = 31d`     |
 |`{cs_version, 10300 }`              |`cs_version = 10300`                    |

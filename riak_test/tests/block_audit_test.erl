@@ -40,12 +40,12 @@ confirm() ->
         {multibag, _} ->
             lager:info("Block audit script does not supprt multibag env."),
             lager:info("Skip the test."),
-            pass;
+            rtcs:pass();
         _ -> confirm1()
     end.
 
 confirm1() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
+    {UserConfig, {RiakNodes, CSNodes, Stanchion}} = rtcs:setup(1),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET1, UserConfig)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET2, UserConfig)),
     FalseOrphans1 =
@@ -56,21 +56,25 @@ confirm1() ->
         [setup_objects(RiakNodes, UserConfig, Bucket, mp,
                        ?KEY_ALIVE_MP, ?KEY_ORPHANED_MP, ?KEY_FALSE_ORPHANED_MP) ||
             Bucket <- [?BUCKET1, ?BUCKET2]],
-    Home = rtcs:riakcs_home(rtcs:get_rt_config(cs, current), 1),
+    Home = rtcs_config:riakcs_home(rtcs_config:devpath(cs, current), 1),
     os:cmd("rm -rf " ++ filename:join([Home, "maybe-orphaned-blocks"])),
     os:cmd("rm -rf " ++ filename:join([Home, "actual-orphaned-blocks"])),
-    Res1 = rtcs:exec_priv_escript(1, "internal/block_audit.erl",
+    Res1 = rtcs_exec:exec_priv_escript(1, "internal/block_audit.erl",
                                   "-h 127.0.0.1 -p 10017 -dd"),
     lager:debug("block_audit.erl log:\n~s", [Res1]),
     lager:debug("block_audit.erl log:============= END"),
     fake_false_orphans(RiakNodes, FalseOrphans1 ++ FalseOrphans2),
-    Res2 = rtcs:exec_priv_escript(1, "internal/ensure_orphan_blocks.erl",
+    Res2 = rtcs_exec:exec_priv_escript(1, "internal/ensure_orphan_blocks.erl",
                                   "-h 127.0.0.1 -p 10017 -dd"),
     lager:debug("ensure_orphan_blocks.erl log:\n~s", [Res2]),
     lager:debug("ensure_orphan_blocks.erl log:============= END"),
     assert_result(?BUCKET1),
     assert_result(?BUCKET2),
-    pass.
+
+    BlockKeysFileList = [filename:join([Home, "actual-orphaned-blocks", B]) ||
+                        B <- [?BUCKET1, ?BUCKET2]],
+    tools_helper:offline_delete({RiakNodes, CSNodes, Stanchion}, BlockKeysFileList),
+    rtcs:pass().
 
 setup_objects(RiakNodes, UserConfig, Bucket, Type,
               KeyAlive, KeyOrphaned, KeyFalseOrphaned) ->
@@ -102,14 +106,15 @@ fake_false_orphans(RiakNodes, FalseOrphans) ->
         {B, K, O} <- FalseOrphans].
 
 assert_result(Bucket) ->
-    Home = rtcs:riakcs_home(rtcs:get_rt_config(cs, current), 1),
+    Home = rtcs_config:riakcs_home(rtcs_config:devpath(cs, current), 1),
     OutFile1 = filename:join([Home, "actual-orphaned-blocks", Bucket]),
-    BucketBin = list_to_binary(Bucket),
     {ok, Bin} = file:read_file(OutFile1),
     KeySeqs = [begin
-                   [BucketBin, _UUID, Seq, K] =
-                       binary:split(Line, [<<$ >>], [global, trim]),
-                   {binary_to_list(K), list_to_integer(binary_to_list(Seq))}
+                   [_RiakBucketHex, _RiakKeyHex,
+                    _CSBucket, CSKeyHex, _UUIDHex, SeqStr] =
+                       binary:split(Line, [<<$\t>>], [global, trim]),
+                   {binary_to_list(mochihex:to_bin(binary_to_list(CSKeyHex))),
+                    list_to_integer(binary_to_list(SeqStr))}
                end || Line <- binary:split(Bin, [<<$\n>>], [global, trim])],
     ?assertEqual([?KEY_ORPHANED, ?KEY_ORPHANED_MP],
                  lists:sort(proplists:get_keys(KeySeqs))),

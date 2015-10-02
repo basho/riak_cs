@@ -30,7 +30,6 @@
          close_riak_connection/2,
          delete_object/3,
          encode_term/1,
-         get_keys_and_manifests/3,
          has_tombstone/1,
          map_keys_and_manifests/3,
          maybe_process_resolved/3,
@@ -163,7 +162,6 @@ close_riak_connection(Pool, Pid) ->
 -spec delete_object(binary(), binary(), riak_client()) ->
                            {ok, [binary()]} | {error, term()}.
 delete_object(Bucket, Key, RcPid) ->
-    ok = riak_cs_stats:update_with_start(object_delete, os:timestamp()),
     riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
 
 -spec encode_term(term()) -> binary().
@@ -173,58 +171,6 @@ encode_term(Term) ->
             term_to_binary(Term, [compressed]);
         false ->
             term_to_binary(Term)
-    end.
-
-%% @doc Return a list of keys for a bucket along
-%% with their associated objects.
--spec get_keys_and_manifests(binary(), binary(), riak_client()) -> {ok, [lfs_manifest()]} | {error, term()}.
-get_keys_and_manifests(BucketName, Prefix, RcPid) ->
-    ManifestBucket = to_bucket_name(objects, BucketName),
-    case active_manifests(ManifestBucket, Prefix, RcPid) of
-        {ok, KeyManifests} ->
-            {ok, lists:keysort(1, KeyManifests)};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-active_manifests(ManifestBucket, Prefix, RcPid) ->
-    Input = case Prefix of
-                <<>> -> ManifestBucket;
-                _ ->
-                    %% using filtered listkeys instead of 2i here
-                    %% because 2i seems no more than a 10% performance
-                    %% increase, and it requires extra finagling to
-                    %% deal with its range query being inclusive
-                    %% instead of exclusive
-                    {ManifestBucket, [[<<"starts_with">>, Prefix]]}
-            end,
-    Query = [{map, {modfun, riak_cs_utils, map_keys_and_manifests},
-              undefined, false},
-             {reduce, {modfun, riak_cs_utils, reduce_keys_and_manifests},
-              undefined, true}],
-    {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    {ok, ReqId} = riakc_pb_socket:mapred_stream(ManifestPbc, Input, Query, self()),
-    receive_keys_and_manifests(ReqId, []).
-
-%% Stream keys to avoid riakc_pb_socket:wait_for_mapred/2's use of
-%% orddict:append_list/3, because it's mega-inefficient, to the point
-%% of unusability for large buckets (memory allocation exit of the
-%% erlang vm for a 100k-object bucket observed in testing).
-receive_keys_and_manifests(ReqId, Acc) ->
-    receive
-        {ReqId, done} ->
-            {ok, Acc};
-        {ReqId, {mapred, _Phase, Res}} ->
-            %% The use of ++ here shouldn't be *too* bad, especially
-            %% since Res is always a single list element in Riak 1.1
-            receive_keys_and_manifests(ReqId, Res++Acc);
-        {ReqId, {error, Reason}} ->
-            {error, Reason}
-    after 60000 ->
-            %% timing out after complete inactivity for 1min
-            %% TODO: would shorter be better? should there be an
-            %% overall timeout?
-            {error, timeout}
     end.
 
 %% MapReduce function, runs on the Riak nodes, should therefore use
@@ -270,32 +216,18 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
-
--ifdef(new_hash).
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
 sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 
 -spec sha(binary()) -> binary().
 sha(Bin) -> crypto:hash(sha, Bin).
 
--else.
--spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
-sha_mac(Key,STS) -> crypto:sha_mac(Key,STS).
-
--spec sha(binary()) -> binary().
-sha(Bin) -> crypto:sha(Bin).
-
--endif.
-
--spec md5(string() | binary()) -> digest().
-md5(Bin) when is_binary(Bin) ->
-    md5_final(md5_update(md5_init(), Bin));
-md5(List) when is_list(List) ->
-    md5(list_to_binary(List)).
+-spec md5(iodata()) -> digest().
+md5(IOData) ->
+    crypto:hash(md5, IOData).
 
 -define(MAX_UPDATE_SIZE, (32*1024)).
 
--ifdef(new_hash).
 -spec md5_init() -> crypto_context().
 md5_init() -> crypto:hash_init(md5).
 
@@ -307,20 +239,6 @@ md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
 
 -spec md5_final(crypto_context()) -> digest().
 md5_final(Ctx) -> crypto:hash_final(Ctx).
-
--else.
--spec md5_init() -> binary().
-md5_init() -> crypto:md5_init().
-
--spec md5_update(binary(), binary()) -> binary().
-md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
-    crypto:md5_update(Ctx, Bin);
-md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
-    md5_update(crypto:md5_update(Ctx, Part), Rest).
-
--spec md5_final(binary()) -> digest().
-md5_final(Ctx) -> crypto:md5_final(Ctx).
--endif.
 
 -spec active_manifest_from_response({ok, orddict:orddict()} |
                                     {error, notfound}) ->
@@ -340,7 +258,7 @@ handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
 %% @doc Determine if a set of contents of a riak object has a tombstone.
--spec has_tombstone({dict(), binary()}) -> boolean().
+-spec has_tombstone({riakc_obj:metadata(), binary()}) -> boolean().
 has_tombstone({_, <<>>}) ->
     true;
 has_tombstone({MD, _V}) ->
@@ -463,18 +381,14 @@ riak_connection(Pool) ->
 -spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
                             ok | {error, term()}.
 set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
-    StartTime = os:timestamp(),
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
-    _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
-    UpdManifest = Manifest?MANIFEST{acl=Acl},
-    Res = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest),
-    riak_cs_manifest_fsm:stop(ManiPid),
-    if Res == ok ->
-            ok = riak_cs_stats:update_with_start(object_put_acl, StartTime);
-       true ->
-            ok
-    end,
-    Res.
+    try
+        _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
+        UpdManifest = Manifest?MANIFEST{acl=Acl},
+        riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, UpdManifest)
+    after
+        riak_cs_manifest_fsm:stop(ManiPid)
+    end.
 
 -spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().
 %% @doc Return the number of seconds this timestamp represents. Truncated to
@@ -521,14 +435,24 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 key_exists(RcPid, Bucket, Key) ->
     key_exists_handle_get_manifests(riak_cs_manifest:get_manifests(RcPid, Bucket, Key)).
 
--spec big_end_key(non_neg_integer()) -> binary().
-big_end_key(NumBytes) ->
-    MaxByte = <<255:8/integer>>,
-    iolist_to_binary([MaxByte || _ <- lists:seq(1, NumBytes)]).
 
 -spec big_end_key() -> binary().
 big_end_key() ->
-    big_end_key(128).
+    big_end_key(<<>>).
+
+-spec big_end_key(Prefix::binary() | undefined) -> binary().
+big_end_key(undefined) ->
+    big_end_key(<<>>);
+big_end_key(Prefix) ->
+    Padding = case riak_cs_config:max_key_length() of
+                  unlimited ->
+                      <<>>;
+                  MaxLen when byte_size(Prefix) > MaxLen ->
+                      <<>>;
+                  MaxLen ->
+                      binary:copy(<<255>>, MaxLen - byte_size(Prefix))
+              end,
+    <<Prefix/binary, 255, Padding/binary>>.
 
 %% @doc Return `stanchion' configuration data.
 -spec stanchion_data() -> {string(), pos_integer(), boolean()}.

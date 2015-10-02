@@ -25,7 +25,9 @@
 %% API
 -export([checkout/0, checkout/1,
          checkin/1, checkin/2]).
--export([pbc_pool_name/1]).
+-export([pbc_pools/0,
+         pbc_pool_name/1,
+         rts_puller/4]).
 -export([
          stop/1,
          get_bucket/2,
@@ -33,6 +35,7 @@
          get_user/2,
          save_user/3,
          set_manifest_bag/2,
+         get_manifest_bag/1,
          set_manifest/2,
          master_pbc/1,
          manifest_pbc/1,
@@ -104,11 +107,47 @@ checkin(Pool, RcPid) ->
     ok = gen_server:call(RcPid, cleanup),
     poolboy:checkin(Pool, RcPid).
 
+-spec pbc_pools() -> [atom()].
+pbc_pools() ->
+    [pbc_pool_name(B) || {B, _, _} <- riak_cs_mb_helper:bags()].
+
 -spec pbc_pool_name(master | bag_id()) -> atom().
 pbc_pool_name(master) ->
     pbc_pool_master;
+pbc_pool_name(undefined) ->
+    pbc_pool_master;
 pbc_pool_name(BagId) when is_binary(BagId) ->
     list_to_atom(lists:flatten(io_lib:format("pbc_pool_~s", [BagId]))).
+
+%% @doc Make a thunk that looks up samples for a given bucket and suffix.
+-spec rts_puller(riak_client(), binary(), iolist(), riak_cs_stats:key()) -> fun().
+rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
+    fun(Slice, {Samples, Errors}) ->
+            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+            Timeout = riak_cs_config:get_access_timeout(),
+            case riak_cs_pbc:get(MasterPbc, Bucket, rts:slice_key(Slice, Suffix), [],
+                                 Timeout, StatsKey) of
+                {ok, Object} ->
+                    RawSamples =
+                        [ catch element(2, {struct,_}=mochijson2:decode(V))
+                          || V <- riakc_obj:get_values(Object) ],
+                    {NewSamples, EncodingErrors} =
+                        lists:partition(fun({'EXIT',_}) -> false;
+                                           (_)          -> true
+                                        end,
+                                        RawSamples),
+                    {NewSamples++Samples,
+                     [{Slice, {encoding, length(EncodingErrors)}}
+                      || EncodingErrors /= []]
+                     ++Errors};
+                {error, notfound} ->
+                    %% this is normal - we ask for all possible
+                    %% archives, and just deal with the ones that exist
+                    {Samples, Errors};
+                {error, Error} ->
+                    {Samples, [{Slice, Error}|Errors]}
+            end
+    end.
 
 -spec get_bucket(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
@@ -141,6 +180,10 @@ set_manifest(RcPid, Manifest) ->
 -spec set_manifest_bag(riak_client(), binary()) -> ok | {error, term()}.
 set_manifest_bag(RcPid, ManifestBagId) ->
     gen_server:call(RcPid, {set_manifest_bag, ManifestBagId}).
+
+-spec get_manifest_bag(riak_client()) -> {ok, binary()} | {error, term()}.
+get_manifest_bag(RcPid) ->
+    gen_server:call(RcPid, get_manifest_bag).
 
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
@@ -212,6 +255,8 @@ handle_call({set_manifest, {_UUID, _Manifest}}, _From, State) ->
     {reply, ok, State};
 handle_call({set_manifest_bag, _ManifestBagId}, _From, State) ->
     {reply, ok, State};
+handle_call(get_manifest_bag, _From, State) ->
+    {reply, {ok, master}, State};
 handle_call(block_pbc, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc=MasterPbc} = NewState} ->
@@ -275,34 +320,55 @@ ensure_master_pbc(#state{} = State) ->
 
 get_bucket_with_pbc(MasterPbc, BucketName) ->
     Timeout = riak_cs_config:get_bucket_timeout(),
-    riak_cs_pbc:get_object(MasterPbc, ?BUCKETS_BUCKET, BucketName, Timeout).
+    riak_cs_pbc:get(MasterPbc, ?BUCKETS_BUCKET, BucketName, [], Timeout,
+                    [riakc, get_cs_bucket]).
 
 get_user_with_pbc(MasterPbc, Key) ->
+    get_user_with_pbc(MasterPbc, Key, riak_cs_config:fast_user_get()).
+
+get_user_with_pbc(MasterPbc, Key, true) ->
+    weak_get_user_with_pbc(MasterPbc, Key);
+get_user_with_pbc(MasterPbc, Key, false) ->
+    case strong_get_user_with_pbc(MasterPbc, Key) of
+        {ok, _} = OK -> OK;
+        {error, <<"{pr_val_unsatisfied,", _/binary>>} ->
+            weak_get_user_with_pbc(MasterPbc, Key);
+        {error, Reason} ->
+            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason]),
+            Timeout = riak_cs_config:get_user_timeout(),
+            _ = riak_cs_pbc:pause_to_reconnect(MasterPbc, Reason, Timeout),
+            weak_get_user_with_pbc(MasterPbc, Key)
+    end.
+
+strong_get_user_with_pbc(MasterPbc, Key) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
     Timeout = riak_cs_config:get_user_timeout(),
-    case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
-                             StrongOptions, Timeout) of
+    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
+                         Timeout, [riakc, get_cs_user_strong]) of
         {ok, Obj} ->
-            %% since we read from all primaries, we're
-            %% less concerned with there being an 'out-of-date'
-            %% replica that we might conflict with (and not
-            %% be able to properly resolve conflicts).
+            %% since we read from all primaries, we're less concerned
+            %% with there being an 'out-of-date' replica that we might
+            %% conflict with (and not be able to properly resolve
+            %% conflicts).
             KeepDeletedBuckets = false,
             {ok, {Obj, KeepDeletedBuckets}};
-        {error, Reason0} ->
-            _ = lager:warning("Fetching user record with strong option failed: ~p", [Reason0]),
-            WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-            case riakc_pb_socket:get(MasterPbc, ?USER_BUCKET, Key,
-                                     WeakOptions, Timeout) of
-                {ok, Obj} ->
-                    %% We weren't able to read from all primary
-                    %% vnodes, so don't risk losing information
-                    %% by pruning the bucket list.
-                    KeepDeletedBuckets = true,
-                    {ok, {Obj, KeepDeletedBuckets}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+        {error, _} = Error ->
+            Error
+    end.
+
+weak_get_user_with_pbc(MasterPbc, Key) ->
+    Timeout = riak_cs_config:get_user_timeout(),
+    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions,
+                         Timeout, [riakc, get_cs_user]) of
+        {ok, Obj} ->
+            %% We weren't able to read from all primary vnodes, so
+            %% don't risk losing information by pruning the bucket
+            %% list.
+            KeepDeletedBuckets = true,
+            {ok, {Obj, KeepDeletedBuckets}};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 save_user_with_pbc(MasterPbc, User, OldUserObj) ->
@@ -313,4 +379,5 @@ save_user_with_pbc(MasterPbc, User, OldUserObj) ->
                    riakc_obj:update_value(OldUserObj,
                                           riak_cs_utils:encode_term(User)),
                    MD),
-    riakc_pb_socket:put(MasterPbc, UpdUserObj).
+    Timeout = riak_cs_config:put_user_timeout(),
+    riak_cs_pbc:put(MasterPbc, UpdUserObj, Timeout, [riakc, put_cs_user]).

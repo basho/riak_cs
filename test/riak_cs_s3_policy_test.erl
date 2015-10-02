@@ -84,7 +84,7 @@ sample_plain_allow_policy()->
       "     \"s3:PutObjectAcl\""
       "   ],"
       "   \"Condition\":{"
-      "     \"IpAddress\": { \"aws:SourceIp\":\"192.168.0.1/8\" }"
+      "     \"IpAddress\": { \"aws:SourceIp\":[\"192.168.0.1/8\", \"192.168.0.2/17\"] }"
       "   },"
       "   \"Effect\": \"Allow\","
       "   \"Resource\": \"arn:aws:s3:::test\","

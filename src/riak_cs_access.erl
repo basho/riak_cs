@@ -136,15 +136,16 @@ merge_stats(Stats, Acc) ->
 %% which the keys are Riak CS node names.  The value for each key is a
 %% list of samples.  Each sample is an orddict full of metrics.
 -spec get_usage(riak_client(),
-                term(), %% TODO: riak_cs:user_key() type doesn't exist
+                term(),     %% TODO: riak_cs:user_key() type doesn't exist
                 boolean(),  %% Not used in this module
                 calendar:datetime(),
                 calendar:datetime()) ->
                        {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
 get_usage(RcPid, User, _AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
-    {Usage, Errors} = rts:find_samples(RcPid, ?ACCESS_BUCKET, User,
-                                       Start, End, Period),
+    RtsPuller = riak_cs_riak_client:rts_puller(
+                  RcPid, ?ACCESS_BUCKET, User, [riakc, get_access]),
+    {Usage, Errors} = rts:find_samples(RtsPuller, Start, End, Period),
     {group_by_node(Usage), Errors}.
 
 group_by_node(Samples) ->

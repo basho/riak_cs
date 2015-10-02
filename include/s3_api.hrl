@@ -22,7 +22,7 @@
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
                        "policy", "requestPayment", "torrent", "uploadId", "uploads",
                        "versionId", "versioning", "versions", "website",
-                       "delete"]).
+                       "delete", "lifecycle"]).
 
 % type and record definitions for S3 policy API
 -type s3_object_action() :: 's3:GetObject'       | 's3:GetObjectVersion'

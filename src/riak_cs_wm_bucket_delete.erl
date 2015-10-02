@@ -23,6 +23,7 @@
 -module(riak_cs_wm_bucket_delete).
 
 -export([init/1,
+         stats_prefix/0,
          allowed_methods/0,
          post_is_create/2,
          process_post/2
@@ -43,6 +44,9 @@
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{rc_pool=?RIAKCPOOL}}.
+
+-spec stats_prefix() -> multiple_delete.
+stats_prefix() -> multiple_delete.
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->

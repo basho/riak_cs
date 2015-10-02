@@ -46,7 +46,7 @@ main(Args) ->
     debug("Options: ~p", [Options]),
     case proplists:get_value(host, Options) of
         undefined ->
-            getopt:usage(option_spec(), "riak-cs escript /path/to/block_audit2.erl"),
+            getopt:usage(option_spec(), "riak-cs escript /path/to/ensure_orphan_blocks.erl"),
             halt(1);
         Host ->
             Port = proplists:get_value(port, Options),
@@ -133,7 +133,7 @@ handle_lines(Pid, Opts, Filename, Input, Output, PrevUUID, PrevState) ->
             err("error in processing ~p : ~p", [Filename, Reason]);
         {ok, LineData} ->
             [Bucket, UUIDHex, Seq] = binary:split(LineData,
-                                                  [<<$\n>>, <<$ >>], [global, trim]),
+                                                  [<<$\n>>, <<$\t>>, <<$ >>], [global, trim]),
             UUID = mochihex:to_bin(binary_to_list(UUIDHex)),
             {ok, NewPrevState}  = handle_line(Pid, Opts, Output, PrevUUID, PrevState,
                                               Bucket, UUID,
@@ -233,10 +233,14 @@ get_block_uuids(Obj) ->
                      {UUID, _} <- riak_cs_lfs_utils:block_sequences_for_manifest(M)],
     lists:usort(BlockUUIDs).
 
-write_uuid(_Opts, Output, Bucket, UUID, Seq, CSKey) ->
+write_uuid(_Opts, Output, CSBucket, UUID, Seq, CSKey) ->
+    RiakBucket = riak_cs_utils:to_bucket_name(blocks, CSBucket),
+    RiakKey = riak_cs_lfs_utils:block_name(dummy_key, UUID, Seq),
     ok = file:write(Output,
-                    [Bucket, $ ,
-                     mochihex:to_hex(UUID), $ ,
-                     integer_to_list(Seq), $ ,
-                     CSKey, $\n]).
+                    [mochihex:to_hex(RiakBucket), $\t,
+                     mochihex:to_hex(RiakKey), $\t,
+                     CSBucket, $\t,
+                     mochihex:to_hex(CSKey), $\t,
+                     mochihex:to_hex(UUID), $\t,
+                     integer_to_list(Seq), $\n]).
 

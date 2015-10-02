@@ -82,18 +82,21 @@ prop_manifest_manipulation() ->
 
             begin
                 application:set_env(riak_cs, lfs_block_size, 1048576),
-                Manifest = riak_cs_lfs_utils:new_manifest(Bucket,
-                                                          FileName,
-                                                          UUID,
-                                                          CLength,
-                                                          <<"ctype">>,
-                                                          Md5,
-                                                          MD,
-                                                          riak_cs_lfs_utils:block_size(),
-                                                          riak_cs_acl_utils:default_acl("tester",
-                                                                                        "tester_id",
-                                                                                        "tester_key_id")),
-
+                Manifest = riak_cs_lfs_utils:new_manifest(
+                             Bucket,
+                             FileName,
+                             UUID,
+                             CLength,
+                             <<"ctype">>,
+                             Md5,
+                             MD,
+                             riak_cs_lfs_utils:block_size(),
+                             riak_cs_acl_utils:default_acl("tester",
+                                                           "tester_id",
+                                                           "tester_key_id"),
+                             [],
+                             undefined,
+                             undefined),
                 Blocks = riak_cs_lfs_utils:initial_blocks(CLength, riak_cs_lfs_utils:block_size()),
                 %% TODO: maybe we should shuffle blocks?
                 FoldFun = fun (Chunk, Mani) -> riak_cs_lfs_utils:remove_write_block(Mani, Chunk) end,

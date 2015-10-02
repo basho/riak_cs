@@ -1,6 +1,6 @@
-REPO		?= riak_cs
+REPO		    ?= riak_cs
 PKG_REVISION    ?= $(shell git describe --tags)
-PKG_VERSION	?= $(shell git describe --tags | tr - .)
+PKG_VERSION	    ?= $(shell git describe --tags | tr - .)
 PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
@@ -8,20 +8,19 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
-PULSE_TESTS = riak_cs_get_fsm_pulse
+PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test depgraph graphviz all compile
+.PHONY: rel stagedevrel deps test depgraph graphviz all compile compile-src
 
 all: compile
 
-compile: deps
+compile: compile-riak-test
+
+compile-src: deps
 	@(./rebar compile)
 
 compile-client-test: all
 	@./rebar client_test_compile
-
-compile-int-test: all
-	@./rebar int_test_compile
 
 bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
@@ -30,7 +29,7 @@ riak_test/src/downgrade_bitcask.erl:
 	@wget https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
 		-O riak_test/src/downgrade_bitcask.erl
 
-compile-riak-test: all bitcask-downgrade-script
+compile-riak-test: compile-src bitcask-downgrade-script
 	@./rebar skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice
@@ -43,11 +42,8 @@ compile-riak-test: all bitcask-downgrade-script
 clean-client-test:
 	@./rebar client_test_clean
 
-clean-int-test:
-	@./rebar int_test_clean
-
 clean-riak-test:
-	@./rebar riak_test_clean
+	@./rebar riak_test_clean skip_deps=true
 
 deps:
 	@./rebar get-deps
@@ -114,9 +110,6 @@ test-php:
 test-go:
 	@cd client_tests/go && make
 
-test-int: compile-int-test
-	@./rebar skip_deps=true int_test_run
-
 ##
 ## Release targets
 ##
@@ -162,18 +155,6 @@ stage : rel
 	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
 
-
-##
-## Doc targets
-##
-orgs: orgs-doc orgs-README
-
-orgs-doc:
-	@emacs -l orgbatch.el -batch --eval="(riak-export-doc-dir \"doc\" 'html)"
-
-orgs-README:
-	@emacs -l orgbatch.el -batch --eval="(riak-export-doc-file \"README.org\" 'ascii)"
-	@mv README.txt README
 
 DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	webtool eunit syntax_tools compiler

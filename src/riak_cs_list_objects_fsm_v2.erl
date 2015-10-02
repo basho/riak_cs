@@ -155,7 +155,7 @@ waiting_object_list({ReqId, {done, _Continuation}}, State=#state{object_list_req
     handle_done(State);
 waiting_object_list({ReqId, {error, _Reason}=Error},
                     State=#state{object_list_req_id=ReqId}) ->
-    try_reply(Error, State).
+    handle_error(Error, State).
 
 handle_event(_Event, StateName, State) ->
     %% TODO: log unknown event
@@ -206,17 +206,18 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
 
     ObjectBufferLength = length(ObjectBuffer),
     RangeUpdatedStateData =
-    update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
+        update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength),
 
     FilteredObjects = exclude_key_from_state(State, ObjectBuffer),
     Manifests = [riak_cs_manifest:manifests_from_riak_object(O) ||
-                 O <- FilteredObjects],
+                    O <- FilteredObjects],
+
     Active = map_active_manifests(Manifests),
     NewObjects = PrevObjects ++ Active,
     ObjectPrefixTuple = {NewObjects, CommonPrefixes},
 
     {NewManis, NewPrefixes} =
-    riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
+        riak_cs_list_objects_utils:filter_prefix_keys(ObjectPrefixTuple, Request),
 
     ReachedEnd = reached_end_of_keyspace(ObjectBufferLength,
                                          NumKeysRequested,
@@ -251,6 +252,11 @@ reached_end_of_keyspace(_, _, ActiveObjects, Prefix) ->
         _ ->
             LastKey > Prefix
     end.
+
+handle_error(Error, #state{profiling=Profiling} = State) ->
+    {_KeyRange, StartTime} = Profiling#profiling.temp_fold_objects_request,
+    _ = riak_cs_stats:update_error_with_start([riakc, fold_manifest_objs], StartTime),
+    try_reply(Error, State).
 
 -spec update_profiling_and_last_request(state(), list(), integer()) ->
     state().
@@ -344,11 +350,12 @@ response_from_manifests_and_common_prefixes(Request,
 
 -spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName},
+make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName,prefix=Prefix},
                                     fold_objects_batch_size=BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
-    EndKey = riak_cs_utils:big_end_key(128),
+    EndKey = riak_cs_utils:big_end_key(Prefix),
+
     NewStateData = State#state{last_request_start_key=StartKey,
                                last_request_num_keys_requested=BatchSize},
     NewStateData2 = update_profiling_state_with_start(NewStateData,
@@ -561,6 +568,7 @@ update_last_request_state(State=#state{last_request_start_key=StartKey,
     state().
 update_profiling_state_with_start(State=#state{profiling=Profiling},
                                   StartKey, EndKey, StartTime) ->
+    _ = riak_cs_stats:inflow([riakc, fold_manifest_objs]),
     TempData = {{StartKey, EndKey},
                 StartTime},
     NewProfiling = Profiling#profiling{temp_fold_objects_request=TempData},
@@ -572,11 +580,12 @@ update_profiling_state_with_start(State=#state{profiling=Profiling},
 update_profiling_state_with_end(State=#state{profiling=Profiling},
                                 EndTime, NumKeysReturned) ->
     {KeyRange, StartTime} = Profiling#profiling.temp_fold_objects_request,
+    _ = riak_cs_stats:update_with_start([riakc, fold_manifest_objs], StartTime),
     OldRequests = Profiling#profiling.fold_objects_requests,
     NewRequest = {KeyRange, NumKeysReturned, {StartTime, EndTime}},
     NewProfiling = Profiling#profiling{temp_fold_objects_request=undefined,
                                        fold_objects_requests=
-                                       [NewRequest | OldRequests]},
+                                           [NewRequest | OldRequests]},
     State#state{profiling=NewProfiling}.
 
 -spec extract_timings(list()) -> [{Millis :: number(),

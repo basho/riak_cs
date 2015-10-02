@@ -20,7 +20,7 @@
 
 %% @doc A worker module that handles garbage collection of deleted
 %% file manifests and blocks at the direction of the garbace
-%% collection daemon.
+%% collection manager.
 
 -module(riak_cs_gc_worker).
 
@@ -44,12 +44,16 @@
          terminate/3,
          code_change/4]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([current_state/1]).
 
 -define(STATE, #gc_worker_state).
--define(GC_D, riak_cs_gc_d).
+-define(GC_D, riak_cs_gc_batch).
 
 %%%===================================================================
 %%% API
@@ -59,7 +63,7 @@
 start_link(BagId, Keys) ->
     gen_fsm:start_link(?MODULE, [BagId, Keys], []).
 
-%% @doc Stop the daemon
+%% @doc Stop the process
 -spec stop(pid()) -> ok | {error, term()}.
 stop(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, stop, infinity).
@@ -86,7 +90,8 @@ init([BagId, Keys]) ->
 %% handle messages from the outside world (like `status').
 fetching_next_fileset(continue, ?STATE{batch=[]}=State) ->
     %% finished with this batch
-    gen_fsm:send_event(?GC_D, {batch_complete, self(), State}),
+    %% gen_fsm:send_event(?GC_D, {batch_complete, self(), State}),
+    gen_fsm:send_all_state_event(?GC_D, {batch_complete, self(), State}),
     {stop, normal, State};
 fetching_next_fileset(continue, State=?STATE{batch=[FileSetKey | RestKeys],
                                              batch_skips=BatchSkips,
@@ -135,12 +140,11 @@ initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
     %% This is because one riak client process is assumed to be used for
     %% blocks in single bag. It's possible to use one riak client process
     %% for multiple block bags, but it introduce complexity of mutation.
-    Args = [BagId, Manifest, self(), CurrentFileSetKey, []],
-    %% The delete FSM is hard-coded to send a sync event to our registered
-    %% name upon terminate(), so we do not have to pass our pid to it
-    %% in order to get a reply.
+    Self = self(),
+    Args = [BagId, Manifest,
+            fun(Msg) -> gen_fsm:sync_send_event(Self, Msg, infinity) end,
+            CurrentFileSetKey, []],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
-
     %% Link to the delete fsm, so that if it dies,
     %% we go down too. In the future we might want to do
     %% something more complicated like retry
@@ -149,6 +153,7 @@ initiating_file_delete(continue, ?STATE{batch=[CurrentFileSetKey | _],
     %% skip an object to GC, we can change the epoch start
     %% time in app.config
     link(Pid),
+    riak_cs_delete_fsm:delete(Pid),
     {next_state, waiting_file_delete, State?STATE{delete_fsm_pid = Pid}};
 initiating_file_delete(_, State) ->
     {next_state, initiating_file_delete, State}.
@@ -165,7 +170,8 @@ initiating_file_delete(_Msg, _From, State) ->
     {next_state, initiating_file_delete, State}.
 
 waiting_file_delete({Pid, DelFsmReply}, _From, State=?STATE{delete_fsm_pid=Pid}) ->
-    ok_reply(initiating_file_delete, handle_delete_fsm_reply(DelFsmReply, State));
+    Reply=handle_delete_fsm_reply(DelFsmReply, State),
+    ok_reply(initiating_file_delete, Reply);
 waiting_file_delete(_Msg, _From, State) ->
     {next_state, initiating_file_delete, State}.
 
@@ -220,7 +226,8 @@ fetch_next_fileset(ManifestSetKey, RcPid) ->
     %% Get the set of manifests represented by the key
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_gckey_timeout(),
-    case riak_cs_pbc:get_object(ManifestPbc, ?GC_BUCKET, ManifestSetKey, Timeout) of
+    case riak_cs_pbc:get(ManifestPbc, ?GC_BUCKET, ManifestSetKey, [],
+                         Timeout, [riakc, get_gc_manifest_set]) of
         {ok, RiakObj} ->
             ManifestSet = riak_cs_gc:decode_and_merge_siblings(
                             RiakObj, twop_set:new()),
@@ -246,7 +253,8 @@ finish_file_delete(0, _, RiakObj, RcPid) ->
     %% Delete the key from the GC bucket
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:delete_gckey_timeout(),
-    _ = riakc_pb_socket:delete_obj(ManifestPbc, RiakObj, [], Timeout),
+    _ = riak_cs_pbc:delete_obj(ManifestPbc, RiakObj, [],
+                               Timeout, [riakc, delete_gc_manifest_set]),
     ok;
 finish_file_delete(_, FileSet, _RiakObj, _RcPid) ->
     _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
@@ -264,7 +272,7 @@ ok_reply(NextState, NextStateData) ->
 %% Refactor TODO:
 %%   1. delete_fsm_pid=undefined is desirable in both ok & error cases?
 %%   2. It's correct to *not* change pause_state?
-handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
+handle_delete_fsm_reply({ok, {_, _, _, TotalBlocks, TotalBlocks}},
                         ?STATE{current_files=[CurrentManifest | RestManifests],
                                current_fileset=FileSet,
                                block_count=BlockCount} = State) ->
@@ -274,7 +282,7 @@ handle_delete_fsm_reply({ok, {TotalBlocks, TotalBlocks}},
                 current_fileset=UpdFileSet,
                 current_files=RestManifests,
                 block_count=BlockCount+TotalBlocks};
-handle_delete_fsm_reply({ok, {NumDeleted, _TotalBlocks}},
+handle_delete_fsm_reply({ok, {_, _, _, NumDeleted, _TotalBlocks}},
                         ?STATE{current_files=[_CurrentManifest | RestManifests],
                                block_count=BlockCount} = State) ->
     ok = continue(),
@@ -293,4 +301,4 @@ handle_delete_fsm_reply({error, _}, ?STATE{current_files=[_ | RestManifests]} = 
 %% @doc Get the current state of the fsm for debugging inspection
 -spec current_state(pid()) -> {atom(), ?STATE{}} | {error, term()}.
 current_state(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, current_state).
+    gen_fsm:sync_send_all_state_event(Pid, current_state, infinity).

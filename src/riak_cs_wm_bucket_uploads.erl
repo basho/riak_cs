@@ -28,13 +28,13 @@
 -module(riak_cs_wm_bucket_uploads).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          to_xml/2,
          allowed_methods/0,
          malformed_request/2,
          content_types_accepted/2,
-         multiple_choices/2,
          finish_request/2]).
 
 -include("riak_cs.hrl").
@@ -45,6 +45,9 @@
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
+
+-spec stats_prefix() -> list_uploads.
+stats_prefix() -> list_uploads.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD,Ctx=#context{local_context=LocalCtx0}) ->
@@ -114,9 +117,6 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-multiple_choices(RD, Ctx) ->
-    {false, RD, Ctx}.
 
 finish_request(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),

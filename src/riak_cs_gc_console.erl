@@ -22,13 +22,16 @@
 
 -module(riak_cs_gc_console).
 
+-export([human_time/1]).
+
 -export([batch/1,
          status/1,
          pause/1,
          resume/1,
          cancel/1,
          'set-interval'/1,
-         'set-leeway'/1]).
+         'set-leeway'/1,
+         'earliest-keys'/1]).
 
 -define(SAFELY(Code, Description),
         try
@@ -54,18 +57,21 @@
 batch(Opts) ->
     ?SAFELY(start_batch(parse_batch_opts(Opts)), "Starting garbage collection batch").
 
-%% @doc Find out what the gc daemon is up to.
+%% @doc Find out what the gc manager is up to.
 status(_Opts) ->
     ?SAFELY(get_status(), "Checking garbage collection status").
 
 cancel(_Opts) ->
     ?SAFELY(cancel_batch(), "Canceling the garbage collection batch").
 
-pause(_Opts) ->
-    ?SAFELY(pause(), "Pausing the garbage collection daemon").
+pause(_) ->
+    output("Warning: Subcommand 'pause' will be removed in future version."),
+    _ = riak_cs_gc_manager:set_interval(infinity),
+    cancel([]).
 
-resume(_Opts) ->
-    ?SAFELY(resume(), "Resuming the garbage collection daemon").
+resume(_) ->
+    output("Warning: Subcommand 'resume' will be removed in future version."),
+    set_interval(riak_cs_gc:gc_interval()).
 
 'set-interval'(Opts) ->
     ?SAFELY(set_interval(parse_interval_opts(Opts)), "Setting the garbage collection interval").
@@ -73,24 +79,43 @@ resume(_Opts) ->
 'set-leeway'(Opts) ->
     ?SAFELY(set_leeway(parse_leeway_opts(Opts)), "Setting the garbage collection leeway time").
 
+'earliest-keys'([]) ->
+    Bags = riak_cs_mb_helper:bags(),
+    earliest_keys(Bags);
+'earliest-keys'(Bags0) ->
+    Bags = [{list_to_binary(Bag), spam, ham} || Bag <- Bags0],
+    earliest_keys(Bags).
+
+earliest_keys(Bags) ->
+    ?SAFELY(begin
+                [begin
+                     {ok, Dates} = riak_cs_gc_key_list:find_oldest_entries(BagId),
+                     case Dates of
+                         [] ->
+                             io:format("No GC key found in ~s.~n", [BagId]);
+                         _ ->
+                             io:format("GC keys in ~s:~n", [BagId]),
+                             [io:format("~s: ~w~n", [Date, Suffix]) || {Date, Suffix} <- Dates]
+                     end
+                 end || {BagId, _, _} <- Bags]
+            end,
+            "Finding oldest entries in GC bucket").
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-start_batch(Options) ->
-    handle_batch_start(riak_cs_gc_d:manual_batch(Options)).
+start_batch({ok, Options}) ->
+    handle_batch_start(riak_cs_gc_manager:start_batch(Options));
+start_batch({error, _}) ->
+    getopt:usage(batch_options(), "riak-cs-admin gc", standard_io),
+    output("Invalid argument").
 
 get_status() ->
-    handle_status(riak_cs_gc_d:status()).
+    handle_status(riak_cs_gc_manager:pp_status()).
 
 cancel_batch() ->
-    handle_batch_cancellation(riak_cs_gc_d:cancel_batch()).
-
-pause() ->
-    handle_pause(riak_cs_gc_d:pause()).
-
-resume() ->
-    handle_resumption(riak_cs_gc_d:resume()).
+    handle_batch_cancellation(riak_cs_gc_manager:cancel_batch()).
 
 set_interval(undefined) ->
     output("Error: No interval value specified"),
@@ -99,7 +124,7 @@ set_interval({'EXIT', _}) ->
     output("Error: Invalid interval specified."),
     error;
 set_interval(Interval) ->
-    case riak_cs_gc_d:set_interval(Interval) of
+    case riak_cs_gc_manager:set_interval(Interval) of
         ok ->
             output("The garbage collection interval was updated."),
             ok;
@@ -127,59 +152,36 @@ set_leeway(Leeway) ->
 handle_batch_start(ok) ->
     output("Garbage collection batch started."),
     ok;
-handle_batch_start({error, already_deleting}) ->
-    output("Error: A garbage collection batch"
-           " is already in progress."),
-    error;
-handle_batch_start({error, already_paused}) ->
-    output("The garbage collection daemon was already paused."),
+handle_batch_start({error, running}) ->
+    output("The garbage collection batch is already running."),
     error.
 
 handle_status({ok, {State, Details}}) ->
-    print_status(State, Details),
+    _ = print_state(State),
+    _ = print_details(State, Details),
     ok.
 
 handle_batch_cancellation(ok) ->
     output("The garbage collection batch was canceled.");
-handle_batch_cancellation({error, no_batch}) ->
+handle_batch_cancellation({error, idle}) ->
     output("No garbage collection batch was running."),
-    error.
-
-handle_pause(ok) ->
-    output("The garbage collection daemon was paused."),
-    ok;
-handle_pause({error, already_paused}) ->
-    output("The garbage collection daemon was already paused."),
-    error.
-
-handle_resumption(ok) ->
-    output("The garbage collection daemon was resumed."),
-    ok;
-handle_resumption({error, not_paused}) ->
-    output("The garbage collection daemon was not paused."),
     error.
 
 output(Output) ->
     io:format(Output ++ "~n").
 
-print_status(State, Details) ->
-    _ = print_state(State),
-    _ = print_details(Details),
-    ok.
-
+-spec print_state(riak_cs_gc_manager:statename()) -> ok.
 print_state(idle) ->
     output("There is no garbage collection in progress");
-print_state(fetching_next_batch) ->
+print_state(running) ->
     output("A garbage collection batch is in progress");
-print_state(feeding_workers) ->
-    output("A garbage collection batch is in progress");
-print_state(waiting_for_workers) ->
-    output("A garbage collection batch is in progress");
-print_state(paused) ->
-    output("A garbage collection batch is currently paused").
+print_state(finishing) ->
+    output("A garbage collection batch is finishing").
 
-%% @doc Pretty-print the status returned from the gc daemon.
-print_details(Details) ->
+%% @doc Pretty-print the status returned from the gc manager.
+print_details(finishing, _Details) ->
+    ok;
+print_details(_, Details) ->
     [ begin
           {HumanName, HumanValue} = human_detail(K, V),
           io:format("  ~s: ~s~n", [HumanName, HumanValue])
@@ -218,15 +220,64 @@ human_detail(Name, Value) ->
     %% anything not to bomb if something was added
     {io_lib:format("~p", [Name]), io_lib:format("~p", [Value])}.
 
+-spec human_time(non_neg_integer()|undefined) -> binary().
 human_time(undefined) -> "unknown/never";
 human_time(Seconds) ->
     Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
     rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
-parse_batch_opts([]) ->
-    [];
-parse_batch_opts([Leeway | _]) ->
-    [{leeway, catch list_to_integer(Leeway)}].
+parse_batch_opts([Leeway]) ->
+    try
+        case list_to_integer(Leeway) of
+            LeewayInt when LeewayInt >= 0 ->
+                {ok, [{leeway, LeewayInt}]};
+            _O ->
+                {error, negative_leeway}
+        end
+    catch T:E ->
+            {error, {T, E}}
+    end;
+parse_batch_opts(Args) ->
+    case getopt:parse(batch_options(), Args) of
+        {ok, {Options, _}} -> {ok, convert(Options)};
+        {error, _} = E -> E
+    end.
+
+batch_options() ->
+    [{leeway, $l, "leeway", integer, "Leeway seconds"},
+     {start,  $s, "start",  string,
+      "Start time (iso8601 format, like 20130320T094500Z)"},
+     {'end',  $e, "end",    string,
+      "End time (iso8601 format, like 20130420T094500Z)"},
+     {'max-workers', $c, "max-workers", integer, "Number of concurrent workers"},
+     {'page-size', $p, "page-size", integer,
+      "Unit size of each GC bucket pagination in a batch"}].
+
+convert(Options) ->
+    lists:map(fun({leeway, Leeway}) when Leeway >= 0 ->
+                      {leeway, Leeway};
+                 ({start, Start}) ->
+                      {start, iso8601_to_epoch(Start)};
+                 ({'end', End}) ->
+                      {'end', iso8601_to_epoch(End)};
+                 ({'max-workers', Concurrency}) when Concurrency > 0 ->
+                      {'max-workers', Concurrency};
+                 ({'page-size', BatchSize}) when BatchSize > 0 ->
+                      %% Note that internal description is different
+                      %% and confusing: "batch" is also a unit of
+                      %% single GC execution, which may include
+                      %% multiple combination of pagenation &
+                      %% deletion.
+                      {batch_size, BatchSize};
+                 (BadArg) ->
+                      error({bad_arg, BadArg})
+              end, Options).
+
+-spec iso8601_to_epoch(string()) -> non_neg_integer().
+iso8601_to_epoch(S) ->
+    {ok, Datetime} = rts:datetime(S),
+    GregorianSeconds = calendar:datetime_to_gregorian_seconds(Datetime),
+    GregorianSeconds - 62167219200. %% Unix Epoch in Gregorian second
 
 parse_interval_opts([]) ->
     undefined;

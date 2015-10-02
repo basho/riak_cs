@@ -182,9 +182,13 @@ handle_call(_Request, State) ->
     {ok, ok, State}.
 
 %% @private
+handle_event({log_access, #wm_log_data{notes=undefined,
+                                       method=Method, path=Path, headers=Headers}},
+             State) ->
+    lager:debug("No WM route: ~p ~s ~p\n", [Method, Path, Headers]),
+    {ok, State};
 handle_event({log_access, LogData},
              #state{table=T, size=S, max_size=MaxS}=State) ->
-
     %% Updates for quotas
     case lists:keyfind(?STAT(user), 1, LogData#wm_log_data.notes) of
         {?STAT(user), Key} ->
@@ -297,10 +301,6 @@ do_archive(#state{period=P, table=T, current=C}=State) ->
 -spec access_record(#wm_log_data{})
          -> {ok, {iodata(), {binary(), list()}}}
           | ignore.
-access_record(#wm_log_data{notes=undefined,
-                           method=Method,path=Path,headers=Headers}=_X) ->
-    error_logger:error_msg("No WM route: ~p ~s ~p\n", [Method, Path, Headers]),
-    ignore;
 access_record(#wm_log_data{notes=Notes}=Log) ->
     case lists:keyfind(?STAT(user), 1, Notes) of
         {?STAT(user), Key} ->

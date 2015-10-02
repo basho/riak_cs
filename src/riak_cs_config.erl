@@ -57,12 +57,15 @@
          auto_reconnect/0,
          is_multibag_enabled/0,
          max_buckets_per_user/0,
+         max_key_length/0,
          read_before_last_manifest_write/0,
          region/0,
          stanchion/0,
          use_2i_for_storage_calc/0,
          detailed_storage_calc/0,
-         quota_modules/0
+         quota_modules/0,
+         active_delete_threshold/0,
+         fast_user_get/0
         ]).
 
 %% Timeouts hitting Riak
@@ -75,6 +78,7 @@
          proxy_get_block_timeout/0, %% for remote
          get_access_timeout/0,
          get_gckey_timeout/0,
+         put_user_timeout/0,
          put_manifest_timeout/0,
          put_block_timeout/0,
          put_access_timeout/0,
@@ -85,12 +89,14 @@
          delete_gckey_timeout/0,
          list_keys_list_objects_timeout/0,
          list_keys_list_users_timeout/0,
+         list_keys_list_buckets_timeout/0,
          storage_calc_timeout/0,
          list_objects_timeout/0, %% using mapred (v0)
          fold_objects_timeout/0, %% for cs_bucket_fold
          get_index_range_gckeys_timeout/0,
          get_index_range_gckeys_call_timeout/0,
-         get_index_list_multipart_uploads_timeout/0
+         get_index_list_multipart_uploads_timeout/0,
+         cluster_id_timeout/0
         ]).
 
 %% OpenStack config
@@ -101,7 +107,7 @@
          os_tokens_url/0,
          os_users_url/0]).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 -include("oos_api.hrl").
 -include("s3_api.hrl").
 -include("list_objects.hrl").
@@ -247,44 +253,16 @@ use_t2b_compression() ->
 %% doc Return the current cluster ID. Used for repl
 %% After obtaining the clusterid the first time,
 %% store the value in app:set_env
--spec cluster_id(riak_client()) -> binary().
-cluster_id(RcPid) ->
+-spec cluster_id(fun()) -> binary().
+cluster_id(GetClusterIdFun) ->
     case application:get_env(riak_cs, cluster_id) of
         {ok, ClusterID} ->
             ClusterID;
         undefined ->
-            Timeout = case application:get_env(riak_cs, cluster_id_timeout) of
-                          {ok, Value} ->
-                              Value;
-                          undefined   ->
-                              ?DEFAULT_CLUSTER_ID_TIMEOUT
-                      end,
-            maybe_get_cluster_id(proxy_get_active(), RcPid, Timeout)
+            ClusterId = GetClusterIdFun(undefined),
+            application:set_env(riak_cs, cluster_id, ClusterId),
+            ClusterId
     end.
-
-%% @doc If `proxy_get' is enabled then attempt to determine the cluster id
--spec maybe_get_cluster_id(boolean(), riak_client(), integer()) -> undefined | binary().
-maybe_get_cluster_id(true, RcPid, Timeout) ->
-    try
-        %% TODO && FIXME!!: DO NOT support multibag YET!!!
-        {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-        case riak_repl_pb_api:get_clusterid(MasterPbc, Timeout) of
-            {ok, ClusterID} ->
-                application:set_env(riak_cs, cluster_id, ClusterID),
-                ClusterID;
-            _ ->
-                _ = lager:debug("Unable to obtain cluster ID"),
-                undefined
-        end
-    catch _:_ ->
-            %% Disable `proxy_get' so we do not repeatedly have to
-            %% handle this same exception. This would happen if an OSS
-            %% install has `proxy_get' enabled.
-            application:set_env(riak_cs, proxy_get, disabled),
-            undefined
-    end;
-maybe_get_cluster_id(false, _, _) ->
-    undefined.
 
 %% @doc Return the configured md5 chunk size
 -spec md5_chunk_size() -> non_neg_integer().
@@ -304,16 +282,16 @@ set_md5_chunk_size(_) ->
 
 %% doc Check app.config to see if repl proxy_get is enabled
 %% Defaults to false.
+-spec proxy_get_active() -> boolean().
 proxy_get_active() ->
-    case application:get_env(riak_cs, proxy_get) of
-        {ok, enabled} ->
-            true;
-        {ok, disabled} ->
-            false;
-        {ok, _} ->
-            _ = lager:warning("proxy_get value in app.config is invalid"),
-            false;
-        undefined -> false
+    case application:get_env(riak_cs, proxy_get, false) of
+        enabled ->   true;
+        disabled -> false;
+        Flag when is_boolean(Flag) -> Flag;
+        Other ->
+            _ = lager:warning("proxy_get value in advanced.config is invalid: ~p",
+                              [Other]),
+            false
     end.
 
 -spec trust_x_forwarded_for() -> true | false.
@@ -393,6 +371,10 @@ is_multibag_enabled() ->
 max_buckets_per_user() ->
     get_env(riak_cs, max_buckets_per_user, ?DEFAULT_MAX_BUCKETS_PER_USER).
 
+-spec max_key_length() -> pos_integer() | unlimited.
+max_key_length() ->
+    get_env(riak_cs, max_key_length, ?MAX_S3_KEY_LENGTH).
+
 %% @doc Return `stanchion' configuration data.
 -spec stanchion() -> {string(), pos_integer(), boolean()}.
 stanchion() ->
@@ -443,6 +425,16 @@ detailed_storage_calc() ->
 quota_modules() ->
     get_env(riak_cs, quota_modules, []).
 
+%% @doc smaller than block size recommended, to avoid multiple DELETE
+%% calls to riak per single manifest deletion.
+-spec active_delete_threshold() -> non_neg_integer().
+active_delete_threshold() ->
+    get_env(riak_cs, active_delete_threshold, 0).
+
+-spec fast_user_get() -> boolean().
+fast_user_get() ->
+    get_env(riak_cs, fast_user_get, false).
+
 %% ===================================================================
 %% ALL Timeouts hitting Riak
 %% ===================================================================
@@ -452,10 +444,7 @@ quota_modules() ->
                get_env(riak_cs, ConfigName,
                        get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT))).
 
-%% @doc Return the configured ping timeout. Default is 5 seconds.  The
-%% timeout is used in call to `poolboy:checkout' and if that fails in
-%% the call to `riakc_pb_socket:ping' so the effective cumulative
-%% timeout could be up to 2 * `ping_timeout()'.
+%% @doc Return the configured ping timeout. Default is 5 seconds.
 -spec ping_timeout() -> pos_integer().
 ping_timeout() ->
     get_env(riak_cs, ping_timeout, ?DEFAULT_PING_TIMEOUT).
@@ -472,6 +461,7 @@ local_get_block_timeout() ->
 ?TIMEOUT_CONFIG_FUNC(proxy_get_block_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_access_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_gckey_timeout).
+?TIMEOUT_CONFIG_FUNC(put_user_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_manifest_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_block_timeout).
 ?TIMEOUT_CONFIG_FUNC(put_access_timeout).
@@ -482,12 +472,14 @@ local_get_block_timeout() ->
 ?TIMEOUT_CONFIG_FUNC(delete_gckey_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_keys_list_objects_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_keys_list_users_timeout).
+?TIMEOUT_CONFIG_FUNC(list_keys_list_buckets_timeout).
 ?TIMEOUT_CONFIG_FUNC(storage_calc_timeout).
 ?TIMEOUT_CONFIG_FUNC(list_objects_timeout).
 ?TIMEOUT_CONFIG_FUNC(fold_objects_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_call_timeout).
 ?TIMEOUT_CONFIG_FUNC(get_index_list_multipart_uploads_timeout).
+?TIMEOUT_CONFIG_FUNC(cluster_id_timeout).
 
 -undef(TIMEOUT_CONFIG_FUNC).
 

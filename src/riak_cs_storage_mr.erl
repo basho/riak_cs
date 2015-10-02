@@ -24,6 +24,8 @@
 
 -include("riak_cs.hrl").
 
+%% Utility for M/R client
+-export([empty_summary/0]).
 -export([bucket_summary_map/3,
          bucket_summary_reduce/2]).
 -export([object_size_map/3,
@@ -63,6 +65,10 @@
         }).
 
 -type sum() :: #sum{}.
+
+-spec empty_summary() -> proplists:proplist().
+empty_summary() ->
+    summary_to_list(#sum{}).
 
 bucket_summary_map({error, notfound}, _, _Args) ->
     [];

@@ -403,6 +403,7 @@ make_action(Method, Target) ->
         {'PUT', object_acl} -> {ok, 's3:PutObjectAcl'};
         {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
         {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
+        {'PUT', bucket_request_payment} -> {ok, 's3:PutBucketRequestPayment'};
 
         {'GET', object} ->     {ok, 's3:GetObject'};
         {'GET', object_part} -> {ok, 's3:ListMultipartUploadParts'};
@@ -412,6 +413,7 @@ make_action(Method, Target) ->
         {'GET', bucket_acl} -> {ok, 's3:GetBucketAcl'};
         {'GET', bucket_policy} -> {ok, 's3:GetBucketPolicy'};
         {'GET', bucket_location} -> {ok, 's3:GetBucketLocation'};
+        {'GET', bucket_request_payment} -> {ok, 's3:GetBucketRequestPayment'};
         {'GET', bucket_uploads} -> {ok, 's3:ListBucketMultipartUploads'};
 
         {'DELETE', object} ->  {ok, 's3:DeleteObject'};
@@ -531,8 +533,8 @@ eval_ip_address(Req, Conds) ->
         {error, _} ->
             false;
         {Peer, _} ->
-            IPConds = [ IPCond || {'aws:SourceIp', IPCond} <- Conds ],
-            eval_all_ip_addr(IPConds, Peer)
+            IPConds = [IPCond || {'aws:SourceIp', IPCond} <- Conds ],
+            eval_all_ip_addr(lists:flatten(IPConds), Peer)
     end.
 
 eval_all_ip_addr([], _) -> false;
@@ -568,7 +570,10 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
 
 -spec condition_block_from_condition_pair(condition_pair()) -> {binary(), list()}.
 condition_block_from_condition_pair({AtomKey, Conds})->
-    Fun = fun({'aws:SourceIp', IP}) -> {'aws:SourceIp', print_ip(IP)};
+    Fun = fun({'aws:SourceIp', IPs}) when is_list(IPs) ->
+                  {'aws:SourceIp', [print_ip(IP) || IP <- IPs]};
+              ({'aws:SourceIp', IP}) when is_tuple(IP) ->
+                  {'aws:SourceIp', print_ip(IP)};
              (Cond) -> Cond
           end,
     {atom_to_binary(AtomKey, latin1),  lists:map(Fun, Conds)}.
@@ -794,6 +799,14 @@ condition_({<<"aws:SourceIp">>, Bin}) when is_binary(Bin)->
         IP ->
             {'aws:SourceIp', IP}
     end;
+condition_({<<"aws:SourceIp">>, BinIPs}) when is_list(BinIPs)->
+    IPs = [case parse_ip(Bin) of
+               {error, _} ->
+                   throw({error, malformed_policy_condition});
+               IP ->
+                   IP
+           end || Bin <- BinIPs],
+    {'aws:SourceIp', IPs};
 condition_({<<"aws:UserAgent">>, Bin}) -> % TODO: check string condition
     {'aws:UserAgent', Bin};
 condition_({<<"aws:Referer">>, Bin}) -> % TODO: check string condition

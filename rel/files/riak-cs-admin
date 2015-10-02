@@ -15,23 +15,29 @@ cd $RUNNER_BASE_DIR
 SCRIPT=`basename $0`
 
 usage() {
-    echo "Usage: $SCRIPT { gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart }"
+    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
 }
 
 # Check the first argument for instructions
 case "$1" in
+    status)
+        shift
+        node_up_check
+        $NODETOOL rpc riak_cs_console status
+        ;;
     gc)
         shift
         case "$1" in
-            batch|status|pause|resume|cancel|set-interval|set-leeway)
+            batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
                 # Make sure the local node IS running
                 node_up_check
 
                 $NODETOOL rpc riak_cs_gc_console "$@"
                 ;;
             *)
-                echo "Usage: $SCRIPT gc { batch [<leeway_seconds>] | status | pause | resume | cancel |"
-                echo "                          set-interval <interval_seconds> | set-leeway <leeway_seconds> }"
+                echo "Usage: $SCRIPT gc { batch [<leeway_seconds>|--help] | status | pause | resume | cancel |"
+                echo "                          set-interval <interval_seconds> | set-leeway <leeway_seconds> |"
+                echo "                          earliest-keys [bag names]}"
                 exit 1
                 ;;
         esac
@@ -100,6 +106,11 @@ case "$1" in
         node_up_check
 
         $NODETOOL rpc riak_cs_console cleanup_orphan_multipart "$@"
+        ;;
+    audit[_-]bucket[_-]ownership)
+        shift
+        node_up_check
+        $NODETOOL rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
         usage

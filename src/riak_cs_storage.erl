@@ -124,7 +124,8 @@ sum_bucket(BucketName, Detailed, LeewayEdge) ->
                     false -> ManifestBucket
                 end,
         Timeout = riak_cs_config:storage_calc_timeout(),
-        case riakc_pb_socket:mapred(ManifestPbc, Input, Query, Timeout) of
+        case riak_cs_pbc:mapred(ManifestPbc, Input, Query, Timeout,
+                                [riakc, mapred_storage]) of
             {ok, MRRes} ->
                 extract_summary(MRRes, Detailed);
             {error, Error} ->
@@ -145,7 +146,10 @@ extract_summary(MRRes, false) ->
     {struct, [{<<"Objects">>, Objects},
               {<<"Bytes">>, Bytes}]};
 extract_summary(MRRes, true) ->
-    {1, [Summary]} = lists:keyfind(1, 1, MRRes),
+    Summary = case lists:keyfind(1, 1, MRRes) of
+                  {1, [[]]} -> riak_cs_storage_mr:empty_summary();
+                  {1, [NonEmptyValue]} -> NonEmptyValue
+              end,
     {struct, detailed_result_json_struct(Summary, [])}.
 
 detailed_result_json_struct([], Acc) ->
@@ -178,14 +182,15 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
                    BucketList).
 
--spec get_usage(pid(), string(),
+-spec get_usage(riak_client(), string(),
                 boolean(),
                 calendar:datetime(),
                 calendar:datetime()) -> {list(), list()}.
-get_usage(Riak, User, AdminAccess, Start, End) ->
+get_usage(RcPid, User, AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
-    {Samples, Errors} = rts:find_samples(Riak, ?STORAGE_BUCKET,
-                                         User, Start, End, Period),
+    RtsPuller = riak_cs_riak_client:rts_puller(
+                  RcPid, ?STORAGE_BUCKET, User, [riakc, get_storage]),
+    {Samples, Errors} = rts:find_samples(RtsPuller, Start, End, Period),
     case AdminAccess of
         true -> {Samples, Errors};
         _ -> {[filter_internal_usage(Sample, []) || Sample <- Samples], Errors}

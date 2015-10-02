@@ -59,6 +59,7 @@ start_link() ->
                         [supervisor:child_spec()]}}.
 init([]) ->
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
+    riak_cs_stats:init(),
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     PoolSpecs = pool_specs(Options),
     {ok, { {one_for_one, 10, 10}, PoolSpecs ++
@@ -75,11 +76,9 @@ process_specs() ->
     Storage = {riak_cs_storage_d,
                {riak_cs_storage_d, start_link, []},
                permanent, 5000, worker, [riak_cs_storage_d]},
-    GC = {riak_cs_gc_d,
-          {riak_cs_gc_d, start_link, []},
-          permanent, 5000, worker, [riak_cs_gc_d]},
-    Stats = {riak_cs_stats, {riak_cs_stats, start_link, []},
-             permanent, 5000, worker, dynamic},
+    GC = {riak_cs_gc_manager,
+          {riak_cs_gc_manager, start_link, []},
+          permanent, 5000, worker, [riak_cs_gc_manager]},
     DeleteFsmSup = {riak_cs_delete_fsm_sup,
                     {riak_cs_delete_fsm_sup, start_link, []},
                     permanent, 5000, worker, dynamic},
@@ -101,7 +100,6 @@ process_specs() ->
         [Archiver,
          Storage,
          GC,
-         Stats,
          ListObjectsETSCacheSup,
          DeleteFsmSup,
          GetFsmSup,

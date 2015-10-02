@@ -71,9 +71,13 @@ eqc_test_() ->
 setup() ->
     error_logger:tty(false),
     error_logger:logfile({open, "riak_cs_list_objects_fsm_v2_eqc.log"}),
+    application:set_env(lager, handlers, []),
+    exometer:start(),
+    riak_cs_stats:init(),
     ok.
 
 cleanup(_) ->
+    exometer:stop(),
     ok.
 
 %% ====================================================================

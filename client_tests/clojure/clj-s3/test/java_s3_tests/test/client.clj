@@ -1,4 +1,4 @@
-;; Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+;; Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 ;;
 ;; This file is provided to you under the Apache License,
 ;; Version 2.0 (the "License"); you may not use this file
@@ -17,28 +17,15 @@
 (ns java-s3-tests.test.client
   (:import java.security.MessageDigest
            org.apache.commons.codec.binary.Hex
-           com.amazonaws.services.s3.model.AmazonS3Exception
-           com.amazonaws.services.s3.model.AccessControlList
-           com.amazonaws.services.s3.model.CanonicalGrantee
-           com.amazonaws.services.s3.model.GroupGrantee
-           com.amazonaws.services.s3.model.Grant
-           com.amazonaws.services.s3.model.Permission
-           com.amazonaws.services.s3.model.PutObjectRequest
-           com.amazonaws.services.s3.model.CreateBucketRequest
-           com.amazonaws.services.s3.model.ObjectMetadata
-           com.amazonaws.services.s3.transfer.TransferManager
-           com.amazonaws.services.s3.transfer.TransferManagerConfiguration)
+           com.amazonaws.services.s3.model.AmazonS3Exception)
 
   (:require [aws.sdk.s3 :as s3])
   (:require [java-s3-tests.user-creation :as user-creation])
+  (:require [clojure.tools.logging :as log])
   (:use midje.sweet))
 
-(def ^:internal riak-cs-host-with-protocol "http://localhost")
-(def ^:internal riak-cs-host "localhost")
-
-(defn input-stream-from-string
-  [s]
-  (java.io.ByteArrayInputStream. (.getBytes s "UTF-8")))
+(def ^:internal riak-cs-host "127.0.0.1")
+(def ^:internal riak-cs-host-with-protocol (str "http://" riak-cs-host))
 
 (defn get-riak-cs-port-str
   "Try to get a TCP port number from the OS environment"
@@ -59,95 +46,85 @@
   (let [b (md5-byte-array input-byte-array)]
     (String. (Hex/encodeHex b))))
 
-(defn random-client
-  []
-  (let [new-creds (user-creation/create-random-user
-                    riak-cs-host-with-protocol
-                    (get-riak-cs-port))]
-    (s3/client (:key_id new-creds)
-               (:key_secret new-creds)
-               {:proxy-host riak-cs-host
-                :proxy-port (get-riak-cs-port)
-                :protocol :http})))
+(defn user-to-cred
+  [user]
+  {:endpoint "http://s3.amazonaws.com"
+   :access-key (:key_id user)
+   :secret-key (:key_secret user)
+   :proxy {:host riak-cs-host
+           :port (get-riak-cs-port)}})
 
-(defmacro with-random-client
-  "Execute `form` with a random-client
-  bound to `var-name`"
-  [var-name form]
-  `(let [~var-name (random-client)]
-     ~form))
+(defn random-user
+  []
+  (user-creation/create-random-user riak-cs-host-with-protocol (get-riak-cs-port)))
+
+(defmacro with-random-user
+  "Execute `body` in implicit do with a random-user bound to `var-name`"
+  [var-name & body]
+  `(let [~var-name (random-user)]
+     (do ~@body)))
+
+(defn random-cred
+  []
+  (user-to-cred (random-user)))
+
+(defmacro with-random-cred
+  "Execute `body` in implicit do with a random-cred bound to `var-name`"
+  [var-name & body]
+  `(let [~var-name (random-cred)]
+     (do ~@body)))
 
 (defn random-string []
   (str (java.util.UUID/randomUUID)))
 
 (defn write-file [filename content]
-  (with-open [w (clojure.java.io/writer  filename :append false)]
+  (with-open [w (clojure.java.io/writer filename :append false)]
     (.write w content)))
 
 (defn etag-suffix [etag]
   (subs etag (- (count etag) 2)))
 
-(defn create-manager [c]
-  (TransferManager. c))
-
-(defn configure-manager [tm]
-  (let [tm-config (.getConfiguration tm)]
-    (.setMultipartUploadThreshold tm-config 19)
-    (.setMinimumUploadPartSize tm-config 10)
-    (.setConfiguration tm tm-config)))
-
-(defn create-and-configure-manager [c]
-  (let [tm (create-manager c)]
-    (configure-manager tm)
-    tm))
-
-(defn upload-file [tm bucket-name object-name file-name]
-  (let [f (clojure.java.io/file file-name)
-        u (.upload tm bucket-name object-name f)]
-    (.waitForCompletion u)
+(defn upload-file [cred bucket key file-name part-size]
+  (let [f (clojure.java.io/file file-name)]
+    (s3/put-multipart-object cred bucket key f {:part-size part-size :threads 2})
     (.delete f)))
 
 (fact "bogus creds raises an exception"
-      (let [bogus-client
-            (s3/client "foo"
-                       "bar"
-                       {:endpoint (str "http://localhost:"
-                                       (get-riak-cs-port-str))})]
-        (s3/list-buckets bogus-client))
+      (let [bogus-user {:key_id "foo"
+                        :key_secret "bar"}]
+        (s3/list-buckets (user-to-cred bogus-user)))
       => (throws AmazonS3Exception))
 
 (fact "new users have no buckets"
-        (with-random-client c
-          (s3/list-buckets c))
-        => [])
+      (with-random-cred c
+        (s3/list-buckets c))
+      => [])
 
 (let [bucket-name (random-string)]
-  (fact "creating a bucket should list
-        one bucket in list buckets"
-        (with-random-client c
-          (do (s3/create-bucket c bucket-name)
-            ((comp :name first) (s3/list-buckets c))))
-        => bucket-name))
+  (fact "creating a bucket should list one bucket in list buckets"
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (map :name (s3/list-buckets c))
+        => [bucket-name])))
 
 (let [bucket-name (random-string)
       object-name (random-string)]
   (fact "simple put works"
-        (with-random-client c
-          (do (s3/create-bucket c bucket-name)
-            (s3/put-object c bucket-name object-name
-                           "contents")))
+        (with-random-cred cred
+          (s3/create-bucket cred bucket-name)
+          (s3/put-object cred bucket-name object-name
+                         "contents"))
         => truthy))
 
 (let [bucket-name (random-string)
       object-name (random-string)
       value "this is the value!"]
   (fact "the value received during GET is the same
-        as the object that was PUT"
-        (with-random-client c
-          (do (s3/create-bucket c bucket-name)
-            (s3/put-object c bucket-name object-name
-                           value)
-            ((comp slurp :content) (s3/get-object c bucket-name object-name))))
+         as the object that was PUT"
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value)
+          ((comp slurp :content) (s3/get-object c bucket-name object-name)))
         => value))
 
 (let [bucket-name (random-string)
@@ -155,165 +132,118 @@
       value "this is the value!"
       as-bytes (.getBytes value "UTF-8")
       md5-sum (md5-string as-bytes)]
-  (fact "check that the etag of the response
-        is the same as the md5 of the original
-        object"
-        (with-random-client c
-          (do (s3/create-bucket c bucket-name)
-            (s3/put-object c bucket-name object-name
-                           value)
-            ((comp :etag :metadata)
-               (s3/get-object
-                 c bucket-name object-name))))
+  (fact "check that the etag of the response is the same as the md5
+         of the original object"
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value)
+          ((comp :etag :metadata)
+           (s3/get-object
+            c bucket-name object-name)))
         => md5-sum))
 
 (let [bucket-name (random-string)
       object-name (random-string)
-      value (str "aaaaaaaaaa" "bbbbbbbbbb")
+      value "aaaaaaaaaabbbbbbbbbb"
       file-name "./clj-mp-test.txt"]
-  (fact "mulitpart upload works"
-        (with-random-client c
-          (do
-            (s3/create-bucket c bucket-name)
-            (let [tm (create-and-configure-manager c)]
-              (write-file file-name value)
-              (upload-file tm bucket-name object-name file-name)
-              (let [fetched-object (s3/get-object
-                                      c bucket-name object-name)]
-                  [((comp slurp :content) fetched-object)
-                   ((comp etag-suffix :etag :metadata) fetched-object)]))))
-        => [value, "-2"]))
+  (fact "multipart upload works"
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (write-file file-name value)
+          (upload-file c bucket-name object-name file-name 10)
+          (let [fetched-object (s3/get-object
+                                c bucket-name object-name)]
+            ((comp slurp :content) fetched-object)
+            => value
+            ((comp etag-suffix :etag :metadata) fetched-object)
+            => "-2"))))
 
 (let [bucket-name (random-string)
       object-name (random-string)
       value "this is the real value"
       wrong-md5 "2945d7de2f70de5b8c0cb3fbcba4fe92"]
   (fact "Bad content md5 throws an exception"
-        (with-random-client c
-          (do
-            (s3/create-bucket c bucket-name)
-            (s3/put-object c bucket-name object-name value
-                           {:content-md5 wrong-md5})))
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value
+                         {:content-md5 wrong-md5}))
         => (throws AmazonS3Exception)))
 
 (def bad-canonical-id
   "0f80b2d002a3d018faaa4a956ce8aa243332a30e878f5dc94f82749984ebb30b")
-
-(def full-control
-  (Permission/FullControl))
-
-(def read-grant
-  (Permission/Read))
-
-(def write-grant
-  (Permission/Write))
 
 (let [bucket-name (random-string)
       object-name (random-string)
       value-string "this is the real value"]
   (fact "Nonexistent canonical-id grant header returns HTTP 400 on
         a put object request (not just an ACL subresource request)"
-        (with-random-client c
-          (do
-            ;; create a bucket
-            (s3/create-bucket c bucket-name)
-
-            (let [value (input-stream-from-string value-string)
-                  bad-id-grantee (CanonicalGrantee. bad-canonical-id)
-                  metadata (ObjectMetadata.)
-                  req (PutObjectRequest. bucket-name object-name value metadata)
-                  acl (AccessControlList.)]
-
-              ;; grant permission to the nonexistent-user
-              (.grantPermission acl bad-id-grantee full-control)
-
-              (.setAccessControlList req acl)
-              (.putObject c req))))
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value-string {}
+                         (s3/grant {:id bad-canonical-id} :full-control)))
         => (throws AmazonS3Exception)))
-
-(def all-users (GroupGrantee/AllUsers))
 
 (let [bucket-name (random-string)
       object-name (random-string)
       value-string "this is the real value"
-      grant (Grant. all-users read-grant)]
+      public-read-grant {:grantee :all-users, :permission :read}]
   (fact "Creating an object with an ACL returns the same ACL when you read
         the ACL"
-        (with-random-client c
-          (do
-            ;; create a bucket
-            (s3/create-bucket c bucket-name)
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value-string {}
+                         (s3/grant :all-users :read))
+          (:grants (s3/get-object-acl c bucket-name object-name)))
+        => (contains (just public-read-grant))))
 
-            (let [value (input-stream-from-string value-string)
-                  metadata (ObjectMetadata.)
-                  acl (AccessControlList.)
-                  req (PutObjectRequest. bucket-name object-name value metadata)]
-              (.grantPermission acl all-users read-grant)
-              (.setAccessControlList req acl)
-              (.putObject c req)
-              (contains?
-                (.getGrants (.getObjectAcl c bucket-name object-name))
-                grant))))
-        => truthy))
+(let [bucket-name (random-string)
+      object-name (random-string)
+      value-string "this is the real value"
+      public-read-grant {:grantee :all-users, :permission :read}]
+  (fact "Creating an object with an ACL returns the same ACL when you read
+        the ACL"
+        (with-random-cred c
+          (s3/create-bucket c bucket-name)
+          (s3/put-object c bucket-name object-name value-string {}
+                         (s3/grant :all-users :read))
+          (:grants (s3/get-object-acl c bucket-name object-name)))
+        => (contains (just public-read-grant))))
 
 (let [bucket-name (random-string)
       object-name (random-string)
       value-string "this is the real value"]
-  (fact "Creating an object with an (non-canned) ACL returns the same ACL
-        when you read the ACL"
-        (with-random-client c
-          (do
-            ;; create a bucket
+  (with-random-cred c
+    (with-random-user u2
+      (fact "Creating an object with an (non-canned) ACL returns the same ACL
+             when you read the ACL"
             (s3/create-bucket c bucket-name)
-
-            (let [value (input-stream-from-string value-string)
-                  metadata (ObjectMetadata.)
-                  user-two-id (:id (user-creation/create-random-user
-                                     riak-cs-host-with-protocol
-                                     (get-riak-cs-port)))
-                  id-grantee (CanonicalGrantee. user-two-id)
-                  grant (Grant. id-grantee read-grant)
-                  acl (AccessControlList.)
-                  req (PutObjectRequest. bucket-name object-name value metadata)]
-              (.grantPermission acl id-grantee read-grant)
-              (.setAccessControlList req acl)
-              (.putObject c req)
-              (contains?
-                (.getGrants (.getObjectAcl c bucket-name object-name))
-                grant))))
-        => truthy))
+            (s3/put-object c bucket-name object-name value-string {}
+                           (s3/grant {:id (:id u2)} :read))
+            (:grants (s3/get-object-acl c bucket-name object-name))
+            => (contains (just {:grantee {:id (:id u2),
+                                          :display-name (:display_name u2)},
+                                :permission :read}))))))
 
 (let [bucket-name (random-string)
-      object-name (random-string)
-      grant (Grant. all-users read-grant)]
+      object-name (random-string)]
   (fact "Creating a bucket with an ACL returns the same ACL when you read
         the ACL"
-        (with-random-client c
-            (let [acl (AccessControlList.)
-                  req (CreateBucketRequest. bucket-name)]
-              (.grantPermission acl all-users read-grant)
-              (.setAccessControlList req acl)
-              (.createBucket c req)
-              (contains?
-                (.getGrants (.getBucketAcl c bucket-name))
-                grant)))
-        => truthy))
+        (with-random-cred c
+          (do
+            (s3/create-bucket c bucket-name {}
+                              (s3/grant :all-users :read))
+            (:grants (s3/get-bucket-acl c bucket-name))))
+        => (contains (just {:grantee :all-users, :permission :read}))))
 
-(let [bucket-name (random-string)]
-  (fact "Creating a bucket with an (non-canned) ACL returns the same ACL
-        when you read the ACL"
-        (with-random-client c
-          (let [user-two-id (:id (user-creation/create-random-user
-                                   riak-cs-host-with-protocol
-                                   (get-riak-cs-port)))
-                id-grantee (CanonicalGrantee. user-two-id)
-                grant (Grant. id-grantee write-grant)
-                acl (AccessControlList.)
-                req (CreateBucketRequest. bucket-name)]
-            (.grantPermission acl id-grantee write-grant)
-            (.setAccessControlList req acl)
-            (.createBucket c req)
-            (contains?
-              (.getGrants (.getBucketAcl c bucket-name))
-              grant)))
-        => truthy))
+(let [bucket-name (random-string)
+      object-name (random-string)]
+  (with-random-cred c
+    (with-random-user u2
+        (fact "Creating a bucket with an (non-canned) ACL returns the same ACL
+               when you read the ACL"
+               (s3/create-bucket c bucket-name {}
+                                 (s3/grant {:id (:id u2)} :write))
+               (:grants (s3/get-bucket-acl c bucket-name))
+               => (contains (just {:grantee {:id (:id u2),
+                                             :display-name (:display_name u2)},
+                                   :permission :write}))))))

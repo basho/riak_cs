@@ -25,38 +25,30 @@
 %% The name is general so declare local type for readability.
 -type index_result_keys() :: keys().
 
--record(gc_d_state, {
-          interval :: 'infinity' | non_neg_integer(),
-          %% the last time a deletion was scheduled
-          last :: undefined | non_neg_integer(),
-          %% the next scheduled gc time
-          next :: undefined | non_neg_integer(),
-          %% start of the current gc interval
+-define(DEFAULT_GC_BATCH_SIZE, 1000).
+-define(DEFAULT_GC_WORKERS, 2).
+
+-record(gc_batch_state, {
+          %% start of the current gc batch
           batch_start :: undefined | non_neg_integer(),
-          %% caller of manual_batch
-          %% Currently only used in `riak_cs_gc_single_run_eqc`.
-          batch_caller :: undefined | pid(),
+          %% start of a range in riak-cs-gc bucket to be collected in this batch
+          start_key :: non_neg_integer(),
+          %% end of a range in riak-cs-gc bucket to be collected in this batch
+          end_key :: non_neg_integer(),
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
           batch_skips=0 :: non_neg_integer(),
           batch=[] :: undefined | [index_result_keys()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
-          %% state of the fsm when a delete batch was paused
-          pause_state :: undefined | atom(),
-          %% used when moving from paused -> idle
-          interval_remaining :: undefined | non_neg_integer(),
-          timer_ref :: reference(),
-          initial_delay :: non_neg_integer(),
           leeway :: non_neg_integer(),
           worker_pids=[] :: [pid()],
-          max_workers :: non_neg_integer(),
-          active_workers=0 :: non_neg_integer(),
+          max_workers=?DEFAULT_GC_WORKERS :: pos_integer(),
+          batch_size=?DEFAULT_GC_BATCH_SIZE :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
-          bag_id :: binary(),
-          testing=false :: boolean()
+          bag_id :: binary()
          }).
 
 -record(gc_worker_state, {
@@ -82,8 +74,9 @@
           current_riak_client :: undefined | riak_client(),
           current_bag_id :: bag_id(),
           %% start of the current gc interval
-          batch_start :: undefined | non_neg_integer(),
-          leeway :: non_neg_integer(),
+          start_key :: binary(),
+          end_key :: binary(),
+          batch_size=?DEFAULT_GC_BATCH_SIZE :: pos_integer(),
           %% Used for paginated 2I querying of GC bucket
           continuation :: continuation()
          }).
@@ -103,6 +96,15 @@
 -define(DEFAULT_GC_INTERVAL, 900). %% 15 minutes
 -define(DEFAULT_GC_RETRY_INTERVAL, 21600). %% 6 hours
 -define(DEFAULT_GC_KEY_SUFFIX_MAX, 256).
--define(DEFAULT_GC_BATCH_SIZE, 1000).
--define(DEFAULT_GC_WORKERS, 2).
 -define(EPOCH_START, <<"0">>).
+-define(DEFAULT_MAX_SCHEDULED_DELETE_MANIFESTS, 50).
+
+-record(gc_manager_state, {
+          next :: undefined | non_neg_integer(),
+          gc_batch_pid :: undefined | pid(),
+          batch_history = [] :: list(#gc_batch_state{}),
+          current_batch :: undefined | #gc_batch_state{},
+          interval = ?DEFAULT_GC_INTERVAL:: non_neg_integer() | infinity,
+          initial_delay :: non_neg_integer(),
+          timer_ref :: undefined | reference()
+         }).

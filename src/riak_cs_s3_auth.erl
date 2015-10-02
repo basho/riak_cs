@@ -38,6 +38,14 @@
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
 
+-define(PERCENT, 37).  % $\%
+-define(FULLSTOP, 46). % $\.
+-define(QS_SAFE(C), ((C >= $a andalso C =< $z) orelse
+                     (C >= $A andalso C =< $Z) orelse
+                     (C >= $0 andalso C =< $9) orelse
+                     (C =:= ?FULLSTOP orelse C =:= $- orelse C =:= $~ orelse
+                      C =:= $_))).
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -110,7 +118,7 @@ identify_by_query_string(RD) ->
 parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
     case riak_cs_config:auth_v4_enabled() of
         true ->
-            parse_auth_v4_header(String, undefined, []);
+            parse_auth_v4_header(String);
         _ ->
             {failed, {auth_not_supported, "AWS4-HMAC-SHA256"}}
     end;
@@ -123,33 +131,28 @@ parse_auth_header("AWS " ++ Key) ->
 parse_auth_header(_) ->
     {undefined, undefined}.
 
--spec parse_auth_v4_header(string(), undefined | string(), [{string(), string()}]) ->
-                                  {string(), {v4, [{string(), string()}]}}.
-parse_auth_v4_header("", UserId, Acc) ->
+-spec parse_auth_v4_header(string()) -> {string(), {v4, [{string(), string()}]}}.
+parse_auth_v4_header(String) ->
+    KVs = string:tokens(String, ", "),
+    parse_auth_v4_header(KVs, undefined, []).
+
+parse_auth_v4_header([], UserId, Acc) ->
     {UserId, {v4, lists:reverse(Acc)}};
-parse_auth_v4_header(String, UserId, Acc) ->
-    {Key, Rest0} = parse_auth_v4_header_key(String, []),
-    {Value, Rest} = parse_auth_v4_header_value(Rest0, []),
-    lager:debug("Auth header ~p=~p~n", [Key, Value]),
-    case Key of
-        "Credential" ->
-            [UserIdInCred | _] = string:tokens(Value, [$/]),
-            parse_auth_v4_header(Rest, UserIdInCred, [{Key, Value} | Acc]);
-        _ ->
-            parse_auth_v4_header(Rest, UserId, [{Key, Value} | Acc])
+parse_auth_v4_header([KV | KVs], UserId, Acc) ->
+    lager:debug("Auth header ~p~n", [KV]),
+    case string:tokens(KV, "=") of
+        [Key, Value] ->
+            case Key of
+                "Credential" ->
+                    [UserIdInCred | _] = string:tokens(Value, [$/]),
+                    parse_auth_v4_header(KVs, UserIdInCred, [{Key, Value} | Acc]);
+                _ ->
+                    parse_auth_v4_header(KVs, UserId, [{Key, Value} | Acc])
+            end;
+         _ ->
+            %% Zero or 2+ "=" characters, ignore the token
+            parse_auth_v4_header(KVs, UserId, Acc)
     end.
-
-parse_auth_v4_header_key([$= | Rest], Acc) ->
-    {lists:reverse(Acc), Rest};
-parse_auth_v4_header_key([C | Rest], Acc) ->
-    parse_auth_v4_header_key(Rest, [C | Acc]).
-
-parse_auth_v4_header_value([], Acc) ->
-    {lists:reverse(Acc), []};
-parse_auth_v4_header_value([$, | Rest], Acc) ->
-    {lists:reverse(Acc), Rest};
-parse_auth_v4_header_value([C | Rest], Acc) ->
-    parse_auth_v4_header_value(Rest, [C | Acc]).
 
 -spec calculate_signature_v2(string(), #wm_reqdata{}) -> string().
 calculate_signature_v2(KeyData, RD) ->
@@ -336,7 +339,7 @@ canonicalize_qs_v4([{K, V}|T], Acc) ->
 %% Because keys and values from raw query string that is URL-encoded at client
 %% side, they should be URL-decoded once and encoded back.
 strict_url_encode_for_qs_value(Value) ->
-    mochiweb_util:quote_plus(mochiweb_util:unquote(Value)).
+    quote_percent(mochiweb_util:unquote(Value)).
 
 %% Force string URL encoding for path part of URL.
 %% Contrary to query part, slashes MUST NOT encoded and left as is.
@@ -344,9 +347,30 @@ strict_url_encode_for_path(Path) ->
     %% Use `binary:split/3' here instead of `string:tokens/2' because
     %% latter drops information about preceding and trailing slashes.
     Tokens = binary:split(list_to_binary(Path), <<"/">>, [global]),
-    EncodedTokens = [mochiweb_util:quote_plus(mochiweb_util:unquote(T)) ||
+    EncodedTokens = [quote_percent(mochiweb_util:unquote(T)) ||
                         T <- Tokens],
     string:join(EncodedTokens, "/").
+
+-spec quote_percent(string()) -> string().
+%% @doc URL safe encoding of the given string, keeping with the strict
+%% specification of AWS S3 because this is used for canonicalizing
+%% resource for signature.
+quote_percent(String) ->
+    quote_percent(String, []).
+
+quote_percent([], Acc) ->
+    lists:reverse(Acc);
+quote_percent([C | Rest], Acc) when ?QS_SAFE(C) ->
+    quote_percent(Rest, [C | Acc]);
+quote_percent([$\s | Rest], Acc) ->
+    quote_percent(Rest, [$0, $2, ?PERCENT | Acc]);
+quote_percent([C | Rest], Acc) ->
+    <<Hi:4, Lo:4>> = <<C>>,
+    quote_percent(Rest, [hexdigit(Lo), hexdigit(Hi), ?PERCENT | Acc]).
+
+hexdigit(C) when C < 10 -> $0 + C;
+hexdigit(C) when C < 16 -> $A + (C - 10).
+
 
 %% ===================================================================
 %% Eunit tests
@@ -531,5 +555,14 @@ example_unicode_keys() ->
     ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example unicode keys test", ExpectedSignature, CalculatedSignature).
+
+quote_percent_test() ->
+    ?assertEqual("", quote_percent("")),
+    ?assertEqual("abc", quote_percent("abc")),
+    ?assertEqual("%20", quote_percent(" ")),
+    ?assertEqual("abc%20%20xyz%20%0A", quote_percent("abc  xyz \n")),
+    ?assertEqual("%24%2A%3F%0A", quote_percent("$*?\n")),
+    ?assertEqual("foo%3B%26%3D", quote_percent("foo;&=")),
+    ok.
 
 -endif.

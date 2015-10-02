@@ -24,39 +24,127 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
--define(TEST_BUCKET, "riak-test-bucket").
-
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
 
-    confirm_initial_stats(query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes)))),
+    lager:info("Confirming initial stats"),
+    confirm_initial_stats(cs, UserConfig, rtcs_config:cs_port(hd(RiakNodes))),
+    confirm_initial_stats(stanchion, UserConfig, rtcs_config:stanchion_port()),
 
-    lager:info("creating bucket ~p", [?TEST_BUCKET]),
-    ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
+    do_some_api_calls(UserConfig, "bucket1", "bucket2"),
 
-    ?assertMatch([{buckets, [[{name, ?TEST_BUCKET}, _]]}],
+    lager:info("Confirming stats after some operations"),
+    confirm_stats(cs, UserConfig, rtcs_config:cs_port(hd(RiakNodes))),
+    confirm_stats(stanchion, UserConfig, rtcs_config:stanchion_port()),
+    rtcs:pass().
+
+confirm_initial_stats(cs, UserConfig, Port) ->
+    StatData = query_stats(cs, UserConfig, Port),
+    lager:debug("length(StatData) = ~p", [length(StatData)]),
+    ?assert(1125 < length(StatData)),
+    [begin
+         StatKey = list_to_binary(StatType ++ "_out_one"),
+         lager:debug("StatKey: ~p~n", [StatKey]),
+         ?assert(proplists:is_defined(StatKey, StatData)),
+         Value = proplists:get_value(StatKey, StatData),
+         ?assertEqual(0, Value)
+     end || StatType <- ["service_get",
+                         "list_objects_get",
+                         "bucket_put",
+                         "bucket_delete",
+                         "bucket_acl_get",
+                         "bucket_acl_put",
+                         "object_get",
+                         "object_put",
+                         "object_head",
+                         "object_delete",
+                         "object_acl_get",
+                         "object_acl_put",
+                         "riakc_get_block_n_one",
+                         "riakc_put_block",
+                         "riakc_delete_block_constrained"
+                        ]],
+    ?assertEqual(1, proplists:get_value(<<"velvet_create_user_in_one">>, StatData)),
+    ?assertEqual(rtcs_config:request_pool_size() - 1,
+                 proplists:get_value(<<"request_pool_workers">>, StatData)),
+    ?assertEqual(rtcs_config:bucket_list_pool_size(),
+                 proplists:get_value(<<"bucket_list_pool_workers">>, StatData));
+
+confirm_initial_stats(stanchion, UserConfig, Port) ->
+    Stats = query_stats(stanchion, UserConfig, Port),
+    lager:debug("length(Stats) = ~p", [length(Stats)]),
+    ?assert(130 < length(Stats)),
+    [begin
+         StatKey = list_to_binary(StatType ++ "_one"),
+         lager:debug("StatKey: ~p~n", [StatKey]),
+         ?assert(proplists:is_defined(StatKey, Stats)),
+         Value = proplists:get_value(StatKey, Stats),
+         ?assertEqual(0, Value)
+     end || StatType <- ["bucket_create",
+                         "bucket_delete",
+                         "bucket_put_acl",
+                         "riakc_get_cs_bucket",
+                         "riakc_put_cs_bucket",
+                         "riakc_get_cs_user_strong",
+                         "riakc_list_all_manifest_keys"
+                        ]],
+    confirm_stat_count(Stats, <<"user_create_one">>, 1),
+    confirm_stat_count(Stats, <<"riakc_put_cs_user_one">>, 1),
+
+    ?assert(proplists:is_defined(<<"waiting_time_mean">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_median">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_95">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_99">>, Stats)),
+    ?assert(proplists:is_defined(<<"waiting_time_100">>, Stats)),
+    ?assert(proplists:is_defined(<<"sys_process_count">>, Stats)),
+    ?assert(proplists:is_defined(<<"webmachine_mochiweb_active_sockets">>, Stats)),
+    ok.
+
+confirm_stats(cs, UserConfig, Port) ->
+    confirm_status_cmd(cs, "service_get_in_one"),
+    Stats = query_stats(cs, UserConfig, Port),
+    confirm_stat_count(Stats, <<"service_get_out_one">>, 2),
+    confirm_stat_count(Stats, <<"object_get_out_one">>, 1),
+    confirm_stat_count(Stats, <<"object_put_out_one">>, 1),
+    confirm_stat_count(Stats, <<"object_delete_out_one">>, 1);
+confirm_stats(stanchion, UserConfig, Port) ->
+    confirm_status_cmd(stanchion, "bucket_create_one"),
+    Stats = query_stats(stanchion, UserConfig, Port),
+    confirm_stat_count(Stats, <<"user_create_one">>, 1),
+    confirm_stat_count(Stats, <<"bucket_create_one">>, 2),
+    confirm_stat_count(Stats, <<"bucket_delete_one">>, 1),
+    confirm_stat_count(Stats, <<"riakc_put_cs_user_one">>, 1),
+    confirm_stat_count(Stats, <<"riakc_put_cs_bucket_one">>, 3),
+    %% this heavy list/gets can be reduced to ONE per delete-bucket (/-o-)/ ⌒ ┤
+    confirm_stat_count(Stats, <<"riakc_list_all_manifest_keys_one">>, 2),
+    confirm_stat_count(Stats, <<"riakc_get_user_by_index_one">>, 1).
+
+do_some_api_calls(UserConfig, Bucket1, Bucket2) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket1, UserConfig)),
+
+    ?assertMatch([{buckets, [[{name, Bucket1}, _]]}],
         erlcloud_s3:list_buckets(UserConfig)),
 
     Object = crypto:rand_bytes(500),
-    erlcloud_s3:put_object(?TEST_BUCKET, "object_one", Object, UserConfig),
-    erlcloud_s3:get_object(?TEST_BUCKET, "object_one", UserConfig),
-    erlcloud_s3:delete_object(?TEST_BUCKET, "object_one", UserConfig),
+    erlcloud_s3:put_object(Bucket1, "object_one", Object, UserConfig),
+    erlcloud_s3:get_object(Bucket1, "object_one", UserConfig),
+    erlcloud_s3:delete_object(Bucket1, "object_one", UserConfig),
     erlcloud_s3:list_buckets(UserConfig),
 
-    lager:info("Confirming stats"),
-    Stats1 = query_stats(UserConfig, rtcs:cs_port(hd(RiakNodes))),
-    confirm_stat_count(Stats1, <<"service_get_buckets">>, 2),
-    confirm_stat_count(Stats1, <<"object_get">>, 1),
-    confirm_stat_count(Stats1, <<"object_put">>, 1),
-    confirm_stat_count(Stats1, <<"object_delete">>, 1),
-    rtcs:pass().
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket2, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(Bucket2, UserConfig)),
+    ok.
 
-query_stats(UserConfig, Port) ->
-    lager:debug("Querying stats"),
+query_stats(Type, UserConfig, Port) ->
+    lager:debug("Querying stats to ~p", [Type]),
     Date = httpd_util:rfc1123_date(),
-    Resource = "/riak-cs/stats",
+    {Resource, SignType} = case Type of
+                               cs -> {"/riak-cs/stats", s3};
+                               stanchion -> {"/stats", velvet}
+                           end,
     Cmd="curl -s -H 'Date: " ++ Date ++ "' -H 'Authorization: " ++
-        rtcs:make_authorization("GET", Resource, [], UserConfig, Date) ++ "' http://localhost:" ++
+        rtcs_admin:make_authorization(SignType, "GET", Resource, [], UserConfig, Date, []) ++
+        "' http://localhost:" ++
         integer_to_list(Port) ++ Resource,
     lager:info("Stats query cmd: ~p", [Cmd]),
     Output = os:cmd(Cmd),
@@ -64,30 +152,16 @@ query_stats(UserConfig, Port) ->
     {struct, JsonData} = mochijson2:decode(Output),
     JsonData.
 
-confirm_initial_stats(StatData) ->
-    %% Check for values for all meters to be 0 when system is initially started
-    [?assertEqual([0,0.0,0.0,0.0,0.0,0.0],
-                  proplists:get_value(StatType, StatData))
-                  || StatType <- [<<"block_get">>,
-                                  <<"block_put">>,
-                                  <<"block_delete">>,
-                                  <<"service_get_buckets">>,
-                                  <<"bucket_list_keys">>,
-                                  <<"bucket_create">>,
-                                  <<"bucket_delete">>,
-                                  <<"bucket_get_acl">>,
-                                  <<"bucket_put_acl">>,
-                                  <<"object_get">>,
-                                  <<"object_put">>,
-                                  <<"object_head">>,
-                                  <<"object_delete">>,
-                                  <<"object_get_acl">>,
-                                  <<"object_put_acl">>]],
-
-    ?assertEqual([rtcs:request_pool_size()-1,0,1],
-                 proplists:get_value(<<"request_pool">>, StatData)),
-    ?assertEqual([rtcs:bucket_list_pool_size(),0,0],
-                 proplists:get_value(<<"bucket_list_pool">>, StatData)).
-
 confirm_stat_count(StatData, StatType, ExpectedCount) ->
-    ?assertEqual(ExpectedCount, hd(proplists:get_value(StatType, StatData))).
+    lager:debug("confirm_stat_count for ~p", [StatType]),
+    ?assertEqual(ExpectedCount, proplists:get_value(StatType, StatData)).
+
+confirm_status_cmd(Type, ExpectedToken) ->
+    Cmd = case Type of
+              cs ->
+                  rtcs_exec:riakcs_statuscmd(rtcs_config:devpath(cs, current), 1);
+              stanchion ->
+                  rtcs_exec:stanchion_statuscmd(rtcs_config:devpath(stanchion, current))
+          end,
+    Res = os:cmd(Cmd),
+    ?assert(string:str(Res, ExpectedToken) > 0).

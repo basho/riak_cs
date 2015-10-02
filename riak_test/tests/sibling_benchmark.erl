@@ -52,27 +52,20 @@ confirm() ->
     Duration = proplists:get_value(duration_sec, RTConfig, 16),
     ?assert(is_integer(Duration) andalso Duration >= 0),
 
-    CSConfig0 = rtcs:replace_cs_config(connection_pools,
-                                       [
-                                        {request_pool, {Concurrency*2 + 5, 0} },
-                                        {bucket_list_pool, {rtcs:bucket_list_pool_size(), 0} }
-                                       ],
-                                       rtcs:cs_config()),
-    CSConfig1 = rtcs:replace_cs_config(leeway_seconds,
-                                       5, CSConfig0),
-    CSConfig = rtcs:replace_cs_config(gc_interval,
-                                      10, CSConfig1),
-    ConnConfig = [{cs, CSConfig}],
-
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
+    Config = [{cs,
+               [{riak_cs,
+                 [{leeway_seconds, 5},
+                  {gc_interval, 10},
+                  {connection_pools, [{request_pool, {Concurrency*2 + 5, 0}}]}
+                 ]}]}],
+    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} =
         case proplists:get_value(version, RTConfig, current) of
             current ->
                 put(version, current),
-                rtcs:setup(4, ConnConfig);
+                rtcs:setup(4, Config);
             previous ->
                 put(version, previous),
-                PrevConfig =  ConnConfig ++ rtcs:previous_configs(),
-                rtcs:setup(4, PrevConfig, previous)
+                rtcs:setup(4, Config, previous)
         end,
 
     %% setting up the stage
@@ -108,13 +101,20 @@ confirm() ->
 
     get_counts(RiakNodes, ?TEST_BUCKET, ?KEY_SINGLE_BLOCK),
 
+    %% Just test sibling resolver, for a major case of manifests
+    RawManifestBucket = rc_helper:to_riak_bucket(objects, ?TEST_BUCKET),
+    RawKey = ?KEY_SINGLE_BLOCK,
+    R0 = rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
+                  [RawManifestBucket, RawKey]),
+    ?assertEqual(ok, R0),
+
     %% tearing down the stage
     erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),
     lager:info("deleting bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET, UserConfig)),
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
-    pass.
+    rtcs:pass().
 
 start_object_reader(UserConfig) ->
     Pid = spawn_link(fun() -> object_reader(UserConfig, 1) end),

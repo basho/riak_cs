@@ -4,9 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 default_config_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, [], Context),
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), [], context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.listener", {"127.0.0.1", 8080}),
     cuttlefish_unit:assert_config(Config, "riak_cs.riak_host", {"127.0.0.1", 8087}),
     cuttlefish_unit:assert_config(Config, "riak_cs.stanchion_host", {"127.0.0.1", 8085}),
@@ -19,17 +17,22 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 10300),
+    cuttlefish_unit:assert_config(Config, "riak_cs.proxy_get", false),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.rewrite_module"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),
     cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.max_buckets_per_user", 100),
+    cuttlefish_unit:assert_config(Config, "riak_cs.max_key_length", 1024),
     cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.leeway_seconds", 86400),
+    cuttlefish_unit:assert_config(Config, "riak_cs.max_scheduled_delete_manifests", 50),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", 900),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_retry_interval", 21600),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_paginated_indexes", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_max_workers", 2),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_batch_size", 1000),
+    cuttlefish_unit:assert_config(Config, "riak_cs.active_delete_threshold", 0),
+    cuttlefish_unit:assert_config(Config, "riak_cs.fast_user_get", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_factor", 1),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_log_flush_size", 1000000),
     cuttlefish_unit:assert_config(Config, "riak_cs.access_archive_period", 3600),
@@ -46,82 +49,144 @@ default_config_test() ->
                                               [{webmachine_access_log_handler, ["./log"]},
                                                {riak_cs_access_log_handler, []}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
+
+    {ok, [ConsoleLog, ErrorLog]} = cuttlefish_unit:path(cuttlefish_variable:tokenize("lager.handlers"), Config),
+    cuttlefish_unit:assert_config([ConsoleLog], "lager_file_backend", [{file, "./log/console.log"},
+                                                                     {level, info},
+                                                                     {size, 10485760},
+                                                                     {date, "$D0"},
+                                                                     {count, 5}]),
+    cuttlefish_unit:assert_config([ErrorLog], "lager_file_backend", [{file, "./log/error.log"},
+                                                                   {level, error},
+                                                                   {size, 10485760},
+                                                                   {date, "$D0"},
+                                                                   {count, 5}]),
 %%    cuttlefish_unit:assert_config(Config, "vm_args.+scl", false),
     ok.
 
 modules_config_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
     Rewrite = riak_cs_oos_rewrite,
     Auth = riak_cs_keystone_auth,
     Conf = [{["rewrite_module"], Rewrite},
             {["auth_module"],  Auth}],
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.rewrite_module", Rewrite),
     cuttlefish_unit:assert_config(Config, "riak_cs.auth_module", Auth),
     ok.
 
 ssl_config_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
     Conf = [{["ssl", "certfile"], "path/certfile"},
             {["ssl", "keyfile"],  "path/keyfile"}],
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.ssl", [{keyfile,  "path/keyfile"},
                                                           {certfile, "path/certfile"}]),
     ok.
 
 admin_ip_config_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
     Conf = [{["admin", "listener"],   "0.0.0.0:9999"}],
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_listener", {"0.0.0.0", 9999}),
     ok.
 
 storage_schedule_config_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
-    Conf = [{["stats", "storage", "schedule", "1"], "00:00"},
-            {["stats", "storage", "schedule", "2"], "19:45"}],
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
-    cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["00:00", "19:45"]),
+    Conf = [{["stats", "storage", "schedule", "1"], "0000"},
+            {["stats", "storage", "schedule", "2"], "1945"}],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    cuttlefish_unit:assert_config(Config, "riak_cs.storage_schedule", ["0000", "1945"]),
     ok.
 
 gc_interval_infinity_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
     Conf = [{["gc", "interval"], infinity}],
-    Config = cuttlefish_unit:generate_templated_config(SchemaFiles, Conf, Context),
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
     cuttlefish_unit:assert_config(Config, "riak_cs.gc_interval", infinity),
     ok.
 
+max_scheduled_delete_manifests_unlimited_test() -> 
+    Conf = [{["max_scheduled_delete_manifests"], unlimited}],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    cuttlefish_unit:assert_config(Config, "riak_cs.max_scheduled_delete_manifests", unlimited),
+    ok.
+
+active_delete_threshold_test() ->
+    Conf = [{["active_delete_threshold"], "10mb"}],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    cuttlefish_unit:assert_config(Config, "riak_cs.active_delete_threshold", 10*1024*1024),
+    ok.
+
+lager_syslog_test() ->
+    Conf = [{["log", "syslog"], on},
+            {["log", "syslog", "ident"], "ident-test"},
+            {["log", "syslog", "facility"], local7},
+            {["log", "syslog", "level"], debug}
+           ],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    cuttlefish_unit:assert_config(Config, "lager.handlers.lager_syslog_backend", ["ident-test", local7, debug]),
+    ok.
+
+lager_hander_test() ->
+    Conf = [
+            {["log", "console", "file"], "./log/consolefile.log"},
+            {["log", "console", "level"], "debug"},
+            {["log", "console", "size"], "1MB"},
+            {["log", "console", "rotation"], "$D5"},
+            {["log", "console", "rotation", "keep"], "10"},
+            {["log", "error", "file"], "./log/errorfile.log"},
+            {["log", "error", "size"], "1KB"},
+            {["log", "error", "rotation"], "$D10"},
+            {["log", "error", "rotation", "keep"], "20"}
+           ],
+    Config = cuttlefish_unit:generate_templated_config(schema_files(), Conf, context()),
+    {ok, [ConsoleLog, ErrorLog]} = cuttlefish_unit:path(cuttlefish_variable:tokenize("lager.handlers"), Config),
+    cuttlefish_unit:assert_config([ConsoleLog], "lager_file_backend", [{file, "./log/consolefile.log"},
+                                                                       {level, debug},
+                                                                       {size, 1048576},
+                                                                       {date, "$D5"},
+                                                                       {count, 10}]),
+    cuttlefish_unit:assert_config([ErrorLog], "lager_file_backend", [{file, "./log/errorfile.log"},
+                                                                     {level, error},
+                                                                     {size, 1024},
+                                                                     {date, "$D10"},
+                                                                     {count, 20}]),
+
+    CurrentConf1 = [{["log", "console", "rotation", "keep"], "current"}],
+    Config1 = cuttlefish_unit:generate_templated_config(schema_files(), CurrentConf1, context()),
+    {ok, [ConsoleLog1, _ErrorLog1]} = cuttlefish_unit:path(cuttlefish_variable:tokenize("lager.handlers"), Config1),
+    cuttlefish_unit:assert_config([ConsoleLog1], "lager_file_backend.count", 0),
+
+    CurrentConf2 = [{["log", "error", "rotation", "keep"], "current"}],
+    Config2 = cuttlefish_unit:generate_templated_config(schema_files(), CurrentConf2, context()),
+    {ok, [_ConsoleLog2, ErrorLog2]} = cuttlefish_unit:path(cuttlefish_variable:tokenize("lager.handlers"), Config2),
+    cuttlefish_unit:assert_config([ErrorLog2], "lager_file_backend.count", 0),
+    ok.
+
 max_buckets_per_user_test() ->
-    SchemaFiles = ["../rel/files/riak_cs.schema"],
-    {ok, Context} = file:consult("../rel/vars.config"),
     DefConf = [{["max_buckets_per_user"], "100"}],
-    DefConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, DefConf, Context),
+    DefConfig = cuttlefish_unit:generate_templated_config(schema_files(), DefConf, context()),
     cuttlefish_unit:assert_config(DefConfig, "riak_cs.max_buckets_per_user", 100),
 
     UnlimitedConf = [{["max_buckets_per_user"], "unlimited"}],
-    UnlimitedConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, UnlimitedConf, Context),
+    UnlimitedConfig = cuttlefish_unit:generate_templated_config(schema_files(), UnlimitedConf, context()),
     cuttlefish_unit:assert_config(UnlimitedConfig, "riak_cs.max_buckets_per_user", unlimited),
     ?assert(1000 < unlimited),
 
     NoConf = [],
-    NoConfig = cuttlefish_unit:generate_templated_config(SchemaFiles, NoConf, Context),
+    NoConfig = cuttlefish_unit:generate_templated_config(schema_files(), NoConf, context()),
     cuttlefish_unit:assert_config(NoConfig, "riak_cs.max_buckets_per_user", 100),
+    ok.
+
+proxy_get_test() ->
+    DefConf = [{["proxy_get"], "on"}],
+    DefConfig = cuttlefish_unit:generate_templated_config(schema_files(), DefConf, context()),
+    cuttlefish_unit:assert_config(DefConfig, "riak_cs.proxy_get", true),
     ok.
 
 wm_log_config_test_() ->
     {setup,
      fun() ->
-             SchemaFiles = ["../rel/files/riak_cs.schema"],
-             {ok, Context} = file:consult("../rel/vars.config"),
              AssertAlog =
                  fun(Conf, Expected) ->
                          Config = cuttlefish_unit:generate_templated_config(
-                                    SchemaFiles, Conf, Context),
+                                    schema_files(), Conf, context()),
                          case Expected of
                              no_alog ->
                                  cuttlefish_unit:assert_config(
@@ -152,3 +217,10 @@ wm_log_config_test_() ->
                                  no_alog))}
              ]
      end}.
+
+schema_files() ->
+    ["../rel/files/riak_cs.schema"].
+
+context() ->
+    {ok, Context} = file:consult("../rel/vars.config"),
+    Context.

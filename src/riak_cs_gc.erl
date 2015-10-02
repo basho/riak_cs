@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,7 +22,7 @@
 
 -module(riak_cs_gc).
 
--include("riak_cs_gc_d.hrl").
+-include("riak_cs_gc.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
@@ -42,7 +42,8 @@
          set_leeway_seconds/1,
          max_scheduled_delete_manifests/0,
          move_manifests_to_gc_bucket/2,
-         timestamp/0]).
+         timestamp/0,
+         default_batch_end/2]).
 
 %% export for repl debugging and testing
 -export([get_active_manifests/3]).
@@ -180,29 +181,49 @@ gc_specific_manifests(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
     {error, term()} | {ok, riakc_obj:riakc_obj()}.
 handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid) ->
     Manifests = riak_cs_manifest:manifests_from_riak_object(RiakObject),
-    PDManifests = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
-    MoveResult = move_manifests_to_gc_bucket(PDManifests, RcPid),
-    PDUUIDs = [UUID || {UUID, _} <- PDManifests],
-    handle_move_result(MoveResult, RiakObject, Bucket, Key, PDUUIDs, RcPid);
+    PDManifests0 = riak_cs_manifest_utils:manifests_to_gc(UUIDsToMark, Manifests),
+    {ToGC, DeletedUUIDs} =
+        case riak_cs_config:active_delete_threshold() of
+            Threshold when is_integer(Threshold) andalso Threshold > 0 ->
+                %% We do synchronous delete after it is marked
+                %% pending_delete, to reduce the possibility where
+                %% concurrent requests find active manifest (UUID) and
+                %% go find deleted blocks resulting notfound stuff.
+                %% However, there are still corner cases where
+                %% concurrent requests interleaves between marking
+                %% pending_delete here and deleting blocks, like:
+                %%
+                %% 1. Request A refers to a manifest finding active UUID x
+                %% 2. Request B deletes an object marking active UUID x as pending_delete
+                %% 3. Request B deletes blocks of UUID x according to this synchronous delete -> ok
+                %% 4. Request A refers to blocks pointed by UUID x -> notfound
+                %%
+                %% Manifests with blocks deleted here, have
+                %% `scheduled_delete' state here. They won't be
+                %% collected by garbage collector, as they are not
+                %% stored in GC bucket. Instead they will be collected
+                %% in `riak_cs_manifest_utils:prune/1' invoked via GET
+                %% object, after leeway period has passed.
+                maybe_delete_small_objects(PDManifests0, RcPid, Threshold);
+            _ ->
+                {PDManifests0, []}
+        end,
+
+    case move_manifests_to_gc_bucket(ToGC, RcPid) of
+        ok ->
+            PDUUIDs = [UUID || {UUID, _} <- ToGC],
+            mark_as_scheduled_delete(PDUUIDs ++ DeletedUUIDs, RiakObject, Bucket, Key, RcPid);
+        {error, _} = Error ->
+            Error
+    end;
+
 handle_mark_as_pending_delete({error, _Error}=Error, _Bucket, _Key, _UUIDsToMark, _RcPid) ->
     _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
-%% @private
--spec handle_move_result(ok | {error, term()},
-                         riakc_obj:riakc_obj(),
-                         binary(), binary(),
-                         [binary()],
-                         riak_client()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, term()}.
-handle_move_result(ok, RiakObject, Bucket, Key, PDUUIDs, RcPid) ->
-    mark_as_scheduled_delete(PDUUIDs, RiakObject, Bucket, Key, RcPid);
-handle_move_result({error, _Reason}=Error, _RiakObject, _Bucket, _Key, _PDUUIDs, _RcPid) ->
-    Error.
-
 %% @doc Return the number of seconds to wait after finishing garbage
 %% collection of a set of files before starting the next.
--spec gc_interval() -> non_neg_integer().
+-spec gc_interval() -> non_neg_integer() | infinity.
 gc_interval() ->
     case application:get_env(riak_cs, gc_interval) of
         undefined ->
@@ -252,16 +273,17 @@ gc_max_workers() ->
     end.
 
 %% @doc Return the start of GC epoch represented as a binary.
-%% This is the time that the GC daemon uses to  begin collecting keys
+%% This is the time that the GC manager uses to  begin collecting keys
 %% from the `riak-cs-gc' bucket.
--spec epoch_start() -> binary().
+-spec epoch_start() -> non_neg_integer().
 epoch_start() ->
-    case application:get_env(riak_cs, epoch_start) of
-        undefined ->
-            ?EPOCH_START;
-        {ok, EpochStart} ->
-            EpochStart
-    end.
+    Bin = case application:get_env(riak_cs, epoch_start) of
+              undefined ->
+                  ?EPOCH_START;
+              {ok, EpochStart} ->
+                  EpochStart
+          end,
+    list_to_integer(binary_to_list(Bin)).
 
 %% @doc Return the minimum number of seconds a file manifest waits in
 %% the `scheduled_delete' state before being garbage collected.
@@ -289,7 +311,7 @@ set_leeway_seconds(_LeewaySeconds) ->
 max_scheduled_delete_manifests() ->
     case application:get_env(riak_cs, max_scheduled_delete_manifests) of
         undefined ->
-            unlimited;
+            ?DEFAULT_MAX_SCHEDULED_DELETE_MANIFESTS;
         {ok, MaxCount} ->
             MaxCount
     end.
@@ -302,6 +324,10 @@ timestamp() ->
 -spec timestamp(erlang:timestamp()) -> non_neg_integer().
 timestamp(ErlangTime) ->
     riak_cs_utils:second_resolution_timestamp(ErlangTime).
+
+-spec default_batch_end(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+default_batch_end(BatchStart, Leeway) ->
+    BatchStart - Leeway.
 
 %%%===================================================================
 %%% Internal functions
@@ -328,7 +354,7 @@ mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
--spec mark_as_scheduled_delete([binary()], riakc_obj:riakc_obj(), binary(), binary(), riak_client()) ->
+-spec mark_as_scheduled_delete([cs_uuid()], riakc_obj:riakc_obj(), binary(), binary(), riak_client()) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, Key, RcPid) ->
     mark_manifests(RiakObject, Bucket, Key, UUIDsToMark,
@@ -353,7 +379,60 @@ mark_manifests(RiakObject, Bucket, Key, UUIDsToMark, ManiFunction, RcPid) ->
     %% with vector clock. This allows us to do a PUT
     %% again without having to re-retrieve the object
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
-    riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body], riak_cs_config:put_gckey_timeout()).
+    riak_cs_pbc:put(ManifestPbc, UpdObj, [return_body],
+                    riak_cs_config:put_manifest_timeout(),
+                    [riakc, put_manifest]).
+
+-spec maybe_delete_small_objects([cs_uuid_and_manifest()], riak_client(), non_neg_integer()) ->
+                                        {[cs_uuid_and_manifest()], [cs_uuid()]}.
+maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
+    {ok, BagId} = riak_cs_riak_client:get_manifest_bag(RcPid),
+    DelFun= fun({UUID, Manifest = ?MANIFEST{state=pending_delete,
+                                            content_length=ContentLength}},
+                {Survivors, UUIDsToDelete})
+                  when ContentLength < Threshold ->
+                    %% actually this won't be scheduled :P
+                    UUIDManifest = {UUID, Manifest?MANIFEST{state=scheduled_delete}},
+                    _ = lager:debug("trying to delete ~p at ~p", [UUIDManifest, BagId]),
+                    case try_delete_blocks(BagId, UUIDManifest) of
+                        ok ->
+                            {Survivors, [UUID|UUIDsToDelete]};
+                        {error, _} ->
+                            %% Error logs were handled in the function
+                            {[{UUID, Manifest}|Survivors], UUIDsToDelete}
+                    end;
+               ({UUID, M}, {Survivors, UUIDsToDelete}) ->
+                    ContentLength = M?MANIFEST.content_length,
+                    _ = lager:debug("~p is not being deleted: (CL, threshold)=(~p, ~p)",
+                                    [UUID, ContentLength, Threshold]),
+                    {[{UUID, M}|Survivors], UUIDsToDelete}
+            end,
+    %% Obtain a new history!
+    lists:foldl(DelFun, {[], []}, Manifests).
+
+-spec try_delete_blocks(binary(), cs_uuid_and_manifest()) -> ok | {error, term()}.
+try_delete_blocks(BagId, {UUID, _} = UUIDManifest) ->
+    Args = [BagId, UUIDManifest, undefined,
+            dummy_gc_key_in_sync_delete,
+            [{cleanup_manifests, false}]],
+    {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
+    case riak_cs_delete_fsm:sync_delete(Pid) of
+        {Pid, {ok, {_, _, _, TotalBlocks, TotalBlocks}}} ->
+            %% all the blocks are successfully deleted
+            _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
+            ok;
+        {Pid, {ok, {_, _, _, NumDeleted, TotalBlocks}}} ->
+            _ = lager:debug("Only ~p/~p blocks of ~p deleted",
+                            [NumDeleted, TotalBlocks, UUID]),
+            {error, partially_deleted};
+        {Pid, {error, _} = E} ->
+            _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
+                              [UUID, E]),
+            E;
+        Other ->
+            _ = lager:error("Active deletion failed. Reason: ~p", [Other]),
+            {error, Other}
+    end.
 
 %% @doc Copy data for a list of manifests to the
 %% `riak-cs-gc' bucket to schedule them for deletion.
@@ -367,7 +446,8 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_gckey_timeout(),
     ObjectToWrite =
-        case riakc_pb_socket:get(ManifestPbc, ?GC_BUCKET, Key, Timeout) of
+        case riak_cs_pbc:get(ManifestPbc, ?GC_BUCKET, Key, [], Timeout,
+                             [riakc, get_gc_manifest_set]) of
             {error, notfound} ->
                 %% There was no previous value, so we'll
                 %% create a new riak object and write it
@@ -385,7 +465,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     %% Create a set from the list of manifests
     _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     Timeout1 = riak_cs_config:put_gckey_timeout(),
-    riak_cs_pbc:put(ManifestPbc, ObjectToWrite, Timeout1).
+    riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 
 -spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->

@@ -21,6 +21,7 @@
 -module(riak_cs_wm_object).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          generate_etag/2,
@@ -41,15 +42,27 @@
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
+-spec stats_prefix() -> object.
+stats_prefix() -> object.
+
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD, Ctx) ->
-    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
-    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
-        true ->
-            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
+    case riak_cs_wm_utils:extract_key(RD, Ctx) of
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx);
+        {ok, ContextWithKey} ->
+            case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+                true ->
+                    ResponseMod:api_error(canned_acl_and_header_grant,
                                           RD, ContextWithKey);
-        false ->
-            {false, RD, ContextWithKey}
+                false ->
+                    case riak_cs_copy_object:malformed_request(RD) of
+                        {true, Reason} ->
+                            ResponseMod:api_error(Reason, RD, ContextWithKey);
+                        false ->
+                            {false, RD, ContextWithKey}
+                    end
+            end
     end.
 
 %% @doc Get the type of access requested and the manifest with the
@@ -85,25 +98,14 @@ allowed_methods() ->
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
-valid_entity_length(RD, Ctx=#context{response_module=ResponseMod}) ->
-    case wrq:method(RD) of
-        'PUT' ->
-            case catch(
-                   list_to_integer(
-                     wrq:get_req_header("Content-Length", RD))) of
-                Length when is_integer(Length) ->
-                    case Length =< riak_cs_lfs_utils:max_content_len() of
-                        false ->
-                            ResponseMod:api_error(
-                              entity_too_large, RD, Ctx);
-                        true ->
-                            check_0length_metadata_update(Length, RD, Ctx)
-                    end;
-                _ ->
-                    {false, RD, Ctx}
-            end;
-        _ ->
-            {true, RD, Ctx}
+valid_entity_length(RD, Ctx) ->
+    MaxLen = riak_cs_lfs_utils:max_content_len(),
+    case riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx) of
+        {true, NewRD, NewCtx} ->
+            check_0length_metadata_update(riak_cs_wm_utils:content_length(RD),
+                                          NewRD, NewCtx);
+        Other ->
+            Other
     end.
 
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
@@ -193,7 +195,10 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                 {Ctx, fun() -> {<<>>, done} end};
             false ->
                 riak_cs_get_fsm:continue(GetFsmPid, {Start, End}),
-                {Ctx#context{auto_rc_close=false},
+                %% Streaming by `known_length_stream' and `StreamBody' function
+                %% will be handled *after* WM's `finish_request' callback complets.
+                %% Use `no_stats` to avoid auto stats update by `riak_cs_wm_common'.
+                {Ctx#context{auto_rc_close=false, stats_key=no_stats},
                  {<<>>, fun() ->
                                 riak_cs_wm_utils:streaming_get(
                                   RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
@@ -201,8 +206,7 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
         end,
     if Method == 'HEAD' ->
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
-                                            [], [UserName, BFile_str]),
-            ok = riak_cs_stats:update_with_start(object_head, StartTime);
+                                            [], [UserName, BFile_str]);
        true ->
             ok
     end,
@@ -293,9 +297,9 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = now()},
-    Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+    {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
-                                      Mfst?MANIFEST{metadata=Metadata}, NewAcl,
+                                      Mfst?MANIFEST{metadata=Metadata, content_type=ContentType}, NewAcl,
                                       RcPid) of
         ok ->
             ETag = riak_cs_manifest:etag(Mfst),
@@ -311,7 +315,8 @@ accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
         {error, _} = Err ->
             ResponseMod:api_error(Err, RD, Ctx);
         {SrcBucket, SrcKey} ->
-            handle_copy_put(RD, Ctx, SrcBucket, SrcKey)
+            handle_copy_put(RD, Ctx#context{stats_key=[object, put_copy]},
+                            SrcBucket, SrcKey)
     end.
 
 -spec handle_normal_put(#wm_reqdata{}, #context{}) ->
@@ -374,10 +379,12 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
                                         [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
 
-                        Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
+                        {ContentType, Metadata} =
+                            riak_cs_copy_object:new_metadata(SrcManifest, RD),
                         NewAcl = Acl?ACL{creation_time=os:timestamp()},
-                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(Bucket, Key, SrcManifest,
-                                                                            Metadata, NewAcl, RcPid),
+                        {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(
+                                            Bucket, Key, SrcManifest?MANIFEST.content_length,
+                                            ContentType, Metadata, NewAcl, RcPid),
 
                         %% Prepare for connection loss or client close
                         FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
@@ -392,18 +399,20 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                     {true, _RD, _OtherCtx} ->
                         %% access to source object not authorized
                         %% TODO: check the return value / http status
-                        _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
-                        {{halt, 403}, RD, Ctx};
-
+                        ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
+                    {{halt, 403}, _RD, _OtherCtx} = Error ->
+                        %% access to source object not authorized either, but
+                        %% in different return value
+                        ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
                     {Result, _, _} = Error ->
                         _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
                         Error
 
                 end;
             {error, notfound} ->
-                ResponseMod:api_error(no_such_key, RD, Ctx);
+                ResponseMod:api_error(no_copy_source_key, RD, Ctx);
             {error, no_active_manifest} ->
-                ResponseMod:api_error(no_such_key, RD, Ctx);
+                ResponseMod:api_error(no_copy_source_key, RD, Ctx);
             {error, Err} ->
                 ResponseMod:api_error(Err, RD, Ctx)
         end
@@ -441,7 +450,6 @@ accept_streambody(RD,
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
                  Ctx=#context{local_context=LocalCtx,
-                              start_time=StartTime,
                               response_module=ResponseMod,
                               user=User},
                  Pid) ->
@@ -465,7 +473,6 @@ finalize_request(RD,
             {error, Reason} ->
                 ResponseMod:api_error(Reason, RD, Ctx)
         end,
-    ok = riak_cs_stats:update_with_start(object_put, StartTime),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
@@ -482,7 +489,9 @@ check_0length_metadata_update(Length, RD, Ctx=#context{local_context=LocalCtx}) 
         true ->
             UpdLocalCtx = LocalCtx#key_context{size=Length,
                                                update_metadata=true},
-            {true, RD, Ctx#context{local_context=UpdLocalCtx}}
+            {true, RD, Ctx#context{
+                         stats_key=[object, put_copy],
+                         local_context=UpdLocalCtx}}
     end.
 
 zero_length_metadata_update_p(0, RD) ->

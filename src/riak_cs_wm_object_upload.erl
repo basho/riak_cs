@@ -21,6 +21,7 @@
 -module(riak_cs_wm_object_upload).
 
 -export([init/1,
+         stats_prefix/0,
          authorize/2,
          content_types_provided/2,
          allowed_methods/0,
@@ -28,7 +29,6 @@
          content_types_accepted/2,
          post_is_create/2,
          process_post/2,
-         multiple_choices/2,
          valid_entity_length/2]).
 
 -include("riak_cs.hrl").
@@ -38,15 +38,22 @@
 init(Ctx) ->
     {ok, Ctx#context{local_context=#key_context{}}}.
 
+-spec stats_prefix() -> multipart.
+stats_prefix() -> multipart.
+
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
-malformed_request(RD,Ctx) ->
-    ContextWithKey = riak_cs_wm_utils:extract_key(RD, Ctx),
-    case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
-        true ->
-            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
+malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
+    case riak_cs_wm_utils:extract_key(RD, Ctx) of
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx);
+        {ok, ContextWithKey} ->
+            case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
+                true ->
+                    ResponseMod:api_error(canned_acl_and_header_grant,
                                           RD, ContextWithKey);
-        false ->
-            {false, RD, ContextWithKey}
+                false ->
+                    {false, RD, ContextWithKey}
+            end
     end.
 
 %% @doc Get the type of access requested and the manifest with the
@@ -114,9 +121,6 @@ process_post_helper(RD, Ctx=#context{riak_client=RcPid, local_context=LocalCtx, 
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
-
-multiple_choices(RD, Ctx) ->
-    {false, RD, Ctx}.
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx=#context{local_context=LocalCtx}) ->

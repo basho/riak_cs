@@ -88,7 +88,7 @@ start_link() ->
 %% calculating so far, and counts of how many users have been
 %% processed and how many are left.
 status() ->
-    gen_fsm:sync_send_event(?SERVER, status).
+    gen_fsm:sync_send_event(?SERVER, status, infinity).
 
 %% @doc Force a calculation and archival manually.  The `current'
 %% property returned from a {@link status/0} call will show the most
@@ -338,6 +338,15 @@ start_batch(Options, Time, State) ->
     Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
     LeewayEdgeTs = Now - riak_cs_gc:leeway_seconds(),
     LeewayEdge = {LeewayEdgeTs div 1000000, LeewayEdgeTs rem 1000000, 0},
+    _ = case Detailed of
+            true ->
+                lager:info("Starting storage calculation: "
+                           "recalc=~p, detailed=~p, leeway edge=~p",
+                           [Recalc, Detailed,
+                            calendar:now_to_universal_time(LeewayEdge)]);
+            _ ->
+                lager:info("Starting storage calculation: recalc=~p", [Recalc])
+        end,
     %% TODO: probably want to do this fetch streaming, to avoid
     %% accidental memory pressure at other points
 
@@ -348,7 +357,15 @@ start_batch(Options, Time, State) ->
     %% socket process, so "starting" one here is the same as opening a
     %% connection, and avoids duplicating the configuration lookup code
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
-    Batch = fetch_user_list(RcPid),
+    Batch =
+        case riak_cs_user:fetch_user_keys(RcPid) of
+            {ok, UserKeys} -> UserKeys;
+            {error, Error} ->
+                _ = lager:error("Storage calculator was unable"
+                                " to fetch list of users (~p)",
+                                [Error]),
+                []
+        end,
 
     gen_fsm:send_event(?SERVER, continue),
     State#state{batch_start=BatchStart,
@@ -360,19 +377,6 @@ start_batch(Options, Time, State) ->
                 recalc=Recalc,
                 detailed=Detailed,
                 leeway_edge=LeewayEdge}.
-
-%% @doc Grab the whole list of Riak CS users.
-fetch_user_list(RcPid) ->
-    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Timeout = riak_cs_config:list_keys_list_users_timeout(),
-    case riak_cs_pbc:list_keys(MasterPbc, ?USER_BUCKET, Timeout) of
-        {ok, Users} -> Users;
-        {error, Error} ->
-            _ = lager:error("Storage calculator was unable"
-                            " to fetch list of users (~p)",
-                            [Error]),
-            []
-    end.
 
 %% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak_client=RcPid,
@@ -417,7 +421,7 @@ store_user(#state{riak_client=RcPid}, User, BucketList, Start, End) ->
     Obj = riak_cs_storage:make_object(User, BucketList, Start, End),
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     Timeout = riak_cs_config:put_user_usage_timeout(),
-    case riakc_pb_socket:put(MasterPbc, Obj, Timeout) of
+    case riak_cs_pbc:put(MasterPbc, Obj, Timeout, [riakc, put_storage]) of
         ok -> ok;
         {error, Error} ->
             _ = lager:error("Error storing storage for user ~s (~p)",
