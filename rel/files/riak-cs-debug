@@ -498,7 +498,7 @@ if [ 1 -eq $get_logs ]; then
         #prefer app.config if it exists
         if [ -f "${cs_etc_dir}/app.config" ]; then
             appconfig="${cs_etc_dir}/app.config"
-        elif [  -d "cuttlefish_conf_dir" ]; then
+        elif [  -d "${cuttlefish_conf_dir}" ]; then
             appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
         fi
         riak_epaths=`make_app_epaths "${appconfig}"`
