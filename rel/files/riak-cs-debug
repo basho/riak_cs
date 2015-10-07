@@ -254,7 +254,14 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     fi
 fi
 
-vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+#prefer vm.args if it exists
+if [ -f "${cs_etc_dir}/vm.args" ]; then
+    vmargs="${cs_etc_dir}/vm.args"
+elif [ -d "${cuttlefish_conf_dir}" ]; then
+    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+fi
+
+
 if [ -f "${vmargs}" ]; then
     node_name="`egrep '^\-s?name' "${vmargs}" 2>/dev/null | cut -d ' ' -f 2`"
 fi
@@ -428,8 +435,13 @@ if [ 1 -eq $get_logs ]; then
 
     # if not already made, make a flat, searchable version of the app.config
     if [ -z "$riak_epaths" ]; then
-      appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
-      riak_epaths=`make_app_epaths "${appconfig}"`
+        #prefer app.config if it exists
+        if [ -f "${cs_etc_dir}/app.config" ]; then
+            appconfig="${cs_etc_dir}/app.config"
+        elif [  -d "cuttlefish_conf_dir" ]; then
+            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+        fi
+        riak_epaths=`make_app_epaths "${appconfig}"`
     fi
 
     # grab a listing of the log directory to show if there are crash dumps
