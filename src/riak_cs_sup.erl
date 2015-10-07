@@ -161,6 +161,7 @@ pbc_pool_specs(Options) ->
                                                   {Fixed + FAcc, Overflow + OAcc}
                                           end,
                                           {0, 0}, MasterPools),
+    riak_cs_config:set_multibag_appenv(),
     Bags = riak_cs_mb_helper:bags(),
     [pbc_pool_spec(BagId, FixedSum, OverflowSum, Address, Port, WorkerStop)
      || {BagId, Address, Port} <- Bags].

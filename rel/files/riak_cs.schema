@@ -676,7 +676,7 @@
 %% @doc IP and port for supercluster members.  Specify one member for
 %% each line, in which the last token of key is member identifier and
 %% value is a PB address of Riak node to connect.
-{mapping, "supercluster.member.$member_id", "riak_cs_multibag.bags", [
+{mapping, "supercluster.member.$member_id", "riak_cs.supercluster_members", [
   {datatype, ip},
   {include_default, "bag-A"},
   {commented, {"192.168.0.101", 8087}},
@@ -684,7 +684,7 @@
 ]}.
 
 {translation,
- "riak_cs_multibag.bags",
+ "riak_cs.supercluster_members",
  fun(Conf) ->
    Keys = cuttlefish_variable:fuzzy_matches(["supercluster", "member", "$member_id"], Conf),
    case Keys of
@@ -700,7 +700,7 @@
 
 %% @doc Interval to refresh weight information for every supercluster member.
 {mapping, "supercluster.weight_refresh_interval", 
- "riak_cs_multibag.weight_refresh_interval", [
+ "riak_cs.supercluster_weight_refresh_interval", [
   {default, "15m"},
   {datatype, [{duration, s}]},
   hidden
