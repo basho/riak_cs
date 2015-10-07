@@ -56,6 +56,7 @@
          queue_if_disconnected/0,
          auto_reconnect/0,
          is_multibag_enabled/0,
+         set_multibag_appenv/0,
          max_buckets_per_user/0,
          max_key_length/0,
          read_before_last_manifest_write/0,
@@ -366,6 +367,20 @@ queue_if_disconnected() ->
 -spec is_multibag_enabled() -> boolean().
 is_multibag_enabled() ->
     application:get_env(riak_cs_multibag, bags) =/= undefined.
+
+%% Set riak_cs_multibag app env vars for backward compatibility
+%% to hide any bags from user-facing (TM) parts.
+-spec set_multibag_appenv() -> ok.
+set_multibag_appenv() ->
+    case application:get_env(riak_cs, supercluster_members) of
+        undefined -> ok;
+        {ok, Bags} -> application:set_env(riak_cs_multibag, bags, Bags)
+    end,
+    case application:get_env(riak_cs, supercluster_weight_refresh_interval) of
+        undefined -> ok;
+        {ok, Interval} -> application:set_env(
+                            riak_cs_multibag, weight_refresh_interval, Interval)
+    end.
 
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->
