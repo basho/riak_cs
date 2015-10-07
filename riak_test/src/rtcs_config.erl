@@ -77,6 +77,11 @@ cs_port(Node) ->
 
 stanchion_port() -> 9095.
 
+riak_conf() ->
+    [{"ring_size", "8"},
+     {"buckets.default.allow_mult", "true"},
+     {"buckets.default.merge_strategy", "2"}].
+
 riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),
@@ -98,10 +103,6 @@ riak_oss_config(CsVsn, Backend) ->
     AddPaths = filelib:wildcard(CSPath ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
-     {riak_core,
-      [{default_bucket_props, [{allow_mult, true}]},
-       {ring_creation_size, 8}]
-     },
      {riak_api,
       [{pb_backlog, 256}]},
      {riak_kv,
@@ -333,6 +334,7 @@ devpath(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
 devpath(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
 set_configs(NumNodes, Config, Vsn) ->
+    rtcs:set_conf({riak, Vsn}, riak_conf()),
     rt:pmap(fun(N) ->
                     rtcs_dev:update_app_config(rtcs:riak_node(N),
                                                 proplists:get_value(riak, Config)),
