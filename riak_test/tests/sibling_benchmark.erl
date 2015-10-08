@@ -104,9 +104,13 @@ confirm() ->
     %% Just test sibling resolver, for a major case of manifests
     RawManifestBucket = rc_helper:to_riak_bucket(objects, ?TEST_BUCKET),
     RawKey = ?KEY_SINGLE_BLOCK,
-    R0 = rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
-                  [RawManifestBucket, RawKey]),
-    ?assertEqual(ok, R0),
+    case rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
+                  [RawManifestBucket, RawKey]) of
+        ok -> ok;
+        {error, not_supported} ->
+            _ = lager:info("resolve_siblings does not suport multibag yet, skip it"),
+            ok
+    end,
 
     %% tearing down the stage
     erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),

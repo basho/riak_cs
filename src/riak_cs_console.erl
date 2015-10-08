@@ -187,12 +187,17 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 
 -spec resolve_siblings(binary(), binary()) -> any().
 resolve_siblings(RawBucket, RawKey) ->
-    {ok, RcPid} = riak_cs_riak_client:start_link([]),
-    try
-        {ok, Pid} = riak_cs_riak_client:master_pbc(RcPid),
-        resolve_siblings(Pid, RawBucket, RawKey)
-    after
-        riak_cs_riak_client:stop(RcPid)
+    case riak_cs_config:is_multibag_enabled() of
+        true ->
+            {error, not_supported};
+        false ->
+            {ok, RcPid} = riak_cs_riak_client:start_link([]),
+            try
+                {ok, Pid} = riak_cs_riak_client:master_pbc(RcPid),
+                resolve_siblings(Pid, RawBucket, RawKey)
+            after
+                riak_cs_riak_client:stop(RcPid)
+            end
     end.
 
 %% @doc Resolve siblings as quick operation. Assuming login via
