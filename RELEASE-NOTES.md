@@ -30,7 +30,7 @@ New metrics have been added that enable you to determine the health of your Riak
   * Memory information about the riak-cs virtual machine
   * HTTP listener information: active sockets and waiting acceptors
 
-**Note:** stats item names from prior to 2.0.x are not preserved; they have been renamed or removed. No backward consistency is maintained. Please see [the documentation](http://docs.basho.com/riakcs/latest/cookbooks/Metrics/) for more information.
+**Note:** stats item names from prior to 2.0.x are not preserved; they have been renamed or removed. No backward consistency is maintained. Please see [the documentation](docs.basho.com/riakcs/latest/cookbooks/Monitoring-and-Metrics/) for more information.
 
 * [[PR 1189](https://github.com/basho/riak_cs/pull/1189)]
 * [[PR 1180](https://github.com/basho/riak_cs/pull/1180)]
@@ -93,7 +93,6 @@ More information on garbage collection can be found in the [documentation](http:
 
 ###Enterprise
 * MDC has `proxy_get`, which make block objects propagate to site clusters when they are requested. Now, multibag configuration with MDC supports `proxy_get`. [[PR 1171](https://github.com/basho/riak_cs/pull/1171) and [PR 25](https://github.com/basho/riak_cs_multibag/pull/25)]
-* Configuration options to replicate blocks in realtime replication (`replicate_cs_blocks_realtime`) and to replicate block tombstones in realtime replication (`replicate_cs_block_tombstone`) are now available. `replicate_cs_blocks_realtime` relieves the load in fullsync replication (there will be a longer realtime queue in realtime replication and risk of dropping manifests or other important keys), and it is set to `false` by default. `replicate_cs_block_tombstone` causes source block deletes caused by garbage collection to be replicated to the sink cluster. This option is set to `true` by default. Both configuration options are set in the advanced.config of the Riak node, rather than in the Riak CS configuration. [[PR 678](https://github.com/basho/riak_repl/pull/678)]
 * Several internal operation tools have been added to help diagnose or address
   issues. [[PR 1145](https://github.com/basho/riak_cs/pull/1145),
   [PR 1134](https://github.com/basho/riak_cs/pull/1134), and
