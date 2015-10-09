@@ -531,7 +531,7 @@ if [ 1 -eq $get_logs ]; then
 
     # Lager info and error files
     new_format_lager_files="`epath 'lager handlers lager_file_backend file' "$riak_epaths" | sed -e 's/^"//' -e 's/".*$//'`"
-    if [ -z "$riak_epath" ]; then
+    if [ -z "$riak_epaths" ]; then
         lager_files=""
     elif [ -z "$new_format_lager_files" ]; then
         lager_files="`epath 'lager handlers lager_file_backend' "$riak_epaths" | cut -d' ' -f 1 | sed -e 's/^"//' -e 's/".*$//'`"
@@ -548,7 +548,7 @@ if [ 1 -eq $get_logs ]; then
             fi
 
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
-            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
+            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/\./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
                 ls -1 "${lager_dir}" | grep -q "${lager_file}"
                 if [ 0 -eq $? ]; then
