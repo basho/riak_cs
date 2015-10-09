@@ -44,8 +44,13 @@ confirm_auth_bypass_for_stats(Bucket, Key, UserConfig, Port) ->
     {S3Content, CurlContent} = get_both_contents(Bucket, Key, UserConfig, Port),
     S3Json = drop_volatile_stats_keys(mochijson2:decode(S3Content)),
     CurlJson = drop_volatile_stats_keys(mochijson2:decode(CurlContent)),
-    ?assertEqual([], S3Json -- CurlJson),
-    ?assertEqual([], CurlJson -- S3Json).
+    ?assertEqual([], remove_volatile(S3Json -- CurlJson)),
+    ?assertEqual([], remove_volatile(CurlJson -- S3Json)).
+
+remove_volatile(Lists) ->
+    lists:filter(fun({<<"memory_", _/binary>>, _V}) -> false;
+                    (_) -> true
+                 end, Lists).
 
 confirm_auth_bypass(Bucket, Key, UserConfig, Port) ->
     {S3Content, CurlContent} = get_both_contents(Bucket, Key, UserConfig, Port),

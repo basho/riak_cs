@@ -89,20 +89,22 @@ riak_config(CustomConfig) ->
 
 riak_config() ->
     riak_config(
+      current,
       ?CS_CURRENT,
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
 
-riak_config(CsVsn, oss, Backend) ->
-    riak_oss_config(CsVsn, Backend);
-riak_config(CsVsn, ee, Backend) ->
-    riak_ee_config(CsVsn, Backend).
+riak_config(Vsn, CsVsn, oss, Backend) ->
+    riak_oss_config(Vsn, CsVsn, Backend);
+riak_config(Vsn, CsVsn, ee, Backend) ->
+    riak_ee_config(Vsn, CsVsn, Backend).
 
-riak_oss_config(CsVsn, Backend) ->
+riak_oss_config(Vsn, CsVsn, Backend) ->
     CSPath = rt_config:get(CsVsn),
     AddPaths = filelib:wildcard(CSPath ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
+     riak_core_config(Vsn),
      {riak_api,
       [{pb_backlog, 256}]},
      {riak_kv,
@@ -110,6 +112,14 @@ riak_oss_config(CsVsn, Backend) ->
           backend_config(CsVsn, Backend)
       }
     ].
+
+riak_core_config(current) ->
+    {riak_core, []};
+riak_core_config(previous) ->
+    {riak_core,
+     [{default_bucket_props, [{allow_mult, true}]},
+      {ring_creation_size, 8}]
+    }.
 
 backend_config(_CsVsn, memory) ->
     [{storage_backend, riak_kv_memory_backend}];
@@ -141,8 +151,8 @@ blocks_backend_config(fs) ->
 blocks_backend_config(_) ->
     {be_blocks, riak_kv_bitcask_backend, [{data_root, "./data/bitcask"}]}.
 
-riak_ee_config(CsVsn, Backend) ->
-    [repl_config() | riak_oss_config(CsVsn, Backend)].
+riak_ee_config(Vsn, CsVsn, Backend) ->
+    [repl_config() | riak_oss_config(Vsn, CsVsn, Backend)].
 
 repl_config() ->
     {riak_repl,
@@ -154,6 +164,7 @@ repl_config() ->
 
 previous_riak_config() ->
     riak_config(
+      previous,
       ?CS_PREVIOUS,
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
@@ -162,11 +173,6 @@ previous_riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),
                   orddict:from_list(lists:sort(previous_riak_config()))).
-
-previous_riak_config(oss, Backend) ->
-    riak_oss_config(?CS_PREVIOUS, Backend);
-previous_riak_config(ee, Backend) ->
-    riak_ee_config(?CS_PREVIOUS, Backend).
 
 previous_cs_config() ->
     previous_cs_config([], []).
