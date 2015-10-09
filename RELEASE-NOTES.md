@@ -93,6 +93,7 @@ More information on garbage collection can be found in the [documentation](http:
 
 ###Enterprise
 * MDC has `proxy_get`, which make block objects propagate to site clusters when they are requested. Now, multibag configuration with MDC supports `proxy_get`. [[PR 1171](https://github.com/basho/riak_cs/pull/1171) and [PR 25](https://github.com/basho/riak_cs_multibag/pull/25)]
+* Multibag is now renamed to "Supercluster". A bag has been a set of replicated underlying Riak clusters, which is now **a member of a supercluster**. `riak-cs-multibag` command has been renamed as `riak-cs-supercluster` as well. [[PR 1257](https://github.com/basho/riak_cs/pull/1257)], [[PR 1260](https://github.com/basho/riak_cs/pull/1260)], [[PR 106](https://github.com/basho/stanchion/pull/106)], [[PR 107](https://github.com/basho/stanchion/pull/107)] and [[PR 31](https://github.com/basho/riak_cs_multibag/pull/31)].
 * Several internal operation tools have been added to help diagnose or address
   issues. [[PR 1145](https://github.com/basho/riak_cs/pull/1145),
   [PR 1134](https://github.com/basho/riak_cs/pull/1134), and
@@ -127,6 +128,7 @@ More information on garbage collection can be found in the [documentation](http:
 * [[Issue 1097](https://github.com/basho/riak_cs/issues/1097)/[PR 1212](https://github.com/basho/riak_cs/pull/1212) and [PR 4](https://github.com/basho/s3-tests/pull/4)] Riak CS did not store `Content-Type` in COPY requests when the `x-amz-metadata-directive=REPLACE` command was used. Handling of the `x-amz-metadata-directive` command in PUT Object Copy API has been added.
 *  [[Issue 1097](https://github.com/basho/riak_cs/issues/1097)/[PR 1212](https://github.com/basho/riak_cs/pull/1212) and [PR 4](https://github.com/basho/s3-tests/pull/4)] Fixed the handling of uploaded parts that should be deleted after Multipart Complete Request.
 * [[Issue 1214](https://github.com/basho/riak_cs/issues/1244)/[PR 1246](https://github.com/basho/riak_cs/pull/1246)] Prior to Riak S2 2.1.0, a PUT Copy API command with identical source and destination changed user metadata (`x-amz-meta-*` headers) but failed to update Content-Type. Content-Type is now correctly updated by the API call.
+* [[Issue PR 1261](https://github.com/basho/riak_cs/pull/1261), [[PR 1263](https://github.com/basho/riak_cs/pull/1263)] Fix `riak-cs-debug` to include `app.config` when no generated files are found when `riak-cs.conf` is not used.
 
 
 
