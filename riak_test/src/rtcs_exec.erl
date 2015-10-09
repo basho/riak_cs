@@ -114,6 +114,9 @@ riakcs_accesscmd(Path, N, Cmd) ->
 riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-admin storage ~s", [riakcs_binpath(Path, N), Cmd])).
 
+riakcs_debugcmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-debug ~s", [riakcs_binpath(Path, N), Cmd])).
+
 stanchioncmd(Path, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
 
