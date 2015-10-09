@@ -65,8 +65,7 @@ confirm() ->
     ?assertMatchAny("^config/generated.configs/app.*.config", List2),
     ?assertMatchAny("^config/generated.configs/vm.*.args", List2),
     ?assertNotMatchAny("^config/*.pem$", List2),
-    ok = file:rename(TarGz2, TarGz2 ++ ".back"),
-
+    ok = file:delete(TarGz2),
 
     %% Run riak-cs-debug with app.config and vm.args.
     move_generated_configs_as_appconfigs(),
