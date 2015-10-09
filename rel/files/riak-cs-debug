@@ -498,10 +498,11 @@ if [ 1 -eq $get_logs ]; then
         #prefer app.config if it exists
         if [ -f "${cs_etc_dir}/app.config" ]; then
             appconfig="${cs_etc_dir}/app.config"
+            riak_epaths=`make_app_epaths "${appconfig}"`
         elif [  -d "${cuttlefish_conf_dir}" ]; then
             appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+            riak_epaths=`make_app_epaths "${appconfig}"`
         fi
-        riak_epaths=`make_app_epaths "${appconfig}"`
     fi
 
     # grab a listing of the log directory to show if there are crash dumps
