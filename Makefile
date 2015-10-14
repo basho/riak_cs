@@ -26,7 +26,7 @@ bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
 ## KLUDGE, as downgrade script is not included in the release.
 riak_test/src/downgrade_bitcask.erl:
-	@wget https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
+	@wget --no-check-certificate https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
 		-O riak_test/src/downgrade_bitcask.erl
 
 compile-riak-test: compile-src bitcask-downgrade-script
