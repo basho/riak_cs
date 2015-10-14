@@ -1,3 +1,136 @@
+# Riak S2 (Riak CS) 2.1.0 リリースノート
+
+2015/10/13 リリース
+
+これは後方互換のリリースです。新しいメトリクスシステム、ガーベジコレクションの改良、その他の新しい機能が追加されています。Riak S2 2.1 はRiak KV 2.0.5 以上、および 2.1.1 以上で動作するようデザインされています。
+
+**注意:** このリリースは Riak S2 2.x シリーズに対してのみ、後方互換性があります。
+
+### Riak KV 2.1.1 の利用
+
+Riak KV 2.1.1 は `riak_cs_kv_multi_backend` のコピーを含むため、 `multi_backend` と `add_paths` 設定を advanced.config へ追加設定する必要はなくなりました。
+
+代わりに下記をriak.confへ設定します:
+
+```
+storage_backend = prefix_multi
+cs_version = 20100
+```
+
+なお、ストレージ集計機能を利用する場合は、MapReduceのコードを読み込むために `add_paths` 設定は依然として必要です。
+
+
+## 新機能
+### メトリクス
+
+新しいメトリクスが追加されました。これにより Riak S2 システムの健全性把握や、ユーザーもしくはバケット毎のストレージ使用量レポートが利用可能です。利用できるメトリクスは次の通り:
+  * S3 APIのレイテンシとカウンター
+  * Stanchionのレイテンシとカウンター
+  * Riak Erlangクライアントのレイテンシとカウンター(Riak S2 - Riak間通信)
+  * コネクションプールの情報(active数, idle数, overflow数)
+  * システム情報: ライブラリのversion、port数、プロセス数
+  * Erlang VMのメモリ情報
+  * HTTPリスナ情報: アクティブソケットと待ち状態のアクセプタ
+
+**注意:** メトリクスのアイテム名は 2.0.x 以前のままではなく、変更もしくは削除されています。この点では、以前のバージョンへの一貫性がありません。詳細は [ドキュメント(英語)](docs.basho.com/riakcs/latest/cookbooks/Monitoring-and-Metrics/) をご覧ください。
+
+* [[PR 1189](https://github.com/basho/riak_cs/pull/1189)]
+* [[PR 1180](https://github.com/basho/riak_cs/pull/1180)]
+* [[PR 1214](https://github.com/basho/riak_cs/pull/1214)]
+* [[PR 1194](https://github.com/basho/riak_cs/pull/1194)]
+* [[PR 99](https://github.com/basho/stanchion/pull/99)]
+
+これまでのメトリクスに加え、新しくストレージ使用量メトリクスも利用できるようになりました。このメトリクスはストレージ集計中に収集されます。デフォルトでメトリクス収集は無効化されていますが、advanced.config で `detailed_storage_calc` を `true` へ変更すると有効化できます。 このオプションを有効化すると、APIからは見えないマニフェストデータの情報にアクセスできます。これは`writing`、`pending_delete`、`scheduled_delete`、`active`の各状態にいくつのマニフェストが属しているか、という情報です。
+
+**注意:** メトリクスは常に実際のディスク使用量を正しく反映している訳ではありません。例えば、`writing`は実際に使われている容量より大きい値を指すかもしれません。もしくはアップロードが途中で中止されると、集計処理は実際に消費されているストレージの容量がわかりません。同様に、ブロックは既にガベージコレクションによって部分的に削除されているかもしれないたため、`scheduled_delete`もディスク使用量を正しく反映していません。
+
+* [[PR 1120](https://github.com/basho/riak_cs/pull/1120)]
+
+###`riak-cs-admin`
+次の管理CLIは [`riak-cs-admin` command](http://docs.basho.com/riakcs/latest/cookbooks/command-line-tools/) によって置き換えられました:
+
+* `riak-cs-storage`
+* `riak-cs-gc`
+* `riak-cs-access`
+* `riak-cs-stanchion`
+
+これらのコマンドは廃止予定のため、今後のリリースで削除されます。
+
+* [[PR 1175](https://github.com/basho/riak_cs/pull/1175)]
+
+## ガベージコレクションの改良
+いくつかの新しいオプションが `riak-cs-admin gc` コマンドへ追加されました:
+
+* `active_delete_threshold` はマニフェストとブロックの削除をガベージコレクタへ委譲しないオプションです。これにより、小さいオブジェクトの削除という責務から、ガベージコレクタは解放されます。パフォーマンス改善の効果が得られるのは、ガベージコレクタが Delete Object API の呼び出しに追いつかない場合と、ガベージコレクタの実行時間が、小さいオブジェクトの削除に強く影響される場合の双方です。[[PR 1174](https://github.com/basho/riak_cs/pull/1174)]
+* `--start` と `--end` オプションが `riak-cs-admin gc batch` コマンドへ追加されました。これはGCのマニュアルバッチ実行において処理対象を開始時刻、終了時刻で指定します。`--start` フラグは advanced.config の `epoch_start` 設定を上書く点に注意して下さい。[[PR 1147 ](https://github.com/basho/riak_cs/pull/1147)]
+* `--leeway` は猶予期間(leeway period)の値を一時的に設定します。これは一度だけ利用され、繰返して次の実行で利用されることはありません。そして、`--max-workers` はガベージコレクタ実行の並列度を一時的に変更します。[[PR 1147 ](https://github.com/basho/riak_cs/pull/1147)]
+* Riak S2 2.0 (とそれ以前は) Fullsyncレプリケーションとガベージコレクションの競合状態の問題があり、削除したブロックが一旦復活し、二度と削除できなくなる可能性がありました。Realtimeレプリケーションと、Realtimeレプリケーションのキューから溢れたGCバケット内エントリのレプリカが混在すると、sink側でブロックが収集されずに残るのです。他にも、GCとFullsyncレプリケーションが並行に動き、同時に同一のブロックやマニフェストを処理した場合にも、これが起こり得ます。Riak S2 2.1 ではFullsyncレプリケーションを避ける、決定論的ガベージコレクションを導入しました。そして、sink側、souce側の双方で同期したオブジェクトの収集、削除を実施するために、ガベージコレクションの `riak-cs-admin gc batch` で、 `--start` および `--end` フラグによる、期間指定ができるようになりました。 [[PR 1147 ](https://github.com/basho/riak_cs/pull/1147)]
+* `riak-cs-admin gc earliest-keys` が利用できるようになりました。これによりガベージコレクションにて、 `epoch_start` 以降の最も古いエントリを見つけることができます。このオプションにより、ガベージコレクションの進捗を得ることができます。[[PR 1160](https://github.com/basho/riak_cs/pull/1160)]
+
+ガベージコレクションの詳細は [ドキュメント（英語）](http://docs.basho.com/riakcs/latest/cookbooks/garbage-collection/) をご覧ください。
+
+## 追加
+### オープンソース
+* MapReduceにおいて Riakオブジェクト取得の最適化が Riak 2.1 で導入されました。Riak S2 2.1 では今回、ストレージ集計で最適化を利用するオプションが導入されています。デフォルトでは無効化されていますが、advanced.config で `use_2i_for_storage_calc` を `true` にすると利用できます。これは LevelDB の I/O を 50% 減少させます。[[PR 1089](https://github.com/basho/riak_cs/pull/1089)]
+* Erlang/OTP 17 のサポートが含まれます。[[PR 1245](https://github.com/basho/riak_cs/pull/1245) および [PR 1040](https://github.com/basho/stanchion/pull/1040)]
+* ユーザーアクセス、および使用量を制限する、モジュールレベルのフックポイントが利用可能になりました。非常に試験的で、シンプルなノードレベルのサンプルモジュールも含まれています。オペレータは要求に応じたプラグインを作成したり、クオータ制限、アクセスレート制限、帯域制限といった、異なるモジュールを組み合わせることが可能です。 [[PR 1118](https://github.com/basho/riak_cs/pull/1118)]
+*  orphanedブロックスキャナーの導入 [[PR 1133](https://github.com/basho/riak_cs/pull/1133)]
+* `riak-cs-admin audit-bucket-ownership` はユーザーと、それに追加されたバケット間の整合性をチェックする新しいツールです。例えば、List Bucketで見えるBucketへアクセスができない場合や、Bucketが見えるが、これが削除できない場合に利用されます。[[PR 1202](https://github.com/basho/riak_cs/pull/1202)]
+* 次のログローテーション設定がcuttlefishへ追加されました:
+    * log.console.size
+    * log.console.rotation
+    * log.console.rotation.keep
+    * log.error.rotation
+    * log.error.rotation.keep
+    * log.error.size
+
+[[PR 1164](https://github.com/basho/riak_cs/pull/1164) および [PR 97](https://github.com/basho/stanchion/pull/97)]
+
+* `riak_cs_wm_common` がデフォルトのコールバック `multiple_choices` を持ちます。これは `code_server` がボトルネックになるのを防止します。[[PR 1181](https://github.com/basho/riak_cs/pull/1181)]
+* 認証前のユーザー取得の `PR=all` オプションは単に `PR=one` で置き換えられました。このオプションはレイテンシを改善します。特に、遅い(実際にはダウンしている)ノードがリクエスト全体の流れを`PR=all`によって妨げている場合に顕著です。これを有効化すると、ユーザーの所有するバケット一覧はバケットの削除後に切り詰められなくなり、代わりに削除が単にマークされます。[[PR 1191](https://github.com/basho/riak_cs/pull/1191)]
+* infoログがストレージ集計バッチの開始時に追加されました。 [[PR 1238](https://github.com/basho/riak_cs/pull/1238)]
+* `GET Bucket` リクエストがわかりやすいレスポンスになりました。Bucket lifecycle への 501のスタブとBucket requestPeymentへの単純なスタブが追加されています。[[PR 1223](https://github.com/basho/riak_cs/pull/1223)]
+* ユーザフレンドリーないくつかの機能が [`riak-cs-debug`](http://docs.basho.com/riakcs/latest/cookbooks/command-line-tools/) へ追加されました。収集する情報の細やかなオプション、ユーザーの定義する設定ファイルへのフィルタ、そしてコマンドが失敗した際の詳細なアウトプットが利用できます。[[PR 1236](https://github.com/basho/riak_cs/pull/1236)]
+
+### エンタープライズ
+* MDC は `proxy_get` 機能を持っており、ブロックオブジェクトが要求されると、siteクラスタへ伝搬されます。今回、MDCのmultibag機能が `proxy_get` をサポートします。[PR 1171](https://github.com/basho/riak_cs/pull/1171) および [PR 25](https://github.com/basho/riak_cs_multibag/pull/25)]
+* Multibag は "Supercluster" へ名称が変更されました。bag はMDCで複製されたRiakクラスターのセットを意味していましたが、これは新しく **superclusterのmember** へと呼び名が変わります。`riak-cs-multibag` コマンドも同じく `riak-cs-supercluster` へ名称変更されます。[[PR 1257](https://github.com/basho/riak_cs/pull/1257)], [[PR 1260](https://github.com/basho/riak_cs/pull/1260)], [[PR 106](https://github.com/basho/stanchion/pull/106)], [[PR 107](https://github.com/basho/stanchion/pull/107)] and [[PR 31](https://github.com/basho/riak_cs_multibag/pull/31)].
+* いくつかの診断ツール、もしくは既知の問題へ対処する内部ツールがいくつか追加されました。
+  [[PR 1145](https://github.com/basho/riak_cs/pull/1145),
+  [PR 1134](https://github.com/basho/riak_cs/pull/1134),
+  [PR 1133](https://github.com/basho/riak_cs/pull/1133)]
+* マニフェストやブロックのSiblingを手動で解決する汎用の関数が追加されました。[[PR 1188](https://github.com/basho/riak_cs/pull/1188)]
+
+
+## 変更
+* Riak S2 と Stanchion の依存ライブラリが更新されました: cuttlefish 2.0.4, node_package 2.0.3, riak-erlang-client 2.1.1, lager 2.2.0, lager_syslog 2.1.1, eper 0.92 (Basho patched), cluster_info 2.0.3, riak_repl_pb_api 2.1.1, and riak_cs_multibag 2.1.0. [[PR 1190](https://github.com/basho/riak_cs/pull/1190), [PR 1197 ](https://github.com/basho/riak_cs/pull/1197), [PR 27](https://github.com/basho/riak_cs_multibag/pull/27), [PR 1245](https://github.com/basho/riak_cs/pull/1245), and [PR 104](https://github.com/basho/stanchion/pull/104)].
+* Riak S2 はFolsomからExometerへ移行しました。[[PR 1165](https://github.com/basho/riak_cs/pull/1165) および [PR 1180](https://github.com/basho/riak_cs/pull/1180)]
+* クライアントからのGetリクエストでブロック取得のエラー追跡が改善されました。クライアントからGetリクエストが発行された際、blockを解決するロジックは複雑です。はじめにRiak S2 はブロックを`n_val=1`で取得しようとします。これに失敗すると`n_val=3`で再取得を試みます。ブロックがローカルで取得できず、かつ`proxy_get`が有効で、データセンターレプリケーションが設定されているシステムでは、Riak S2 はリモートサイトへのproxy getを試みます。このフォールバック、およびリトライのロジックは複雑で追跡が難しく、特に故障や不安定な状況ではこれは顕著です。今回の改善はエラーの追跡を前述の処理全体へ追加しており、問題解決を助けます。とりわけ、各ブロックにおいて、ブロックサーバはRiakクライアントからの全エラーを積み上げ、エラー発生箇所の型呼び出しと、これら全ての詳細(reason)を通知します。[[PR 1177](https://github.com/basho/riak_cs/pull/1177)]
+* バケット内オブジェクトの一覧取得において、prefixを指定した `GET Bucket` APIの利用は最適化が必要でした。Riak内のオブジェクトの走査に使用する、終了key指定が非常に大雑把だったのです。この変更により、Riakのオブジェクトを走査する際、終了keyがより厳しく指定され、不必要なvnode内での走査処理が回避されます。[[PR 1233](https://github.com/basho/riak_cs/pull/1233)]
+* keyの最大長の制限が導入されました。この制限はデフォルトで1024バイトです。これはriak-cs.confの `max_key_length` で明示的に1024より大きい値を指定しない限り、PUT、GET、DELETEで1024バイトを超えるkeyが処理されない事を意味します。keyの長さに関して以前の振る舞いを維持したい場合は、`max_key_length` を `unlimited` に指定しなければなりません。 [[PR 1233](https://github.com/basho/riak_cs/pull/1233)]
+* 複数ノードがダウンした不完全なクラスタにおいて、誤ったnotfoundにより、ブロックがすでに削除されたと誤認識する問題がありました。これはブロックのリークを引き起こします。この問題を回避するため、PRのデフォルトは `quorum` に設定されました。そして、PWのデフォルトは `1` になり、少なくとも一つのブロックのレプリカは、プライマリノードへ書かれるようなりました。 これに加え、クラスタ内に存在しないオブジェクトの、特定のブロックが "not found" エラーを返した時に、今回の対処はブロックサーバのクラッシュを適切に防ぎます。代わりに、到達不能なブロックはスキップされ、残されたブロックとマニフェストは収集されます。ブロックでPRとPWの値が増えたため、 PUTの可用性とGCのスループットは減少する可能性があります。到達不能な少数のRiakノードがPUTリクエストが成功を返すことを阻害したり、すべての到達不能なノードが戻るまでガベージコレクションによる全ブロックの収集を阻害するかもしれません。[[PR 1242](https://github.com/basho/riak_cs/pull/1242)]
+* 同時かつ、無期限で呼び出される `gen_fsm` のいくつかの関数へ無限のタイムアウトオプションを設定しました。これは無駄なタイムアウトの発生を防ぎます。[[PR 1249](https://github.com/basho/riak_cs/pull/1249)]
+
+
+## バグ修正
+* [[Issue 1097](https://github.com/basho/riak_cs/issues/1097)/[PR 1212](https://github.com/basho/riak_cs/pull/1212)] `x-amz-metadata-directive=COPY` が指定されても、実際には Riak CS はオリジナルリソースのメタデータをコピーせずに、`REPLACE`として処理していました。`x-amz-metadata-directive=REPLACE` として扱われると、`Content-Type`は置き換わってしまいます。 `x-amz-metadata-directive` を正しく扱う処理が追加されました。
+* [[Issue 1099](https://github.com/basho/riak_cs/issues/1099)/[PR 1096](https://github.com/basho/riak_cs/pull/1096)] Get Bucketリクエストで、最後のkeyが`CommonPrefixes`を含む場合に、不要なNextMarkerが返されていました。
+* [[Issue 939](https://github.com/basho/riak_cs/issues/939)/[PR 1200](https://github.com/basho/riak_cs/pull/1200)] Content-Lengthヘッダーを含まないCopyリクエストは5xxエラーを返しました。この種のリクエストがCopy APIで許容されるように変更されました。更に、ゼロより大きな値がContent-Lengthに指定されたCopy APIリクエストには、明示的なエラーが返るようになりました。
+* [[Issue 1143](https://github.com/basho/riak_cs/issues/1143)/[PR 1144](https://github.com/basho/riak_cs/pull/1144)] 手動でGCのバッチ起動をすると、last batch timeの表示が未来を指していました。すべての時間的なズレは修正されました。
+* [[Issue PR 1162](https://github.com/basho/riak_cs/pull/1162)/[PR 1163](https://github.com/basho/riak_cs/pull/1163)] `log.syslog=on` が設定されていると、Riak CSが起動しないという、設定システムの問題が修正されました。
+* [[Issue 1169](https://github.com/basho/riak_cs/issues/1169)/[PR 1200](https://github.com/basho/riak_cs/pull/1200)] PUT Copy APIの利用時に、コピー元がそもそも存在しない、もしくはリクエストユーザーがアクセス権を持たない場合、エラーレスポンスにコピー元のパスでなく、コピー先のパスが出力されていました。今ではコピー元が適切に表示されています。
+* [[PR 1178](https://github.com/basho/riak_cs/pull/1178)] バケットポリシーの単一条件下で、複数IPアドレスの表現がリストとしてパースされませんでした。
+* [[PR 1185](https://github.com/basho/riak_cs/pull/1185)] riak-cs.confで`proxy_get_active` がenabled、disabled以外で定義されていると、過剰なログ出力がありました。今回、`proxy_get_active` はブール値以外の表現も受け入れるようになりました。
+* [[PR 1184](https://github.com/basho/riak_cs/pull/1184)] 削除プロセスがマニフェストの状態を更新する際、`put_manifest_timeout` の代わりに `put_gckey_timeout`が使われていました。
+* [[Issue 1201](https://github.com/basho/riak_cs/issues/1201)/[PR 1230](https://github.com/basho/riak_cs/pull/1230)] ひとつの遅い、もしくは静かに故障したノードが断続的なユーザー取得の失敗を起こしていました。graceピリオドが追加され、`riakc_pb_socket` が再接続を試みるようになりました。
+* [[PR 1232](https://github.com/basho/riak_cs/pull/1232)] プライマリリード(PR)の条件が満たされない、というwarningログが出力されていました。ユーザーはRiak CS内のオブジェクトであり、Riak CSは殆ど全てのリクエストで、認証するためにこれらのオブジェクトを参照します。これにより、ひとつでもプライマリvnodeが停止、もしくは応答できない状態にあれば、参照時のオプション(PR=all)は失敗し、ログ出力されました。Riakが高可用にセットアップされていることを考慮すると、これらのログはとても目障りなものでした。また、Riak CS 2.1 以前のログである、"No WM route" が今回復活しました。これは開発フェーズでのクライアントエラーすべてを示すので、ログの重要度(severity)はdebugへ下がりました。
+* [[PR 1237](https://github.com/basho/riak_cs/pull/1237)]  `riak-cs-admin` status コマンドの実行が成功したにもかかわらず、そのexit codeがゼロではありませんでした。これはゼロを返すようになります。
+* [[Issue 1097](https://github.com/basho/riak_cs/issues/1097)/[PR 1212](https://github.com/basho/riak_cs/pull/1212) および [PR 4](https://github.com/basho/s3-tests/pull/4)] Riak S2 が PUT Object Copy APIにおいて、コピー元のユーザーメタデータをコピーしない問題に対処しました。
+*  [[Issue 1097](https://github.com/basho/riak_cs/issues/1097)/[PR 1212](https://github.com/basho/riak_cs/pull/1212) および [PR 4](https://github.com/basho/s3-tests/pull/4)] Multipart Complete リクエスト後に削除されるべき、アップロード済みpartへの対応がなされました。
+* [[Issue 1244](https://github.com/basho/riak_cs/issues/1244)/[PR 1246](https://github.com/basho/riak_cs/pull/1246)] Riak S2 2.1.0 以前、 コピー元とコピー先が一致する PUT Copy API はContent-Typeの更新に失敗していました。Content-Typeは現在、このAPIで正しく更新されます。
+* [[Issue PR 1261](https://github.com/basho/riak_cs/pull/1261), [[PR 1263](https://github.com/basho/riak_cs/pull/1263)] `riak-cs.conf` が使用されず、設定ファイルが生成されない場合でも、`app.config` で`riak-cs-debug`が動くように修正されました。
+
+
 # Riak CS 2.0.1 リリースノート
 
 ## General Information
