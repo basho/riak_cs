@@ -127,9 +127,6 @@ warnings() ->
     ?MAYBE_WARN(anonymous_user_creation(),
                 "`anonymous_user_creation` is set as true. Set this as false"
                 " when this CS nodes is populated as public service."),
-    ?MAYBE_WARN(not gc_paginated_indexes(),
-                "`gc_paginated_indexes` is set as false. "
-                " This will be removed at next major version."),
     ok.
 
 %% ===================================================================
@@ -232,10 +229,10 @@ policy_module() ->
 
 %% @doc paginated 2i is supported after Riak 1.4
 %% When using Riak CS `>= 1.5' with Riak `=< 1.3' (it rarely happens)
-%% this should be set as false at app.config.
+%% this should be set as false at app.config. Deprecated in 2.1.
 -spec gc_paginated_indexes() -> atom().
 gc_paginated_indexes() ->
-    get_env(riak_cs, gc_paginated_indexes, true).
+    true.
 
 -spec response_module() -> atom().
 response_module() ->
