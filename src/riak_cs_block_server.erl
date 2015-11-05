@@ -205,23 +205,11 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
     Timeout = riak_cs_config:get_block_timeout(),
 
     %% do a get first to get the vclock (only do a head request though)
-    GetOptions = [head | pr_quorum_options()],
-    _ = case riak_cs_pbc:get(block_pbc(RcPid), FullBucket, FullKey,
-                             GetOptions, Timeout, [riakc, head_block]) of
-            {ok, RiakObject} ->
-                ok = delete_block(RcPid, ReplyPid, RiakObject, {UUID, BlockNumber});
-            {error, notfound} ->
-                %% If the block isn't found, assume it's been
-                %% previously deleted by another delete FSM, and
-                %% move on to the next block.
-                riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}});
-            {error, _} = Error ->
-                %% Report errors in HEADs to prevent crashing block
-                %% servers, as crash logs forces lager to sync log
-                %% files at each line.
-                Result = format_delete_result(Error, {UUID, BlockNumber}),
-                riak_cs_delete_fsm:block_deleted(ReplyPid, Result)
-        end,
+    GetOptions = [head, deletedvclock | pr_quorum_options()],
+    GetResult =  riak_cs_pbc:get(block_pbc(RcPid), FullBucket, FullKey,
+                             GetOptions, Timeout, [riakc, head_block]),
+    Result = maybe_delete_block(RcPid, GetResult),
+    riak_cs_delete_fsm:block_deleted(ReplyPid, format_delete_result(Result, {UUID, BlockNumber})),
     dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->
@@ -393,20 +381,19 @@ get_block_legacy(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
     dt_return(<<"get_block_legacy">>, [BlockNumber], [Bucket, Key]).
 
-delete_block(RcPid, ReplyPid, RiakObject, BlockId) ->
-    Result = constrained_delete(RcPid, RiakObject, BlockId),
+maybe_delete_block(RcPid, {ok, RiakObject}) ->
+    Result = constrained_delete(RcPid, RiakObject),
     _ = secondary_delete_check(Result, RcPid, RiakObject),
-    riak_cs_delete_fsm:block_deleted(ReplyPid, Result),
-    ok.
+    Result;
+maybe_delete_block(_, Error) ->
+    Error.
 
-constrained_delete(RcPid, RiakObject, BlockId) ->
+constrained_delete(RcPid, RiakObject) ->
     DeleteOptions = [{r, all}, {pr, all}, {w, all}, {pw, all}],
     StatsKey = [riakc, delete_block_constrained],
     Timeout = riak_cs_config:delete_block_timeout(),
-    format_delete_result(
-      riak_cs_pbc:delete_obj(block_pbc(RcPid), RiakObject, DeleteOptions,
-                             Timeout, StatsKey),
-      BlockId).
+    riak_cs_pbc:delete_obj(block_pbc(RcPid), RiakObject, DeleteOptions,
+                             Timeout, StatsKey).
 
 secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RcPid, RiakObject) ->
     Timeout = riak_cs_config:delete_block_timeout(),
@@ -418,8 +405,16 @@ secondary_delete_check({error, Reason} = E, _, _) ->
 secondary_delete_check(_, _, _) ->
     ok.
 
+
 format_delete_result(ok, BlockId) ->
+    %% when block is first deleted, we need to revisit to ensure reaping
+    {error, {unreaped_tombstone, ok, BlockId}};
+format_delete_result({error, notfound}, BlockId) ->
+    %% notfound + no vclock = reaped
     {ok, BlockId};
+format_delete_result({error, notfound, VC}, BlockId) ->
+    %% notfound, but not reaped
+    {error, {unreaped_tombstone, VC, BlockId}};
 format_delete_result({error, Reason}, BlockId) when is_binary(Reason) ->
     %% Riak client sends back oddly formatted errors
     format_delete_result({error, binary_to_list(Reason)}, BlockId);

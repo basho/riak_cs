@@ -64,6 +64,7 @@
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
                 deleted_blocks = 0 :: non_neg_integer(),
                 total_blocks = 0 :: non_neg_integer(),
+                ensure_block_reap = true :: boolean(),
                 cleanup_manifests = true :: boolean()}).
 
 -type state() :: #state{}.
@@ -100,6 +101,8 @@ init([BagId, {UUID, Manifest}, FinishedCallback, GCKey, Options]) ->
     ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
     CleanupManifests = proplists:get_value(cleanup_manifests,
                                            Options, true),
+    EnsureBlockReap = application:get_env(riak_cs, gc_ensure_block_reap,
+        true),
     State = #state{bucket=Bucket,
                    key=Key,
                    manifest=Manifest,
@@ -107,6 +110,7 @@ init([BagId, {UUID, Manifest}, FinishedCallback, GCKey, Options]) ->
                    riak_client=RcPid,
                    finished_callback=FinishedCallback,
                    gc_key=GCKey,
+                   ensure_block_reap=EnsureBlockReap,
                    cleanup_manifests=CleanupManifests},
     {ok, prepare, State}.
 
@@ -118,18 +122,35 @@ prepare(delete, State) ->
 prepare(delete, From, State) ->
     handle_receiving_manifest(State#state{caller=From}).
 
-deleting({block_deleted, {ok, BlockID}, DeleterPid},
-         State=#state{deleted_blocks=DeletedBlocks}) ->
-    UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks+1, State),
-    ManifestState = UpdState#state.manifest?MANIFEST.state,
-    deleting_state_result(ManifestState, UpdState);
-deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterPid},
-         State=#state{deleted_blocks=DeletedBlocks}) ->
-    UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks, State),
-    ManifestState = UpdState#state.manifest?MANIFEST.state,
-    deleting_state_result(ManifestState, UpdState);
+
+%% {ok, BlockID} means notfound, no tombstone = success
+%% {error, {unreaped_tombstone, _, BlockID}} means either
+%%    successful delete, or notfound with tombstone
+%%    = success unless ensure_block_reap is true
+%%    otherwise revisit later to ensure it is gone
+%% {error, {unsatisfied_constraint, _, BlockID}} means 
+%%    primary was unavailable, so revisit later 
+%%  gracefully stop the FSM on any other error
+deleting({block_deleted, {ok, BlockID}, DeleterPid}, State) ->
+    handle_block_deleted(1, BlockID, DeleterPid, State);
+deleting({block_deleted, {error, {unreaped_tombstone, _, BlockID}}, DeleterPid},
+        State=#state{ensure_block_reap=true}) ->
+    handle_block_deleted(0, BlockID, DeleterPid, State);
+deleting({block_deleted, {error, {unreaped_tombstone, _, BlockID}}, DeleterPid},
+        State) ->
+    handle_block_deleted(1, BlockID, DeleterPid, State);
+deleting({block_deleted, {error, {unsatisfied_contstraint, _, BlockID}},
+        DeleterPid}, State) ->
+    handle_block_deleted(0, BlockID, DeleterPid, State);
 deleting({block_deleted, {error, Error}, _DeleterPid}, State) ->
     {stop, Error, State}.
+
+handle_block_deleted(Success, BlockID, DeleterPid,
+    State=#state{deleted_blocks=DeletedBlocks}) ->
+    UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks +
+        Success, State),
+    ManifestState = UpdState#state.manifest?MANIFEST.state,
+    deleting_state_result(ManifestState, UpdState).
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
