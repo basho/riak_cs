@@ -1,9 +1,10 @@
 # Internal Tools
 
-All these scripts are intended for special uses and should be used
-with Basho support. This document does not describe detailed usage of
-these scripts, but tries to describe high level idea on how they can
-compensate and help Riak CS operations.
+All these scripts in this directory are *not generally available*.
+They are intended for special or internal uses and should not be
+used without Basho guidance. This document does not describe
+detailed usage of these scripts, but tries to describe high level
+idea on how they can compensate and help Riak CS operations.
 
 ## SYNOPSIS
 
