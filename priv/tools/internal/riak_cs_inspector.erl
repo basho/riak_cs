@@ -240,9 +240,9 @@ list_buckets(RiakcPid) ->
                   || B <- ?KNOWN_BUCKETS],
     {ok, RiakBuckets} = riakc_pb_socket:list_buckets(RiakcPid),
     heading("All buckets:~n"),
-    heading("[~-7s] ~-32..=s = ~-32..=s~n",
+    heading("[~-7s] ~-32..=s ~-32..=s~n",
             [type, "cs-bucket-name ", "riak-bucket-name "]),
-    [io:format("[~-7s] ~-32s = ~w~n", cs_bucket_info(RiakBucket, KnownNames))
+    [io:format("[~-7s] ~-32s ~w~n", cs_bucket_info(RiakBucket, KnownNames))
      || RiakBucket <- lists:sort(RiakBuckets) ].
 
 cs_bucket_info(RiakBucket, KnownNames) ->
@@ -261,11 +261,11 @@ cs_bucket_info(RiakBucket, KnownNames) ->
 
 -spec list_cs_buckets(pid()) -> any().
 list_cs_buckets(RiakcPid)->
-    heading("~-64..=s ~-8..=s: ~-40..=s~n",
+    heading("~-64..=s ~-8..=s ~-40..=s~n",
             ["CS Bucket Name ", "Sibl. ", "Owner Key "]),
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.buckets"),
     lists:foreach(fun(Key) ->
-                          [io:format("~-64s ~-8B: ~-40s~n", [Key, SiblingNo, V])
+                          [io:format("~-64s ~-8B ~-40s~n", [Key, SiblingNo, V])
                            || {SiblingNo, {_MD, V}}
                                   <- get_riak_object(RiakcPid, "moss.buckets", Key)]
                   end, lists:sort(Keys)).
@@ -279,11 +279,11 @@ list_objects(RiakcPid, Bucket)->
         {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)].
 
 list_users(RiakcPid)->
-    heading("~-40..=s ~-8..=s: ~-40..=s ~-40..=s~n",
+    heading("~-40..=s ~-8..=s ~-40..=s ~-40..=s~n",
             ["Key ID ", "Sibl. ", "Name ", "Secret "]),
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.users"),
     %% TODO: only support #rcs_user_v2{}
-    [[io:format("~-40s ~8B: ~-40s ~-40s~n",
+    [[io:format("~-40s ~8B ~-40s ~-40s~n",
                 [user_attr(key_id, User),
                  SiblingNo,
                  user_attr(name, User),
@@ -309,10 +309,10 @@ show_user(RiakcPid, Opts) ->
     end.
 
 list_accesses(RiakcPid) ->
-    heading("~-40..=s ~-8..=s: ~-16..=s ~-16..=s ~-32..=s~n",
+    heading("~-40..=s ~-8..=s ~-16..=s ~-16..=s ~-32..=s~n",
             ["Key ", "Sibl. ", "StartTime ", "EndTime ", "MossNode "]),
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.access"),
-    [[io:format("~-40s ~8B: ~-16s ~-16s ~-32s~n",
+    [[io:format("~-40s ~8B ~-16s ~-16s ~-32s~n",
                 [Key, SiblingNo, Start, End, Node])
       || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.access", Key),
          {Start, End, Node, _Stats} <-
@@ -353,10 +353,10 @@ show_gc(RiakcPid, Key)->
     [ print_manifest(Manifest) || Manifest <- Manifests].
 
 list_storage(RiakcPid) ->
-    heading("~-40..=s ~-8..=s: ~-16..=s ~-16..=s~n",
+    heading("~-40..=s ~-8..=s ~-16..=s ~-16..=s~n",
             ["Key ", "Sibl. ", "StartTime ", "EndTime "]),
     {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.storage"),
-    [[io:format("~-40s ~8B: ~-16s ~-16s~n",
+    [[io:format("~-40s ~8B ~-16s ~-16s~n",
                 [Key, SiblingNo, Start, End])
       || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.storage", Key),
          {Start, End, _Node, _Stats} <- [case MD of
@@ -374,26 +374,26 @@ show_storage(RiakcPid, Key, PrintZeros)->
             <- get_riak_object(RiakcPid, "moss.storage", Key)].
 
 print_gc_manifest_summary(_RiakcPid, _Key, _SiblingNo, header) ->
-    heading("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-32..=s~n",
+    heading("~-32..=s ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-32..=s~n",
             ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length", "CS Key "]);
 print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, {tombstone, {_Bucket, Key}}) ->
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+    io:format("~-32s ~-8B ~-16s ~-32s ~16B ~-32s~n",
               [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
 print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, empty_twop_set) ->
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+    io:format("~-32s ~-8B ~-16s ~-32s ~16B ~-32s~n",
               [Key, SiblingNo, empty_twop_set, empty_twop_set, 0, empty_twop_set]);
 print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, M) ->
     {_, CSKey} = m_attr(bkey, M),
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-32s~n",
+    io:format("~-32s ~-8B ~-16s ~-32s ~16B ~-32s~n",
               [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
                m_attr(content_length, M), CSKey]).
 
 print_manifest_summary(_RiakcPid, _Bucket, _SiblingNo, header) ->
-    heading("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-9..=s ~-16..=s~n",
+    heading("~-32..=s ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-9..=s ~-16..=s~n",
             ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length",
              "Type ", "First Block "]);
 print_manifest_summary(_RiakcPid, _Bucket, SiblingNo, {tombstone, {_Bucket, Key}}) ->
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
+    io:format("~-32s ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
               [Key, SiblingNo, tombstone, tombstone, 0, "N/A", tombstone]);
 print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
     {_, Key} = m_attr(bkey, M),
@@ -411,7 +411,7 @@ print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
                         "**Not Found**"
                 end
         end,
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
+    io:format("~-32s ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
               [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
                m_attr(content_length, M), Type, FirstBlockStatus]).
 
@@ -684,12 +684,11 @@ list_blocks(RiakcPid, Bucket, Key, UUIDHexPrefix) ->
                 throw({uuid_not_found, UUIDHexPrefix});
             [{GotUUID, Manifest} | _] ->
                 %% TODO: lfs_manifest_v2
-                %% TODO: multipart upload
                 {GotUUID, riak_cs_lfs_utils:block_sequences_for_manifest(Manifest)}
         end,
     io:format("Blocks in object [~s/~s]:~n", [Key, mochihex:to_hex(UUID)]),
-    io:format("~-32..=s ~-8..=s: ~-10..=s ~-64..=s~n",
-              ["UUID ", "Block ", "Size ", "Value(first 8 or 32 bytes) "]),
+    io:format("~-32..=s ~-8..=s ~-10..=s ~-64..=s~n",
+              ["UUID ", "Seq ", "Size ", "Value(first 8 or 32 bytes) "]),
     [print_block_summary(RiakcPid, Bucket, Key, UUID, B) || B <- Blocks ].
 
 count_blocks(_, undefined) ->
@@ -708,7 +707,7 @@ print_block_summary(RiakcPid, Bucket, Key, UUID0, Block) ->
               end,
     case get_block(RiakcPid, Bucket, Key, UUID, SeqNo) of
         notfound ->
-            io:format("~-32s ~8B: ~10s ~64s~n",
+            io:format("~-32s ~8B ~10s ~64s~n",
                       [mochihex:to_hex(UUID), SeqNo, "*********", "**Not Found**"]);
         Value ->
             ByteSize = byte_size(Value),
@@ -719,11 +718,11 @@ print_block_summary(RiakcPid, Bucket, Key, UUID0, Block) ->
             %% - \z:     end of subject
             case re:run(FirstChars, "\\A[[:graph:]]*\\z", []) of
                 nomatch ->
-                    io:format("~-32s ~8B: ~10B ~64w~n",
+                    io:format("~-32s ~8B ~10B ~64w~n",
                               [mochihex:to_hex(UUID), SeqNo,
                                ByteSize, binary:part(Value, 0, min(8, ByteSize))]);
                 _ ->
-                    io:format("~-32s ~8B: ~10B ~s~n",
+                    io:format("~-32s ~8B ~10B ~s~n",
                               [mochihex:to_hex(UUID), SeqNo,
                                ByteSize, FirstChars])
             end
