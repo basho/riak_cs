@@ -699,17 +699,17 @@ count_blocks(RiakcPid, Bucket) ->
     BlockBucketBin = riak_cs_utils:to_bucket_name(blocks, Bucket),
     count_riak_bucket(RiakcPid, BlockBucketBin, Bucket ++ ":blocks", 100*1000).
 
-print_block_summary(RiakcPid, Bucket, Key, UUID, Block) ->
-    SeqNo = case Block of
-                  {_UUID, Seq} ->
-                      Seq;
+print_block_summary(RiakcPid, Bucket, Key, UUID0, Block) ->
+    {UUID, SeqNo} = case Block of
+                  {PartUUID, Seq} ->
+                      {PartUUID, Seq};
                   Seq ->
-                      Seq
+                      {UUID0, Seq}
               end,
     case get_block(RiakcPid, Bucket, Key, UUID, SeqNo) of
         notfound ->
-            io:format("~-32B: ~-32s ~-32s~n",
-                      [SeqNo, "****************", "**Not Found**"]);
+            io:format("~-32s ~8B: ~10s ~64s~n",
+                      [mochihex:to_hex(UUID), SeqNo, "*********", "**Not Found**"]);
         Value ->
             ByteSize = byte_size(Value),
             FirstChars = binary:part(Value, 0, min(32, ByteSize)),
