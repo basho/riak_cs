@@ -690,7 +690,7 @@ list_blocks(RiakcPid, Bucket, Key, UUIDHexPrefix) ->
         case lists:nth(1, Blocks) of
             {UUID, _Seq} ->
                 "UUID ";
-            {PartUUID, _Seq} ->
+            {_PartUUID, _Seq} ->
                 "Part UUID "
         end,
     io:format("Blocks in object [~s/~s]:~n", [Key, mochihex:to_hex(UUID)]),
