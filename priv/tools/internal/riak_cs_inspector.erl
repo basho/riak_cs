@@ -686,9 +686,16 @@ list_blocks(RiakcPid, Bucket, Key, UUIDHexPrefix) ->
                 %% TODO: lfs_manifest_v2
                 {GotUUID, riak_cs_lfs_utils:block_sequences_for_manifest(Manifest)}
         end,
+    UUIDName =
+        case lists:nth(1, Blocks) of
+            {UUID, _Seq} ->
+                "UUID ";
+            {PartUUID, _Seq} ->
+                "Part UUID "
+        end,
     io:format("Blocks in object [~s/~s]:~n", [Key, mochihex:to_hex(UUID)]),
     io:format("~-32..=s ~-8..=s ~-10..=s ~-64..=s~n",
-              ["UUID ", "Seq ", "Size ", "Value(first 8 or 32 bytes) "]),
+              [UUIDName, "Seq ", "Size ", "Value(first 8 or 32 bytes) "]),
     [print_block_summary(RiakcPid, Bucket, Key, UUID, B) || B <- Blocks ].
 
 count_blocks(_, undefined) ->
@@ -698,13 +705,7 @@ count_blocks(RiakcPid, Bucket) ->
     BlockBucketBin = riak_cs_utils:to_bucket_name(blocks, Bucket),
     count_riak_bucket(RiakcPid, BlockBucketBin, Bucket ++ ":blocks", 100*1000).
 
-print_block_summary(RiakcPid, Bucket, Key, UUID0, Block) ->
-    {UUID, SeqNo} = case Block of
-                  {PartUUID, Seq} ->
-                      {PartUUID, Seq};
-                  Seq ->
-                      {UUID0, Seq}
-              end,
+print_block_summary(RiakcPid, Bucket, Key, _ManifestUUID, {UUID, SeqNo}) ->
     case get_block(RiakcPid, Bucket, Key, UUID, SeqNo) of
         notfound ->
             io:format("~-32s ~8B ~10s ~64s~n",
