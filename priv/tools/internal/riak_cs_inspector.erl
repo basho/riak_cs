@@ -389,25 +389,44 @@ print_gc_manifest_summary(_RiakcPid, Key, SiblingNo, M) ->
                m_attr(content_length, M), CSKey]).
 
 print_manifest_summary(_RiakcPid, _Bucket, _SiblingNo, header) ->
-    heading("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-16..=s~n",
-            ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length", "First Block "]);
+    heading("~-32..=s: ~-8..=s ~-16..=s ~-32..=s ~-16..=s ~-9..=s ~-16..=s~n",
+            ["Key ", "Sibl. ", "State ", "UUID ", "Content-Length",
+             "Type ", "First Block "]);
 print_manifest_summary(_RiakcPid, _Bucket, SiblingNo, {tombstone, {_Bucket, Key}}) ->
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
-              [Key, SiblingNo, tombstone, tombstone, 0, tombstone]);
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
+              [Key, SiblingNo, tombstone, tombstone, 0, "N/A", tombstone]);
 print_manifest_summary(RiakcPid, Bucket, SiblingNo, M) ->
     {_, Key} = m_attr(bkey, M),
-    UUID = m_attr(uuid, M),
-    FirstBlockId = 0,
-    {RiakBucket, RiakKey} = full_bkey(Bucket, Key, UUID, FirstBlockId),
-    FirstBlockStatus = case riakc_pb_socket:get(RiakcPid, RiakBucket, RiakKey) of
-                           {ok, _RiakObject} ->
-                               "Found";
-                           {error, notfound} ->
-                               "**Not Found**"
-                       end,
-    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-16s~n",
+    {BlockUUID, Type} = first_block_uuid(M, m_attr(props, M)),
+    FirstBlockStatus =
+        case BlockUUID of
+            no_first_block -> "**No Entry**";
+            _ ->
+                FirstBlockId = 0,
+                {RiakBucket, RiakKey} = full_bkey(Bucket, Key, BlockUUID, FirstBlockId),
+                case riakc_pb_socket:get(RiakcPid, RiakBucket, RiakKey) of
+                    {ok, _RiakObject} ->
+                        "Found";
+                    {error, notfound} ->
+                        "**Not Found**"
+                end
+        end,
+    io:format("~-32s: ~-8B ~-16s ~-32s ~16B ~-9s ~-16s~n",
               [Key, SiblingNo, m_attr(state, M), uuid_hex(M),
-               m_attr(content_length, M), FirstBlockStatus]).
+               m_attr(content_length, M), Type, FirstBlockStatus]).
+
+first_block_uuid(M, undefined) ->
+    {m_attr(uuid, M), "normal"};
+first_block_uuid(M, Props) ->
+    case proplists:get_value(multipart, Props) of
+        undefined -> {m_attr(uuid, M), "normal"};
+        MpM ->
+            case ordsets:to_list(MpM?MULTIPART_MANIFEST.parts) of
+                [] -> {no_first_block, "multipart"};
+                [FirstPart|_] ->
+                    {FirstPart#part_manifest_v1.part_id, "multipart"}
+            end
+    end.
 
 -spec print_object(pid(), string(), string()) -> any().
 print_object(RiakcPid, Bucket, "key=" ++ Key)->
@@ -906,7 +925,8 @@ full_bkey(Bucket, Key, UUID, Seq) ->
 ?m_attr(state);
 ?m_attr(uuid);
 ?m_attr(content_md5);
-?m_attr(content_length).
+?m_attr(content_length);
+?m_attr(props).
 
 uuid_hex(M) ->
     mochihex:to_hex(m_attr(uuid, M)).
