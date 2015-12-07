@@ -366,30 +366,29 @@ read_config(Vsn, N, Who) ->
              Config
      end.
 
-update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
+update_cs_config(Prefix, N, Config, {AdminKey, _AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
-    UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
+    UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey)} |
                  proplists:delete(riak_cs, Config)],
     update_cs_config(Prefix, N, UpdConfig).
 
 update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
-                  proplists:delete(riak_cs, Config)],
+                 proplists:delete(riak_cs, Config)],
     update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
-update_admin_creds(Config, AdminKey, AdminSecret) ->
-    [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
-     proplists:delete(admin_secret,
-                      proplists:delete(admin_key, Config))].
+update_admin_creds(Config, AdminKey) ->
+    [{admin_key, AdminKey}|
+     proplists:delete(admin_key, Config)].
 
 update_cs_port(Config, N) ->
     Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
     [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
-update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
+update_stanchion_config(Prefix, Config, {AdminKey, _AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
-    UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
+    UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey)} |
                  proplists:delete(stanchion, Config)],
     update_stanchion_config(Prefix, UpdConfig).
 
