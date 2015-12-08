@@ -237,8 +237,11 @@ list_buckets(RiakcPid, ListFun) ->
     heading("All buckets:~n"),
     heading("[~-7s] ~-32..=s ~-32..=s~n",
             [type, "cs-bucket-name ", "riak-bucket-name "]),
-    [io:format("[~-7s] ~-32s ~w~n", cs_bucket_info(RiakBucket, KnownNames))
-     || RiakBucket <- lists:sort(RiakBuckets) ].
+    PrintFun = fun(RiakBuckets) ->
+                       [io:format("[~-7s] ~-32s ~w~n", cs_bucket_info(RiakBucket, KnownNames))
+                        || RiakBucket <- RiakBuckets ]
+               end,
+    ListFun(RiakcPid, PrintFun).
 
 cs_bucket_info(RiakBucket, KnownNames) ->
     try riak_cs_utils:from_bucket_name(RiakBucket) of
@@ -254,41 +257,46 @@ cs_bucket_info(RiakBucket, KnownNames) ->
             ['riak-cs', RiakBucket, RiakBucket]
     end.
 
--spec list_cs_buckets(pid()) -> any().
-list_cs_buckets(RiakcPid)->
+list_cs_buckets(RiakcPid, ListFun)->
     heading("~-64..=s ~-8..=s ~-40..=s~n",
             ["CS Bucket Name ", "Sibl. ", "Owner Key "]),
-    {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.buckets"),
-    lists:foreach(fun(Key) ->
-                          [io:format("~-64s ~-8B ~-40s~n", [Key, SiblingNo, V])
-                           || {SiblingNo, {_MD, V}}
-                                  <- get_riak_object(RiakcPid, "moss.buckets", Key)]
-                  end, lists:sort(Keys)).
+    PrintFun = fun(Keys) ->
+                       lists:foreach(fun(Key) ->
+                                             [io:format("~-64s ~-8B ~-40s~n", [Key, SiblingNo, V])
+                                              || {SiblingNo, {_MD, V}}
+                                                     <- get_riak_object(RiakcPid, "moss.buckets", Key)]
+                                     end, Keys)
+               end,
+    ListFun(RiakcPid, "moss.buckets", PrintFun).
 
-list_objects(RiakcPid, Bucket)->
+list_objects(RiakcPid, Bucket, ListFun)->
     print_manifest_summary(pid, bucket, sibling_no, header),
     ManifestBucketName = riak_cs_utils:to_bucket_name(objects, Bucket),
-    {ok, ManifestKeys} = riakc_pb_socket:list_keys(RiakcPid, ManifestBucketName),
-    [print_manifest_summary(RiakcPid, Bucket, SiblingNo, M)
-     || Key <- lists:sort(ManifestKeys),
-        {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)].
+    PrintFun = fun(ManifestKeys) ->
+                       [print_manifest_summary(RiakcPid, Bucket, SiblingNo, M)
+                        || Key <- ManifestKeys,
+                           {SiblingNo, _UUID, M} <- get_manifest(RiakcPid, Bucket, Key)]
+               end,
+    ListFun(RiakcPid, ManifestBucketName, PrintFun).
 
-list_users(RiakcPid)->
+list_users(RiakcPid, ListFun)->
     heading("~-40..=s ~-8..=s ~-40..=s ~-40..=s~n",
             ["Key ID ", "Sibl. ", "Name ", "Secret "]),
-    {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.users"),
-    %% TODO: only support #rcs_user_v2{}
-    [[io:format("~-40s ~8B ~-40s ~-40s~n",
-                [user_attr(key_id, User),
-                 SiblingNo,
-                 user_attr(name, User),
-                 user_attr(key_secret, User)])
-      || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.users", Key),
-         User <- [case MD of
-                      tombstone -> tombstone;
-                      _ -> binary_to_term(V)
-                  end]]
-     || Key <- lists:sort(Keys)].
+    PrintFun = fun(Keys) ->
+                       %% TODO: only support #rcs_user_v2{}
+                       [[io:format("~-40s ~8B ~-40s ~-40s~n",
+                                   [user_attr(key_id, User),
+                                    SiblingNo,
+                                    user_attr(name, User),
+                                    user_attr(key_secret, User)])
+                         || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.users", Key),
+                            User <- [case MD of
+                                         tombstone -> tombstone;
+                                         _ -> binary_to_term(V)
+                                     end]]
+                        || Key <- Keys]
+               end,
+    ListFun(RiakcPid, "moss.users", PrintFun).
 
 show_user(RiakcPid, Opts) ->
     case {proplists:get_value(key, Opts), proplists:get_value(name, Opts)} of
@@ -303,19 +311,21 @@ show_user(RiakcPid, Opts) ->
             print_users(RiakcPid, "moss.users", {name, Name})
     end.
 
-list_accesses(RiakcPid) ->
+list_accesses(RiakcPid, ListFun) ->
     heading("~-40..=s ~-8..=s ~-16..=s ~-16..=s ~-32..=s~n",
             ["Key ", "Sibl. ", "StartTime ", "EndTime ", "MossNode "]),
-    {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.access"),
-    [[io:format("~-40s ~8B ~-16s ~-16s ~-32s~n",
-                [Key, SiblingNo, Start, End, Node])
-      || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.access", Key),
-         {Start, End, Node, _Stats} <-
-             [case MD of
-                  tombstone -> tombstone;
-                  _ -> stats_sample_from_binary(V)
-              end]]
-     || Key <- lists:sort(Keys)].
+    PrintFun = fun(Keys) ->
+                       [[io:format("~-40s ~8B ~-16s ~-16s ~-32s~n",
+                                   [Key, SiblingNo, Start, End, Node])
+                         || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.access", Key),
+                            {Start, End, Node, _Stats} <-
+                                [case MD of
+                                     tombstone -> tombstone;
+                                     _ -> stats_sample_from_binary(V)
+                                 end]]
+                        || Key <- Keys]
+               end,
+    ListFun(RiakcPid, "moss.access", PrintFun).
 
 show_access(_RiakcPid, undefined)->
     usage(access, show),
@@ -350,18 +360,20 @@ show_gc(RiakcPid, Key)->
     io:format("----- ~B instance(s) -----~n", [length(Manifests)]),
     [ print_manifest(Manifest) || Manifest <- Manifests].
 
-list_storage(RiakcPid) ->
+list_storage(RiakcPid, ListFun) ->
     heading("~-40..=s ~-8..=s ~-16..=s ~-16..=s~n",
             ["Key ", "Sibl. ", "StartTime ", "EndTime "]),
-    {ok, Keys} = riakc_pb_socket:list_keys(RiakcPid, "moss.storage"),
-    [[io:format("~-40s ~8B ~-16s ~-16s~n",
-                [Key, SiblingNo, Start, End])
-      || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.storage", Key),
-         {Start, End, _Node, _Stats} <- [case MD of
-                       tombstone -> tombstone;
-                       _ -> stats_sample_from_binary(V)
-                   end]]
-     || Key <- lists:sort(Keys)].
+    PrintFun = fun(Keys) ->
+                       [[io:format("~-40s ~8B ~-16s ~-16s~n",
+                                   [Key, SiblingNo, Start, End])
+                         || {SiblingNo, {MD, V}} <- get_riak_object(RiakcPid, "moss.storage", Key),
+                            {Start, End, _Node, _Stats} <- [case MD of
+                                          tombstone -> tombstone;
+                                          _ -> stats_sample_from_binary(V)
+                                      end]]
+                        || Key <- Keys]
+               end,
+    ListFun(RiakcPid, "moss.storage", PrintFun).
 
 show_storage(_RiakcPid, undefined, _)->
     usage(storage, show),
