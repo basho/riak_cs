@@ -61,7 +61,7 @@ to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
             Doc = [{'LocationConstraint',
                     [{xmlns, "http://s3.amazonaws.com/doc/2006-03-01/"}],
                     [riak_cs_config:region()]}],
-            {riak_cs_xml:export_xml(Doc), RD, Ctx}
+            {riak_cs_xml:to_xml(Doc), RD, Ctx}
     end.
 
 
