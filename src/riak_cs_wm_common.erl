@@ -159,6 +159,7 @@ validate_content_checksum(RD, Ctx=#context{submodule=Mod, exports_fun=ExportsFun
 
 -spec forbidden(#wm_reqdata{}, #context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 forbidden(RD, Ctx=#context{auth_module=AuthMod,
+                           response_module=ResponseMod,
                            submodule=Mod,
                            riak_client=RcPid,
                            exports_fun=ExportsFun}) ->
@@ -174,15 +175,21 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                                            <<"forbidden">>,
                                            [],
                                            [riak_cs_wm_utils:extract_name(UserKey)]),
-                UserLookupResult = maybe_create_user(
-                                     riak_cs_user:get_user(UserKey, RcPid),
-                                     UserKey,
-                                     Ctx#context.api,
-                                     Ctx#context.auth_module,
-                                     AuthData,
-                                     RcPid),
-                {authenticate(UserLookupResult, RD, Ctx, AuthData),
-                 resource_call(Mod, anon_ok, [], ExportsFun)}
+
+                case maybe_create_user(
+                       riak_cs_user:get_user(UserKey, RcPid),
+                       UserKey,
+                       Ctx#context.api,
+                       Ctx#context.auth_module,
+                       AuthData,
+                       RcPid) of
+                    {ok, _} = LookupResult ->
+                        {authenticate(LookupResult, RD, Ctx, AuthData),
+                         resource_call(Mod, anon_ok, [], ExportsFun)};
+                    Error ->
+                        {ResponseMod:api_error(Error, RD, Ctx),
+                         resource_call(Mod, anon_ok, [], ExportsFun)}
+                end
         end,
     post_authentication(AuthResult, RD, Ctx, AnonOk).
 
@@ -429,9 +436,7 @@ authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submod
 authenticate({ok, {User, _UserObj}}, _RD, _Ctx, _AuthData)
   when User?RCS_USER.status =/= enabled ->
     %% {ok, _} -> %% disabled account, we are going to 403
-    {error, bad_auth};
-authenticate({error, _}=Error, _RD, _Ctx, _AuthData) ->
-    Error.
+    {error, bad_auth}.
 
 -spec exports_fun(orddict:orddict()) -> function().
 exports_fun(Exports) ->
