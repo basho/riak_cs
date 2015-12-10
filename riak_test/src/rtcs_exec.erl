@@ -242,6 +242,13 @@ disable_proxy_get(SrcN, Vsn, SinkCluster) ->
     rtdev:run_riak_repl(SrcN, rtcs_config:devpath(riak, Vsn),
                         "proxy_get disable " ++ SinkCluster).
 
+inspector(SubCmd) ->
+    inspector(1, SubCmd).
+
+inspector(N, SubCmd)->
+    Option = lists:flatten(io_lib:format(" -p ~B ~s", [rtcs_config:pb_port(N), SubCmd])),
+    exec_priv_escript(N, "internal/riak_cs_inspector.erl", Option).
+
 %% TODO: this is added as riak-1.4 branch of riak_test/src/rtcs_dev.erl
 %% throws out the return value. Let's get rid of these functions when
 %% we entered to Riak CS 2.0 dev, updating to riak_test master branch
