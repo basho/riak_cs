@@ -35,6 +35,7 @@ confirm() ->
     ok = verify_cs631(UserConfig, "cs-631-test-bukcet"),
     ok = verify_cs654(UserConfig),
     ok = verify_cs781(UserConfig, "cs-781-test-bucket"),
+    ok = verify_cs1255(UserConfig, "cs-1255-test-bucket"),
 
     %% Append your next regression tests here
 
@@ -201,3 +202,20 @@ verify_cs781(UserConfig, BucketName) ->
                                                               UserConfig))),
     ok.
 
+%% Test for [https://github.com/basho/riak_cs/pull/1255]
+verify_cs1255(UserConfig, BucketName) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    POSTData = {iolist_to_binary(crypto:rand_bytes(100)), "application/octet-stream"},
+
+    %% put objects using a binary key
+    erlcloud_s3:s3_request(UserConfig, put, BucketName, <<"/", 00>>, [], [], POSTData, []),
+    erlcloud_s3:s3_request(UserConfig, put, BucketName, <<"/", 01>>, [], [], POSTData, []),
+    erlcloud_s3:s3_request(UserConfig, put, BucketName, <<"/valid_key">>, [], [], POSTData, []),
+
+    %% list objects without xmerl which throws error when parsing invalid charactor as XML 1.0
+    {_Header, Body} = erlcloud_s3:s3_request(UserConfig, get, BucketName, "/", [], [], <<>>, []),
+    ?assertMatch({_, _}, binary:match(list_to_binary(Body), <<"<Key>", 00, "</Key>">>)),
+    ?assertMatch({_, _}, binary:match(list_to_binary(Body), <<"<Key>", 01, "</Key>">>)),
+    ?assertMatch({_, _}, binary:match(list_to_binary(Body), <<"<Key>valid_key</Key>">>)),
+
+    ok.
