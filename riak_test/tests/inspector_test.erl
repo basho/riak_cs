@@ -22,25 +22,39 @@
 
 -export([confirm/0]).
 
+-define(BLOCK_SIZE, 10).
+-define(OBJECT_SIZE, 100).
+-define(DEFAULT_HEADER_LINES, 2).
+
 -include_lib("eunit/include/eunit.hrl").
 
 confirm() ->
-    {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup(1),
+    rtcs:set_advanced_conf(cs, [{riak_cs, [{lfs_block_size, ?BLOCK_SIZE}]}]),
+    {UserConfig, _Nodes} = rtcs:setup(1),
     [ok = erlcloud_s3:create_bucket(Bucket, UserConfig)||Bucket<-buckets()],
-    [[{version_id, "null"}] = erlcloud_s3:put_object(bucket(1),
-                                                     Key,
-                                                     crypto:rand_bytes(100),
-                                                     UserConfig)||Key<-keys()],
 
-    %% verify listing buckets
-    SortedBucketsByDict = lists:sort(buckets()),
+    load_objects(bucket(1), UserConfig),
+
+    verify_bucket_cmd(),
+    verify_object_cmd(),
+    verify_block_cmd(),
+    verify_storage_cmd(),
+    verify_access_cmd(),
+
+    cleanup_bucket(bucket(1), UserConfig),
+
+    verify_gc_cmd(),
+    pass.
+
+verify_bucket_cmd() ->
+    %% verify listing buckets with sort option
     BucketList = result_to_lists(rtcs_exec:inspector("bucket list --sort")),
     lists:foldl(fun([Bucket|_], Num) ->
-                        ?assertEqual(lists:nth(Num, SortedBucketsByDict), Bucket),
+                        ?assertEqual(bucket(Num), Bucket),
                         Num+1
                 end, 1, BucketList),
 
-    %% verify listing bucketsption
+    %% verify listing buckets
     UnsortedBucketList = result_to_lists(rtcs_exec:inspector("bucket list")),
     ?assertNotEqual(BucketList, UnsortedBucketList),
     ?assertEqual(BucketList, lists:sort(fun([BucketA|_], [BucketB|_]) ->
@@ -48,17 +62,18 @@ confirm() ->
                                         end,
                                         UnsortedBucketList)),
 
-    %% verify show object
+    %% verify show bucket
     Bucket1 = rtcs_exec:inspector(string:join(["bucket", "show", bucket(1)], " ")),
     Owner1 = lists:nth(3, hd(BucketList)),
     ?assertMatch({match, _}, re:run(Bucket1, Owner1)),
+    ok.
 
+verify_object_cmd() ->
     %% verify listing objects with sort option
-    SortedKeysByDict = lists:sort(keys()),
     KeyList = result_to_lists(
                 rtcs_exec:inspector("object list " ++ bucket(1) ++ " --sort")),
     lists:foldl(fun([Key|_], Num) ->
-                        ?assertEqual(lists:nth(Num, SortedKeysByDict), Key),
+                        ?assertEqual(key(Num), Key),
                         Num+1
                 end, 1, KeyList),
 
@@ -67,21 +82,72 @@ confirm() ->
     ?assertNotEqual(KeyList, UnsortedKeyList),
     ?assertEqual(KeyList, lists:sort(fun([KeyA|_], [KeyB|_]) ->
                                              KeyA < KeyB
-                                        end,
-                                        UnsortedKeyList)),
+                                     end,
+                                     UnsortedKeyList)),
 
     %% verify show object
     Obj1 = rtcs_exec:inspector(string:join(["object", "show", bucket(1), key(1)], " ")),
     UUID1 = lists:nth(4, hd(KeyList)),
     ?assertMatch({match, _}, re:run(Obj1, UUID1)),
+    ok.
 
-    pass.
+verify_block_cmd() ->
+    %% verify listing blocks
+    KeyList = result_to_lists(
+                rtcs_exec:inspector("object list " ++ bucket(1) ++ " --sort")),
+    UUID1 = lists:nth(4, hd(KeyList)),
+    BlockList = result_to_lists(
+                  rtcs_exec:inspector(
+                    string:join(["block", "list", bucket(1), key(1), UUID1], " ")), 3),
+    ?assertEqual(?OBJECT_SIZE div ?BLOCK_SIZE, length(BlockList)),
+    ok.
+
+verify_storage_cmd() ->
+    _ = rtcs_exec:calculate_storage(1),
+    [Key|_] = hd(result_to_lists(rtcs_exec:inspector("storage list"))),
+    Stats = result_to_lists(rtcs_exec:inspector("storage show " ++ Key), 6),
+    ?assertEqual(["inspector-test-001", "100", "10000", "-1"], lists:last(Stats)),
+    ok.
+
+verify_access_cmd() ->
+    _ = rtcs_exec:flush_access(1),
+    [Key|_] = hd(result_to_lists(rtcs_exec:inspector("access list"))),
+    Stats = result_to_lists(rtcs_exec:inspector("access show " ++ Key)),
+    ?assertEqual([["BucketCreate", "Count",   "100"],
+                  ["KeyWrite",     "BytesIn", "10000"],
+                  ["KeyWrite",     "Count",   "100"]],
+                 lists:nthtail(length(Stats)-3, Stats)),
+    ok.
+
+verify_gc_cmd() ->
+    [Key|_] = hd(result_to_lists(rtcs_exec:inspector("gc list"))),
+    Ret = rtcs_exec:inspector("gc show " ++ Key),
+    ?assertMatch({match, _}, re:run(Ret, "pending_delete")),
+    ok.
+
+load_objects(Bucket, UserConfig) ->
+    [?assertEqual([{version_id, "null"}],
+                  erlcloud_s3:put_object(Bucket,
+                                         Key,
+                                         crypto:rand_bytes(?OBJECT_SIZE),
+                                         UserConfig))
+     ||Key<-keys()].
+
+
+cleanup_bucket(Bucket, UserConfig) ->
+    [?assertEqual([{delete_marker, false},
+                   {version_id, "null"}],
+                  erlcloud_s3:delete_object(Bucket, Key, UserConfig))
+     ||Key<-keys()].
 
 bucket(N) ->
-    "inspector-test" ++ integer_to_list(N).
+    "inspector-test-" ++ zero_padding(N).
 
 key(N) ->
-    "key" ++ integer_to_list(N).
+    "key-" ++ zero_padding(N).
+
+zero_padding(N) ->
+    lists:flatten(io_lib:format("~3..0B", [N])).
 
 buckets() ->
     [bucket(N)||N<-lists:seq(1, 100)].
@@ -90,6 +156,9 @@ keys() ->
     [key(N)||N<-lists:seq(1, 100)].
 
 result_to_lists(Ret) ->
+    result_to_lists(Ret, ?DEFAULT_HEADER_LINES).
+
+result_to_lists(Ret, HeaderLines) ->
     Tokens1 = string:tokens(Ret, "\n"),
-    Tokens2 = lists:sublist(Tokens1, 3, length(Tokens1)-2), % remove headers
-    lists:map(fun(Line) -> string:tokens(Line, " ") end, Tokens2).
+    Tokens2 = lists:nthtail(HeaderLines, Tokens1), % remove headers
+    lists:map(fun(Line) -> string:tokens(Line, " :=") end, Tokens2).
