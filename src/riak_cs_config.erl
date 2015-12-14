@@ -143,7 +143,7 @@ anonymous_user_creation() ->
     get_env(riak_cs, anonymous_user_creation, false).
 
 %% @doc Return the credentials of the admin user
--spec admin_creds() -> {ok, {string(), string()}} | {error, term()}.
+-spec admin_creds() -> {ok, {string()|undefined, string()|undefined}}.
 admin_creds() ->
     {ok, {get_env(riak_cs, admin_key, undefined),
           get_env(riak_cs, admin_secret, undefined)}}.

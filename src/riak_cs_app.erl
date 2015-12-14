@@ -84,7 +84,7 @@ fetch_and_cache_admin_creds(Key) ->
         %% Do we count this into stats?; This is a startup query and
         %% system latency is expected to be low. So get timeout can be
         %% low like 10% of configuration value.
-        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, Key,
+        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, iolist_to_binary(Key),
                                         [{notfound_ok, false}],
                                         riak_cs_config:get_user_timeout() div 10) of
             {ok, Obj} ->
