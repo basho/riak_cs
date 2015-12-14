@@ -100,7 +100,7 @@ fetch_and_cache_admin_creds(Key) ->
     catch T:E ->
             _ = lager:error("Couldn't get admin user (~s) record: ~p",
                             [Key, {T, E}]),
-            {T, E}
+            {error, {T, E}}
     after
         riakc_pb_socket:stop(MasterPbc)
     end.
