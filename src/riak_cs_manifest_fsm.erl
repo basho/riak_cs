@@ -40,7 +40,7 @@
          add_new_manifest/2,
          update_manifest/2,
          update_manifests/2,
-         delete_specific_manifest/2,
+         gc_specific_manifest/2,
          update_manifest_with_confirmation/2,
          update_manifests_with_confirmation/2,
          maybe_stop_manifest_fsm/1,
@@ -123,9 +123,9 @@ update_manifest(Pid, Manifest) ->
 %% @doc Delete a specific manifest version from a manifest and
 %% update the manifest value in riak or delete the manifest key from
 %% riak if there are no manifest versions remaining.
--spec delete_specific_manifest(pid(), binary()) -> ok | {error, term()}.
-delete_specific_manifest(Pid, UUID) ->
-    gen_fsm:sync_send_event(Pid, {delete_manifest, UUID}, infinity).
+-spec gc_specific_manifest(pid(), binary()) -> ok | {error, term()}.
+gc_specific_manifest(Pid, UUID) ->
+    gen_fsm:sync_send_event(Pid, {gc_specific_manifest, UUID}, infinity).
 
 -spec update_manifests_with_confirmation(pid(), orddict:orddict()) -> ok | {error, term()}.
 update_manifests_with_confirmation(Pid, Manifests) ->
@@ -196,7 +196,6 @@ waiting_update_command({update_manifests, WrappedManifests},
                                   WrappedManifests),
     {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
 
-
 waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
     {reply, Reply, waiting_update_command, NewState};
@@ -244,7 +243,30 @@ waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _
                                           WrappedManifests)
         end,
     {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
-                                                       manifests=undefined}}.
+                                                       manifests=undefined}};
+waiting_update_command({gc_specific_manifest, UUID}, _From,
+                       #state{
+                          riak_object = RiakObj0,
+                          bucket = Bucket,
+                          key = Key,
+                          riak_client = RcPid
+                         } = State) ->
+    %% put_fsm has issued delete_manifest caused by force_stop
+    Res = case RiakObj0 of
+              undefined ->
+                  case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+                      {ok, RiakObj, _} ->
+                          riak_cs_gc:gc_specific_manifests([UUID], RiakObj,
+                                                           Bucket, Key, RcPid);
+                      Error ->
+                          Error
+                  end;
+              RiakObj ->
+                  riak_cs_gc:gc_specific_manifests([UUID], RiakObj,
+                                                   Bucket, Key, RcPid)
+          end,
+    {reply, Res, waiting_update_command, State}.
+
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 

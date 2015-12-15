@@ -280,6 +280,9 @@ prepare_part_upload(RD, #context{riak_client=RcPid,
             case SrcManifest of
                 undefined ->
                     BlockSize = riak_cs_lfs_utils:block_size(),
+                    %% No badmatch errow by machiweb_socket:recv()
+                    %% will be catched here because writing state
+                    %% parts can be collected in Multipart Abort API.
                     accept_streambody(RD, Ctx, PutPid,
                                       wrq:stream_req_body(RD, BlockSize));
                 _ ->

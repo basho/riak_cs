@@ -22,6 +22,7 @@
 
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 upload(UserConfig, normal, B, K) ->
     Content = crypto:rand_bytes(mb(4)),
@@ -29,7 +30,40 @@ upload(UserConfig, normal, B, K) ->
     {B, K, Content};
 upload(UserConfig, multipart, B, K) ->
     Content = rtcs_multipart:multipart_upload(B, K, [mb(10), 400], UserConfig),
-    {B, K, Content}.
+    {B, K, Content};
+upload(UserConfig, {normal_partial, CL, Actual}, B, K) when is_list(K),
+                                                            CL >= Actual ->
+    %% Dumbest handmade S3 PUT Client
+    %% Send partial payload to the socket and suddenly close
+    Host = io_lib:format("~s.s3.amazonaws.com", [B]),
+    Date = httpd_util:rfc1123_date(erlang:localtime()),
+    %% Fake checksum, this request should fail if all payloads were sent
+    MD5 = "1B2M2Y8AsgTpgAmY7PhCfg==",
+    ToSign = ["PUT", $\n, MD5, $\n, "application/octet-stream", $\n,
+              Date, $\n, [], $/, B, $/, K, []],
+    lager:debug("String to Sign: ~s", [ToSign]),
+    Sig = base64:encode_to_string(crypto:hmac(
+                                    sha,
+                                    UserConfig#aws_config.secret_access_key,
+                                    ToSign)),
+    Auth = io_lib:format("Authorization: AWS ~s:~s",
+                         [UserConfig#aws_config.access_key_id, Sig]),
+    {ok, Sock} = gen_tcp:connect("127.0.0.1", 15018, [{active, false}]),
+    FirstLine = io_lib:format("PUT /~s HTTP/1.1", [K]),
+    Binary = binary:copy(<<"*">>, Actual),
+    ReqHdr = [FirstLine, $\n, "Host: ", Host, $\n, Auth, $\n,
+              "Content-Length: ", integer_to_list(CL), $\n,
+              "Content-Md5: ", MD5, $\n,
+              "Content-Type: application/octet-stream", $\n,
+              "Date: ", Date, $\n],
+    lager:info("~s", [iolist_to_binary(ReqHdr)]),
+    case gen_tcp:send(Sock, [ReqHdr, $\n, Binary]) of
+        ok ->
+            %% Let caller handle the socket call, either close or continue
+            {ok, Sock};
+        Error ->
+            Error
+    end.
 
 upload(UserConfig, normal_copy, B, DstK, SrcK) ->
     ?assertEqual([{copy_source_version_id, "false"}, {version_id, "null"}],
