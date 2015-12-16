@@ -36,8 +36,8 @@ compile-riak-test: compile-src bitcask-downgrade-script
 	## way of adding the -pz argument + code path that we need.
 	## So we'll copy the BEAM files to a place that riak_test is
 	## already using.
-	cp -v ebin/riak_cs_wm_utils.beam riak_test/ebin
-	cp -v ebin/twop_set.beam riak_test/ebin
+	cp ebin/riak_cs_wm_utils.beam riak_test/ebin
+	cp ebin/twop_set.beam riak_test/ebin
 
 clean-client-test:
 	@./rebar client_test_clean
