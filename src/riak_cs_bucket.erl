@@ -475,7 +475,7 @@ bucket_exists(Buckets, CheckBucket) ->
 -spec bucket_fun(bucket_operation(),
                  binary(),
                  bag_id(),
-                 acl(),
+                 [] | policy() | acl(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
@@ -682,36 +682,33 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
 serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPid) ->
     StartTime = os:timestamp(),
     _ = riak_cs_stats:inflow(StatsKey),
-    case riak_cs_config:admin_creds() of
-        {ok, AdminCreds} ->
-            BucketFun = bucket_fun(BucketOp,
-                                   Bucket,
-                                   BagId,
-                                   ACL,
-                                   User?RCS_USER.key_id,
-                                   AdminCreds,
-                                   riak_cs_utils:stanchion_data()),
-            %% Make a call to the request serialization service.
-            OpResult = BucketFun(),
-            _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
-            case OpResult of
-                ok ->
-                    BucketRecord = bucket_record(Bucket, BucketOp),
-                    case update_user_buckets(User, BucketRecord) of
-                        {ok, ignore} when BucketOp == update_acl ->
-                            OpResult;
-                        {ok, ignore} ->
-                            OpResult;
-                        {ok, UpdUser} ->
-                            riak_cs_user:save_user(UpdUser, UserObj, RcPid)
-                    end;
-                {error, {error_status, Status, _, ErrorDoc}} ->
-                    handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
-                {error, _} ->
-                    OpResult
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+
+    BucketFun = bucket_fun(BucketOp,
+                           Bucket,
+                           BagId,
+                           ACL,
+                           User?RCS_USER.key_id,
+                           AdminCreds,
+                           riak_cs_utils:stanchion_data()),
+    %% Make a call to the request serialization service.
+    OpResult = BucketFun(),
+    _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
+    case OpResult of
+        ok ->
+            BucketRecord = bucket_record(Bucket, BucketOp),
+            case update_user_buckets(User, BucketRecord) of
+                {ok, ignore} when BucketOp == update_acl ->
+                    OpResult;
+                {ok, ignore} ->
+                    OpResult;
+                {ok, UpdUser} ->
+                    riak_cs_user:save_user(UpdUser, UserObj, RcPid)
             end;
-        {error, Reason1} ->
-            {error, Reason1}
+        {error, {error_status, Status, _, ErrorDoc}} ->
+            handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
+        {error, _} ->
+            OpResult
     end.
 
 %% @doc needs retry for delete op.  409 assumes

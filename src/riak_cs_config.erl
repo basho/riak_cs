@@ -143,32 +143,10 @@ anonymous_user_creation() ->
     get_env(riak_cs, anonymous_user_creation, false).
 
 %% @doc Return the credentials of the admin user
--spec admin_creds() -> {ok, {string(), string()}} | {error, term()}.
+-spec admin_creds() -> {ok, {string()|undefined, string()|undefined}}.
 admin_creds() ->
-    admin_creds_response(
-      get_env(riak_cs, admin_key, undefined),
-      get_env(riak_cs, admin_secret, undefined)).
-
--spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
-                                              {error, atom()}.
-admin_creds_response(undefined, _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response([], _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response(_, undefined) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(_, []) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(Key, Secret) ->
-    {ok, {Key, Secret}}.
+    {ok, {get_env(riak_cs, admin_key, undefined),
+          get_env(riak_cs, admin_secret, undefined)}}.
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.

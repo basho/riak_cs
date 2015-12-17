@@ -30,6 +30,7 @@
          is_admin/1,
          get_user/2,
          get_user_by_index/3,
+         from_riakc_obj/2,
          to_3tuple/1,
          save_user/3,
          update_key_secret/1,
@@ -67,12 +68,8 @@ create_user(Name, Email, KeyId, Secret) ->
             Error
     end.
 
--spec create_credentialed_user({error, term()}, rcs_user()) ->
-                                  {error, term()};
-                              ({ok, {term(), term()}}, rcs_user()) ->
-                                  {ok, rcs_user()} | {error, term()}.
-create_credentialed_user({error, _}=Error, _User) ->
-    Error;
+-spec create_credentialed_user({ok, {term(), term()}}, rcs_user()) ->
+                                      {ok, rcs_user()} | {error, term()}.
 create_credentialed_user({ok, AdminCreds}, User) ->
     {StIp, StPort, StSSL} = riak_cs_utils:stanchion_data(),
     %% Make a call to the user request serialization service.
@@ -117,24 +114,20 @@ handle_update_user({error, _}=Error, _User, _, _) ->
                          {ok, rcs_user()} | {error, term()}.
 update_user(User, UserObj, RcPid) ->
     {StIp, StPort, StSSL} = riak_cs_utils:stanchion_data(),
-    case riak_cs_config:admin_creds() of
-        {ok, AdminCreds} ->
-            Options = [{ssl, StSSL}, {auth_creds, AdminCreds}],
-            StatsKey = [velvet, update_user],
-            _ = riak_cs_stats:inflow(StatsKey),
-            StartTime = os:timestamp(),
-            %% Make a call to the user request serialization service.
-            Result = velvet:update_user(StIp,
-                                        StPort,
-                                        "application/json",
-                                        User?RCS_USER.key_id,
-                                        binary_to_list(riak_cs_json:to_json(User)),
-                                        Options),
-            _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
-            handle_update_user(Result, User, UserObj, RcPid);
-        {error, _}=Error ->
-            Error
-    end.
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Options = [{ssl, StSSL}, {auth_creds, AdminCreds}],
+    StatsKey = [velvet, update_user],
+    _ = riak_cs_stats:inflow(StatsKey),
+    StartTime = os:timestamp(),
+    %% Make a call to the user request serialization service.
+    Result = velvet:update_user(StIp,
+                                StPort,
+                                "application/json",
+                                User?RCS_USER.key_id,
+                                binary_to_list(riak_cs_json:to_json(User)),
+                                Options),
+    _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
+    handle_update_user(Result, User, UserObj, RcPid).
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.

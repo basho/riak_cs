@@ -165,7 +165,11 @@ setup_admin_user(NumNodes, Vsn)
     #aws_config{access_key_id=KeyID,
                 secret_access_key=KeySecret} = AdminCreds,
 
-    AdminConf = [{admin_key, KeyID}, {admin_secret, KeySecret}],
+    AdminConf = [{admin_key, KeyID}]
+        ++ case Vsn of
+               current -> [];
+               previous -> [{admin_secret, KeySecret}]
+           end,
     rt:pmap(fun(N) ->
                     rtcs:set_advanced_conf({cs, Vsn, N}, [{riak_cs, AdminConf}])
             end, lists:seq(1, NumNodes)),

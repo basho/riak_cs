@@ -27,7 +27,6 @@
 %% application API
 -export([start/2,
          stop/1,
-         sanity_check/2,
          check_bucket_props/2,
          atoms_for_check_bucket_props/0]).
 
@@ -46,6 +45,7 @@
 start(_Type, _StartArgs) ->
     riak_cs_config:warnings(),
     sanity_check(is_config_valid(),
+                 check_admin_creds(),
                  check_bucket_props()).
 
 %% @doc application stop callback for riak_cs.
@@ -53,23 +53,82 @@ start(_Type, _StartArgs) ->
 stop(_State) ->
     ok.
 
--spec sanity_check(boolean(), {ok, boolean()} | {error, term()}) -> {ok, pid()} | {error, term()}.
-sanity_check(true, {ok, true}) ->
+-spec check_admin_creds() -> ok | {error, term()}.
+check_admin_creds() ->
+    case riak_cs_config:admin_creds() of
+        {ok, {"admin-key", _}} ->
+            %% The default key
+            lager:warning("admin.key is defined as default. Please create"
+                          " admin user and configure it.", []),
+            application:set_env(riak_cs, admin_secret, "admin-secret"),
+            ok;
+        {ok, {undefined, _}} ->
+            _ = lager:warning("The admin user's key id has not been specified."),
+            {error, admin_key_undefined};
+        {ok, {[], _}} ->
+            _ = lager:warning("The admin user's key id has not been specified."),
+            {error, admin_key_undefined};
+        {ok, {Key, undefined}} ->
+            fetch_and_cache_admin_creds(Key);
+        {ok, {Key, []}} ->
+            fetch_and_cache_admin_creds(Key);
+        {ok, {Key, _}} ->
+            _ = lager:warning("The admin user's secret is specified. Ignoring."),
+            fetch_and_cache_admin_creds(Key)
+    end.
+
+fetch_and_cache_admin_creds(Key) ->
+    %% Not using as the master pool might not be initialized
+    {ok, MasterPbc} = riak_connection(),
+    try
+        %% Do we count this into stats?; This is a startup query and
+        %% system latency is expected to be low. So get timeout can be
+        %% low like 10% of configuration value.
+        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, iolist_to_binary(Key),
+                                        [{notfound_ok, false}],
+                                        riak_cs_config:get_user_timeout() div 10) of
+            {ok, Obj} ->
+                User = riak_cs_user:from_riakc_obj(Obj, false),
+                Secret = User?RCS_USER.key_secret,
+                lager:info("setting admin secret as ~s", [Secret]),
+                application:set_env(riak_cs, admin_secret, Secret);
+            Error ->
+                _ = lager:error("Couldn't get admin user (~s) record: ~p",
+                                [Key, Error]),
+                Error
+        end
+    catch T:E ->
+            _ = lager:error("Couldn't get admin user (~s) record: ~p",
+                            [Key, {T, E}]),
+            {error, {T, E}}
+    after
+        riakc_pb_socket:stop(MasterPbc)
+    end.
+
+-spec sanity_check(boolean(),
+                   ok | {error, term()},
+                   {ok, boolean()} | {error, term()}) ->
+                          {ok, pid()} | {error, term()}.
+sanity_check(true, ok, {ok, true}) ->
     riak_cs_sup:start_link();
-sanity_check(false, _) ->
+sanity_check(false, _, _) ->
     _ = lager:error("You must update your Riak CS app.config. Please see the"
                     "release notes for more information on updating you"
                     "configuration."),
     {error, bad_config};
-sanity_check(true, {ok, false}) ->
-        _ = lager:error("Invalid Riak bucket properties detected. Please "
-                        "verify that allow_mult is set to true for all "
-                        "buckets."),
+sanity_check(true, _, {ok, false}) ->
+    _ = lager:error("Invalid Riak bucket properties detected. Please "
+                    "verify that allow_mult is set to true for all "
+                    "buckets."),
     {error, invalid_bucket_props};
-sanity_check(true, {error, Reason}) ->
-        _ = lager:error("Could not verify bucket properties. Error was"
-                       " ~p.", [Reason]),
-    {error, error_verifying_props}.
+sanity_check(true, _, {error, Reason}) ->
+    _ = lager:error("Could not verify bucket properties. Error was"
+                    " ~p.", [Reason]),
+    {error, error_verifying_props};
+sanity_check(_, {error, Reason}, _) ->
+    _ = lager:error("Admin credentials are not properly set: ~p.",
+                    [Reason]),
+    {error, Reason}.
 
 -spec is_config_valid() -> boolean().
 is_config_valid() ->
