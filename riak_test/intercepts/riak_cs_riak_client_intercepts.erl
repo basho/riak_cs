@@ -20,11 +20,7 @@
 
 -module(riak_cs_riak_client_intercepts).
 -compile(export_all).
-%-include_lib("intercept.hrl").
 -define(M, riak_cs_riak_client_orig).
 
 get_user_timeout(_MasterPbc, _Key) ->
     {error, timeout}.
-
-get_user_orig(MasterPbc, Key) ->
-    ?M:get_user_orig(MasterPbc, Key).

@@ -20,11 +20,7 @@
 
 -module(riak_cs_block_server_intercepts).
 -compile(export_all).
-%-include_lib("intercept.hrl").
 -define(M, riak_cs_block_server_orig).
 
 get_block_local_timeout(_RcPid, _FullBucket, _FullKey, _GetOptions, _Timeout, _StatsKey) ->
     {error, timeout}.
-
-get_block_local_orig(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey) ->
-    ?M:get_block_local_orig(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey).

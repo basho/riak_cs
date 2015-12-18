@@ -20,20 +20,13 @@
 
 -module(riakc_pb_socket_intercepts).
 -compile(export_all).
-%-include_lib("intercept.hrl").
 -define(M, riakc_pb_socket_orig).
 
 get_timeout(_Pid, _Bucket, _Key, _Options, _Timeout) ->
     {error, timeout}.
 
-get_orig(Pid, Bucket, Key, Options, Timeout) ->
-    ?M:get_orig(Pid, Bucket, Key, Options, Timeout).
-
 put_timeout(_Pid, _Obj, _Options, _Timeout) ->
     {error, timeout}.
-
-put_orig(Pid, Obj, Options, Timeout) ->
-    ?M:put_orig(Pid, Obj, Options, Timeout).
 
 get_overload(_Pid, _Bucket, _Key, _Options, _Timeout) ->
     {error, <<"overload">>}.

@@ -46,13 +46,13 @@ confirm() ->
     rt_intercept:add(ErrCSNode, {riak_cs_riak_client, [{{get_user, 2}, get_user_timeout}]}),
     ?assertError({aws_error, {http_error, 403, [], _}},
                  erlcloud_s3:get_object(?BUCKET, ?KEY, ErrConfig)),
-    rt_intercept:add(ErrCSNode, {riak_cs_riak_client, [{{get_user, 2}, get_user_orig}]}),
+    rt_intercept:clean(ErrCSNode, riak_cs_riak_client),
 
     %% vefity response for timeout during getting block.
     %% FIXME: This should be http_error 503
     rt_intercept:add(ErrCSNode, {riak_cs_block_server, [{{get_block_local, 6}, get_block_local_timeout}]}),
     ?assertError({aws_error, {socket_error, retry_later}}, erlcloud_s3:get_object(?BUCKET, ?KEY, ErrConfig)),
-    rt_intercept:add(ErrCSNode, {riak_cs_block_server, [{{get_block_local, 6}, get_block_local_orig}]}),
+    rt_intercept:clean(ErrCSNode, riak_cs_block_server),
 
 
     %% vefity response for timeout during get a bucket on stanchion.
@@ -60,14 +60,14 @@ confirm() ->
     rt_intercept:add(Stanchion, {riakc_pb_socket, [{{get, 5}, get_timeout}]}),
     ?assertError({aws_error, {http_error, 500, [], _}},
                  erlcloud_s3:create_bucket(?BUCKET2, ErrConfig)),
-    rt_intercept:add(Stanchion, {riakc_pb_socket, [{{get, 5}, get_orig}]}),
+    rt_intercept:clean(Stanchion, riakc_pb_socket),
 
     %% vefity response for timeout during put a bucket on stanchion.
     %% FIXME: This should be http_error 503
     rt_intercept:add(Stanchion, {riakc_pb_socket, [{{put, 4}, put_timeout}]}),
     ?assertError({aws_error, {http_error, 500, [], _}},
                  erlcloud_s3:create_bucket(?BUCKET2, ErrConfig)),
-    rt_intercept:add(Stanchion, {riakc_pb_socket, [{{put, 4}, put_orig}]}),
+    rt_intercept:clean(Stanchion, riakc_pb_socket),
 
     rtcs:pass().
 
