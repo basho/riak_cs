@@ -370,6 +370,14 @@ cs_node(N) ->
 stanchion_node() ->
     'stanchion@127.0.0.1'.
 
+maybe_load_intercepts(Node) ->
+    case rt_intercept:are_intercepts_loaded(Node, [intercept_path()]) of
+        false ->
+            ok = rt_intercept:load_intercepts([Node], [intercept_path()]);
+        true ->
+            ok
+    end.
+
 %% private
 
 riak_nodes(NumNodes) ->
@@ -383,3 +391,7 @@ node_list(NumNodes) ->
                     riak_nodes(NumNodes)),
     {CS1, R1} = hd(NL0),
     [{CS1, R1, stanchion_node()} | tl(NL0)].
+
+intercept_path() ->
+      filename:join([rtcs_dev:srcpath(cs_src_root),
+                     "riak_test", "intercepts", "*.erl"]).

@@ -84,7 +84,9 @@ start_cs(N, Vsn) ->
     NodePath = rtcs_config:devpath(cs, Vsn),
     Cmd = riakcscmd(NodePath, N, "start"),
     lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    R = os:cmd(Cmd),
+    rtcs:maybe_load_intercepts(rtcs:cs_node(N)),
+    R.
 
 stop_cs(N) -> stop_cs(N, current).
 
@@ -204,7 +206,9 @@ start_stanchion() -> start_stanchion(current).
 start_stanchion(Vsn) ->
     Cmd = stanchioncmd(rtcs_config:devpath(stanchion, Vsn), "start"),
     lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    R = os:cmd(Cmd),
+    rtcs:maybe_load_intercepts(rtcs:stanchion_node()),
+    R.
 
 stop_stanchion() -> stop_stanchion(current).
 
