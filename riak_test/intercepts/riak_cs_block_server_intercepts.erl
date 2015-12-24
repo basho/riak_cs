@@ -20,7 +20,18 @@
 
 -module(riak_cs_block_server_intercepts).
 -compile(export_all).
+-include("intercept.hrl").
 -define(M, riak_cs_block_server_orig).
 
 get_block_local_timeout(_RcPid, _FullBucket, _FullKey, _GetOptions, _Timeout, _StatsKey) ->
     {error, timeout}.
+
+get_block_local_insufficient_vnode_at_nval1(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey) ->
+    case proplists:get_value(n_val, GetOptions) of
+        1 ->
+            ?I_INFO("riak_cs_block_server:get_block_local/6 returns insufficient_vnodes"),
+            {error, <<"{insufficient_vnodes,0,need,1}">>};
+        N ->
+            ?I_INFO("riak_cs_block_server:get_block_local/6 forwards original code with n_val=~p", [N]),
+            ?M:get_block_local_orig(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey)
+    end.
