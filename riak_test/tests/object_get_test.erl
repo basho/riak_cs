@@ -66,6 +66,12 @@ non_mp_get_cases(UserConfig) ->
     basic_get_test_case(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, SingleBlock, UserConfig),
     basic_get_test_case(?TEST_BUCKET, ?KEY_MULTIPLE_BLOCK, MultipleBlock, UserConfig),
 
+    %% GET after nval=1 GET failure
+    rt_intercept:add(rtcs:cs_node(1), {riak_cs_block_server, [{{get_block_local, 6}, get_block_local_insufficient_vnode_at_nval1}]}),
+    Res = erlcloud_s3:get_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),
+    ?assertEqual(SingleBlock, proplists:get_value(content, Res)),
+    rt_intercept:clean(rtcs:cs_node(1), riak_cs_block_server),
+
     %% Range GET for single-block object test cases
     [range_get_test_case(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, SingleBlock,
                          Range, UserConfig)
