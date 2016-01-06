@@ -39,7 +39,7 @@ confirm() ->
     ok = verify_cs347(SetupInfo, "test-bucket-cs347"),
     ok = verify_cs436(SetupInfo, "test-bucket-cs436"),
     ok = verify_cs512(UserConfig, "test-bucket-cs512"),
-    ok = verify_cs770(UserConfig, "test-bucket-cs770"),
+    ok = verify_cs770(SetupInfo, "test-bucket-cs770"),
 
     %% Append your next regression tests here
 
@@ -147,7 +147,7 @@ verify_cs512(UserConfig, BucketName) ->
     assert_notfound(UserConfig,BucketName),
     ok.
 
-verify_cs770(UserConfig, BucketName) ->
+verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
     %% put object and cancel it;
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
     Key = "foobar",
@@ -157,7 +157,7 @@ verify_cs770(UserConfig, BucketName) ->
                                       {normal_partial, 3*1024*1024, 1024*1024},
                                       BucketName, Key),
     
-    [[{UUID, M}]] = get_manifests(BucketName, Key),
+    [[{UUID, M}]] = get_manifests(RiakNodes, BucketName, Key),
 
     %% Even if CS is smart enough to remove canceled upload, at this
     %% time the socket will be still alive, so no cancellation logic
@@ -171,7 +171,7 @@ verify_cs770(UserConfig, BucketName) ->
     timer:sleep(1000),
     retry(8, 4096,
           fun() ->
-                  [[{UUID, Mx}]] = get_manifests(BucketName, Key),
+                  [[{UUID, Mx}]] = get_manifests(RiakNodes, BucketName, Key),
                   scheduled_delete =:= Mx?MANIFEST.state
           end),
 
@@ -220,9 +220,8 @@ all_manifests_in_gc_bucket(Pbc) ->
     %% lager:debug("All manifests in GC buckets: ~p", [Ms]),
     lists:flatten(Ms).
 
-get_manifests(BucketName, Key) ->
-    Node = 'dev1@127.0.0.1',
-    {ok, Obj} = rc_helper:get_riakc_obj([Node], objects, BucketName, Key),
+get_manifests(RiakNodes, BucketName, Key) ->
+    {ok, Obj} = rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key),
     %% Assuming no tombstone;
     [binary_to_term(V) || {_, V} <- riakc_obj:get_contents(Obj),
                           V =/= <<>>].
