@@ -40,6 +40,7 @@
          add_new_manifest/2,
          update_manifest/2,
          update_manifests/2,
+         delete_specific_manifest/2,
          gc_specific_manifest/2,
          update_manifest_with_confirmation/2,
          update_manifests_with_confirmation/2,
@@ -123,6 +124,14 @@ update_manifest(Pid, Manifest) ->
 %% @doc Delete a specific manifest version from a manifest and
 %% update the manifest value in riak or delete the manifest key from
 %% riak if there are no manifest versions remaining.
+-spec delete_specific_manifest(pid(), binary()) -> ok | {error, term()}.
+delete_specific_manifest(Pid, UUID) ->
+    gen_fsm:sync_send_event(Pid, {delete_manifest, UUID}, infinity).
+
+%% @doc Not only delete a specific manifest version from a manifest
+%% and update the manifest value in riak or delete the manifest key
+%% from riak if there are no manifest versions remaining, but also
+%% moves them into GC bucket.
 -spec gc_specific_manifest(pid(), binary()) -> ok | {error, term()}.
 gc_specific_manifest(Pid, UUID) ->
     gen_fsm:sync_send_event(Pid, {gc_specific_manifest, UUID}, infinity).
