@@ -47,7 +47,6 @@ stats_prefix() -> object.
 
 -spec malformed_request(#wm_reqdata{}, #context{}) -> {false, #wm_reqdata{}, #context{}}.
 malformed_request(RD, #context{response_module=ResponseMod} = Ctx) ->
-    lager:debug("*********** ~p", [?LINE]),
     case riak_cs_wm_utils:extract_key(RD, Ctx) of
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx);
@@ -95,13 +94,11 @@ authorize(RD, Ctx, _BucketObj, _Method, _Manifest) ->
 %% @doc Get the list of methods this resource supports.
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    lager:debug("*********** ~p", [?LINE]),
     %% TODO: POST
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx) ->
-    lager:debug("*********** ~p", [?LINE]),
     MaxLen = riak_cs_lfs_utils:max_content_len(),
     case riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx) of
         {true, NewRD, NewCtx} ->
@@ -114,7 +111,6 @@ valid_entity_length(RD, Ctx) ->
 -spec content_types_provided(#wm_reqdata{}, #context{}) -> {[{string(), atom()}], #wm_reqdata{}, #context{}}.
 content_types_provided(RD, Ctx=#context{local_context=LocalCtx,
                                         riak_client=RcPid}) ->
-    lager:debug("*********** ~p", [?LINE]),
     Mfst = LocalCtx#key_context.manifest,
     %% TODO:
     %% As I understand S3, the content types provided
@@ -172,7 +168,6 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                               start_time=StartTime,
                               user=User},
              {Start, End}, RespRange) ->
-    lager:debug("*********** ~p", [?LINE]),
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     {Bucket, File} = Mfst?MANIFEST.bkey,
     ResourceLength = Mfst?MANIFEST.content_length,
@@ -349,20 +344,16 @@ handle_normal_put(RD, Ctx) ->
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     try
-        lager:info("start putting data: ~s / ~s, ~p bytes", [Bucket, Key, Size]),
         accept_streambody(RD, Ctx, Pid,
                           wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()))
     catch
         Type:Error ->
-            %% Want to catch mochiweb_socket:recv() returns
-            %% {error, einval} or disconnected stuff, any
-            %% errors prevents this manifests from being
-            %% uploaded anymore
-            _ = lager:debug("upload failed: ~p", [{Type, Error}]),
+            %% Want to catch mochiweb_socket:recv() returns {error,
+            %% einval} or disconnected stuff, any errors prevents this
+            %% manifests from being uploaded anymore
             Res = riak_cs_put_fsm:force_stop(Pid),
-            _ = lager:debug("PUT FSM force_stop: ~p", [Res]),
+            _ = lager:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
             error({Type, Error})
-            %% {{halt, 503}, RD, Ctx, Pid}
     end.
 
 %% @doc the head is PUT copy path
