@@ -274,7 +274,7 @@ waiting_update_command({gc_specific_manifest, UUID}, _From,
                   riak_cs_gc:gc_specific_manifests([UUID], RiakObj,
                                                    Bucket, Key, RcPid)
           end,
-    {reply, Res, waiting_update_command, State}.
+    {stop, normal, Res, State}.
 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.

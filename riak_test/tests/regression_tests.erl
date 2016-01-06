@@ -169,11 +169,10 @@ verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
     ok = gen_tcp:close(Socket),
     %% This wait is just for convenience
     timer:sleep(1000),
-    retry(8, 4096,
-          fun() ->
-                  [[{UUID, Mx}]] = get_manifests(RiakNodes, BucketName, Key),
-                  scheduled_delete =:= Mx?MANIFEST.state
-          end),
+    rt:wait_until(fun() ->
+                          [[{UUID, Mx}]] = get_manifests(RiakNodes, BucketName, Key),
+                          scheduled_delete =:= Mx?MANIFEST.state
+                  end, 8, 4096),
 
     Pbc = rt:pbc('dev1@127.0.0.1'),
 
@@ -197,17 +196,6 @@ verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
     lager:info("cs770 verification ok", []),
     ?assertEqual(ok, erlcloud_s3:delete_bucket(BucketName, UserConfig)),
     ok.
-
-retry(0, _, _) ->
-    throw(retry_over);
-retry(N, Interval, Fun) ->
-    case Fun() of
-        false ->
-            timer:sleep(Interval),
-            retry(N-1, Interval, Fun);
-        true ->
-            true
-    end.
 
 all_manifests_in_gc_bucket(Pbc) ->
     {ok, Keys} = riakc_pb_socket:list_keys(Pbc, ?GC_BUCKET),
