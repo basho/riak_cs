@@ -174,7 +174,7 @@ verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
                           scheduled_delete =:= Mx?MANIFEST.state
                   end, 8, 4096),
 
-    Pbc = rt:pbc('dev1@127.0.0.1'),
+    Pbc = rtcs:pbc(RiakNodes, objects, BucketName),
 
     %% verify that object is also stored in latest GC bucket
     Ms = all_manifests_in_gc_bucket(Pbc),
@@ -209,6 +209,12 @@ all_manifests_in_gc_bucket(Pbc) ->
     lists:flatten(Ms).
 
 get_manifests(RiakNodes, BucketName, Key) ->
+    rt:wait_until(fun() ->
+                          case rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key) of
+                              {ok, _} -> true;
+                              Error -> Error
+                          end
+                  end, 8, 500),
     {ok, Obj} = rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key),
     %% Assuming no tombstone;
     [binary_to_term(V) || {_, V} <- riakc_obj:get_contents(Obj),
