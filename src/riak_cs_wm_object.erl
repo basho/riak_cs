@@ -343,7 +343,18 @@ handle_normal_put(RD, Ctx) ->
     Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
-    accept_streambody(RD, Ctx, Pid, wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size())).
+    try
+        accept_streambody(RD, Ctx, Pid,
+                          wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()))
+    catch
+        Type:Error ->
+            %% Want to catch mochiweb_socket:recv() returns {error,
+            %% einval} or disconnected stuff, any errors prevents this
+            %% manifests from being uploaded anymore
+            Res = riak_cs_put_fsm:force_stop(Pid),
+            _ = lager:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
+            error({Type, Error})
+    end.
 
 %% @doc the head is PUT copy path
 -spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary()) ->

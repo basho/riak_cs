@@ -348,8 +348,11 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(current_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
-handle_sync_event(force_stop, _From, _StateName, State) ->
-    {stop, normal, ok, State};
+handle_sync_event(force_stop, _From, _StateName, State = #state{mani_pid=ManiPid,
+                                                                uuid=UUID}) ->
+    Res = riak_cs_manifest_fsm:gc_specific_manifest(ManiPid, UUID),
+    lager:debug("Manifest collection on upload failure: ~p", [Res]),
+    {stop, normal, Res, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.

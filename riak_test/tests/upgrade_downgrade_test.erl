@@ -51,6 +51,9 @@ confirm() ->
          ok = rt:upgrade(RiakNode, RiakCurrentVsn),
          rt:wait_for_service(RiakNode, riak_kv),
          ok = rtcs_config:upgrade_cs(N, AdminCreds),
+         rtcs:set_advanced_conf({cs, current, N},
+                                [{riak_cs,
+                                  [{riak_host, {"127.0.0.1", rtcs_config:pb_port(1)}}]}]),
          rtcs_exec:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],
