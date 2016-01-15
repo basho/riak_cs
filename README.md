@@ -28,8 +28,8 @@ tested with Riak CS:
 - [s3curl](http://aws.amazon.com/code/128)
 - [boto](https://github.com/boto/boto)
 - [erlcloud](https://github.com/basho/erlcloud)
-- [AWS Java SDK](http://aws.amazon.com/sdkforjava/)
-- [AWS Ruby SDK](http://aws.amazon.com/sdkforruby/)
+- [AWS Java SDK](http://aws.amazon.com/sdk-for-java/)
+- [AWS Ruby SDK](http://aws.amazon.com/sdk-for-ruby/)
 - [Fog](http://fog.io/)
 
 ## Administrative interface
@@ -79,7 +79,7 @@ tag. *e.g.* For the *1.3.0* release use the following command:
 
 Below, you'll find a direct link to a guide to quickly getting started
 with Riak CS. For more information about Riak CS please visit our
-[docs](http://docs.basho.com/riakcs/latest).
+[docs](http://docs.basho.com/riakcs/latest/).
 
 # Riak CS Fast Track
 
