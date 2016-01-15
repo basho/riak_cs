@@ -27,8 +27,6 @@
 %% application API
 -export([start/2,
          stop/1,
-         sanity_check/2,
-         check_bucket_props/2,
          atoms_for_check_bucket_props/0]).
 
 -include("riak_cs.hrl").
@@ -57,14 +55,11 @@ stop(_State) ->
 sanity_check(true, {ok, true}) ->
     riak_cs_sup:start_link();
 sanity_check(false, _) ->
-    _ = lager:error("You must update your Riak CS app.config. Please see the"
+    _ = lager:error("You must update your Riak CS riak-cs.conf. Please see the"
                     "release notes for more information on updating you"
                     "configuration."),
     {error, bad_config};
 sanity_check(true, {ok, false}) ->
-        _ = lager:error("Invalid Riak bucket properties detected. Please "
-                        "verify that allow_mult is set to true for all "
-                        "buckets."),
     {error, invalid_bucket_props};
 sanity_check(true, {error, Reason}) ->
         _ = lager:error("Could not verify bucket properties. Error was"
@@ -83,15 +78,28 @@ get_env_response_to_bool(_) ->
 
 -spec check_bucket_props() -> {ok, boolean()} | {error, term()}.
 check_bucket_props() ->
-    Buckets = [?USER_BUCKET,
-               ?ACCESS_BUCKET,
-               ?STORAGE_BUCKET,
-               ?BUCKETS_BUCKET],
     {ok, MasterPbc} = riak_connection(),
     try
-        Results = [check_bucket_props(Bucket, MasterPbc) ||
-                   Bucket <- Buckets],
-        lists:foldl(fun promote_errors/2, {ok, true}, Results)
+        case riakc_pb_socket:get_bucket_type(MasterPbc, <<"default">>) of
+            {ok, DefaultProps} ->
+                _ = lager:info("Checking default bucket props...", []),
+                _ = lager:debug("default bucket props: ~p", [DefaultProps]),
+                CheckResult = [check_prop(Property, DefaultProps)
+                               || Property <- [{dvv_enabled, true, false},
+                                               {allow_mult, true, true},
+                                               {last_write_wins, false, true}]],
+                case CheckResult of
+                    [true, true, true] ->
+                        _ = lager:debug("Default bucket type was"
+                                        " already configured correctly."),
+                        {ok, true};
+                    _ ->
+                        _ = lager:error("Default bucket type is not properly configured"),
+                        {ok, false}
+                end;
+            {error, _} = E ->
+                E
+        end
     after
         riakc_pb_socket:stop(MasterPbc)
     end.
@@ -101,34 +109,24 @@ atoms_for_check_bucket_props() ->
     [riak_core_util, chash_std_keyfun,
      riak_kv_wm_link_walker, mapreduce_linkfun].
 
-promote_errors(_Elem, {error, _Reason}=E) ->
-    E;
-promote_errors({error, _Reason}=E, _Acc) ->
-    E;
-promote_errors({ok, false}=F, _Acc) ->
-    F;
-promote_errors({ok, true}, Acc) ->
-    Acc.
-
--spec check_bucket_props(binary(), pid()) -> {ok, boolean()} | {error, term()}.
-check_bucket_props(Bucket, MasterPbc) ->
-    case catch riakc_pb_socket:get_bucket(MasterPbc, Bucket) of
-        {ok, Props} ->
-            case lists:keyfind(allow_mult, 1, Props) of
-                {allow_mult, true} ->
-                    _ = lager:debug("~s bucket was"
-                                    " already configured correctly.",
-                                    [Bucket]),
-                    {ok, true};
-                _ ->
-                    _ = lager:warning("~p is misconfigured", [Bucket]),
-                    {ok, false}
-            end;
-        {error, Reason}=E ->
-            _ = lager:warning(
-                  "Unable to verify ~s bucket settings (~p).",
-                  [Bucket, Reason]),
-            E
+-spec check_prop({atom(), boolean(), boolean()}, proplists:proplist()) -> boolean().
+check_prop({Key, ShouldBe, IsMust}, Props) ->
+    case lists:keyfind(Key, 1, Props) of
+        {Key, ShouldBe} ->
+            true;
+        {Key, Current} when not IsMust ->
+            _ = lager:warning("~p is strongly recommended to be ~p (currently ~p)",
+                              [Key, ShouldBe, Current]),
+            true;
+        false ->
+            _ = lager:warning("~p is strongly recommended to be ~p (currently undefined)",
+                              [Key, ShouldBe]),
+            true;
+        _ when IsMust ->
+            _ = lager:error("Invalid Riak bucket properties detected. Please "
+                            "verify that riak.conf has `buckets.default.~p = ~p`.",
+                            [Key, ShouldBe]),
+            false
     end.
 
 riak_connection() ->
