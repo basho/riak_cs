@@ -29,6 +29,7 @@
 %%       [{write_concurrency, 2},
 %%        {duration_sec, 30},
 %%        {leave_and_join, 0}, %% number of cluster membership change during the benchmark
+%%        {dvv_enabled, true},
 %%        {version, previous}]
 %%        %%{version, current}]
 %%      },
@@ -52,12 +53,20 @@ confirm() ->
     Duration = proplists:get_value(duration_sec, RTConfig, 16),
     ?assert(is_integer(Duration) andalso Duration >= 0),
 
+    DVVEnabled = proplists:get_value(dvv_enabled, RTConfig, true),
+    ?assert(is_boolean(DVVEnabled)),
+
     Config = [{cs,
                [{riak_cs,
                  [{leeway_seconds, 5},
                   {gc_interval, 10},
                   {connection_pools, [{request_pool, {Concurrency*2 + 5, 0}}]}
-                 ]}]}],
+                 ]}]},
+              {riak,
+               [{riak_core,
+                 [{default_bucket_props,
+                   [{allow_mult, true}, {dvv_enabled, DVVEnabled}]}]}
+               ]}],
     {UserConfig, {RiakNodes, CSNodes, _Stanchion}} =
         case proplists:get_value(version, RTConfig, current) of
             current ->
@@ -79,7 +88,8 @@ confirm() ->
     lager:info("====================== run benchmark ====================="),
     {ok, Pid} = start_stats_checker(RiakNodes),
 
-    lager:info("write_concurrency: ~p, write_interval: ~p msec", [Concurrency, Interval]),
+    lager:info("write_concurrency: ~p, write_interval: ~p msec, DVV: ~p",
+               [Concurrency, Interval, DVVEnabled]),
 
     Writers = [start_object_writer(UserConfig, Interval) || _ <- lists:seq(1, Concurrency)],
     {ok, Reader} = start_object_reader(UserConfig),
@@ -104,9 +114,13 @@ confirm() ->
     %% Just test sibling resolver, for a major case of manifests
     RawManifestBucket = rc_helper:to_riak_bucket(objects, ?TEST_BUCKET),
     RawKey = ?KEY_SINGLE_BLOCK,
-    R0 = rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
-                  [RawManifestBucket, RawKey]),
-    ?assertEqual(ok, R0),
+    case rpc:call(hd(CSNodes), riak_cs_console, resolve_siblings,
+                  [RawManifestBucket, RawKey]) of
+        ok -> ok;
+        {error, not_supported} ->
+            _ = lager:info("resolve_siblings does not suport multibag yet, skip it"),
+            ok
+    end,
 
     %% tearing down the stage
     erlcloud_s3:delete_object(?TEST_BUCKET, ?KEY_SINGLE_BLOCK, UserConfig),

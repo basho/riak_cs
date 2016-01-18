@@ -104,6 +104,10 @@ migrate_nodes_to_cs20_with_kv14(AdminCreds, RiakNodes) ->
          N = rtcs_dev:node_id(RiakNode),
          rtcs_exec:stop_cs(N, previous),
          ok = rtcs_config:upgrade_cs(N, AdminCreds),
+         %% actually after CS 2.1.1
+         rtcs:set_advanced_conf({cs, current, N},
+                                [{riak_cs,
+                                  [{riak_host, {"127.0.0.1", rtcs_config:pb_port(1)}}]}]),
          rtcs_exec:start_cs(N, current)
      end
      || RiakNode <- RiakNodes],

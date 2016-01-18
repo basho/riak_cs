@@ -300,9 +300,13 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     fi
 fi
 
-if [ -d "${cuttlefish_conf_dir}" ]; then
+#prefer vm.args if it exists
+if [ -f "${cs_etc_dir}/vm.args" ]; then
+    vmargs="${cs_etc_dir}/vm.args"
+elif [ -d "${cuttlefish_conf_dir}" ]; then
     vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
 fi
+
 
 if [ -f "${vmargs}" ]; then
     node_name="`egrep '^\-s?name' "${vmargs}" 2>/dev/null | cut -d ' ' -f 2`"
@@ -491,9 +495,15 @@ if [ 1 -eq $get_logs ]; then
     cd "${start_dir}"/"${debug_dir}"/logs
 
     # if not already made, make a flat, searchable version of the app.config
-    if [ -z "$riak_epaths" -a -d "cuttlefish_conf_dir" ]; then
-      appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
-      riak_epaths=`make_app_epaths "${appconfig}"`
+    if [ -z "$riak_epaths" ]; then
+        #prefer app.config if it exists
+        if [ -f "${cs_etc_dir}/app.config" ]; then
+            appconfig="${cs_etc_dir}/app.config"
+            riak_epaths=`make_app_epaths "${appconfig}"`
+        elif [  -d "${cuttlefish_conf_dir}" ]; then
+            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+            riak_epaths=`make_app_epaths "${appconfig}"`
+        fi
     fi
 
     # grab a listing of the log directory to show if there are crash dumps
@@ -522,7 +532,7 @@ if [ 1 -eq $get_logs ]; then
 
     # Lager info and error files
     new_format_lager_files="`epath 'lager handlers lager_file_backend file' "$riak_epaths" | sed -e 's/^"//' -e 's/".*$//'`"
-    if [ -z "$riak_epath" ]; then
+    if [ -z "$riak_epaths" ]; then
         lager_files=""
     elif [ -z "$new_format_lager_files" ]; then
         lager_files="`epath 'lager handlers lager_file_backend' "$riak_epaths" | cut -d' ' -f 1 | sed -e 's/^"//' -e 's/".*$//'`"
@@ -539,7 +549,7 @@ if [ 1 -eq $get_logs ]; then
             fi
 
             lager_file="`echo $lager_path | awk -F/ '{print $NF}'`"
-            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/./|/|'`"
+            lager_dir="`echo $lager_path | awk -F/$lager_file '{print $1}'|sed 's|/\./|/|'`"
             if [ "$cs_log_dir" != "$lager_dir" ]; then
                 ls -1 "${lager_dir}" | grep -q "${lager_file}"
                 if [ 0 -eq $? ]; then

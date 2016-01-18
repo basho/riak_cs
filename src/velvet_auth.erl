@@ -26,30 +26,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([authenticate/2,
-         request_signature/4]).
+-export([request_signature/4]).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
-
--spec authenticate(term(), [string()]) -> ok | {error, atom()}.
-authenticate(RD, [KeyId, Signature]) ->
-    case riak_cs_config:admin_creds() of
-        {ok, {AdminKeyId, AdminSecret}} ->
-            CalculatedSignature = signature(AdminSecret, RD),
-            _ = lager:debug("Presented Signature: ~p~nCalculated Signature: ~p~n",
-                            [Signature, CalculatedSignature]),
-            case KeyId == AdminKeyId andalso
-                check_auth(Signature, CalculatedSignature) of
-                true ->
-                    ok;
-                _ ->
-                    {error, invalid_authentication}
-            end;
-        _ ->
-            {error, invalid_authentication}
-    end.
 
 %% Calculate a signature for inclusion in a client request.
 -type http_verb() :: 'GET' | 'HEAD' | 'PUT' | 'POST' | 'DELETE'.
@@ -90,49 +71,6 @@ request_signature(HttpVerb, RawHeaders, Path, KeyData) ->
 
     base64:encode_to_string(
       riak_cs_utils:sha_mac(KeyData, STS)).
-
-%% ===================================================================
-%% Internal functions
-%% ===================================================================
-
-signature(KeyData, RD) ->
-    Headers = normalize_headers(get_request_headers(RD)),
-    BashoHeaders = extract_basho_headers(Headers),
-    Resource = wrq:path(RD),
-    case proplists:is_defined("x-basho-date", Headers) of
-        true ->
-            Date = "\n";
-        false ->
-            Date = [wrq:get_req_header("date", RD), "\n"]
-    end,
-    case wrq:get_req_header("content-md5", RD) of
-        undefined ->
-            CMD5 = [];
-        CMD5 ->
-            ok
-    end,
-    case wrq:get_req_header("content-type", RD) of
-        undefined ->
-            ContentType = [];
-        ContentType ->
-            ok
-    end,
-    STS = [atom_to_list(wrq:method(RD)), "\n",
-           CMD5,
-           "\n",
-           ContentType,
-           "\n",
-           Date,
-           BashoHeaders,
-           Resource],
-    base64:encode_to_string(
-      riak_cs_utils:sha_mac(KeyData, STS)).
-
-check_auth(PresentedSignature, CalculatedSignature) ->
-    PresentedSignature == CalculatedSignature.
-
-get_request_headers(RD) ->
-    mochiweb_headers:to_list(wrq:req_headers(RD)).
 
 normalize_headers(Headers) ->
     FilterFun =

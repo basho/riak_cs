@@ -12,7 +12,7 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.ssl"),
     cuttlefish_unit:assert_config(Config, "riak_cs.anonymous_user_creation", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.admin_key", "admin-key"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.admin_secret", "admin-secret"),
+    cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_secret"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
@@ -61,6 +61,8 @@ default_config_test() ->
                                                                    {size, 10485760},
                                                                    {date, "$D0"},
                                                                    {count, 5}]),
+   cuttlefish_unit:assert_not_configured(Config, "riak_cs.supercluster_members"),
+   cuttlefish_unit:assert_config(Config, "riak_cs.supercluster_weight_refresh_interval", 900),
 %%    cuttlefish_unit:assert_config(Config, "vm_args.+scl", false),
     ok.
 
@@ -217,6 +219,50 @@ wm_log_config_test_() ->
                                  no_alog))}
              ]
      end}.
+
+supercluster_members_test_() ->
+    [{"One bag",
+      fun() ->
+              Conf = [{["supercluster", "member", "bag-A"], "192.168.0.101:8087"}],
+              Config = cuttlefish_unit:generate_templated_config(
+                         schema_files(), Conf, context()),
+              cuttlefish_unit:assert_config(Config, "riak_cs.supercluster_members",
+                                            [{"bag-A", "192.168.0.101", 8087}])
+      end},
+     {"Two bags",
+      fun() ->
+              Conf = [{["supercluster", "member", "bag-A"], "192.168.0.101:18087"},
+                      {["supercluster", "member", "bag-B"], "192.168.0.102:28087"}],
+              Config = cuttlefish_unit:generate_templated_config(
+                         schema_files(), Conf, context()),
+              cuttlefish_unit:assert_config(Config, "riak_cs.supercluster_members",
+                                            [{"bag-A", "192.168.0.101", 18087},
+                                             {"bag-B", "192.168.0.102", 28087}])
+      end},
+     {"FQDN for host part",
+      fun() ->
+              Conf = [{["supercluster", "member", "bag-A"], "riak-A1.example.com:8087"}],
+              Config = cuttlefish_unit:generate_templated_config(
+                         schema_files(), Conf, context()),
+              cuttlefish_unit:assert_config(Config, "riak_cs.supercluster_members",
+                                            [{"bag-A", "riak-A1.example.com", 8087}])
+      end}
+    ].
+
+supercluster_weight_refresh_interval_test_() ->
+    [fun() ->
+             Conf = [{["supercluster", "weight_refresh_interval"], "5s"}],
+             Config = cuttlefish_unit:generate_templated_config(
+                        schema_files(), Conf, context()),
+             cuttlefish_unit:assert_config(
+               Config, "riak_cs.supercluster_weight_refresh_interval", 5) end,
+     fun() ->
+             Conf = [{["supercluster", "weight_refresh_interval"], "1h"}],
+             Config = cuttlefish_unit:generate_templated_config(
+                        schema_files(), Conf, context()),
+             cuttlefish_unit:assert_config(
+               Config, "riak_cs.supercluster_weight_refresh_interval", 3600) end
+    ].
 
 schema_files() ->
     ["../rel/files/riak_cs.schema"].

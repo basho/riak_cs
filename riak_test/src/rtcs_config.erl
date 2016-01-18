@@ -77,6 +77,11 @@ cs_port(Node) ->
 
 stanchion_port() -> 9095.
 
+riak_conf() ->
+    [{"ring_size", "8"},
+     {"buckets.default.allow_mult", "true"},
+     {"buckets.default.merge_strategy", "2"}].
+
 riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),
@@ -84,24 +89,22 @@ riak_config(CustomConfig) ->
 
 riak_config() ->
     riak_config(
+      current,
       ?CS_CURRENT,
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
 
-riak_config(CsVsn, oss, Backend) ->
-    riak_oss_config(CsVsn, Backend);
-riak_config(CsVsn, ee, Backend) ->
-    riak_ee_config(CsVsn, Backend).
+riak_config(Vsn, CsVsn, oss, Backend) ->
+    riak_oss_config(Vsn, CsVsn, Backend);
+riak_config(Vsn, CsVsn, ee, Backend) ->
+    riak_ee_config(Vsn, CsVsn, Backend).
 
-riak_oss_config(CsVsn, Backend) ->
+riak_oss_config(Vsn, CsVsn, Backend) ->
     CSPath = rt_config:get(CsVsn),
     AddPaths = filelib:wildcard(CSPath ++ "/dev/dev1/lib/riak_cs*/ebin"),
     [
      lager_config(),
-     {riak_core,
-      [{default_bucket_props, [{allow_mult, true}]},
-       {ring_creation_size, 8}]
-     },
+     riak_core_config(Vsn),
      {riak_api,
       [{pb_backlog, 256}]},
      {riak_kv,
@@ -109,6 +112,14 @@ riak_oss_config(CsVsn, Backend) ->
           backend_config(CsVsn, Backend)
       }
     ].
+
+riak_core_config(current) ->
+    {riak_core, []};
+riak_core_config(previous) ->
+    {riak_core,
+     [{default_bucket_props, [{allow_mult, true}]},
+      {ring_creation_size, 8}]
+    }.
 
 backend_config(_CsVsn, memory) ->
     [{storage_backend, riak_kv_memory_backend}];
@@ -140,8 +151,8 @@ blocks_backend_config(fs) ->
 blocks_backend_config(_) ->
     {be_blocks, riak_kv_bitcask_backend, [{data_root, "./data/bitcask"}]}.
 
-riak_ee_config(CsVsn, Backend) ->
-    [repl_config() | riak_oss_config(CsVsn, Backend)].
+riak_ee_config(Vsn, CsVsn, Backend) ->
+    [repl_config() | riak_oss_config(Vsn, CsVsn, Backend)].
 
 repl_config() ->
     {riak_repl,
@@ -153,6 +164,7 @@ repl_config() ->
 
 previous_riak_config() ->
     riak_config(
+      previous,
       ?CS_PREVIOUS,
       rt_config:get(build_type, oss),
       rt_config:get(backend, {multi_backend, bitcask})).
@@ -161,11 +173,6 @@ previous_riak_config(CustomConfig) ->
     orddict:merge(fun(_, LHS, RHS) -> LHS ++ RHS end,
                   orddict:from_list(lists:sort(CustomConfig)),
                   orddict:from_list(lists:sort(previous_riak_config()))).
-
-previous_riak_config(oss, Backend) ->
-    riak_oss_config(?CS_PREVIOUS, Backend);
-previous_riak_config(ee, Backend) ->
-    riak_ee_config(?CS_PREVIOUS, Backend).
 
 previous_cs_config() ->
     previous_cs_config([], []).
@@ -333,6 +340,7 @@ devpath(stanchion, current) -> rt_config:get(?STANCHION_CURRENT);
 devpath(stanchion, previous) -> rt_config:get(?STANCHION_PREVIOUS).
 
 set_configs(NumNodes, Config, Vsn) ->
+    rtcs:set_conf({riak, Vsn}, riak_conf()),
     rt:pmap(fun(N) ->
                     rtcs_dev:update_app_config(rtcs:riak_node(N),
                                                 proplists:get_value(riak, Config)),
@@ -358,30 +366,29 @@ read_config(Vsn, N, Who) ->
              Config
      end.
 
-update_cs_config(Prefix, N, Config, {AdminKey, AdminSecret}) ->
+update_cs_config(Prefix, N, Config, {AdminKey, _AdminSecret}) ->
     CSSection = proplists:get_value(riak_cs, Config),
-    UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey, AdminSecret)} |
+    UpdConfig = [{riak_cs, update_admin_creds(CSSection, AdminKey)} |
                  proplists:delete(riak_cs, Config)],
     update_cs_config(Prefix, N, UpdConfig).
 
 update_cs_config(Prefix, N, Config) ->
     CSSection = proplists:get_value(riak_cs, Config),
     UpdConfig = [{riak_cs, update_cs_port(CSSection, N)} |
-                  proplists:delete(riak_cs, Config)],
+                 proplists:delete(riak_cs, Config)],
     update_app_config(riakcs_etcpath(Prefix, N), UpdConfig).
 
-update_admin_creds(Config, AdminKey, AdminSecret) ->
-    [{admin_key, AdminKey}, {admin_secret, AdminSecret} |
-     proplists:delete(admin_secret,
-                      proplists:delete(admin_key, Config))].
+update_admin_creds(Config, AdminKey) ->
+    [{admin_key, AdminKey}|
+     proplists:delete(admin_key, Config)].
 
 update_cs_port(Config, N) ->
     Config2 = [{riak_host, {"127.0.0.1", pb_port(N)}} | proplists:delete(riak_host, Config)],
     [{listener, {"127.0.0.1", cs_port(N)}} | proplists:delete(listener, Config2)].
 
-update_stanchion_config(Prefix, Config, {AdminKey, AdminSecret}) ->
+update_stanchion_config(Prefix, Config, {AdminKey, _AdminSecret}) ->
     StanchionSection = proplists:get_value(stanchion, Config),
-    UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey, AdminSecret)} |
+    UpdConfig = [{stanchion, update_admin_creds(StanchionSection, AdminKey)} |
                  proplists:delete(stanchion, Config)],
     update_stanchion_config(Prefix, UpdConfig).
 

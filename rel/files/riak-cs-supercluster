@@ -1,12 +1,5 @@
 #!/bin/sh
 
-cat<<EOS
-### WARNING ################################################################
-# This command has been deprecated and will be removed in a future release.
-# Use "riak-cs-supercluster <subcommand>" instead of this.
-############################################################################
-EOS
-
 # Pull environment for this install
 . "{{runner_base_dir}}/lib/env.sh"
 
@@ -27,12 +20,8 @@ case "$1" in
 
         $NODETOOL rpc riak_cs_multibag_console "$@"
         ;;
-    list-bags)
-        node_up_check
-        $NODETOOL rpc riak_cs_multibag_console list-members
-        ;;
     *)
-        echo "Usage: $SCRIPT { list-members |  weight | weight-manifest | weight-block | refresh | list-bags }"
+        echo "Usage: $SCRIPT { list-members |  weight | weight-manifest | weight-block | refresh }"
         exit 1
         ;;
 esac

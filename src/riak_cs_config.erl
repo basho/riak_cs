@@ -56,6 +56,7 @@
          queue_if_disconnected/0,
          auto_reconnect/0,
          is_multibag_enabled/0,
+         set_multibag_appenv/0,
          max_buckets_per_user/0,
          max_key_length/0,
          read_before_last_manifest_write/0,
@@ -142,32 +143,10 @@ anonymous_user_creation() ->
     get_env(riak_cs, anonymous_user_creation, false).
 
 %% @doc Return the credentials of the admin user
--spec admin_creds() -> {ok, {string(), string()}} | {error, term()}.
+-spec admin_creds() -> {ok, {string()|undefined, string()|undefined}}.
 admin_creds() ->
-    admin_creds_response(
-      get_env(riak_cs, admin_key, undefined),
-      get_env(riak_cs, admin_secret, undefined)).
-
--spec admin_creds_response(term(), term()) -> {ok, {term(), term()}} |
-                                              {error, atom()}.
-admin_creds_response(undefined, _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response([], _) ->
-    _ = lager:warning("The admin user's key id"
-                      "has not been specified."),
-    {error, admin_key_undefined};
-admin_creds_response(_, undefined) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(_, []) ->
-    _ = lager:warning("The admin user's secret"
-                      "has not been specified."),
-    {error, admin_secret_undefined};
-admin_creds_response(Key, Secret) ->
-    {ok, {Key, Secret}}.
+    {ok, {get_env(riak_cs, admin_key, undefined),
+          get_env(riak_cs, admin_secret, undefined)}}.
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
@@ -366,6 +345,20 @@ queue_if_disconnected() ->
 -spec is_multibag_enabled() -> boolean().
 is_multibag_enabled() ->
     application:get_env(riak_cs_multibag, bags) =/= undefined.
+
+%% Set riak_cs_multibag app env vars for backward compatibility
+%% to hide any bags from user-facing (TM) parts.
+-spec set_multibag_appenv() -> ok.
+set_multibag_appenv() ->
+    case application:get_env(riak_cs, supercluster_members) of
+        undefined -> ok;
+        {ok, Bags} -> application:set_env(riak_cs_multibag, bags, Bags)
+    end,
+    case application:get_env(riak_cs, supercluster_weight_refresh_interval) of
+        undefined -> ok;
+        {ok, Interval} -> application:set_env(
+                            riak_cs_multibag, weight_refresh_interval, Interval)
+    end.
 
 -spec max_buckets_per_user() -> non_neg_integer() | unlimited.
 max_buckets_per_user() ->

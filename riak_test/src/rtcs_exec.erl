@@ -84,7 +84,9 @@ start_cs(N, Vsn) ->
     NodePath = rtcs_config:devpath(cs, Vsn),
     Cmd = riakcscmd(NodePath, N, "start"),
     lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    R = os:cmd(Cmd),
+    rtcs:maybe_load_intercepts(rtcs:cs_node(N)),
+    R.
 
 stop_cs(N) -> stop_cs(N, current).
 
@@ -113,6 +115,9 @@ riakcs_accesscmd(Path, N, Cmd) ->
 
 riakcs_storagecmd(Path, N, Cmd) ->
     lists:flatten(io_lib:format("~s-admin storage ~s", [riakcs_binpath(Path, N), Cmd])).
+
+riakcs_debugcmd(Path, N, Cmd) ->
+    lists:flatten(io_lib:format("~s-debug ~s", [riakcs_binpath(Path, N), Cmd])).
 
 stanchioncmd(Path, Cmd) ->
     lists:flatten(io_lib:format("~s ~s", [stanchion_binpath(Path), Cmd])).
@@ -201,7 +206,9 @@ start_stanchion() -> start_stanchion(current).
 start_stanchion(Vsn) ->
     Cmd = stanchioncmd(rtcs_config:devpath(stanchion, Vsn), "start"),
     lager:info("Running ~p", [Cmd]),
-    os:cmd(Cmd).
+    R = os:cmd(Cmd),
+    rtcs:maybe_load_intercepts(rtcs:stanchion_node()),
+    R.
 
 stop_stanchion() -> stop_stanchion(current).
 

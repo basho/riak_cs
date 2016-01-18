@@ -73,16 +73,17 @@
 
 %% @doc Admin user credentials. Admin access like /riak-cs/stats
 %% requires this entry to be set properly. The credentials specified
-%% here must match the admin credentials specified in the stanchion
-%% app.config for the system to function properly.
+%% here must match the admin credentials specified in the
+%% stanchion.conf for the system to function properly.
 {mapping, "admin.key", "riak_cs.admin_key", [
   {default, "{{admin_key}}"},
   {datatype, string}
 ]}.
 
+%% @doc admin.secret is deprecated.
 {mapping, "admin.secret", "riak_cs.admin_secret", [
-  {default, "{{admin_secret}}"},
-  {datatype, string}
+  {datatype, string},
+  hidden
 ]}.
 
 %% @doc Root host name which Riak CS accepts.
@@ -669,6 +670,41 @@
 {mapping, "platform_log_dir", "riak_cs.platform_log_dir", [
   {datatype, directory},
   {default, "{{platform_log_dir}}"}
+]}.
+
+%% == Supercluster aka Multi-bug Support ==
+
+%% @doc IP and port for supercluster members.  Specify one member for
+%% each line, in which the last token of key is member identifier and
+%% value is a PB address of Riak node to connect.
+{mapping, "supercluster.member.$member_id", "riak_cs.supercluster_members", [
+  {datatype, ip},
+  {include_default, "bag-A"},
+  {commented, {"192.168.0.101", 8087}},
+  hidden
+]}.
+
+{translation,
+ "riak_cs.supercluster_members",
+ fun(Conf) ->
+   Keys = cuttlefish_variable:fuzzy_matches(["supercluster", "member", "$member_id"], Conf),
+   case Keys of
+       [] -> undefined;
+       [_|_] -> [begin
+                     {Host, Port} = cuttlefish:conf_get(
+                                      "supercluster.member." ++ MemberId, Conf),
+                     {MemberId, Host, Port}
+                 end || {Key, MemberId} <- Keys]
+   end
+ end
+}.
+
+%% @doc Interval to refresh weight information for every supercluster member.
+{mapping, "supercluster.weight_refresh_interval", 
+ "riak_cs.supercluster_weight_refresh_interval", [
+  {default, "15m"},
+  {datatype, [{duration, s}]},
+  hidden
 ]}.
 
 %% @doc Cookie for distributed node communication.  All nodes in the

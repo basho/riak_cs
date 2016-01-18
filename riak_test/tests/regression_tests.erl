@@ -28,6 +28,7 @@
 
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include("riak_cs.hrl").
 
 -define(TEST_BUCKET_CS347, "test-bucket-cs347").
 
@@ -38,6 +39,7 @@ confirm() ->
     ok = verify_cs347(SetupInfo, "test-bucket-cs347"),
     ok = verify_cs436(SetupInfo, "test-bucket-cs436"),
     ok = verify_cs512(UserConfig, "test-bucket-cs512"),
+    ok = verify_cs770(SetupInfo, "test-bucket-cs770"),
 
     %% Append your next regression tests here
 
@@ -144,6 +146,79 @@ verify_cs512(UserConfig, BucketName) ->
     delete(UserConfig, BucketName),
     assert_notfound(UserConfig,BucketName),
     ok.
+
+verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
+    %% put object and cancel it;
+    ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    Key = "foobar",
+    lager:debug("starting cs770 verification: ~s ~s", [BucketName, Key]),    
+
+    {ok, Socket} = rtcs_object:upload(UserConfig,
+                                      {normal_partial, 3*1024*1024, 1024*1024},
+                                      BucketName, Key),
+    
+    [[{UUID, M}]] = get_manifests(RiakNodes, BucketName, Key),
+
+    %% Even if CS is smart enough to remove canceled upload, at this
+    %% time the socket will be still alive, so no cancellation logic
+    %% shouldn't be triggerred.
+    ?assertEqual(writing, M?MANIFEST.state),
+    lager:debug("UUID of ~s ~s: ~p", [BucketName, Key, UUID]),
+
+    %% Emulate socket error with {error, closed} at server
+    ok = gen_tcp:close(Socket),
+    %% This wait is just for convenience
+    timer:sleep(1000),
+    rt:wait_until(fun() ->
+                          [[{UUID, Mx}]] = get_manifests(RiakNodes, BucketName, Key),
+                          scheduled_delete =:= Mx?MANIFEST.state
+                  end, 8, 4096),
+
+    Pbc = rtcs:pbc(RiakNodes, objects, BucketName),
+
+    %% verify that object is also stored in latest GC bucket
+    Ms = all_manifests_in_gc_bucket(Pbc),
+    lager:info("Retrieved ~p manifets from GC bucket", [length(Ms)]),
+    ?assertMatch(
+       [{UUID, _}],
+       lists:filter(fun({UUID0, M1}) when UUID0 =:= UUID ->
+                            ?assertEqual(pending_delete, M1?MANIFEST.state),
+                            true;
+                       ({UUID0, _}) ->
+                            lager:debug("UUID=~p / ~p",
+                                        [mochihex:to_hex(UUID0), mochihex:to_hex(UUID)]),
+                            false;
+                       (_Other) ->
+                            lager:error("Unexpected: ~p", [_Other]),
+                            false
+                    end, Ms)),
+
+    lager:info("cs770 verification ok", []),
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(BucketName, UserConfig)),
+    ok.
+
+all_manifests_in_gc_bucket(Pbc) ->
+    {ok, Keys} = riakc_pb_socket:list_keys(Pbc, ?GC_BUCKET),
+    Ms = rt:pmap(fun(K) ->
+                         {ok, O} = riakc_pb_socket:get(Pbc, <<"riak-cs-gc">>, K),
+                         Some = [binary_to_term(V) || {_, V} <- riakc_obj:get_contents(O),
+                                                      V =/= <<>>],
+                         twop_set:to_list(twop_set:resolve(Some))
+                 end, Keys),
+    %% lager:debug("All manifests in GC buckets: ~p", [Ms]),
+    lists:flatten(Ms).
+
+get_manifests(RiakNodes, BucketName, Key) ->
+    rt:wait_until(fun() ->
+                          case rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key) of
+                              {ok, _} -> true;
+                              Error -> Error
+                          end
+                  end, 8, 500),
+    {ok, Obj} = rc_helper:get_riakc_obj(RiakNodes, objects, BucketName, Key),
+    %% Assuming no tombstone;
+    [binary_to_term(V) || {_, V} <- riakc_obj:get_contents(Obj),
+                          V =/= <<>>].
 
 put_and_get(UserConfig, BucketName, Data) ->
     erlcloud_s3:put_object(BucketName, ?KEY, Data, UserConfig),

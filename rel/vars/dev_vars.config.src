@@ -21,7 +21,6 @@
 {riak_pb_port,      @RIAKPBPORT@}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
-{admin_secret,      "admin-secret"}.
 {stanchion_ip,      "127.0.0.1"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
