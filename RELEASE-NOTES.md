@@ -5,52 +5,52 @@ This is a bugfix release.
 
 ## Bug Fixes
 
-* Remove blocks and a manifest after failure of client side,
-  e.g. upload stall, network failure between server and client, or
-  non-usual upload cancellation. If a manifest was left as writing and
-  no overwrite happened after upload canceled, then those partially
-  uploaded blocks and manifest were to be left as it was and occupies
-  certain disk space. This is fixed by adding additional error
-  handling routine to move the manifest to GC bucket by catching
-  socket error. Partially uploaded blocks and manifest will eventually
-  be deleted by garbage
-  collection. ([#770](https://github.com/basho/riak_cs/issues/770) /
-  [PR#1280](https://github.com/basho/riak_cs/pull/1280)).
-* Remove `admin.secret` from `riak-cs.conf` or `stanchion.conf`. Both
-  Riak CS and Stanchion used them to find who was the administrator,
-  with `admin.key` and `admin.secret`. Writing down `admin.secret` in
-  non-encrypted form may risk the whole system of the secret being
-  stolen. Administrator is able to (1) list all users, (2)
-  disable/enable other users, (3) changing user accounts, and (4) read
-  access and storage statistics of all users. Workaround for this
-  might be encrypting the partition that includes `/etc/riak-cs`
+* Remove blocks and manifest in cases of client-side failure, eg:
+  incomplete upload, network issues, or other unexpected transfer failures.
+  If the manifest was writing and no overwrite happened after upload canceled,
+  then the partially uploaded blocks and manifest are left as is, occupying
+  disk space. This is fixed by adding an error handling routine to move the
+  manifest to the garbage collection bucket by catching the socket error.
+  Partially uploaded blocks and manifests will eventually be deleted by
+  garbage collection. ([#770](https://github.com/basho/riak_cs/issues/770) /
+  [PR#1280](https://github.com/basho/riak_cs/pull/1280))
+* Remove `admin.secret` from riak-cs.conf and stanchion.conf. Both
+  Riak CS and Stanchion searched riak-cs.conf and stanchion.conf to
+  find who was the administrator using `admin.key` and `admin.secret`.
+  Writing down `admin.secret` in non-encrypted form compromises the
+  security of the system. The administrator is able to (1) list all
+  users, (2) disable/enable other users, (3) changing user accounts,
+  and (4) read access and storage statistics of all users. A workaround
+  for this is encrypting the partition that includes the /etc/riak-cs
   directory. ([#1274](https://github.com/basho/riak_cs/issues/1274) /
   [PR#1279](https://github.com/basho/riak_cs/issues/1279) /
-  [PR#108](https://github.com/basho/stanchion/pull/108)).
-* Forward-ported
-  [#1261](https://github.com/basho/riak_cs/issues/1261)/[PR#1263](https://github.com/basho/riak_cs/pull/1263)
-  as [PR#1266](https://github.com/basho/riak_cs/pull/1266).
+  [PR#108](https://github.com/basho/stanchion/pull/108))
+* Use /etc/riak-cs/app.config when no generated config file is found.
+  This prevents an error when using app.config/vm.args instead of
+  riak.conf, such as when upgrading from 1.5.x.
+  ([#1261](https://github.com/basho/riak_cs/issues/1261)/
+  [PR#1263](https://github.com/basho/riak_cs/pull/1263)
+  as [PR#1266](https://github.com/basho/riak_cs/pull/1266))
 * Allow any bytes (including non-UTF8 ones) in List Objects response
-  XML. List Objects API had been failing in case where an object with
-  its name including non-utf8 character was included in the
-  result. With this change, such keys are to be represented in the
-  result of List Objects as raw binaries although it may not proper
-  XML 1.0. ([#974](https://github.com/basho/riak_cs/issues/974) /
+  XML. List Objects API had been failing in cases where an object with
+  non-UTF8 characters in its name was included in the result. With this
+  change, such keys are represented in the result of List Objects as
+  raw binaries, although it may not be proper XML 1.0.
+  ([#974](https://github.com/basho/riak_cs/issues/974) /
   [PR#1255](https://github.com/basho/riak_cs/pull/1255) /
-  [PR#1275](https://github.com/basho/riak_cs/pull/1275)).
+  [PR#1275](https://github.com/basho/riak_cs/pull/1275))
 
 ## Notes on Upgrade
 
-*It is strongly recommended to remove `admin.secret` from
-`riak-cs.conf` and `stanchion.conf`, and `admin_secret` from
-`advanced.config` of Riak CS and Stanchion.* Due to #1274, Riak CS has
-small startup behaviour change. A startup check on administrator user
-was added, where a `admin.key` must be specified either an existing
-user or default `admin-key`. Otherwise, for example a non-existent
-user key, Riak CS process won't start. Also, any `admin.secret` will
-no longer matter and ignored, instead it is fetched from Riak on each
-startup. Initial procedure to create the very first account starting
-`anonymous_user_creation = true` does not change.
+* We strongly recommend removing `admin.secret` from
+  riak-cs.conf and stanchion.conf, and `admin_secret` from the
+  `advanced.config` files of Riak CS and Stanchion.
+* On startup, Riak CS now verifies that the value of `admin.key`
+  is either a valid Riak CS user key or the placeholder value
+  `admin-key`. For an user with a non-existent or invlaid user
+  key, Riak CS process won't start. Also, any `admin.secret` will
+  be ignored. The initial procedure to create the very first
+  account, starting `anonymous_user_creation = true`, does not change.
 
 #Riak S2 (Riak CS) 2.1.0 Release Notes
 
