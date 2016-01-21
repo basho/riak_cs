@@ -10,7 +10,7 @@
 
 Example to setup old and new CS:
 
-```
+```bash
 $ mkdir ~/rt
 $ cd ~/rt
 $ cd path/to/repo/riak_cs
@@ -18,26 +18,30 @@ $ cd path/to/repo/riak_cs
 $ export RIAK_CS_EE_DEPS=true
 $ riak_test/bin/rtdev-build-releases.sh
 $ riak_test/bin/rtdev-setup-releases.sh
-## make sure runtime is Basho's patched R16B02-basho5
+## make sure runtime is Basho's patched R16B02-basho<patch-for-release-build>
 $ make devrel && riak_test/bin/rtdev-current.sh
 ```
 
+*NOTE* For building Enterprise version releases, use
+`rtdev-build-releases.sh` script in `riak_cs_multibag` repository
+(private).
+
 Example to setup old and new Stanchion:
 
-```
+```bash
 $ cd path/to/repo/stanchion
 $ riak_test/bin/rtdev-build-releases.sh
 $ riak_test/bin/rtdev-setup-releases.sh
-## make sure runtime is Basho's patched R16B02-basho5
+## make sure runtime is Basho's patched R16B02-basho<patch-for-release-build>
 $ make devrel && riak_test/bin/rtdev-current.sh
 ```
 
 Example to setup 1.4.x and 2.0 as old and new Riak (maybe same as Riak
 OSS... while shell scripts are included in riak_test repo):
 
-```
+```bash
 $ mkdir ~/rt/riak_ee
-## make sure runtime is Basho's patched R16B02-basho5
+## make sure runtime is Basho's patched R16B02-basho<patch-for-release-build>
 $ tar xzf riak-ee-2.0.1.tar.gz
 $ cd riak-ee-2.0.1 && make devrel
 $ riak_test/bin/rteedev-setup-releases.sh
@@ -57,24 +61,24 @@ $ git commit -m "Add 1.4 series Riak EE"
 1. Setup a `~/.riak_test.config` file like this:
 
 ```erlang
-    {default, [
-           {rt_max_wait_time, 180000},
-           {rt_retry_delay, 1000}
-          ]}.
+{default, [
+       {rt_max_wait_time, 180000},
+       {rt_retry_delay, 1000}
+      ]}.
 
-    {rtdev, [
-         {rt_deps, [
-                    "/Users/kelly/basho/riak_test_builds/riak/deps",
-                    "deps"
-                   ]},
-         {rt_retry_delay, 500},
-         {rt_harness, rtdev},
-         {rtdev_path, [{root, "/Users/kelly/rt/riak"},
-                       {current, "/Users/kelly/rt/riak/current"},
-                       {ee_root, "/Users/kelly/rt/riak_ee"},
-                       {ee_current, "/Users/kelly/rt/riak_ee/current"}
-                      ]}
-        ]}.
+{rtdev, [
+     {rt_deps, [
+                "/Users/kelly/basho/riak_test_builds/riak/deps",
+                "deps"
+               ]},
+     {rt_retry_delay, 500},
+     {rt_harness, rtdev},
+     {rtdev_path, [{root, "/Users/kelly/rt/riak"},
+                   {current, "/Users/kelly/rt/riak/current"},
+                   {ee_root, "/Users/kelly/rt/riak_ee"},
+                   {ee_current, "/Users/kelly/rt/riak_ee/current"}
+                  ]}
+    ]}.
 
 {rtcs_dev, [
   {rt_project, "riak_cs"},
@@ -103,11 +107,21 @@ $ git commit -m "Add 1.4 series Riak EE"
      %%{build_type, oss},
      {build_type, ee},
      {flavor, basic},
+     %% {sibling_benchmark,
+     %%  [{write_concurrency, 8},
+     %%   {write_interval, 0},      % msec
+     %%   {version, current},
+     %%   %% {version, previous},
+     %%   %% {leave_and_join, 100}, % times
+     %%   %% {duration_sec, 1}
+     %%   {duration_sec, 30}
+     %%  ]
+     %% },
      {backend, {multi_backend, bitcask}}
 ]}.
 ```
 
-Running the RiakCS tests for `riak_test` use a different test harness
+Running the Riak CS tests for `riak_test` use a different test harness
 (`rtcs_dev`) than running the Riak tests and so requires a separate
 configuration section. Notice the extra `riak_cs/deps` in the
 `rt_deps` section. `RT_DEST_DIR` should be replaced by the path used
@@ -125,7 +139,7 @@ The `backend` option is used to indicate which Riak backend option
 should be used. The valid options are `{multi_backend, bitcask}` and
 `memory`. `{multi_backend, bitcask}` is the default option and
 represents the default recommended backed for production use of
-RiakCS.
+Riak CS.
 
 The `test_paths` option is a list of fully-qualified paths which
 `riak_test` will use to find additional tests. Since the Riak CS tests
@@ -134,15 +148,16 @@ point to the compiled tests in `riak_cs/riak_test/ebin`.
 
 The `flavor` option is used to vary environment setup.  Some
 `riak_test` modules use only S3 API and does not depend on details,
-such as number of riak nodes, riak's backend, MDC or not, multibag or
-not.  By adding flavor setting to riak_test config, such generic test
-cases can be utilized to verify Riak CS's behavior in various setups.
-The scope of setup functions affected by flavors are `rtcs:setup/1`
-and `rtcs:setup/2`.  Other setup functions, for example
-`rtcs:setup2x2` used by `repl_test`, does not change their behavior.
-The valid option values are `basic` (default) and `{multibag, disjoint}`.
-`{multibag, disjoint}` setup multibag environment with 3 bags, the master
-bag with two riak nodes and two additional bags with one riak node each.
+such as number of riak nodes, riak's backend, MDC or not, multibag
+(aka supercluster) or not.  By adding flavor setting to riak_test
+config, such generic test cases can be utilized to verify Riak CS's
+behavior in various setups.  The scope of setup functions affected by
+flavors are `rtcs:setup/1` and `rtcs:setup/2`.  Other setup functions,
+for example `rtcs:setup2x2` used by `repl_v3_test`, does not change
+their behavior.  The valid option values are `basic` (default) and
+`{multibag, disjoint}`.  `{multibag, disjoint}` setup multibag
+environment with 3 bags, the master bag with two riak nodes and two
+additional bags with one riak node each.
 
 
 1. To build the `riak_test` files use the `compile-riak-test` Makefile
@@ -154,7 +169,7 @@ bag with two riak nodes and two additional bags with one riak node each.
 
 * Your $PATH must have `erl` available.
 * Your $PATH must have a version of Python available that also has
-  access to the Boto S3 libraries.
+  vertualenv tools and access to the Boto S3 libraries.
 * Your $PATH must have Clojure's "lein" available.  "lein" is the main
   executable for the Leinigen tool.
 * Your system must have libevent installed. If you see an error for a 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-These tests are written using a copy of
+These tests are written using a modified copy of
 [clj-aws-s3](https://github.com/weavejester/clj-aws-s3) at tag 0.3.10,
 for S3 API call. On the other hand, Riak CS specific administrative API
 call is implemented in

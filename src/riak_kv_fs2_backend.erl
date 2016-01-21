@@ -20,7 +20,9 @@
 %%
 %% -------------------------------------------------------------------
 
-% @doc riak_kv_fs2_backend is filesystem storage system, Mark III
+%% @doc riak_kv_fs2_backend is filesystem storage system, Mark III
+
+%% Deprecated
 
 -module(riak_kv_fs2_backend).
 %% -behavior(riak_kv_backend). % Not building within riak_kv

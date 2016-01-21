@@ -1,9 +1,9 @@
-Welcome to Riak CS.
+Welcome to Riak CS or Riak S2.
 
 # Overview
 
-Riak CS is an object storage system built on top of Riak. It
-facilitates storing large objects in Riak and presents an
+Riak CS is an object storage system built on top of Riak KV. It
+facilitates storing large objects in Riak KV and presents an
 S3-compatible interface. It also provides multi-tenancy features such
 as user accounts, authentication, access control mechanisms, and
 per account usage reporting.

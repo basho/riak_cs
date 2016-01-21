@@ -20,9 +20,12 @@
 
 %% @doc
 
-%% TODO:
-%% 1. optimize for when list keys returns [], we shouldn't
-%% even have to do map-reduce then
+%% TODO: Deprecated/stale module at the time at 2.1 release, not used and
+%%       should be removed.
+%% - Remove configuration item fold_objects_for_list_keys
+%% - Remove this module and riak_cs_list_objects_ets_cache and
+%%   riak_cs_list_objects_ets_cache_sup, with suitable supervisor
+%%   tree change.
 
 -module(riak_cs_list_objects_fsm).
 
