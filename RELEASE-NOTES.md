@@ -1,3 +1,53 @@
+#Riak S2 (Riak CS) 2.1.1 Release Notes
+
+## General Information
+This is a bugfix release.
+
+## Bug Fixes
+
+* Remove blocks and a manifest after client failure. If a manifest was
+  left as writing and no overwrite happened after upload canceled,
+  then those partially uploaded blocks and manifest were to be left as
+  it was and occupies certain disk space. This is fixed by adding
+  additional error handling routine to move the manifest to GC bucket
+  by catching socket error. Partially uploaded blocks and manifest
+  will eventually be deleted by garbage
+  collection. ([#770](https://github.com/basho/riak_cs/issues/770) /
+  [PR#1280](https://github.com/basho/riak_cs/pull/1280)).
+* Remove `admin.secret` from `riak-cs.conf` or `stanchion.conf`. Both
+  Riak CS and Stanchion used them to find who was the administrator,
+  with `admin.key` and `admin.secret`. Writing down `admin.secret` in
+  non-encrypted form may risk the whole system of the secret being
+  stolen. Administrator is able to (1) list all users, (2)
+  disable/enable other users, (3) changing user accounts. Workaround
+  for this might be encrypting the partition that includes
+  `/etc/riak-cs`
+  directory. ([#1274](https://github.com/basho/riak_cs/issues/1274) /
+  [PR#1279](https://github.com/basho/riak_cs/issues/1279) /
+  [PR#108](https://github.com/basho/stanchion/pull/108)).
+* Forward-ported
+  [#1261](https://github.com/basho/riak_cs/issues/)/[PR#1263](https://github.com/basho/riak_cs/pull/1263)
+  as [PR#1266](https://github.com/basho/riak_cs/pull/1266).
+* Allow any bytes (including non-UTF8 ones) in List Objects response
+  XML. List Objects API had been failing in case where an object with
+  its name including non-utf8 character was included in the
+  result. With this change, such keys are to be represented in the
+  result of List Objects as raw binaries although it may not proper
+  XML 1.0. ([#974](https://github.com/basho/riak_cs/issues/974) /
+  [PR#1255](https://github.com/basho/riak_cs/pull/1255) /
+  [PR#1275](https://github.com/basho/riak_cs/pull/1275)).
+
+## Notes on Upgrade
+
+Due to #1274, Riak CS has small startup behaviour change. A startup
+check on administrator user was added, where a `admin.key` must be
+specified either an existing user or default `admin-key`. Otherwise,
+for example a non-existent user key, Riak CS process won't
+start. Also, any `admin.secret` will no longer matter and ignored,
+instead it is fetched from Riak on each startup. Initial procedure to
+create the very first account starting `anonymous_user_creation =
+true` does not change.
+
 #Riak S2 (Riak CS) 2.1.0 Release Notes
 
 Released October 13, 2015.
