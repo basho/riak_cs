@@ -169,7 +169,7 @@ additional bags with one riak node each.
 
 * Your $PATH must have `erl` available.
 * Your $PATH must have a version of Python available that also has
-  vertualenv tools and access to the Boto S3 libraries.
+  virtualenv tool and access to the Boto S3 libraries.
 * Your $PATH must have Clojure's "lein" available.  "lein" is the main
   executable for the Leinigen tool.
 * Your system must have libevent installed. If you see an error for a 
