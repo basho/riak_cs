@@ -90,17 +90,18 @@ urldecode_digit(D)  -> D.
 -ifdef(TEST).
 equal_strip_amend_test() ->
     %% TODO: rewrite this with EQC
-    [begin
-         UUID = druuid:v4(),
-         Encoded = base64url:encode(UUID),
-         ?assertEqual(nomatch, binary:match(Encoded, [<<"=">>, <<"+">>, <<"/">>])),
-         ?assertEqual(UUID, base64url:decode(Encoded))
-     end || _<- lists:seq(1, 1024)],
-    [begin
-         UUID = druuid:v4(),
-         Encoded = base64url:encode_to_string(UUID),
-         %% ?assertEqual(nomatch, binary:match(Encoded, [<<"=">>, <<"+">>, <<"/">>])),
-         ?assertEqual(UUID, base64url:decode(Encoded))
-     end || _<- lists:seq(1, 1024)].
+    _ = [begin
+             UUID = druuid:v4(),
+             Encoded = base64url:encode(UUID),
+             ?assertEqual(nomatch, binary:match(Encoded, [<<"=">>, <<"+">>, <<"/">>])),
+             ?assertEqual(UUID, base64url:decode(Encoded))
+         end || _<- lists:seq(1, 1024)],
+    _ = [begin
+             UUID = druuid:v4(),
+             Encoded = base64url:encode_to_string(UUID),
+             ?assertEqual(nomatch, re:run(Encoded, "(=\\+\\/)")),
+             ?assertEqual(UUID, base64url:decode(Encoded))
+         end || _<- lists:seq(1, 1024)],
+    ok.
 
 -endif.
