@@ -51,7 +51,6 @@
          resolve_robj_siblings/1,
          riak_connection/0,
          riak_connection/1,
-         safe_base64_decode/1,
          safe_base64url_decode/1,
          safe_list_to_integer/1,
          set_object_acl/5,
@@ -500,15 +499,6 @@ active_to_bool({error, notfound}) ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
-
--spec safe_base64_decode(binary() | string()) -> {ok, binary()} | bad.
-safe_base64_decode(Str) ->
-    try
-        X = base64:decode(Str),
-        {ok, X}
-    catch _:_ ->
-            bad
-    end.
 
 -spec safe_base64url_decode(binary() | string()) -> {ok, binary()} | bad.
 safe_base64url_decode(Str) ->

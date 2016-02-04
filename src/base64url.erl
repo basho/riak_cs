@@ -27,30 +27,47 @@
 
 -module(base64url).
 
+-include_lib("eunit/include/eunit.hrl").
+
 -export([decode/1,
          decode_to_string/1,
          encode/1,
-         encode_to_string/1,
-         mime_decode/1,
-         mime_decode_to_string/1]).
+         encode_to_string/1]).
 
 decode(Base64url) ->
-    base64:decode(urldecode(Base64url)).
+    base64:decode(amend_equal(urldecode(Base64url))).
 
 decode_to_string(Base64url) ->
-    base64:decode_to_string(urldecode(Base64url)).
-
-mime_decode(Base64url) ->
-    base64:mime_decode(urldecode(Base64url)).
-
-mime_decode_to_string(Base64url) ->
-    base64:mime_decode_to_string(urldecode(Base64url)).
+    base64:decode_to_string(amend_equal(urldecode(Base64url))).
 
 encode(Data) ->
-    urlencode(base64:encode(Data)).
+    urlencode(strip_equal(base64:encode(Data))).
 
 encode_to_string(Data) ->
-    urlencode(base64:encode_to_string(Data)).
+    urlencode(strip_equal(base64:encode_to_string(Data))).
+
+-spec strip_equal(binary() | string()) -> binary()|string().
+strip_equal(Encoded) when is_list(Encoded) ->
+    hd(string:tokens(Encoded, "="));
+strip_equal(Encoded) when is_binary(Encoded) ->
+    LCS = binary:longest_common_suffix([Encoded, <<"===">>]),
+    binary:part(Encoded, 0, byte_size(Encoded)-LCS).
+
+%% @doc complements '=' if it doesn't have 4*n length
+-spec amend_equal(binary()|string()) -> binary()|string().
+amend_equal(Encoded) when is_list(Encoded) ->
+    Suffix = case length(Encoded) rem 4 of
+                 0 -> "";
+                 L -> [$=||_<-lists:seq(1,L)]
+             end,
+    lists:flatten([Encoded, Suffix]);
+amend_equal(Bin) when is_binary(Bin) ->
+    case byte_size(Bin) rem 4 of
+        0 -> Bin;
+        1 -> <<Bin/binary, "===">>;
+        2 -> <<Bin/binary, "==">>;
+        3 -> <<Bin/binary, "=">>
+    end.
 
 urlencode(Base64) when is_list(Base64) ->
     [urlencode_digit(D) || D <- Base64];
@@ -69,3 +86,21 @@ urlencode_digit(D)  -> D.
 urldecode_digit($_) -> $/;
 urldecode_digit($-) -> $+;
 urldecode_digit(D)  -> D.
+
+-ifdef(TEST).
+equal_strip_amend_test() ->
+    %% TODO: rewrite this with EQC
+    [begin
+         UUID = druuid:v4(),
+         Encoded = base64url:encode(UUID),
+         ?assertEqual(nomatch, binary:match(Encoded, [<<"=">>, <<"+">>, <<"/">>])),
+         ?assertEqual(UUID, base64url:decode(Encoded))
+     end || _<- lists:seq(1, 1024)],
+    [begin
+         UUID = druuid:v4(),
+         Encoded = base64url:encode_to_string(UUID),
+         %% ?assertEqual(nomatch, binary:match(Encoded, [<<"=">>, <<"+">>, <<"/">>])),
+         ?assertEqual(UUID, base64url:decode(Encoded))
+     end || _<- lists:seq(1, 1024)].
+
+-endif.
