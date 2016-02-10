@@ -74,6 +74,6 @@ show([]) ->
                              true -> "https://";
                              false -> "http://"
                          end,
-                io:format("Current Stanchion Adderss: ~s~s:~s~n",
+                io:format("Current Stanchion Address: ~s~s:~s~n",
                           [Scheme, Host, integer_to_list(Port)])
             end, "Retrieving Stanchion info").
