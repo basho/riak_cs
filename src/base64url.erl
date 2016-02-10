@@ -21,7 +21,7 @@
 %% @doc base64url is a wrapper around the base64 module to produce
 %%      base64-compatible encodings that are URL safe.
 %%      The / character in normal base64 encoding is replaced with
-%%      the _ character, and + is replaced with -.
+%%      the _ character, + is replaced with -,and = is omitted.
 %%      This replacement scheme is named "base64url" by
 %%      http://en.wikipedia.org/wiki/Base64
 
