@@ -92,9 +92,20 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     ?assertEqual(ok, wait_until_nodes_ready(RiakNodes)),
     ?assertEqual(ok, wait_until_no_pending_changes(RiakNodes)),
     rt:wait_until_ring_converged(RiakNodes),
-    AdminConfig = setup_admin_user(NumNodes, Vsn),
+    AdminConfig =
+        case ssl_options(Configs) of
+            [] ->
+                setup_admin_user(NumNodes, Vsn);
+            _SSLOpts ->
+                rtcs_admin:create_user_rpc(hd(_CSNodes), "admin-key", "admin-secret")
+        end,
+                
     {AdminConfig, Nodes}.
 
+ssl_options(Config) ->
+    RiakCS = proplists:get_value(cs, Config),
+    CSConfig = proplists:get_value(riak_cs, RiakCS),
+    proplists:get_value(ssl, CSConfig, []).
 
 pass() ->
     teardown(),
