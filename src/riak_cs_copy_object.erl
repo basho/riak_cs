@@ -332,16 +332,17 @@ copy_range(RD, ?MANIFEST{content_length=Len}) ->
     end.
 
 
-%% @doc  nasty  hack,  do  not  use this  other  than  for  disconnect
+%% @doc nasty hack, do not use this other than for disconnect
 %% detection in copying objects.
--spec connection_checker(inet:socket()) -> fun(() -> boolean()).
+-type mochiweb_socket() :: inet:socket() | {ssl, ssl:sslsocket()}.
+-spec connection_checker(mochiweb_socket()) -> fun(() -> boolean()).
 connection_checker(Socket) ->
     fun() ->
-            case inet:peername(Socket) of
+            case mochiweb_socket:peername(Socket) of
                 {error,_E} ->
                     false;
                 {ok,_} ->
-                    case gen_tcp:recv(Socket, 0, 0) of
+                    case mochiweb_socket:recv(Socket, 0, 0) of
                         {error, timeout} ->
                             true;
                         {error, _E} ->
