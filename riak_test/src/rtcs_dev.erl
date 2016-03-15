@@ -80,14 +80,17 @@ srcpath(Vsn) ->
     Path = ?SRC_PATHS,
     path(Vsn, Path).
 
-path(Vsn, Paths=[{_,_}|_]) ->
-    orddict:fetch(Vsn, orddict:from_list(Paths));
+path(Key, [{Key, Path} | _]) ->
+    Path;
+path(Key, [{_, _} | Paths]) ->
+    path(Key, Paths);
 path(current, Path) ->
     Path;
 path(root, Path) ->
     Path;
-path(_, _) ->
-    throw("Version requested but only one path provided").
+path(Key, _) ->
+    Err = io_lib:format("Path '~p' requested but no value provided", [Key]),
+    throw(lists:flatten(Err)).
 
 upgrade(Node, NewVersion) ->
     N = node_id(Node),
