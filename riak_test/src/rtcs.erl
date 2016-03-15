@@ -103,9 +103,15 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
     {AdminConfig, Nodes}.
 
 ssl_options(Config) ->
-    RiakCS = proplists:get_value(cs, Config),
-    CSConfig = proplists:get_value(riak_cs, RiakCS),
-    proplists:get_value(ssl, CSConfig, []).
+    case proplists:get_value(cs, Config) of
+        undefined -> [];
+        RiakCS ->
+           case proplists:get_value(riak_cs, RiakCS) of
+               undefined -> [];
+               CSConfig ->
+                   proplists:get_value(ssl, CSConfig, [])
+           end
+    end.
 
 pass() ->
     teardown(),
