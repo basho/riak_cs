@@ -25,45 +25,38 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
+-include("deps/erlcloud/include/erlcloud_aws.hrl").
+
 -define(test_bucket(Label), "test-bucket-" Label).
 -define(test_key(Label),    "test-key-" Label).
--define(root_host_default,  "s3.amazonaws.com").
+
+% use something that shouldn't occur naturally
 -define(root_host_alt,      "foo.bar.example.com").
 
 confirm() ->
     verify_multipart_upload_response().
 
-% TODO: get the default root host from the riak-cs.conf file?
-
 verify_multipart_upload_response() ->
-    {UserConfig, {_, [Node], _}} = rtcs:setup(1),
-    Bucket = ?test_bucket("vrhr"),
-    DefKey = ?test_key("vrhr-dflt"),
-    AltKey = ?test_key("vrhr-alt"),
+    Host    = ?root_host_alt,
+    Bucket  = ?test_bucket("vrhr"),
+    Key     = ?test_key("vrhr"),
     NumParts = 3,
     PartSize = (5 * 1024 * 1024),
 
+    rtcs:set_conf({cs, current, 1}, [{root_host, Host}]),
+    {AdminConfig, _} = rtcs:setup(1),
+    % erlcloud requires that 's3_host' matches our 'root_host'
+    % TODO: read this from the conf file
+    Config = AdminConfig#aws_config{s3_host = Host},
+
     lager:info("creating bucket ~p", [Bucket]),
-    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, Config)),
 
-    {ok, {_, DefRes}} = perform_multipart_upload(
-        Bucket, DefKey, NumParts, PartSize, UserConfig),
-    lager:info("Response Data of '~s/~s':\n~p\n", [Bucket, DefKey, DefRes]),
+    {ok, {_, Result}} = perform_multipart_upload(
+        Bucket, Key, NumParts, PartSize, Config),
+    % lager:info("Response Data of '~s/~s':\n~p\n", [Bucket, Key, Result]),
 
-    verify_multipart_upload_response(
-        DefRes, ?root_host_default, Bucket, DefKey),
-
-    rtcs_exec:stop_cs(1),
-    rt:wait_until_unpingable(Node),
-    rtcs:set_conf({cs, current, 1}, [{root_host, ?root_host_alt}]),
-    rtcs_exec:start_cs(1),
-    rt:wait_until_pingable(Node),
-
-    {ok, {_, AltRes}} = perform_multipart_upload(
-        Bucket, AltKey, NumParts, PartSize, UserConfig),
-    lager:info("Response Data of '~s/~s':\n~p\n", [Bucket, AltKey, AltRes]),
-
-    verify_multipart_upload_response(AltRes, ?root_host_alt, Bucket, AltKey),
+    verify_multipart_upload_response(Result, Host, Bucket, Key),
 
     rtcs:pass().
 
@@ -88,25 +81,12 @@ verify_multipart_upload_response(ResponseBody, RootHost, Bucket, Key) ->
     [#xmlText{value = ResLocation}] = get_response_value(
         ResponseBody, 'CompleteMultipartUploadResult', 'Location'),
 
-    ?assertEqual(ResBucket, Bucket),
-    ?assertEqual(ResKey, Key),
-    ?assertEqual(ResLocation, lists:flatten(
-        io_lib:format("http://~s.~s/~s", [Bucket, RootHost, Key]))).
+    Location = lists:flatten(
+        io_lib:format("http://~s.~s/~s", [Bucket, RootHost, Key])),
 
-
-% verify_root_host_result(NodeId, User, Host) ->
-%     ?assertNotEqual(Host, get_response_value(User, Field)),
-%     reset_cs_root_host(NodeId, Host)
-%     ?assertEqual(Host, get_response_value(User, Field)),
-%
-% reset_cs_root_host(NodeId, Host) ->
-%     Node = rtcs:cs_node(NodeId),
-%     rtcs_exec:stop_cs(NodeId),
-%     rt:wait_until_unpingable(Node),
-%     rtcs:set_advanced_conf(Node, [{riak_cs, [{root_host, Host}]}]),
-%     rtcs_exec:start_cs(NodeId),
-%     rt:wait_until_pingable(Node),
-%     ok.
+    ?assertEqual(Bucket, ResBucket),
+    ?assertEqual(Key, ResKey),
+    ?assertEqual(Location, ResLocation).
 
 get_response_value(
         #xmlElement{name = TopLevel, content = Content}, TopLevel, Field) ->
@@ -133,7 +113,7 @@ complete_multipart_upload(Bucket, Key, UploadId, EtagList, Config) ->
         [],                                     % params
         etags_to_multipart_request(EtagList),   % POST data
         []),                                    % headers
-    lager:info("Raw Response: ~p", [Response]),
+    % lager:info("Raw Response: ~p", [Response]),
     case Response of
         {_, []} ->
             {ok, Response};
@@ -151,7 +131,7 @@ etags_to_multipart_request(EtagList) ->
     ReqData = [{'Part', [
         {'PartNumber', [erlang:integer_to_list(N)]},
         {'ETag', [T]}]} || {N, T} <- EtagList],
-    lager:info("Request Data: ~p", [ReqData]),
+    % lager:info("Request Data: ~p", [ReqData]),
     Request = {'CompleteMultipartUpload', ReqData},
     erlang:list_to_binary(xmerl:export_simple([Request], xmerl_xml)).
 
