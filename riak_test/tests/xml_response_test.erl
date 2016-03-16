@@ -24,8 +24,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
-
--include("deps/erlcloud/include/erlcloud_aws.hrl").
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 -define(test_bucket(Label), "test-bucket-" Label).
 -define(test_key(Label),    "test-key-" Label).
@@ -46,7 +45,7 @@ verify_multipart_upload_response() ->
     rtcs:set_conf({cs, current, 1}, [{root_host, Host}]),
     {AdminConfig, _} = rtcs:setup(1),
     % erlcloud requires that 's3_host' matches our 'root_host'
-    % TODO: read this from the conf file
+    % TODO: rtcs:setup should read this from the conf file
     Config = AdminConfig#aws_config{s3_host = Host},
 
     lager:info("creating bucket ~p", [Bucket]),
@@ -68,7 +67,7 @@ perform_multipart_upload(Bucket, Key, NumParts, PartSize, Config) ->
     lager:info("uploading parts of '~s/~s'", [Bucket, Key]),
     EtagList = upload_and_assert_parts(
         Bucket, Key, UploadId, NumParts, PartSize, Config),
-    lager:info("ETags of '~s/~s': ~p", [Bucket, Key, EtagList]),
+    % lager:info("ETags of '~s/~s': ~p", [Bucket, Key, EtagList]),
 
     lager:info("completing upload of '~s/~s'", [Bucket, Key]),
     complete_multipart_upload(Bucket, Key, UploadId, EtagList, Config).
