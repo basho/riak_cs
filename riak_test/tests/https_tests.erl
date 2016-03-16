@@ -13,9 +13,9 @@ verify_cs1025(UserConfig) ->
     B = <<"booper">>,
     K = <<"drooper">>,
     K2 = <<"super">>,
-    lager:debug("here0"),
+    lager:info("Creating a bucket ~s", [B]),
     rtcs_object:upload(UserConfig, {https, 0}, B, <<>>),
-    lager:debug("here"),
+    lager:info("Creating a source object to copy, ~s", [K]),
     rtcs_object:upload(UserConfig, {https, 42}, B, K),
-    lager:debug("here2"),
+    lager:info("Trying copy from ~s to ~s", [K, K2]),
     rtcs_object:upload(UserConfig, https_copy, B, K2, K).
