@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -127,8 +127,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
-                               %% TODO: use cs_root from app.config
-                               {'Location', [lists:append(["http://", binary_to_list(Bucket), ".s3.amazonaws.com/", Key])]},
+                               {'Location', [response_location(Bucket, Key)]},
                                {'Bucket', [Bucket]},
                                {'Key', [Key]},
                                {'ETag', [ETag]}
@@ -144,6 +143,10 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
             end
     end.
 
+response_location(Bucket, Key) ->
+    lists:append(["http://",
+        binary:bin_to_list(Bucket), ".", riak_cs_config:root_host(), "/", Key]).
+    
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx) ->
     MaxLen = riak_cs_lfs_utils:max_content_len(),
