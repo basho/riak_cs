@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -52,13 +52,13 @@ start_all_nodes(NodeList, Vsn) ->
                                  rtcs_dev:relpath(NodeVersion)]),
                     rtdev:run_riak(N, rtcs_dev:relpath(NodeVersion), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    spawn(fun() -> start_stanchion(Vsn) end),
-                    spawn(fun() -> start_cs(N, Vsn) end);
+                    start_stanchion(Vsn),
+                    start_cs(N, Vsn);
                ({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
                     rtdev:run_riak(N, rtcs_dev:relpath(rtcs_dev:node_version(N)), "start"),
                     rt:wait_for_service(RiakNode, riak_kv),
-                    spawn(fun() -> start_cs(N, Vsn) end)
+                    start_cs(N, Vsn)
             end, NodeList).
 
 stop_all_nodes(NodeList, Vsn) ->
