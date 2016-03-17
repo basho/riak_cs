@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -66,7 +66,8 @@
          detailed_storage_calc/0,
          quota_modules/0,
          active_delete_threshold/0,
-         fast_user_get/0
+         fast_user_get/0,
+         root_host/0
         ]).
 
 %% Timeouts hitting Riak
@@ -427,6 +428,10 @@ active_delete_threshold() ->
 -spec fast_user_get() -> boolean().
 fast_user_get() ->
     get_env(riak_cs, fast_user_get, false).
+
+-spec root_host() -> string().
+root_host() ->
+    get_env(riak_cs, cs_root_host, ?ROOT_HOST).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

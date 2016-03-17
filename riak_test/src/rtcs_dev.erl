@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2013 Basho Technologies, Inc.
+%% Copyright (c) 2013-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -175,7 +175,7 @@ all_the_app_configs(DevPath) ->
     end.
 
 update_app_config(all, Config) ->
-    lager:info("rtdev:update_app_config(all, ~p)", [Config]),
+    lager:info("rtcs_dev:update_app_config(all, ~p)", [Config]),
     [ update_app_config(DevPath, Config) || DevPath <- devpaths()];
 update_app_config(Node, Config) when is_atom(Node) ->
     N = node_id(Node),
@@ -196,7 +196,7 @@ update_app_config(DevPath, Config) ->
     [update_app_config_file(AppConfig, Config) || AppConfig <- all_the_app_configs(DevPath)].
 
 update_app_config_file(ConfigFile, Config) ->
-    lager:info("rtdev:update_app_config_file(~s, ~p)", [ConfigFile, Config]),
+    lager:info("rtcs_dev:update_app_config_file(~s, ~p)", [ConfigFile, Config]),
 
     BaseConfig = case file:consult(ConfigFile) of
         {ok, [ValidConfig]} ->
@@ -466,7 +466,7 @@ check_node({_N, Version}) ->
     end.
 
 set_backend(Backend) ->
-    lager:info("rtdev:set_backend(~p)", [Backend]),
+    lager:info("rtcs_dev:set_backend(~p)", [Backend]),
     update_app_config(all, [{riak_kv, [{storage_backend, Backend}]}]),
     get_backends().
 
