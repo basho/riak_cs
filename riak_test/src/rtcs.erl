@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -99,7 +99,7 @@ setup_clusters(Configs, JoinFun, NumNodes, Vsn) ->
             _SSLOpts ->
                 rtcs_admin:create_user_rpc(hd(_CSNodes), "admin-key", "admin-secret")
         end,
-                
+
     {AdminConfig, Nodes}.
 
 ssl_options(Config) ->

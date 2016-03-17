@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -42,8 +42,8 @@ upload(UserConfig, {normal_partial, CL, Actual}, B, K) when is_list(K),
     ReqHdr = base_header(B, K, CL, MD5, UserConfig, ""),
     lager:info("~s", [iolist_to_binary(ReqHdr)]),
 
-    %% Hard coded Host only for riak_test
-    {ok, Sock} = gen_tcp:connect("127.0.0.1", 15018, [{active, false}]),
+    {Host, Port} = get_config_target_address(UserConfig),
+    {ok, Sock} = gen_tcp:connect(Host, Port, [{active, false}]),
     case gen_tcp:send(Sock, [ReqHdr, $\n, Binary]) of
         ok ->
             %% Let caller handle the socket call, either close or continue
@@ -55,7 +55,7 @@ upload(UserConfig, {https, Size}, B, K) ->
     Binary = binary:copy(<<"*">>, Size),
     MD5 = base64:encode(crypto:hash(md5, Binary)),
     ReqHdr = base_header(B, K, Size, MD5, UserConfig, ""),
-    send_ssl_request([ReqHdr, $\n, Binary]).
+    send_ssl_request(UserConfig, [ReqHdr, $\n, Binary]).
 
 upload(UserConfig, normal_copy, B, DstK, SrcK) ->
     ?assertEqual([{copy_source_version_id, "false"}, {version_id, "null"}],
@@ -67,8 +67,7 @@ upload(UserConfig, https_copy, B, DstK, SrcK) ->
     CopyHdr = ["x-amz-copy-source:/", B, "/", SrcK, $\n,
                "x-amz-metadata-directive:COPY", $\n],
     ReqHdr = base_header(B, DstK, CL, MD5, UserConfig, CopyHdr),
-
-    send_ssl_request([ReqHdr, CopyHdr, $\n]);
+    send_ssl_request(UserConfig, [ReqHdr, CopyHdr, $\n]);
 
 upload(UserConfig, multipart_copy, B, DstK, SrcK) ->
     InitUploadRes = erlcloud_s3_multipart:initiate_upload(B, DstK, "text/plain", [], UserConfig),
@@ -85,8 +84,9 @@ upload(UserConfig, multipart_copy, B, DstK, SrcK) ->
     ?assertEqual(ok, erlcloud_s3_multipart:complete_upload(
                        B, DstK, UploadId, EtagList, UserConfig)).
 
-send_ssl_request(Payload) ->
-    {ok, Sock} = ssl:connect("127.0.0.1", 15018, [{active, false}, binary]),
+send_ssl_request(Config, Payload) ->
+    {Host, Port} = get_config_target_address(Config),
+    {ok, Sock} = ssl:connect(Host, Port, [{active, false}, binary]),
     lager:info("sending HTTPS request: ~s", [Payload]),
     ok = ssl:send(Sock, Payload),
     {ok, Data} = ssl:recv(Sock, 0),
@@ -96,6 +96,10 @@ send_ssl_request(Payload) ->
     ?assertEqual({http_response, {1, 1}, 200, "OK"}, Packet),
     ssl:close(Sock),
     ok.
+
+get_config_target_address(#aws_config{s3_port = Port, http_options = Opts}) ->
+    {proplists:get_value(proxy_host, Opts, "localhost"),
+     proplists:get_value(proxy_port, Opts, Port)}.
 
 base_header(B, K, CL, MD5, UserConfig, MetaTags) ->
     Host = io_lib:format("~s.s3.amazonaws.com", [B]),
