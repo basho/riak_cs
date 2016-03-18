@@ -117,6 +117,11 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     case {parse_body(Body), catch base64url:decode(UploadId64)} of
         {bad, _} ->
             {{halt,477}, RD, Ctx};
+        %% RCS-156 (gh #1100) return a 400 Bad Request, Malformed XML error
+        %% when there is a multipart upload without any parts in the upload
+        %% complete message
+        {[], _UploadId} ->
+            riak_cs_s3_response:api_error(malformed_xml, RD, Ctx);
         {PartETags, UploadId} ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, list_to_binary(Key), UploadId, PartETags, User,
