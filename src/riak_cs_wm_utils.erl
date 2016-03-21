@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -316,7 +316,7 @@ deny_access(RD, Ctx) ->
 
 
 
-%% @doc Prodice an invalid-access-keyid error message from a
+%% @doc Produce an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.
 deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
     ResponseMod:api_error(invalid_access_key_id, RD, Ctx).

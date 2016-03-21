@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -42,9 +42,8 @@ confirm() ->
     erlcloud_s3:put_object(?BUCKET, ?KEY, SingleBlock, UserConfig),
 
     %% vefity response for timeout during getting a user.
-    %% FIXME: This should be http_error 503
     rt_intercept:add(ErrCSNode, {riak_cs_riak_client, [{{get_user, 2}, get_user_timeout}]}),
-    ?assertError({aws_error, {http_error, 403, [], _}},
+    ?assertError({aws_error, {http_error, 503, [], _}},
                  erlcloud_s3:get_object(?BUCKET, ?KEY, ErrConfig)),
     rt_intercept:clean(ErrCSNode, riak_cs_riak_client),
 
@@ -53,7 +52,6 @@ confirm() ->
     rt_intercept:add(ErrCSNode, {riak_cs_block_server, [{{get_block_local, 6}, get_block_local_timeout}]}),
     ?assertError({aws_error, {socket_error, retry_later}}, erlcloud_s3:get_object(?BUCKET, ?KEY, ErrConfig)),
     rt_intercept:clean(ErrCSNode, riak_cs_block_server),
-
 
     %% vefity response for timeout during get a bucket on stanchion.
     %% FIXME: This should be http_error 503

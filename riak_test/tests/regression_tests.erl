@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -29,10 +29,16 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include("riak_cs.hrl").
+-include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 -define(TEST_BUCKET_CS347, "test-bucket-cs347").
 
+-define(assert500(X),
+        ?assertError({aws_error, {http_error, 500, _, _}}, (X))).
+
 confirm() ->
+    %% Setting short timeouts to accelarate verify_cs756
+    rtcs:set_advanced_conf(cs, [{riak_cs, [{riakc_timeouts, 1000}]}]),
     {UserConfig, _} = SetupInfo = rtcs:setup(1),
 
     ok = verify_cs296(SetupInfo, "test-bucket-cs296"),
@@ -40,9 +46,11 @@ confirm() ->
     ok = verify_cs436(SetupInfo, "test-bucket-cs436"),
     ok = verify_cs512(UserConfig, "test-bucket-cs512"),
     ok = verify_cs770(SetupInfo, "test-bucket-cs770"),
-
     %% Append your next regression tests here
 
+    %% regression of CS#756 must be the last test as it stops all Riak
+    %% nodes.
+    ok = verify_cs756(SetupInfo, "test-bucket-cs756"),
     rtcs:pass().
 
 %% @doc Regression test for `riak_cs' <a href="https://github.com/basho/riak_cs/issues/296">
@@ -139,13 +147,17 @@ verify_cs436(_SetupInfo = {UserConfig, {_RiakNodes, _CSNodes, _Stanchion}}, Buck
 -define(KEY, "cs512-key").
 
 verify_cs512(UserConfig, BucketName) ->
-    %% {ok, UserConfig} = setup(),
     ?assertEqual(ok, erlcloud_s3:create_bucket(BucketName, UserConfig)),
     put_and_get(UserConfig, BucketName, <<"OLD">>),
     put_and_get(UserConfig, BucketName, <<"NEW">>),
-    delete(UserConfig, BucketName),
+    erlcloud_s3:delete_object(BucketName, ?KEY, UserConfig),
     assert_notfound(UserConfig,BucketName),
     ok.
+
+put_and_get(UserConfig, BucketName, Data) ->
+    erlcloud_s3:put_object(BucketName, ?KEY, Data, UserConfig),
+    Props = erlcloud_s3:get_object(BucketName, ?KEY, UserConfig),
+    ?assertEqual(proplists:get_value(content, Props), Data).
 
 verify_cs770({UserConfig, {RiakNodes, _, _}}, BucketName) ->
     %% put object and cancel it;
@@ -220,13 +232,33 @@ get_manifests(RiakNodes, BucketName, Key) ->
     [binary_to_term(V) || {_, V} <- riakc_obj:get_contents(Obj),
                           V =/= <<>>].
 
-put_and_get(UserConfig, BucketName, Data) ->
-    erlcloud_s3:put_object(BucketName, ?KEY, Data, UserConfig),
-    Props = erlcloud_s3:get_object(BucketName, ?KEY, UserConfig),
-    ?assertEqual(proplists:get_value(content, Props), Data).
+verify_cs756({UserConfig, {RiakNodes, _, _}}, BucketName) ->
+    %% Making sure API call to CS failed Riak KV underneath, all fails in 500
+    %% This could be done with eqc
+    lager:info("CS756 regression"),
+    [rt:stop(RiakNode) || RiakNode <- RiakNodes],
+    [rt:wait_until_unpingable(RiakNode) || RiakNode <- RiakNodes],
 
-delete(UserConfig, BucketName) ->
-    erlcloud_s3:delete_object(BucketName, ?KEY, UserConfig).
+    %% test Object APIs before bucket creation
+    ?assert500(erlcloud_s3:put_object(BucketName, "mine", <<"deadbeef">>, UserConfig)),
+    ?assert500(erlcloud_s3:get_object(BucketName, "mine", UserConfig)),
+
+    %% test bucket creation fails
+    ?assert500(erlcloud_s3:create_bucket(BucketName, UserConfig)),
+    ?assert500(erlcloud_s3:delete_bucket("dummybucket", UserConfig)),
+
+    ?assert500(erlcloud_s3:put_object(BucketName, "mine", <<"deadbeef">>, UserConfig)),
+    ?assert500(erlcloud_s3:get_object(BucketName, "mine", UserConfig)),
+    ?assert500(erlcloud_s3:delete_object(BucketName, "mine", UserConfig)), 
+
+    %% try copy
+    ?assert500(erlcloud_s3:copy_object(BucketName, "destination",
+                                       BucketName, "mine", UserConfig)),
+
+    ?assert500(erlcloud_s3:delete_bucket("dummybucket", UserConfig)),
+    ?assert500(erlcloud_s3:delete_bucket(BucketName, UserConfig)),
+
+    ok.
 
 assert_notfound(UserConfig, BucketName) ->
     ?assertException(_,

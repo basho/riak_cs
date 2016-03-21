@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -162,6 +162,7 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                            submodule=Mod,
                            riak_client=RcPid,
                            exports_fun=ExportsFun}) ->
+
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
             failed ->
@@ -174,15 +175,20 @@ forbidden(RD, Ctx=#context{auth_module=AuthMod,
                                            <<"forbidden">>,
                                            [],
                                            [riak_cs_wm_utils:extract_name(UserKey)]),
-                UserLookupResult = maybe_create_user(
-                                     riak_cs_user:get_user(UserKey, RcPid),
-                                     UserKey,
-                                     Ctx#context.api,
-                                     Ctx#context.auth_module,
-                                     AuthData,
-                                     RcPid),
-                {authenticate(UserLookupResult, RD, Ctx, AuthData),
-                 resource_call(Mod, anon_ok, [], ExportsFun)}
+                case maybe_create_user(
+                       riak_cs_user:get_user(UserKey, RcPid),
+                       UserKey,
+                       Ctx#context.api,
+                       Ctx#context.auth_module,
+                       AuthData,
+                       RcPid) of
+                    {ok, {User, Obj}} = _LookupResult ->
+                        {authenticate(User, Obj, RD, Ctx, AuthData),
+                         resource_call(Mod, anon_ok, [], ExportsFun)};
+                    Error ->
+                        {Error,
+                         resource_call(Mod, anon_ok, [], ExportsFun)}
+                end
         end,
     post_authentication(AuthResult, RD, Ctx, AnonOk).
 
@@ -409,10 +415,9 @@ authorize(RD,Ctx=#context{submodule=Mod, exports_fun=ExportsFun}) ->
     end,
     R.
 
--type user_lookup_result() :: {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
--spec authenticate(user_lookup_result(), term(), term(), term()) ->
-                          {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, term()}.
-authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}, AuthData)
+-spec authenticate(rcs_user(), riakc_obj:riakc_obj(), term(), term(), term()) ->
+                          {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, bad_auth}.
+authenticate(User, UserObj, RD, Ctx=#context{auth_module=AuthMod, submodule=Mod}, AuthData)
   when User?RCS_USER.status =:= enabled ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
@@ -426,12 +431,10 @@ authenticate({ok, {User, UserObj}}, RD, Ctx=#context{auth_module=AuthMod, submod
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"authenticate">>, [0], [atom_to_binary(AuthMod, latin1)]),
             {error, bad_auth}
     end;
-authenticate({ok, {User, _UserObj}}, _RD, _Ctx, _AuthData)
+authenticate(User, _UserObj, _RD, _Ctx, _AuthData)
   when User?RCS_USER.status =/= enabled ->
     %% {ok, _} -> %% disabled account, we are going to 403
-    {error, bad_auth};
-authenticate({error, _}=Error, _RD, _Ctx, _AuthData) ->
-    Error.
+    {error, bad_auth}.
 
 -spec exports_fun(orddict:orddict()) -> function().
 exports_fun(Exports) ->
@@ -494,15 +497,13 @@ post_authentication({error, {auth_not_supported, AuthType}}, RD,
     _ = lager:debug("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
-    %% This is rubbish. We need to differentiate between
-    %% no key_id being presented and the key_id lookup
-    %% failing in some better way.
-    _ = lager:debug("key_id not present or not found"),
-    riak_cs_wm_utils:deny_access(RD, Ctx);
-post_authentication({error, Reason}, RD, Ctx, _, _) ->
-    %% no matching keyid was found, or lookup failed
+    _ = lager:debug("User does not exist"),
+    riak_cs_wm_utils:deny_invalid_key(RD, Ctx);
+post_authentication({error, Reason}, RD,
+                    #context{response_module=ResponseMod} = Ctx, _, _) ->
+    %% Lookup failed, basically due to disconnected stuff
     _ = lager:debug("Authentication error: ~p", [Reason]),
-    riak_cs_wm_utils:deny_invalid_key(RD, Ctx).
+    ResponseMod:api_error(Reason, RD, Ctx).
 
 update_stats_inflow(_RD, undefined = _StatsPrefix) ->
     ok;

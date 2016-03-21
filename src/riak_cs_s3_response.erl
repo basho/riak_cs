@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -111,6 +111,7 @@ error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
 error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
+error_message(disconnected) -> "Please contact administrator.";
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -161,6 +162,7 @@ error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(malformed_xml) -> "MalformedXML";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
+error_code(disconnected) -> "ServiceUnavailable";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
@@ -218,6 +220,7 @@ status_code(canned_acl_and_header_grant)   -> 400;
 status_code(malformed_acl_error)           -> 400;
 status_code(malformed_xml)                 -> 400;
 status_code(remaining_multipart_upload)    -> 409;
+status_code(disconnected)                  -> 500;
 status_code(not_implemented)               -> 501;
 status_code(ErrorName) ->
     _ = lager:debug("Unknown error: ~p", [ErrorName]),
