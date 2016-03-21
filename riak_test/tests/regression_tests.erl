@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -233,7 +233,7 @@ get_manifests(RiakNodes, BucketName, Key) ->
                           V =/= <<>>].
 
 verify_cs756({UserConfig, {RiakNodes, _, _}}, BucketName) ->
-    %% Making sure API call from non-existent user all fails in 403, not 50x
+    %% Making sure API call to CS failed Riak KV underneath, all fails in 500
     %% This could be done with eqc
     lager:info("CS756 regression"),
     [rt:stop(RiakNode) || RiakNode <- RiakNodes],

@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -91,7 +91,6 @@ fetch_and_cache_admin_creds(Key) ->
             {ok, Obj} ->
                 User = riak_cs_user:from_riakc_obj(Obj, false),
                 Secret = User?RCS_USER.key_secret,
-                _ = lager:debug("admin secret: ~s", [Secret]),
                 application:set_env(riak_cs, admin_secret, Secret);
             Error ->
                 _ = lager:error("Couldn't get admin user (~s) record: ~p",
