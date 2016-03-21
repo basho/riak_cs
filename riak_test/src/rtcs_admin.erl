@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,6 +24,7 @@
          create_user/2,
          create_user/3,
          create_user/4,
+         create_user_rpc/3,
          create_admin_user/1,
          update_user/5,
          get_user/4,
@@ -49,6 +50,15 @@ storage_stats_json_request(AdminConfig, UserConfig, Begin, End) ->
     lager:debug("Storage samples[json]: ~p", [Samples]),
     {struct, Slice} = latest(Samples, undefined),
     by_bucket_list(Slice, []).
+
+%% Kludge for SSL testing
+create_user_rpc(Node, Key, Secret) ->
+    User = "admin",
+    Email = "admin@me.com",
+
+    %% You know this is a kludge, user creation via RPC
+    _Res = rpc:call(Node, riak_cs_user, create_user, [User, Email, Key, Secret]),
+    aws_config(Key, Secret, rtcs_config:cs_port(1)).
 
 -spec create_admin_user(atom()) -> #aws_config{}.
 create_admin_user(Node) ->
