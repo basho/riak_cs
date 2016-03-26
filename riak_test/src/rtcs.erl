@@ -1,6 +1,6 @@
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,9 +16,12 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
+
 -module(rtcs).
+
 -compile(export_all).
+
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
@@ -312,10 +315,11 @@ sha(Bin) -> crypto:hash(sha, Bin).
 md5(Bin) -> crypto:hash(md5, Bin).
 
 datetime() ->
-    {{YYYY,MM,DD}, {H,M,S}} = calendar:universal_time(),
-    lists:flatten(io_lib:format("~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S])).
+    datetime(calendar:universal_time()).
 
-
+datetime({{YYYY,MM,DD}, {H,M,S}}) ->
+    lists:flatten(io_lib:format(
+        "~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S])).
 
 json_get(Key, Json) when is_binary(Key) ->
     json_get([Key], Json);
