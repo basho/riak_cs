@@ -1,6 +1,6 @@
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,13 +16,12 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 
 -module(access_stats_test).
 %% @doc Integration test for access statistics.
 %% TODO: Only several kinds of stats are covered
 
--compile(export_all).
 -export([confirm/0]).
 
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
@@ -32,42 +31,73 @@
 -define(BUCKET, "access-stats-test-1").
 -define(KEY, "a").
 
+% default time generate_some_accesses spends doing its thing
+-define(DURATION_SECS, 11).
+
 confirm() ->
     {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup(2),
     rt:setup_log_capture(hd(CSNodes)),
 
-    {Begin, End} = generate_some_accesses(UserConfig),
+    Results = generate_some_accesses(UserConfig),
+    lager:debug("Client results: ~p", [Results]),
     flush_access_stats(),
-    assert_access_stats(json, UserConfig, {Begin, End}),
-    assert_access_stats(xml, UserConfig, {Begin, End}),
+    assert_access_stats(json, UserConfig, Results),
+    assert_access_stats(xml, UserConfig, Results),
     verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes),
 
     rtcs:pass().
 
 generate_some_accesses(UserConfig) ->
-    Begin = rtcs:datetime(),
+    generate_some_accesses(UserConfig, ?DURATION_SECS).
+
+generate_some_accesses(UserConfig, DurationSecs) ->
+    Begin = calendar:universal_time(),
+    Until = calendar:datetime_to_gregorian_seconds(Begin) + DurationSecs,
+    R0 = dict:new(),
     lager:info("creating bucket ~p", [?BUCKET]),
     %% Create bucket
     ?assertEqual(ok, erlcloud_s3:create_bucket(?BUCKET, UserConfig)),
-    %% Put 100-byte object, twice
-    Block = crypto:rand_bytes(100),
-    _ = erlcloud_s3:put_object(?BUCKET, ?KEY, Block, UserConfig),
-    _ = erlcloud_s3:put_object(?BUCKET, ?KEY, Block, UserConfig),
-    %% Get 100-byte object, once
-    _ = erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig),
-    %% Head Object
-    _ = erlcloud_s3:head_object(?BUCKET, ?KEY, UserConfig),
-    %% List objects (GET bucket)
-    _ = erlcloud_s3:list_objects(?BUCKET, UserConfig),
-    %% Delete object
-    _ = erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig),
+    R1 = dict:update_counter({"BucketCreate", "Count"}, 1, R0),
+    %% do stuff for a while ...
+    R2 = generate_some_accesses(UserConfig, Until, R1),
     %% Delete bucket
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?BUCKET, UserConfig)),
+    Results = dict:update_counter({"BucketDelete", "Count"}, 1, R2),
     %% Illegal URL such that riak_cs_access_log_handler:handle_event/2 gets {log_access, #wm_log_data{notes=undefined}}
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("", "//a", UserConfig)), %% Path-style access
     ?assertError({aws_error, {http_error, 404, _, _}}, erlcloud_s3:get_object("riak-cs", "pong", UserConfig)),
-    End = rtcs:datetime(),
-    {Begin, End}.
+    {rtcs:datetime(Begin), rtcs:datetime(), dict:to_list(Results)}.
+
+generate_some_accesses(UserConfig, UntilGregSecs, R0) ->
+    %% Put random object, twice
+    O1Size = 100 + random:uniform(100),
+    O2Size = 100 + random:uniform(100),
+    _ = erlcloud_s3:put_object(?BUCKET, ?KEY,
+            crypto:rand_bytes(O1Size), UserConfig),
+    _ = erlcloud_s3:put_object(?BUCKET, ?KEY,
+            crypto:rand_bytes(O2Size), UserConfig),
+    R1 = dict:update_counter({"KeyWrite", "Count"}, 2, R0),
+    R2 = dict:update_counter({"KeyWrite", "BytesIn"}, O1Size + O2Size, R1),
+    %% Get object, once
+    _ = erlcloud_s3:get_object(?BUCKET, ?KEY, UserConfig),
+    R3 = dict:update_counter({"KeyRead", "Count"}, 1, R2),
+    R4 = dict:update_counter({"KeyRead", "BytesOut"}, O2Size, R3),
+    %% Head Object
+    _ = erlcloud_s3:head_object(?BUCKET, ?KEY, UserConfig),
+    R5 = dict:update_counter({"KeyStat", "Count"}, 1, R4),
+    %% List objects (GET bucket)
+    _ = erlcloud_s3:list_objects(?BUCKET, UserConfig),
+    R6 = dict:update_counter({"BucketRead", "Count"}, 1, R5),
+    %% Delete object
+    _ = erlcloud_s3:delete_object(?BUCKET, ?KEY, UserConfig),
+    Results = dict:update_counter({"KeyDelete", "Count"}, 1, R6),
+    GregSecsNow = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+    if
+        GregSecsNow < UntilGregSecs ->
+            generate_some_accesses(UserConfig, UntilGregSecs, Results);
+        true ->
+            Results
+    end.
 
 flush_access_stats() ->
     Res = rtcs_exec:flush_access(1),
@@ -75,7 +105,7 @@ flush_access_stats() ->
     ExpectRegexp = "All access logs were flushed.\n$",
     ?assertMatch({match, _}, re:run(Res, ExpectRegexp)).
 
-assert_access_stats(Format, UserConfig, {Begin, End}) ->
+assert_access_stats(Format, UserConfig, {Begin, End, ClientStats}) ->
     KeyId = UserConfig#aws_config.access_key_id,
     FormatInstruction = case Format of
                             json -> "j";
@@ -89,23 +119,36 @@ assert_access_stats(Format, UserConfig, {Begin, End}) ->
     Samples = node_samples_from_content(Format, "rcs-dev1@127.0.0.1", Content),
     lager:debug("Access samples (~s): ~p", [Format, Samples]),
 
-    ?assertEqual(  1, sum_samples(Format, "BucketCreate", "Count", Samples)),
-    ?assertEqual(  2, sum_samples(Format, "KeyWrite",     "Count", Samples)),
-    ?assertEqual(200, sum_samples(Format, "KeyWrite",     "BytesIn", Samples)),
-    ?assertEqual(  0, sum_samples(Format, "KeyWrite",     "BytesOut", Samples)),
-    ?assertEqual(  1, sum_samples(Format, "KeyRead",      "Count", Samples)),
-    ?assertEqual(  0, sum_samples(Format, "KeyRead",      "BytesIn", Samples)),
-    ?assertEqual(100, sum_samples(Format, "KeyRead",      "BytesOut", Samples)),
-    ?assertEqual(  1, sum_samples(Format, "KeyStat",      "Count", Samples)),
-    ?assertEqual(  0, sum_samples(Format, "KeyStat",      "BytesOut", Samples)),
-    ?assertEqual(  1, sum_samples(Format, "BucketRead",   "Count", Samples)),
-    ?assertEqual(  1, sum_samples(Format, "KeyDelete",    "Count", Samples)),
-    ?assertEqual(  1, sum_samples(Format, "BucketDelete", "Count", Samples)),
+    ?assertEqual(client_result({"BucketCreate", "Count"},       ClientStats),
+            sum_samples(Format, "BucketCreate", "Count",        Samples)),
+    ?assertEqual(client_result({"KeyWrite",     "Count"},       ClientStats),
+            sum_samples(Format, "KeyWrite",     "Count",        Samples)),
+    ?assertEqual(client_result({"KeyWrite",     "BytesIn"},     ClientStats),
+            sum_samples(Format, "KeyWrite",     "BytesIn",      Samples)),
+    ?assertEqual(client_result({"KeyWrite",     "BytesOut"},    ClientStats),
+            sum_samples(Format, "KeyWrite",     "BytesOut",     Samples)),
+    ?assertEqual(client_result({"KeyRead",      "Count"},       ClientStats),
+            sum_samples(Format, "KeyRead",      "Count",        Samples)),
+    ?assertEqual(client_result({"KeyRead",      "BytesIn"},     ClientStats),
+            sum_samples(Format, "KeyRead",      "BytesIn",      Samples)),
+    ?assertEqual(client_result({"KeyRead",      "BytesOut"},    ClientStats),
+            sum_samples(Format, "KeyRead",      "BytesOut",     Samples)),
+    ?assertEqual(client_result({"KeyStat",      "Count"},       ClientStats),
+            sum_samples(Format, "KeyStat",      "Count",        Samples)),
+    ?assertEqual(client_result({"KeyStat",      "BytesOut"},    ClientStats),
+            sum_samples(Format, "KeyStat",      "BytesOut",     Samples)),
+    ?assertEqual(client_result({"BucketRead",   "Count"},       ClientStats),
+            sum_samples(Format, "BucketRead",   "Count",        Samples)),
+    ?assertEqual(client_result({"KeyDelete",    "Count"},       ClientStats),
+            sum_samples(Format, "KeyDelete",    "Count",        Samples)),
+    ?assertEqual(client_result({"BucketDelete", "Count"},       ClientStats),
+            sum_samples(Format, "BucketDelete", "Count",        Samples)),
     pass.
 
 verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes) ->
     KeyId = UserConfig#aws_config.access_key_id,
-    {_Begin, _End} = generate_some_accesses(UserConfig),
+    %% one second ought to be enough
+    _ = generate_some_accesses(UserConfig, 1),
     %% kill riak
     [ rt:brutal_kill(Node) || Node <- RiakNodes ],
     %% force archive
@@ -118,6 +161,8 @@ verify_stats_lost_logging(UserConfig, RiakNodes, CSNodes) ->
     true = rt:expect_in_log(CSNode, ExpectLine),
     pass.
 
+client_result(Key, ResultSet) ->
+    proplists:get_value(Key, ResultSet, 0).
 
 node_samples_from_content(json, Node, Content) ->
     Usage = mochijson2:decode(Content),
