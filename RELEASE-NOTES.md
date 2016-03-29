@@ -6,7 +6,7 @@ This is a backwards-compatible* release that updates node_package to address a r
 
 Riak CS 2.1 is designed to work with Riak KV 2.1.1+.
 
->***Note:** This release is backwards compatible only with the Riak CS 2.x series.
+>*This release is backwards compatible only with the Riak CS 2.x series.
 
 ###Upgrading
 
