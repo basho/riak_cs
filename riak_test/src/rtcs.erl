@@ -18,22 +18,128 @@
 %%
 %% -------------------------------------------------------------------
 
+%% @doc Common functions for testing Riak CS.
+%%  Several date/time types are exported.
+%%
+%%
+%% @todo Maybe document how this stuff works?
+%% @end
 -module(rtcs).
 
--compile(export_all).
+-export([
+    assert_error_log_empty/1,
+    assert_error_log_empty/2,
+    assert_versions/3,
+    check_error_response/5,
+    check_no_such_bucket/2,
+    cs_node/1,
+    datetime/0,
+    datetime/1,
+    datetime_to_gs/1,
+    datetime_to_ts/1,
+    deploy_nodes/3,
+    error_child_element_verifier/3,
+    flavored_setup/4,
+    iso8601/1,
+    json_get/2,
+    maybe_load_intercepts/1,
+    md5/1,
+    node_id/1,
+    pass/0,
+    pbc/3,
+    pbc/4,
+    reset_log/1,
+    riak_id_per_cluster/1,
+    riak_node/1,
+    set_advanced_conf/2,
+    set_conf/2,
+    setup/1,
+    setup/2,
+    setup/3,
+    setup2x2/0,
+    setup2x2/1,
+    setupNxMsingles/2,
+    setupNxMsingles/4,
+    setup_admin_user/2,
+    setup_clusters/4,
+    sha/1,
+    sha_mac/2,
+    ssl_options/1,
+    stanchion_node/0,
+    teardown/0,
+    truncate_error_log/1,
+    valid_timestamp/1,
+    wait_until/4
+]).
+-export_type([
+    bad_date/0,
+    cs_datetime/0,
+    datetime/0,
+    datetime_str/0,
+    dt_error/0,
+    epochsecs/0,
+    gregorian/0,
+    iso8601ts/0,
+    rfc2616ts/0,
+    timestamp/0
+]).
+-import(rt, [
+    join/2,
+    wait_until_nodes_ready/1,
+    wait_until_no_pending_changes/1
+]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--import(rt, [join/2,
-             wait_until_nodes_ready/1,
-             wait_until_no_pending_changes/1]).
+-define(DEVS(N),    lists:concat(["dev", N, "@127.0.0.1"])).
+-define(DEV(N),     erlang:list_to_atom(?DEVS(N))).
+-define(CSDEVS(N),  lists:concat(["rcs-dev", N, "@127.0.0.1"])).
+-define(CSDEV(N),   erlang:list_to_atom(?CSDEVS(N))).
 
--define(DEVS(N), lists:concat(["dev", N, "@127.0.0.1"])).
--define(DEV(N), list_to_atom(?DEVS(N))).
--define(CSDEVS(N), lists:concat(["rcs-dev", N, "@127.0.0.1"])).
--define(CSDEV(N), list_to_atom(?CSDEVS(N))).
+-ifndef(paranoid_dates).
+%% comment out either or both of the following to be paranoid about
+%% timestamp validation regardless of whether paranoid_dates is defined
+-define(validated_timestamp(TS), TS).
+-define(validated_timestamp_op(TS, Func), Func(TS)).
+-endif.
+
+% string versions of timestamps have distinct types only for clarity of code
+-type bad_date()    :: bad_date | {bad_date, incomplete}
+                     | {bad_date, extra_characters}.
+-type cs_datetime() :: iso8601ts().
+-type datetime()    :: timestamp() | gregorian() | datetime_str().
+-type datetime_str():: iso8601ts() | rfc2616ts().
+-type dt_error()    :: {error, bad_date() | term()}.
+-type epochsecs()   :: integer().
+-type gregorian()   :: non_neg_integer().
+-type iso8601ts()   :: nonempty_string().
+-type rfc2616ts()   :: nonempty_string().
+-type timestamp()   :: calendar:datetime().
+
+-define(gregorian_guard(Secs), erlang:is_integer(Secs) andalso Secs >= 0).
+%% maybe define paranoid versions
+-ifndef(validated_timestamp).
+-define(validated_timestamp(TS),
+    case valid_timestamp(TS) of
+        true ->
+            TS;
+        _ ->
+            {error, bad_date}
+    end
+).
+-endif.
+-ifndef(validated_timestamp_op).
+-define(validated_timestamp_op(TS, Func),
+    case valid_timestamp(TS) of
+        true ->
+            Func(TS);
+        _ ->
+            {error, bad_date}
+    end
+).
+-endif.
 
 setup(NumNodes) ->
     setup(NumNodes, [], current).
@@ -314,12 +420,134 @@ sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
 sha(Bin) -> crypto:hash(sha, Bin).
 md5(Bin) -> crypto:hash(md5, Bin).
 
-datetime() ->
-    datetime(calendar:universal_time()).
 
-datetime({{YYYY,MM,DD}, {H,M,S}}) ->
-    lists:flatten(io_lib:format(
-        "~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ", [YYYY, MM, DD, H, M, S])).
+-spec datetime() -> cs_datetime().
+%% @doc Returns the current time as a string in ISO-8601 format.
+%%
+%%  Output is formatted as by {@link datetime/1}.
+%% @end
+datetime() ->
+    iso8601datetime(calendar:universal_time()).
+
+-spec datetime(DateTime :: datetime()) -> cs_datetime() | dt_error().
+%% @doc Convert a date/time value into a string in ISO 8601 format.
+%%
+%%  Output is formatted as the most compact version specified by ISO 8601:
+%%  `YYYYMMDDTHHMMSSZ'.
+%%
+%%  Input may be either a {@link calendar:datetime()} representing UTC (as
+%%  returned by {@link calendar:universal_time/0}) or a non-negative number
+%%  of Gregorian seconds representing UTC as interpretted by the
+%%  {@link calendar} module.
+%%
+%%  For convenience, this function can also be used to convert between
+%%  formats, as if `rtcs:datetime(rtcs:datetime_to_ts(DateTime))' were
+%%  invoked.
+%%
+%% @see datetime_to_ts/1
+%% @end
+datetime({{_,_,_},{_,_,_}} = DateTime) ->
+    ?validated_timestamp_op(DateTime, iso8601datetime);
+
+datetime(GregorianSecs) when ?gregorian_guard(GregorianSecs) ->
+    iso8601datetime(calendar:gregorian_seconds_to_datetime(GregorianSecs));
+
+datetime([_|_] = DateTime) ->
+    case datetime_to_ts(DateTime) of
+        {{_,_,_},{_,_,_}} = Result ->
+            datetime(Result);
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, Other}
+    end.
+
+-spec iso8601(EpochSecs :: epochsecs()) -> cs_datetime() | dt_error().
+%% @doc Convert the number of seconds since the Unix epoch into a timestamp.
+%%  Output is formatted as the most compact version specified by ISO 8601:
+%%  `YYYYMMDDTHHMMSSZ'.
+%% @see datetime/1
+%% @end
+iso8601(EpochSecs) when is_integer(EpochSecs) ->
+    datetime(EpochSecs + (719528 * 86400)).
+
+-spec datetime_to_gs(DateTime :: datetime()) -> gregorian() | dt_error().
+%% @doc Convert a date/time string into Gregorian seconds.
+%%
+%%  Input is formatted as specified by ISO 8601 or RFC 2616. Note that all
+%%  times are UTC, though RFC 2616 insists on the timezone 'GMT'.
+%%
+%%  Output is the number of Gregorian seconds representing the input as
+%%  interpretted by the {@link calendar} module.
+%%
+%%  For convenience, input in the form of a {@link calendar:datetime()} is
+%%  also accepted, functioning identically to
+%%  {@link calendar:datetime_to_gregorian_seconds/1}.
+%% @end
+datetime_to_gs({{_,_,_},{_,_,_}} = DateTime) ->
+    calendar:datetime_to_gregorian_seconds(DateTime);
+
+datetime_to_gs(GregorianSecs) when ?gregorian_guard(GregorianSecs) ->
+    GregorianSecs;
+
+datetime_to_gs([_|_] = DateTime) ->
+    case datetime_to_ts(DateTime) of
+        {{_,_,_},{_,_,_}} = TS ->
+            calendar:datetime_to_gregorian_seconds(TS);
+        Error ->
+            Error
+    end.
+
+-spec datetime_to_ts(DateTime :: datetime()) -> timestamp() | dt_error().
+%% @doc Convert a date/time string into a {@link timestamp()} tuple.
+%%
+%%  Input is formatted as specified by ISO 8601 or RFC 2616. Note that all
+%%  times are UTC, though RFC 2616 insists on the timezone 'GMT'.
+%%
+%%  Output is the time as represented by a `calendar:datetime()'.
+%%
+%%  For convenience, input in the form of a `calendar:datetime()' is
+%%  also accepted, effectively returning the input unchanged ... though
+%%  possibly validated.
+%% @end
+datetime_to_ts({{_,_,_},{_,_,_}} = DateTime) ->
+    ?validated_timestamp(DateTime);
+
+datetime_to_ts([_,_,_,_,_,_,_,_,$T,_,_,_,_,_,_,$Z] = DateTime) ->
+    datetime_to_ts("~4d~2d~2dT~2d~2d~2dZ", DateTime);
+
+datetime_to_ts([_,_,_,_,$-,_,_,$-,_,_,$T,_,_,$:,_,_,$:,_,_,$Z] = DateTime) ->
+    datetime_to_ts("~4d-~2d-~2dT~2d:~2d:~2dZ", DateTime);
+
+datetime_to_ts([_,_,_,_,$-,_,_,$-,_,_,$T,_,_,$:,_,_,$:,_,_,$+,$0,$0,$:,$0,$0]
+        = DateTime) ->
+    datetime_to_ts("~4d-~2d-~2dT~2d:~2d:~2d+00:00", DateTime);
+
+datetime_to_ts([_|_] = DateTime) ->
+    case httpd_util:convert_request_date(DateTime) of
+        {{_,_,_},{_,_,_}} = Result ->
+            Result;
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, Other}
+    end.
+
+-spec valid_timestamp(timestamp()) -> boolean().
+%% @doc Check whether the specified timestamp is valid.
+%%  Input is a {@link calendar:datetime()}.  The result is `true' if all
+%%  elements conform to the limits specified in the {@link calendar} module,
+%%  `false' otherwise.
+%% @see calendar:valid_date/1
+%% @end
+valid_timestamp({{_,_,_} = D, {H, M, S}}) ->
+    calendar:valid_date(D)
+    andalso erlang:is_integer(H)
+    andalso erlang:is_integer(M)
+    andalso erlang:is_integer(S)
+    andalso H >= 0 andalso H < 24
+    andalso M >= 0 andalso M < 60
+    andalso S >= 0 andalso S < 60.
 
 json_get(Key, Json) when is_binary(Key) ->
     json_get([Key], Json);
@@ -366,15 +594,6 @@ assert_versions(App, Nodes, Regexp) ->
      end ||
         N <- Nodes].
 
-
-%% Copy from rts:iso8601/1
-iso8601(Timestamp) when is_integer(Timestamp) ->
-    GregSec = Timestamp + 719528 * 86400,
-    Datetime = calendar:gregorian_seconds_to_datetime(GregSec),
-    {{Y,M,D},{H,I,S}} = Datetime,
-    io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
-                  [Y, M, D, H, I, S]).
-
 reset_log(Node) ->
     {ok, _Logs} = rpc:call(Node, gen_event, delete_handler,
                            [lager_event, riak_test_lager_backend, normal]),
@@ -416,3 +635,58 @@ node_list(NumNodes) ->
 intercept_path() ->
       filename:join([rtcs_dev:srcpath(cs_src_root),
                      "riak_test", "intercepts", "*.erl"]).
+
+-spec datetime_to_ts(Format :: io:format(), DateTime :: datetime_str())
+        -> timestamp() | dt_error().
+%% @private
+%% @doc Internal scanning function.
+%%  Parses DateTime according to Format into a {@link timestamp()}. If the
+%%  DateTime is not an exact match for the Format, an error is returned.
+%%  Additional validations are also performed to assure the result is valid.
+%%  If the result of this operation is not an error, the returned timestamp
+%%  has been fully validated.
+%%
+%%  The Format MUST yield exactly six integers representin, in order, Year,
+%%  Month, Day, Hour, Minute, and Second, which are validated against the
+%%  constraints specified in the {@link calendar} module.
+%% @end
+datetime_to_ts([_|_] = Format, [_|_] = DateTime) ->
+    case io_lib:fread(Format, DateTime) of
+        {ok, [Year, Mon, Day, Hour, Min, Sec], []} ->
+            TS = {{Year, Mon, Day}, {Hour, Min, Sec}},
+            % don't trust the format to have specified integers, so perform
+            % a complete validation, including types
+            case valid_timestamp(TS) of
+                true ->
+                    TS;
+                _ ->
+                    {error, bad_date}
+            end;
+        {ok, [_,_,_,_,_,_], [_|_]} ->
+            {error, {bad_date, extra_characters}};
+        {more, _, _, _} ->
+            {error, {bad_date, incomplete}};
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, Other}
+    end.
+
+-spec iso8601datetime(DateTime :: timestamp()) -> iso8601ts() | dt_error().
+%% @private
+%% @doc Internal formatting function.
+%%  Converts a {@link timestamp()} value into a string in ISO 8601 format.
+%%  As long as the inputs are all integers, a result is rendered WITHOUT
+%%  value validation!
+%%  Output is formatted as the most compact version specified by ISO 8601:
+%%  `YYYYMMDDTHHMMSSZ'.
+%% @end
+iso8601datetime({{YYYY, MM, DD}, {H ,M ,S}}) ->
+    try
+        lists:flatten(io_lib:format(
+            "~4..0B~2..0B~2..0BT~2..0B~2..0B~2..0BZ",
+            [YYYY, MM, DD, H, M, S]))
+    catch
+        error:Reason ->
+            {error, Reason}
+    end.
