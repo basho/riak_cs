@@ -45,7 +45,7 @@
                         "7ce217c3effb9990bb1aff34621013222c9977ec"}},
        {node_package,".*",
                      {git,"git://github.com/basho/node_package",
-                          "fb028057a97ad2ea86a4002403aaeb71a6adc7bb"}},
+                          "c630bcb25de53d542b167a0891c32f9e47602d6a"}},
        {mochiweb,".*",
                  {git,"git://github.com/basho/mochiweb.git",
                       "ade2a9b29a11034eb550c1d79b4f991bf5ca05ba"}},
