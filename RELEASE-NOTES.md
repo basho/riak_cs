@@ -1,3 +1,33 @@
+#Riak CS 2.1.2 Release Notes
+
+Released March 31, 2016.
+
+This is a backwards-compatible* release that updates node_package to address a recent [Product Advisory](http://docs.basho.com/riak/latest/community/product-advisories/codeinjectioninitfiles/), as well as fixes several bugs.
+
+Riak CS 2.1 is designed to work with Riak KV 2.1.1+.
+
+>*This release is backwards compatible only with the Riak CS 2.x series.
+
+###Upgrading
+
+**For anyone updating to 2.1.2 from 2.1.1 and older versions.**
+
+During the update to 2.1.2, a '==' omitted upload ID might be passed to a Riak CS node running an older version of CS. This may lead to process-crash by failing on decoding upload ID.
+
+##Changes
+
+* Due to a recent [Product Advisory](http://docs.basho.com/riak/latest/community/product-advisories/codeinjectioninitfiles/), node_package was bumped to version 3.0.0 to prevent a potential code injection on the riak init file. [[Issue 1297](https://github.com/basho/riak_cs/issues/1297), [PR 1306](https://github.com/basho/riak_cs/pull/1306), & [PR 109](https://github.com/basho/stanchion/pull/109)]
+* Multipart upload IDs no longer contain trailing '=' characters, which caused trouble for some clients. This change also makes upload IDs URL-safe. This commit removes several unused functions. [[PR 1293](https://github.com/basho/riak_cs/pull/1293)]
+* When Riak is unavailable due to network partition or node being offline, a 500 error is returned. [[PR 1298](https://github.com/basho/riak_cs/pull/1298)]
+
+## Bugs Fixed
+
+* [[Issue 1100](https://github.com/basho/riak_cs/issues/1100)/[PR 1304](https://github.com/basho/riak_cs/pull/1304)] When a multipart completion request was empty, Riak CS would return a "Completed" message. Now, during a multipart upload, the "complete" message contains a list of part IDs and MD5 hashes. If it is empty, it returns a "400 Bad Request, Malformed" XML message like S3.
+* [[Issue 1288](https://github.com/basho/riak_cs/issues/1288)/[PR 1302](https://github.com/basho/riak_cs/pull/1302)] The `root_host` configuration parameter is now used to populate the `Location` response element.
+* [[Issue 972](https://github.com/basho/riak_cs/issues/972)/[PR 1296](https://github.com/basho/riak_cs/pull/1296)] 'adderss' now reads 'address' in Stanchion console output.
+* [[Issue 1025](https://github.com/basho/riak_cs/issues/1025)/[PR 1300](https://github.com/basho/riak_cs/pull/1300)] Copying an object used to fail when connecting via HTTPS.
+
+
 #Riak S2 (Riak CS) 2.1.1 Release Notes
 
 ## General Information
