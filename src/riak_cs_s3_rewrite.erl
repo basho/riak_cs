@@ -110,10 +110,11 @@ rewrite_path(_Method, "/", _QS, undefined) ->
 rewrite_path(Method, Path, QS, undefined) ->
     {Bucket, UpdPath} = separate_bucket_from_path(Path),
     rewrite_path(Method, UpdPath, QS, mochiweb_util:unquote(Bucket));
+rewrite_path(_Method, Path = [47,117,115,97,103,101|_], QS=[_|_], "riak-cs") ->
+    %% [47,117,115,97,103,101] == "/usage"
+    "/riak-cs" ++ Path ++ "?" ++ QS;
 rewrite_path(_Method, Path, _QS, "riak-cs") ->
     "/riak-cs" ++ Path;
-rewrite_path(_Method, Path, _QS, "usage") ->
-    "/usage" ++ Path;
 rewrite_path(Method, "/", [], Bucket) when Method =/= 'GET' ->
     lists:flatten(["/buckets/", Bucket]);
 rewrite_path(Method, "/", QS, Bucket) ->
