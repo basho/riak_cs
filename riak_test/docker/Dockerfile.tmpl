@@ -1,0 +1,31 @@
+FROM centos:centos6
+MAINTAINER Shunichi Shinohara <shino@basho.com>
+
+RUN yum install -y tar
+RUN yum install -y epel-release
+RUN yum install -y s3cmd
+# RUN apt-get install -qq logrotate sudo python-pip
+# RUN pip install s3cmd
+
+ADD @@RIAK_PKG@@ /
+ADD @@ST_PKG@@ /
+ADD @@CS_PKG@@ /
+
+RUN rpm -ivh @@RIAK_PKG@@
+RUN rpm -ivh @@ST_PKG@@
+RUN rpm -ivh @@CS_PKG@@
+
+COPY riak.conf                  /etc/riak/riak.conf
+COPY riak.advanced.config       /etc/riak/advanced.config
+COPY stanchion.conf             /etc/stanchion/stanchion.conf
+COPY stanchion.advanced.config  /etc/stanchion/advanced.config
+COPY riak-cs.conf               /etc/riak-cs/riak-cs.conf
+COPY riak-cs.advanced.config    /etc/riak-cs/advanced.config
+
+COPY local.s3cfg                /.s3cfg
+COPY confirm.sh                 /root/confirm.sh
+RUN  chmod 755                  /root/confirm.sh
+
+RUN riak      version
+RUN stanchion version
+RUN riak-cs   version
