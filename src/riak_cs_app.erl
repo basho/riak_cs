@@ -80,7 +80,7 @@ check_admin_creds() ->
 fetch_and_cache_admin_creds(Key) ->
     %% Not using as the master pool might not be initialized
     {ok, MasterPbc} = riak_connection(),
-    _ = lager:info("setting admin as ~s", [Key]),
+    _ = lager:debug("setting admin as ~s", [Key]),
     try
         %% Do we count this into stats?; This is a startup query and
         %% system latency is expected to be low. So get timeout can be
