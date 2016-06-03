@@ -1,6 +1,6 @@
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,7 +16,7 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 
 %% @doc riak_cs utility functions
 
@@ -52,7 +52,6 @@
          resolve_robj_siblings/1,
          riak_connection/0,
          riak_connection/1,
-         safe_base64_decode/1,
          safe_base64url_decode/1,
          safe_list_to_integer/1,
          set_object_acl/5,
@@ -576,15 +575,6 @@ active_to_bool({error, notfound}) ->
 -spec pid_to_binary(pid()) -> binary().
 pid_to_binary(Pid) ->
     list_to_binary(pid_to_list(Pid)).
-
--spec safe_base64_decode(binary() | string()) -> {ok, binary()} | bad.
-safe_base64_decode(Str) ->
-    try
-        X = base64:decode(Str),
-        {ok, X}
-    catch _:_ ->
-            bad
-    end.
 
 -spec safe_base64url_decode(binary() | string()) -> {ok, binary()} | bad.
 safe_base64url_decode(Str) ->
