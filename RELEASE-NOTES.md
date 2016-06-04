@@ -17,7 +17,7 @@ During the update to 2.1.2, a '==' omitted upload ID might be passed to a Riak C
 ##Changes
 
 * Due to a recent [Product Advisory](http://docs.basho.com/riak/latest/community/product-advisories/codeinjectioninitfiles/), node_package was bumped to version 3.0.0 to prevent a potential code injection on the riak init file. [[Issue 1297](https://github.com/basho/riak_cs/issues/1297), [PR 1306](https://github.com/basho/riak_cs/pull/1306), & [PR 109](https://github.com/basho/stanchion/pull/109)]
-* Multipart upload IDs no longer contain trailing '=' characters, which caused trouble for some clients. This change also makes upload IDs URL-safe. This commit removes several unused functions. [[PR 1293](https://github.com/basho/riak_cs/pull/1293)]
+* Multipart upload IDs no longer contain trailing '=' characters, which caused trouble for some clients. This change also makes upload IDs URL-safe. [[PR 1316](https://github.com/basho/riak_cs/pull/1316)]
 * When Riak is unavailable due to network partition or node being offline, a 500 error is returned. [[PR 1298](https://github.com/basho/riak_cs/pull/1298)]
 
 ## Bugs Fixed
