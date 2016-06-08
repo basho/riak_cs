@@ -1,6 +1,6 @@
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,7 +16,7 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 
 %% @doc riak_cs utility functions
 
