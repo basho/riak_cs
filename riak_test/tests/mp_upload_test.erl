@@ -1,6 +1,6 @@
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,7 +16,7 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% ---------------------------------------------------------------------
+%% -------------------------------------------------------------------
 
 -module(mp_upload_test).
 
@@ -154,6 +154,7 @@ aborted_upload_test_case(Bucket, Key, Config) ->
     lager:info("Initiating multipart upload"),
     InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
     UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+    lager:info("Upload ID: ~p", [UploadId]),
 
     %% Verify the upload id is in list_uploads results and
     %% that the bucket information is correct
@@ -216,6 +217,7 @@ basic_upload_test_case(Bucket, Key, Config) ->
     lager:info("Initiating multipart upload"),
     InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
     UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+    lager:info("Upload ID: ~p", [UploadId]),
 
     %% Verify the upload id is in list_uploads results and
     %% that the bucket information is correct
@@ -274,6 +276,7 @@ parts_too_small_test_case(Bucket, Key, Config) ->
     lager:info("Initiating multipart upload (bad)"),
     InitUploadRes = erlcloud_s3_multipart:initiate_upload(Bucket, Key, [], [], Config),
     UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
+    lager:info("Upload ID: ~p", [UploadId]),
 
     lager:info("Uploading parts (bad)"),
     EtagList = upload_and_assert_parts(Bucket,
