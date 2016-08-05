@@ -44,6 +44,12 @@ upload-docs: docs
 	@cd doc; s3cmd put -P * "s3://${BUCKET}/${PROJECT}/${REVISION}/" > /dev/null
 	@echo "Docs built at: http://${BUCKET}.s3-website-us-east-1.amazonaws.com/${PROJECT}/${REVISION}"
 
+fmt:
+	emacs --script priv/erlfmt.el src/*.erl include/*.hrl
+	emacs --script priv/erlfmt.el test/*.erl
+	emacs --script priv/erlfmt.el riak_test/src/*.erl
+	emacs --script priv/erlfmt.el riak_test/tests/*.erl
+
 docs:
 	${REBAR} doc skip_deps=true
 
