@@ -23,6 +23,7 @@
 -compile(export_all).
 
 -ifdef(TEST).
+-ifdef(EQC).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
@@ -304,4 +305,5 @@ wm_reqdata() ->
             notes         = list(nonempty_binary_char_string()) %% any..?
            }).
 
+-endif.
 -endif.
