@@ -48,7 +48,8 @@ confirm() ->
                                   {"homer@simpsons.com", "homer"},
                                   {"taro@example.co.jp", japanese_aiueo()}], [])],
     Users2 = Users1 ++ create_200_users(Port),
-    ?assertEqual(1 + 3 + 200, length(Users2)),
+    ?assertEqual(4, length(Users1)),
+    ?assertEqual(4 + 10, length(Users2)),
 
     user_listing_json_test_case(Users2, AdminUserConfig, HeadRiakNode),
     user_listing_xml_test_case(Users2, AdminUserConfig, HeadRiakNode),
@@ -67,7 +68,7 @@ japanese_aiueo() ->
 create_200_users(Port) ->
     From = self(),
     Processes = 10,
-    PerProcess = 20,
+    PerProcess = 1,
     [spawn(fun() ->
                    Users = create_users(
                              Port,
@@ -92,6 +93,7 @@ create_users(_Port, [], Acc) ->
     ordsets:from_list(Acc);
 create_users(Port, [{Email, Name} | Users], Acc) ->
     {Key, Secret, _Id} = rtcs:create_user(Port, Email, Name),
+    lager:info("user created: ~p", [Email]),
     create_users(Port, Users, [{Email, Name, Key, Secret, "enabled"} | Acc]).
 
 user_listing_json_test_case(Users, UserConfig, Node) ->
@@ -110,6 +112,7 @@ user_listing_test(ExpectedUsers, UserConfig, Node, ContentType) ->
     Port = rtcs:cs_port(Node),
     Users = parse_user_info(
               rtcs:list_users(UserConfig, Port, Resource, ContentType)),
+    ?assertEqual(14, length(Users)),
     ?assertEqual(ExpectedUsers, Users).
 
 update_user_json_test_case(AdminConfig, Node) ->
