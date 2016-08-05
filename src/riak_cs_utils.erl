@@ -395,12 +395,21 @@ delete_object(Bucket, Key, RiakcPid) ->
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
-    case riak_cs_config:use_t2b_compression() of
+    StartTime = os:timestamp(),
+    UseCompression = riak_cs_config:use_t2b_compression(),
+    Binary = case UseCompression of
         true ->
             term_to_binary(Term, [compressed]);
         false ->
             term_to_binary(Term)
-    end.
+    end,
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    Size = byte_size(Binary),
+    _ = lager:debug("term_to_binary took ~B microseconds for ~B bytes, with"
+                    " compression ~p.",
+                    [TimeDiff, Size, UseCompression]),
+    Binary.
 
 %% Get the root bucket name for either a Riak CS object
 %% bucket or the data block bucket name.
@@ -580,7 +589,13 @@ get_object(BucketName, Key, RiakPid) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_manifests_raw(RiakcPid, Bucket, Key) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
-    riakc_pb_socket:get(RiakcPid, ManifestBucket, Key).
+    StartTime = os:timestamp(),
+    Manifests = riakc_pb_socket:get(RiakcPid, ManifestBucket, Key),
+    EndTime = os:timestamp(),
+    TimeDiff = timer:now_diff(EndTime, StartTime),
+    _ = lager:debug("Took ~B microseconds to read manifest: ~p",
+                    [TimeDiff, [Bucket, Key]]),
+    Manifests.
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary()) ->
@@ -613,6 +628,7 @@ manifests_from_riak_object(RiakObject) ->
                        %% Original value had many contents
                        riakc_obj:get_contents(RiakObject)
                end,
+    _ = debug_log_siblings_and_sizes(Contents),
     DecodedSiblings = [binary_to_term(V) ||
                           {_, V}=Content <- Contents,
                           not has_tombstone(Content)],
@@ -626,6 +642,12 @@ manifests_from_riak_object(RiakObject) ->
 
     %% prune old scheduled_delete manifests
     riak_cs_manifest_utils:prune(Resolved).
+
+debug_log_siblings_and_sizes(Contents) ->
+    NumSiblings = length(Contents),
+    Sizes = [byte_size(V) || {_, V} <- Contents],
+    lager:debug("Deserialized ~B manifests with byte sizes ~p",
+                [NumSiblings, Sizes]).
 
 -spec active_manifest_from_response({ok, orddict:orddict()} |
                                     {error, notfound}) ->
