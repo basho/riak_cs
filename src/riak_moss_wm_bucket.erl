@@ -117,7 +117,7 @@ check_grants(#context{user=User,
 %% belongs to someone else.  Switch to it if the owner's record can be
 %% retrieved.
 shift_to_owner(RD, Ctx, OwnerId, RiakPid) ->
-    case riak_moss_utils:get_user(list_to_binary(OwnerId), RiakPid) of
+    case riak_moss_utils:get_user(OwnerId, RiakPid) of
         {ok, {Owner, OwnerVClock}} ->
             AccessRD = riak_moss_access_logger:set_user(Owner, RD),
             {false, AccessRD, Ctx#context{user=Owner,
