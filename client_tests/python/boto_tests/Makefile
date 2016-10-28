@@ -11,7 +11,7 @@ PATCHED_AUTH_PY = auth.py.patched
 all: test
 
 env:
-	@virtualenv env
+	@virtualenv2 env
 
 $(DEPS) $(BIN): requirements.txt env
 	@env/bin/pip install -r requirements.txt

@@ -19,7 +19,7 @@ s3-tests:
 		-b riakcs-2.1
 
 env:
-	@cd s3-tests && virtualenv env
+	@cd s3-tests && virtualenv2 env
 
 $(DEPS) $(BIN): s3-tests env
 	@cd s3-tests && env/bin/pip install -r requirements.txt
