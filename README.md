@@ -28,6 +28,7 @@ tested with Riak CS:
 - [s3curl](http://aws.amazon.com/code/128)
 - [boto](https://github.com/boto/boto)
 - [erlcloud](https://github.com/basho/erlcloud)
+- [ex_riak_cs](https://github.com/ayrat555/ex_riak_cs)
 - [AWS Java SDK](http://aws.amazon.com/sdk-for-java/)
 - [AWS Ruby SDK](http://aws.amazon.com/sdk-for-ruby/)
 - [Fog](http://fog.io/)
