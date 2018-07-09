@@ -1,44 +1,49 @@
-{IsEE, Package} = case os:getenv("RIAK_CS_EE_DEPS") of
-                      false -> {false, "riak-cs"};
-                      _     -> {true, "riak-cs-ee"}
-                  end,
+%%{IsEE, Package} = case os:getenv("RIAK_CS_EE_DEPS") of
+%%                      false -> {false, "riak-cs"};
+%%                     _     -> {true, "riak-cs-ee"}
+%%                  end,
+{Package} = {"riak-cs"},
 io:format("Building ~s~n", [Package]),
 
-DepsUpdated =
-    case IsEE of
-        false ->
-            CONFIG;
-        true ->
-            {value, {deps, Deps}} = lists:keysearch(deps, 1, CONFIG),
-            {value, {deps_ee, DepsEE}} = lists:keysearch(deps_ee, 1, CONFIG),
-            lists:keyreplace(deps, 1, CONFIG, {deps, Deps ++ DepsEE})
-    end,
+%%DepsUpdated =
+%%    case IsEE of
+%%        false ->
+%%            CONFIG;
+%%        true ->
+%%            {value, {deps, Deps}} = lists:keysearch(deps, 1, CONFIG),
+%%            {value, {deps_ee, DepsEE}} = lists:keysearch(deps_ee, 1, CONFIG),
+%%            lists:keyreplace(deps, 1, CONFIG, {deps, Deps ++ DepsEE})
+%%    end,
 
-XrefQueryUpdated =
-    case IsEE of
-        false ->
-            DepsUpdated;
-        true ->
-            {value, {xref_queries_ee, QueriesEE}} =
-                lists:keysearch(xref_queries_ee, 1, DepsUpdated),
-            lists:keyreplace(xref_queries, 1, DepsUpdated, {xref_queries, QueriesEE})
-    end,            
+DepsUpdated = CONFIG,
+
+%%XrefQueryUpdated =
+%%    case IsEE of
+%%        false ->
+%%            DepsUpdated;
+%%        true ->
+%%            {value, {xref_queries_ee, QueriesEE}} =
+%%                lists:keysearch(xref_queries_ee, 1, DepsUpdated),
+%%            lists:keyreplace(xref_queries, 1, DepsUpdated, {xref_queries, QueriesEE})
+%%   end,            
+
+XrefQueryUpdated = DepsUpdated,
 
 FinalConfig = XrefQueryUpdated,
 
 %% Write dialyzer.ignore_warnings
 
 {ok, _} = file:copy("dialyzer.ignore-warnings.ee", "dialyzer.ignore-warnings"),
-case IsEE of
-    false ->
-        {ok, _} = file:copy("dialyzer.ignore-warnings.oss",
-                            {"dialyzer.ignore-warnings", [append]});
-    true -> ok
-end,
+%%case IsEE of
+%%    false ->
+%%        {ok, _} = file:copy("dialyzer.ignore-warnings.oss",
+%%                           {"dialyzer.ignore-warnings", [append]});
+%%    true -> ok
+%%end,
 
 %% Write pkg.vars.config
-case IsEE of
-    false ->
+%%case IsEE of
+%%    false ->
         Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
 
@@ -50,7 +55,7 @@ case IsEE of
 {package_install_user, \"riakcs\"}.
 {package_install_group, \"riak\"}.
 {package_install_user_desc, \"Riak CS user\"}.
-{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}]]}}.
+{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}], [{name, \"riak-cs-supercluster\"}], [{name, \"riak-cs-multibag\"}]]}}.
 {package_shortdesc, \"Riak CS\"}.
 {package_patch_dir, \"basho-patches\"}.
 {package_desc, \"Riak CS\"}.
@@ -63,34 +68,35 @@ case IsEE of
 {vendor_contact_email, \"packaging@basho.com\"}.
 {license_full_text, \"This software is provided under license from Basho Technologies.\"}.
 {solaris_pkgname, \"BASHOriak-cs\"}.",
-        file:write_file("pkg.vars.config", Bytes);
-    true ->
-        Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+        file:write_file("pkg.vars.config", Bytes),
+
+%%    true ->
+%%        Bytes = "%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
 
 %%
 %% Packaging
 %%
-{package_name, \"riak-cs-ee\"}.
-{package_install_name, \"riak-cs\"}.
-{package_install_user, \"riakcs\"}.
-{package_install_group, \"riak\"}.
-{package_install_user_desc, \"Riak CS user\"}.
-{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}], [{name, \"riak-cs-supercluster\"}], [{name, \"riak-cs-multibag\"}]]}}.
-{package_shortdesc, \"Riak CS\"}.
-{package_patch_dir, \"basho-patches\"}.
-{package_desc, \"Riak CS\"}.
-{bin_or_sbin, \"sbin\"}.
-{license_type, \"Proprietary\"}.
-{copyright, \"2013 Basho Technologies, Inc\"}.
-{vendor_name, \"Basho Technologies, Inc\"}.
-{vendor_url, \"http://basho.com\"}.
-{vendor_contact_name, \"Basho Package Maintainer\"}.
-{vendor_contact_email, \"packaging@basho.com\"}.
-{license_full_text, \"This software is provided under license from Basho Technologies.\"}.
-{solaris_pkgname, \"BASHOriak-cs-ee\"}.
-{debuild_extra_options, \"-e RIAK_CS_EE_DEPS=true\"}.",
-        file:write_file("pkg.vars.config", Bytes)
-end,
+%%{package_name, \"riak-cs-ee\"}.
+%%{package_install_name, \"riak-cs\"}.
+%%{package_install_user, \"riakcs\"}.
+%%{package_install_group, \"riak\"}.
+%%{package_install_user_desc, \"Riak CS user\"}.
+%%{package_commands, {list, [[{name, \"riak-cs\"}], [{name, \"riak-cs-access\"}], [{name, \"riak-cs-gc\"}], [{name, \"riak-cs-storage\"}], [{name, \"riak-cs-stanchion\"}], [{name, \"riak-cs-debug\"}], [{name, \"riak-cs-admin\"}], [{name, \"riak-cs-supercluster\"}], [{name, \"riak-cs-multibag\"}]]}}.
+%%{package_shortdesc, \"Riak CS\"}.
+%%{package_patch_dir, \"basho-patches\"}.
+%%{package_desc, \"Riak CS\"}.
+%%{bin_or_sbin, \"sbin\"}.
+%%{license_type, \"Proprietary\"}.
+%%{copyright, \"2013 Basho Technologies, Inc\"}.
+%%{vendor_name, \"Basho Technologies, Inc\"}.
+%%{vendor_url, \"http://basho.com\"}.
+%%{vendor_contact_name, \"Basho Package Maintainer\"}.
+%%{vendor_contact_email, \"packaging@basho.com\"}.
+%%{license_full_text, \"This software is provided under license from Basho Technologies.\"}.
+%%{solaris_pkgname, \"BASHOriak-cs-ee\"}.
+%%{debuild_extra_options, \"-e RIAK_CS_EE_DEPS=true\"}.",
+%%        file:write_file("pkg.vars.config", Bytes)
+%%end,
 
 FinalConfig.
