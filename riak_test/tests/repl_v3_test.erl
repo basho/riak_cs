@@ -26,7 +26,16 @@
 
 -define(TEST_BUCKET, "riak-test-bucket").
 
-confirm() ->
+confirm()
+    ->case rt_config:get(build_type, oss) of 
+        ee -> 
+            confirm_ee(); 
+        _ -> 
+            lager:info("~s test is only valid on riak_ee, skipping", [?MODULE]), 
+            pass 
+    end. 
+ 
+confirm_ee() -> 
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup2x2(),
     lager:info("UserConfig = ~p", [UserConfig]),
     [A,B,C,D] = RiakNodes,
