@@ -170,7 +170,7 @@ package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
-	cp rebar.config.script package/$(PKG_ID)
+	cp pkg.vars.config package/$(PKG_ID)
 	make -C package/$(PKG_ID) deps
 	mkdir -p package/$(PKG_ID)/priv
 	git --git-dir=.git describe --tags >package/$(PKG_ID)/priv/vsn.git
