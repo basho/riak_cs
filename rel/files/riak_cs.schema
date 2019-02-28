@@ -86,6 +86,17 @@
   hidden
 ]}.
 
+%% @doc Enable experimental signature_v4 compatibility.
+%% Changing this setting to on will allow s3cmd to utilise
+%% signature_v4 and thus function without the need to manually add
+%% v2_signature support to your .s3cfg file,
+%% Note: this function is unfinished and suffers from issues:
+%% #1058, #1059, #1060. Use at your own risk.
+{mapping, "auth_v4", "riak_cs.auth_v4_enabled", [
+   {default, off},
+   {datatype, flag}
+]}.
+
 %% @doc Root host name which Riak CS accepts.
 %% Your CS bucket at s3.example.com will be accessible
 %% via URL like http://bucket.s3.example.com/object/name

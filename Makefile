@@ -166,20 +166,11 @@ PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 .PHONY: package
 export PKG_VERSION PKG_ID PKG_BUILD BASE_DIR ERLANG_BIN REBAR OVERLAY_VARS RELEASE
 
-## Do not export RIAK_CS_EE_DEPS unless it is set, since even an empty
-## variable will affect the build and 'export' by default makes it empty
-## if it is unset
-BUILD_EE = $(shell test -n "$${RIAK_CS_EE_DEPS+x}" && echo "true" || echo "false")
-ifeq ($(BUILD_EE),true)
-export RIAK_CS_EE_DEPS=true
-endif
-
-
 package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
-	cp rebar.config.script package/$(PKG_ID)
+	cp pkg.vars.config package/$(PKG_ID)
 	make -C package/$(PKG_ID) deps
 	mkdir -p package/$(PKG_ID)/priv
 	git --git-dir=.git describe --tags >package/$(PKG_ID)/priv/vsn.git
