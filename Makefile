@@ -84,13 +84,13 @@ pulse: all
 test-client: test-clojure test-boto test-ceph test-erlang test-ruby test-php test-go
 
 test-python:
-	@cd client_tests/python/ && make CS_HTTP_PORT=$(CS_HTTP_PORT)
+	@cd client_tests/python/ && ${MAKE} CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-boto:
-	@cd client_tests/python/ && make boto_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
+	@cd client_tests/python/ && ${MAKE} boto_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-ceph:
-	@cd client_tests/python/ && make ceph_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
+	@cd client_tests/python/ && ${MAKE} ceph_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
 
 test-ruby:
 	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
@@ -105,10 +105,10 @@ test-clojure:
 	@cd client_tests/clojure/clj-s3 && lein do deps, midje
 
 test-php:
-	@cd client_tests/php && make
+	@cd client_tests/php && ${MAKE}
 
 test-go:
-	@cd client_tests/go && make
+	@cd client_tests/go && ${MAKE}
 
 ##
 ## Release targets
@@ -171,7 +171,7 @@ package.src: deps
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
 	cp pkg.vars.config package/$(PKG_ID)
-	make -C package/$(PKG_ID) deps
+	${MAKE} -C package/$(PKG_ID) deps
 	mkdir -p package/$(PKG_ID)/priv
 	git --git-dir=.git describe --tags >package/$(PKG_ID)/priv/vsn.git
 	for dep in package/$(PKG_ID)/deps/*; do \
@@ -186,7 +186,7 @@ dist: package.src
 	cp package/$(PKG_ID).tar.gz .
 
 package: package.src
-	make -C package -f $(PKG_ID)/deps/node_package/Makefile
+	${MAKE} -C package -f $(PKG_ID)/deps/node_package/Makefile
 
 pkgclean: distclean
 	rm -rf package

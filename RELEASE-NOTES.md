@@ -1,6 +1,6 @@
-#Riak CS 2.1.2 Release Candidate Notes
+#Riak CS 2.1.2 Release Notes
 
-Released February 24, 2019.
+Released April 7, 2019.
 
 This is a backwards-compatible* release that updates node_package to address a recent [Product Advisory](http://docs.basho.com/riak/latest/community/product-advisories/codeinjectioninitfiles/), as well as fixes several bugs.
 
@@ -16,9 +16,11 @@ During the update to 2.1.2, a '==' omitted upload ID might be passed to a Riak C
 
 ##Changes
 * For s3cmd users, experimental signature_v4 support has been made available through a simple on/off toggle in riak-cs.conf. With a default setting of "off", it allows in-situ upgrades without the need to change s3cfg files until after all nodes have been upgraded. Note: this function is currently unfinished and suffers from compatibility issues with some clients ([#1058](https://github.com/basho/riak_cs/issues/1058) / [#1060](https://github.com/basho/riak_cs/issues/1060)) and one potential security issue ([#1059](https://github.com/basho/riak_cs/issues/1059)
+* Experimental support for Leveled (the alternative to LevelDB to be released with Riak KV 2.9) has been successfully tested with the Riak KV 2.9.0 Release Candidates.
 * Due to a recent [Product Advisory](http://docs.basho.com/riak/latest/community/product-advisories/codeinjectioninitfiles/), node_package was bumped to version 3.0.0 to prevent a potential code injection on the riak init file. [[Issue 1297](https://github.com/basho/riak_cs/issues/1297), [PR 1306](https://github.com/basho/riak_cs/pull/1306), & [PR 109](https://github.com/basho/stanchion/pull/109)]
 * Multipart upload IDs no longer contain trailing '=' characters, which caused trouble for some clients. This change also makes upload IDs URL-safe. [[PR 1316](https://github.com/basho/riak_cs/pull/1316)]
 * When Riak is unavailable due to network partition or node being offline, a 500 error is returned. [[PR 1298](https://github.com/basho/riak_cs/pull/1298)]
+* Switched from `make` to `${MAKE}` to facilitate easier building on FreeBSD and related platforms
 
 ## Bugs Fixed
 
