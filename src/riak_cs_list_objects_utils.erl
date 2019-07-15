@@ -228,8 +228,7 @@ set_key_list_multiplier(Multiplier) ->
 
 -spec fold_objects_for_list_keys() -> boolean().
 fold_objects_for_list_keys() ->
-    riak_cs_config:get_env(riak_cs, fold_objects_for_list_keys,
-                          ?FOLD_OBJECTS_FOR_LIST_KEYS).
+    true.
 
 -spec fold_objects_timeout() -> non_neg_integer().
 fold_objects_timeout() ->
