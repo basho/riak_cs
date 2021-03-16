@@ -13,7 +13,6 @@
                   mochiweb,
                   webmachine,
                   poolboy,
-                  lager,
                   cluster_info,
                   exometer_core
                  ]},
