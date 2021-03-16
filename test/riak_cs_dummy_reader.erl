@@ -100,7 +100,7 @@ handle_call(get_manifest, _From, #state{bucket=Bucket,
     Manifest = riak_cs_lfs_utils:new_manifest(
                  Bucket,
                  Key,
-                 druuid:v4(),
+                 uuid:get_v4(),
                  ContentLength,
                  "application/test",
                  <<"md5">>,

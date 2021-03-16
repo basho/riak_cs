@@ -221,7 +221,7 @@ list_parts(Bucket, Key, UploadId, Caller, Opts, RcPidUnW) ->
 %% @doc
 -spec new_manifest(binary(), binary(), binary(), acl_owner(), list()) -> lfs_manifest().
 new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
-    UUID = druuid:v4(),
+    UUID = uuid:get_v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
     MetaData = case proplists:get_value(meta_data, Opts) of
                    undefined -> [];

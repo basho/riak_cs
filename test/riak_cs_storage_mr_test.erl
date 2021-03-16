@@ -135,7 +135,7 @@ bucket_summary_map_test_() ->
     ].
 
 m() ->
-    ?MANIFEST{uuid=druuid:v4(),
+    ?MANIFEST{uuid=uuid:get_v4(),
               content_length=0,
               write_start_time={1200, 0, 0},
               block_size=riak_cs_lfs_utils:block_size()}.

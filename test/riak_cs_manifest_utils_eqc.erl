@@ -73,7 +73,7 @@ cleanup(_) ->
 prop_active_manifests() ->
     ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
         begin
-            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid=druuid:v4()} end, Manifests),
+            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
             ToGcUUIDs = lists:sort(riak_cs_manifest_utils:deleted_while_writing(AsDict)),
             Active = riak_cs_manifest_utils:active_manifest(AsDict),
@@ -101,7 +101,7 @@ prop_prune_manifests() ->
     ?FORALL({Manifests, MaxCount},
             {eqc_gen:resize(50, manifests()), frequency([{9, nat()}, {1, 'unlimited'}])},
         begin
-            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid=druuid:v4()} end, Manifests),
+            AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
             NowTime = {-1, -1, -1},
             case MaxCount of

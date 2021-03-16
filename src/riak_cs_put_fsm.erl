@@ -158,7 +158,7 @@ init({{Bucket, Key, ContentLength, ContentType,
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
 
-    UUID = druuid:v4(),
+    UUID = uuid:get_v4(),
     BagId = case BagId0 of
                 undefined ->
                     riak_cs_mb_helper:choose_bag_id(block, {Bucket, Key, UUID});

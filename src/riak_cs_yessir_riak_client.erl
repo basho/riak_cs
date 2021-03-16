@@ -214,7 +214,7 @@ new_manifest(BucketName, Key, ContentLength, Acl) ->
        bkey = {BucketName, Key},
        metadata = [],
        created = riak_cs_wm_utils:iso_8601_datetime(),
-       uuid = druuid:v4(),
+       uuid = uuid:get_v4(),
 
        content_length = ContentLength,
        content_type = <<"application/octet-stream">>,

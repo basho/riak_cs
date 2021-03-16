@@ -135,7 +135,7 @@ encode_decode_test() ->
 test_encode_decode_uuid(0, _, _) ->
     ok;
 test_encode_decode_uuid(Count, BinRE, StrRE) ->
-    test_encode_decode(druuid:v4(), BinRE, StrRE),
+    test_encode_decode(uuid:get_v4(), BinRE, StrRE),
     test_encode_decode_uuid((Count - 1), BinRE, StrRE).
 
 test_encode_decode_binary(0, _, _, _) ->

@@ -125,7 +125,7 @@ process_part(Part) ->
     Part?PART_MANIFEST{part_number = choose(1,1000)}.
 
 g_uuid() ->
-    noshrink(eqc_gen:bind(eqc_gen:bool(), fun(_) -> druuid:v4_str() end)).
+    noshrink(eqc_gen:bind(eqc_gen:bool(), fun(_) -> uuid:get_v4() end)).
 
 not_empty(G) ->
     ?SUCHTHAT(X, G, X /= [] andalso X /= <<>>).

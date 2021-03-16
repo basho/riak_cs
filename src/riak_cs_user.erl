@@ -255,7 +255,7 @@ generate_access_creds(UserId) ->
 generate_canonical_id(KeyID) ->
     Bytes = 16,
     Id1 = riak_cs_utils:md5(KeyID),
-    Id2 = riak_cs_utils:md5(druuid:v4()),
+    Id2 = riak_cs_utils:md5(uuid:get_v4()),
     riak_cs_utils:binary_to_hexlist(
       iolist_to_binary(<< Id1:Bytes/binary,
                           Id2:Bytes/binary >>)).
@@ -264,7 +264,7 @@ generate_canonical_id(KeyID) ->
 -spec generate_key(binary()) -> [byte()].
 generate_key(UserName) ->
     Ctx = crypto:hmac_init(sha, UserName),
-    Ctx1 = crypto:hmac_update(Ctx, druuid:v4()),
+    Ctx1 = crypto:hmac_update(Ctx, uuid:get_v4()),
     Key = crypto:hmac_final_n(Ctx1, 15),
     string:to_upper(base64url:encode_to_string(Key)).
 
@@ -276,7 +276,7 @@ generate_secret(UserName, Key) ->
     Ctx1 = crypto:hmac_update(Ctx, list_to_binary(Key)),
     SecretPart1 = crypto:hmac_final_n(Ctx1, Bytes),
     Ctx2 = crypto:hmac_init(sha, UserName),
-    Ctx3 = crypto:hmac_update(Ctx2, druuid:v4()),
+    Ctx3 = crypto:hmac_update(Ctx2, uuid:get_v4()),
     SecretPart2 = crypto:hmac_final_n(Ctx3, Bytes),
     base64url:encode_to_string(
       iolist_to_binary(<< SecretPart1:Bytes/binary,
