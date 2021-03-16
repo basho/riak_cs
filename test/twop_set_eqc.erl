@@ -52,11 +52,7 @@
 -define(QC_OUT(P),
         eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
--ifdef(namespaced_types).
 -type stdlib_set() :: sets:set().
--else.
--type stdlib_set() :: set().
--endif.
 
 -record(eqc_state, {adds=sets:new() :: stdlib_set(),
                     deletes=sets:new() :: stdlib_set(),

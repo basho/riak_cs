@@ -53,11 +53,7 @@
          resolve/1
         ]).
 
--ifdef(namespaced_types).
 -type stdlib_set() :: sets:set().
--else.
--type stdlib_set() :: set().
--endif.
 
 -type twop_set() :: {stdlib_set(), stdlib_set()}.
 -export_type([twop_set/0]).

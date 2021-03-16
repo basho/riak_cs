@@ -52,11 +52,7 @@
 
 -define(DICTMODULE, dict).
 
--ifdef(namespaced_types).
 -type dictionary() :: dict:dict().
--else.
--type dictionary() :: dict().
--endif.
 
 -record(state, {tid :: ets:tid(),
                 monitor_to_timer = ?DICTMODULE:new() :: dictionary(),

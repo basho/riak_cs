@@ -67,11 +67,7 @@
 
 -type block_name() :: {binary(), integer()}.
 
--ifdef(namespaced_types).
 -type block_queue() :: queue:queue().
--else.
--type block_queue() :: queue().
--endif.
 
 -record(state, {from :: {pid(), reference()},
                 riak_client :: riak_client(),
