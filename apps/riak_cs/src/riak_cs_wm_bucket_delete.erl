@@ -78,7 +78,7 @@ handle_with_bucket_obj({error, notfound}, RD,
 
 handle_with_bucket_obj({error, _} = Error, RD,
                        #context{response_module=ResponseMod} = Ctx) ->
-    _ = lager:debug("bucket error: ~p", [Error]),
+    logger:debug("bucket error: ~p", [Error]),
     ResponseMod:api_error(Error, RD, Ctx);
 
 handle_with_bucket_obj({ok, BucketObj},
@@ -94,7 +94,7 @@ handle_with_bucket_obj({ok, BucketObj},
             %% Delete Multiple Objects accepts a request to delete up to 1000 Objects.
             ResponseMod:api_error(malformed_xml, RD, Ctx);
         {ok, BinKeys} ->
-            lager:debug("deleting keys at ~p: ~p", [Bucket, BinKeys]),
+            logger:debug("deleting keys at ~p: ~p", [Bucket, BinKeys]),
 
             Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
             CanonicalId = riak_cs_wm_utils:extract_canonical_id(User),

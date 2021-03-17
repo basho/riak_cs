@@ -116,7 +116,7 @@
 
 -define(MAYBE_WARN(Bool, Msg),
         case (Bool) of
-            true -> _ = lager:warning((Msg));
+            true -> logger:warning((Msg));
             _ -> ok
         end).
 
@@ -269,8 +269,7 @@ proxy_get_active() ->
         disabled -> false;
         Flag when is_boolean(Flag) -> Flag;
         Other ->
-            _ = lager:warning("proxy_get value in advanced.config is invalid: ~p",
-                              [Other]),
+            logger:warning("proxy_get value in advanced.config is invalid: ~p", [Other]),
             false
     end.
 
@@ -280,7 +279,7 @@ trust_x_forwarded_for() ->
         {ok, true} -> true;
         {ok, false} -> false;
         {ok, _} ->
-            _ = lager:warning("trust_x_forwarded_for value in app.config is invalid"),
+            logger:warning("trust_x_forwarded_for value in app.config is invalid"),
             false;
         undefined -> false %% secure by default!
     end.
@@ -375,13 +374,13 @@ stanchion() ->
     {Host, Port} = case application:get_env(riak_cs, stanchion_host) of
                        {ok, HostPort} -> HostPort;
                        undefined ->
-                           _ = lager:warning("No stanchion access defined. Using default."),
+                           logger:warning("No stanchion access defined. Using default."),
                            {?DEFAULT_STANCHION_IP, ?DEFAULT_STANCHION_PORT}
                    end,
     SSL = case application:get_env(riak_cs, stanchion_ssl) of
               {ok, SSL0} -> SSL0;
               undefined ->
-                  _ = lager:warning("No ssl flag for stanchion access defined. Using default."),
+                  logger:warning("No ssl flag for stanchion access defined. Using default."),
                   ?DEFAULT_STANCHION_SSL
           end,
     {Host, Port, SSL}.

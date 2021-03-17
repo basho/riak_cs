@@ -309,7 +309,7 @@ done(finalize, false, From, State=#state{manifest=Manifest,
 
     ok = maybe_update_manifest_with_confirmation(ManiPid, NotActive),
     gen_fsm:reply(From, {error, invalid_digest}),
-    _ = lager:debug("Invalid digest in the PUT FSM"),
+    logger:debug("Invalid digest in the PUT FSM"),
     {stop, normal, State};
 done(finalize, true, From, State=#state{manifest=Manifest,
                                         mani_pid=ManiPid,
@@ -328,12 +328,11 @@ done(finalize, true, From, State=#state{manifest=Manifest,
 -spec is_digest_valid(binary(), undefined | string()) -> boolean().
 is_digest_valid(D1, undefined) ->
     %% reported MD5 is not in request header
-    _ = lager:debug("Calculated = ~p, Reported = undefined~n", [D1]),
+    logger:debug("Calculated = ~p, Reported = undefined~n", [D1]),
     true;
 is_digest_valid(CalculatedMD5, ReportedMD5) ->
     StringCalculatedMD5 = base64:encode(CalculatedMD5),
-    _ = lager:debug("Calculated = ~p, Reported = ~p~n",
-                    [StringCalculatedMD5, ReportedMD5]),
+    logger:debug("Calculated = ~p, Reported = ~p~n", [StringCalculatedMD5, ReportedMD5]),
     StringCalculatedMD5 =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
@@ -351,7 +350,7 @@ handle_sync_event(current_state, _From, StateName, State) ->
 handle_sync_event(force_stop, _From, _StateName, State = #state{mani_pid=ManiPid,
                                                                 uuid=UUID}) ->
     Res = riak_cs_manifest_fsm:gc_specific_manifest(ManiPid, UUID),
-    lager:debug("Manifest collection on upload failure: ~p", [Res]),
+    logger:debug("Manifest collection on upload failure: ~p", [Res]),
     {stop, normal, Res, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,

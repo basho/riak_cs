@@ -101,12 +101,12 @@ refresher() ->
                   end,
     receive
         reset ->
-            lager:debug("reset received: ~p", [?MODULE]),
+            logger:debug("reset received: ~p", [?MODULE]),
             refresher();
         _ ->
             ets:delete(?MODULE)
     after IntervalSec * 1000 ->
-            lager:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
+            logger:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
             refresher()
     end.
@@ -118,7 +118,7 @@ refresher() ->
                    {error, {disk_quota, non_neg_integer(), non_neg_integer()}}.
 allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
     OwnerKey = iolist_to_binary(riak_cs_user:key_id(Owner)),
-    lager:debug("access => ~p", [OwnerKey]),
+    logger:debug("access => ~p", [OwnerKey]),
 
     {_, Usage} = case ets:lookup(?MODULE, OwnerKey) of
                      [{OwnerKey, _Usage} = UserState0] -> UserState0;
@@ -133,8 +133,8 @@ allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
         Quota < 0 -> {ok, RD, Ctx};
         Usage < Quota -> {ok, RD, Ctx};
         true ->
-            lager:warning("User ~s has exceeded it's quota: usage, quota = ~p, ~p (bytes)",
-                          [OwnerKey, Usage, Quota]),
+            logger:warning("User ~s has exceeded it's quota: usage, quota = ~p, ~p (bytes)",
+                           [OwnerKey, Usage, Quota]),
             {error, {disk_quota, Usage, Quota}}
     end;
 allow(_Owner, #access_v1{req = RD} = _Access, Ctx) ->
@@ -148,7 +148,7 @@ maybe_usage(User0, _Ctx = #context{riak_client=RiakClient}) ->
     User = binary_to_list(User0),
     Usage = case get_latest_usage(RiakClient, User) of
                 {error, notfound} ->
-                    lager:warning("No storage stats data was found. Starting as no usage."),
+                    logger:warning("No storage stats data was found. Starting as no usage."),
                     0;
                 {ok, Usages} ->
                     sum_all_buckets(lists:last(Usages))
@@ -185,7 +185,7 @@ update(User,
         ets:update_counter(?MODULE, User, Bytes)
     catch Type:Error ->
             %% TODO: show out stacktrace heah
-            lager:warning("something wrong? ~p", [Error]),
+            logger:warning("something wrong? ~p", [Error]),
             {error, {Type, Error}}
     end;
 update(_, _) ->

@@ -204,9 +204,9 @@ handle_receiving_manifest(State=#state{manifest=Manifest,
             start_block_servers(NewState);
         {error, invalid_state} ->
             {Bucket, Key} = Manifest?MANIFEST.bkey,
-            _ = lager:warning("Invalid state manifest in GC bucket at ~p, "
-                              "bucket=~p key=~p: ~p",
-                              [GCKey, Bucket, Key, Manifest]),
+            logger:warning("Invalid state manifest in GC bucket at ~p, "
+                           "bucket=~p key=~p: ~p",
+                           [GCKey, Bucket, Key, Manifest]),
             %% If total blocks and deleted blocks are the same,
             %% gc worker attempt to delete the manifest in fileset.
             %% Then manifests and blocks becomes orphan.
@@ -258,7 +258,7 @@ maybe_delete_blocks(State=#state{bucket=Bucket,
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     {UUID, Seq} = BlockID,
-    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
+    logger:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
     riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,

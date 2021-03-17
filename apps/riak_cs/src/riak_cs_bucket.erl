@@ -174,7 +174,7 @@ delete_bucket(User, UserObj, Bucket, RcPid) ->
             %% TODO: output log if failed in cleaning up existing uploads.
             %% The number of retry is hardcoded.
             {ok, Count} = delete_all_uploads(Bucket, RcPid),
-            _ = lager:debug("deleted ~p multiparts before bucket deletion.", [Count]),
+            logger:debug("deleted ~p multiparts before bucket deletion.", [Count]),
             %% This call still may return {error, remaining_multipart_upload}
             %% even if all uploads cleaned up above, because concurrent
             %% multiple deletion may happen. Then Riak CS returns 409 confliction
@@ -227,12 +227,12 @@ fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->
-                    lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
+                    logger:debug("cannot delete multipart manifest: ~p ~p (~p)",
                                 [{Bucket, Key}, M?MANIFEST.uuid, E]),
                     E
             end;
         _E ->
-            lager:debug("skipping multipart manifest: ~p ~p (~p)",
+            logger:debug("skipping multipart manifest: ~p ~p (~p)",
                         [{Bucket, Key}, UploadId, _E]),
             fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count)
     end.
@@ -265,7 +265,7 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
             end;
 
         Error ->
-            _ = lager:error("iterating CS buckets: ~p", [Error]),
+            logger:error("iterating CS buckets: ~p", [Error]),
             {error, {Error, Acc0}}
     end.
 
@@ -439,17 +439,17 @@ fetch_bucket_object_raw(BucketName, RcPid) ->
 
 -spec maybe_log_sibling_warning(binary(), list(riakc_obj:value())) -> ok.
 maybe_log_sibling_warning(Bucket, Values) when length(Values) > 1 ->
-    _ = lager:warning("The bucket ~s has ~b siblings that may need resolution.",
-                      [binary_to_list(Bucket), length(Values)]),
+    logger:warning("The bucket ~s has ~b siblings that may need resolution.",
+                   [binary_to_list(Bucket), length(Values)]),
     ok;
 maybe_log_sibling_warning(_, _) ->
     ok.
 
 -spec maybe_log_bucket_owner_error(binary(), list(riakc_obj:value())) -> ok.
 maybe_log_bucket_owner_error(Bucket, Values) when length(Values) > 1 ->
-    _ = lager:error("The bucket ~s has ~b owners."
-                    " This situation requires administrator intervention.",
-                    [binary_to_list(Bucket), length(Values)]),
+    logger:error("The bucket ~s has ~b owners."
+                 " This situation requires administrator intervention.",
+                 [binary_to_list(Bucket), length(Values)]),
     ok;
 maybe_log_bucket_owner_error(_, _) ->
     ok.
@@ -724,21 +724,21 @@ handle_stanchion_response(409, ErrorDoc, Op, Bucket)
     Value = riak_cs_s3_response:xml_error_code(ErrorDoc),
     case {lists:flatten(Value), Op} of
         {"MultipartUploadRemaining", delete} ->
-            _ = lager:error("Concurrent multipart upload might have"
-                            " happened on deleting bucket '~s'.", [Bucket]),
+            logger:error("Concurrent multipart upload might have"
+                         " happened on deleting bucket '~s'.", [Bucket]),
             {error, remaining_multipart_upload};
         {"MultipartUploadRemaining", create} ->
             %% might be security issue
-            _ = lager:critical("Multipart upload remains in deleted bucket (~s)"
-                               " Clean up the deleted buckets now.", [Bucket]),
+            logger:critical("Multipart upload remains in deleted bucket (~s)"
+                            " Clean up the deleted buckets now.", [Bucket]),
             %% Broken, returns 500
             throw({remaining_multipart_upload_on_deleted_bucket, Bucket});
         Other ->
-            _ = lager:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
+            logger:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
 handle_stanchion_response(_C, ErrorDoc, _M, _) ->
-    %% _ = lager:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
+    %% logger:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
     riak_cs_s3_response:error_response(ErrorDoc).
 
 %% @doc Update a bucket record to convert the name from binary

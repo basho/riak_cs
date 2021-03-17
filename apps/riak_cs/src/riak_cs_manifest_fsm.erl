@@ -390,7 +390,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     MeanSleepMS = min(Coefficient * Siblings, MaxSleep),
     Delta = MeanSleepMS div 2,
     SleepMS = crypto:rand_uniform(MeanSleepMS - Delta, MeanSleepMS + Delta),
-    lager:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p~n", [Siblings, SleepMS]),
+    logger:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p~n", [Siblings, SleepMS]),
     ok = riak_cs_stats:countup([manifest, siblings_bp_sleep]),
     ok = timer:sleep(SleepMS),
     true.

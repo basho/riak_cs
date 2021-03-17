@@ -57,7 +57,7 @@ next(#gc_key_list_state{current_riak_client=RcPid,
                         continuation=Continuation} = State) ->
     {Batch, UpdContinuation} =
         fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, Continuation),
-    lager:debug("next Batch: ~p~n", [Batch]),
+    logger:debug("next Batch: ~p~n", [Batch]),
     {#gc_key_list_result{bag_id=BagId, batch=Batch},
      State#gc_key_list_state{continuation=UpdContinuation}}.
 
@@ -81,15 +81,15 @@ next_pool(#gc_key_list_state{
             ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
             {Batch, Continuation} =
                 fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, undefined),
-            lager:debug("next_bag ~s Batch: ~p~n", [BagId, Batch]),
+            logger:debug("next_bag ~s Batch: ~p~n", [BagId, Batch]),
             {#gc_key_list_result{bag_id=BagId, batch=Batch},
              State#gc_key_list_state{remaining_bags=Rest,
                                      current_riak_client=RcPid,
                                      current_bag_id=BagId,
                                      continuation=Continuation}};
         {error, Reason} ->
-            lager:error("Connection error for bag ~s in garbage collection: ~p",
-                        [BagId, Reason]),
+            logger:error("Connection error for bag ~s in garbage collection: ~p",
+                         [BagId, Reason]),
             next_pool(State#gc_key_list_state{remaining_bags=Rest})
     end.
 
@@ -121,9 +121,9 @@ eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        false, BatchSize) ->
     split_eligible_manifest_keys(BatchSize, Keys, []);
 eligible_manifest_keys({{error, Reason}, {StartKey, EndKey}}, _, _) ->
-    _ = lager:warning("Error occurred trying to query from time ~p to ~p"
-                      "in gc key index. Reason: ~p",
-                      [StartKey, EndKey, Reason]),
+    logger:warning("Error occurred trying to query from time ~p to ~p"
+                   "in gc key index. Reason: ~p",
+                   [StartKey, EndKey, Reason]),
     [].
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets

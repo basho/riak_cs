@@ -190,8 +190,8 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
                            {?USERMETA_KEY, Key},
                            {?USERMETA_BCSUM, BCSum}]),
     FailFun = fun(Error) ->
-                      _ = lager:error("Put ~p ~p UUID ~p block ~p failed: ~p\n",
-                                      [Bucket, Key, UUID, BlockNumber, Error])
+                      logger:error("Put ~p ~p UUID ~p block ~p failed: ~p",
+                                   [Bucket, Key, UUID, BlockNumber, Error])
               end,
     %% TODO: Handle put failure here.
     ok = do_put_block(FullBucket, FullKey, <<>>, Value, MD,
@@ -217,7 +217,7 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
                 riak_cs_delete_fsm:block_deleted(ReplyPid, {ok, {UUID, BlockNumber}});
             {error, _} = Error ->
                 %% Report errors in HEADs to prevent crashing block
-                %% servers, as crash logs forces lager to sync log
+                %% servers, as crash logs forces logger to sync log
                 %% files at each line.
                 Result = format_delete_result(Error, {UUID, BlockNumber}),
                 riak_cs_delete_fsm:block_deleted(ReplyPid, Result)
@@ -253,14 +253,14 @@ do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
   when is_list(ErrorReasons) andalso is_atom(LastReason) ->
     %% Not worth retrying, 'failure' comes as LastReason
     Sorry = {error, ErrorReasons},
-    _ = lager:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
+    logger:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
 
 do_get_block(ReplyPid, _Bucket, _Key, _ClusterID, _UseProxyGet, _ProxyActive,
              UUID, BlockNumber, _RcPid, MaxRetries, ErrorReasons)
   when is_list(ErrorReasons) andalso length(ErrorReasons) > MaxRetries ->
     Sorry = {error, ErrorReasons},
-    _ = lager:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
+    logger:error("do_get_block/11 failed. Errors: ~p", [ErrorReasons]),
     ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, Sorry);
 
 do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
@@ -306,7 +306,7 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
                                   [{local_one, Why}|ErrorReasons], UseProxyGet,
                                   ProxyActive, ClusterID);
         {error, Other} ->
-            _ = lager:error("do_get_block: other error 1: ~p\n", [Other]),
+            logger:error("do_get_block: other error 1: ~p", [Other]),
             RetryFun({failure, [{local_one, Other}|ErrorReasons]})
     end.
 
@@ -322,7 +322,7 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
 
         {error, Why} when Why == disconnected;
                           Why == timeout ->
-            _ = lager:debug("get_block_local() failed: {error, ~p}", [Why]),
+            logger:debug("get_block_local() failed: {error, ~p}", [Why]),
             _ = riak_cs_pbc:pause_to_reconnect(block_pbc(RcPid), Why, Timeout),
             RetryFun([{local_quorum, Why}|ErrorReasons]);
 
@@ -341,7 +341,7 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
         {error, notfound} ->
             RetryFun({failure, [{local_quorum, notfound}|ErrorReasons]});
         {error, Other} ->
-            _ = lager:error("do_get_block: other error 2: ~p\n", [Other]),
+            logger:error("do_get_block: other error 2: ~p", [Other]),
             RetryFun({failure, [{local_quorum, Other}|ErrorReasons]})
     end.
 
@@ -413,7 +413,7 @@ secondary_delete_check({error, {unsatisfied_constraint, _, _}}, RcPid, RiakObjec
     StatsKey = [riakc, delete_block_secondary],
     riak_cs_pbc:delete_obj(block_pbc(RcPid), RiakObject, [], Timeout, StatsKey);
 secondary_delete_check({error, Reason} = E, _, _) ->
-    _ = lager:warning("Constrained block deletion failed. Reason: ~p", [Reason]),
+    logger:warning("Constrained block deletion failed. Reason: ~p", [Reason]),
     E;
 secondary_delete_check(_, _, _) ->
     ok.
@@ -512,19 +512,18 @@ resolve_block_object(RObj, RcPid) ->
                 error ->
                     []
             end,
-            _ = lager:info("Repairing riak ~p ~p for ~p\n",
-                           [RBucket, RKey, S3Info]),
+            logger:info("Repairing riak ~p ~p for ~p", [RBucket, RKey, S3Info]),
             Bucket = proplists:get_value(<<?USERMETA_BUCKET>>, S3Info),
             Key = proplists:get_value(<<?USERMETA_KEY>>, S3Info),
             VClock = riakc_obj:vclock(RObj),
             FailFun = fun(Error) ->
-                              _ = lager:error("Put S3 ~p ~p Riak ~p ~p failed: ~p\n",
-                                              [Bucket, Key, RBucket, RKey, Error])
+                              logger:error("Put S3 ~p ~p Riak ~p ~p failed: ~p",
+                                           [Bucket, Key, RBucket, RKey, Error])
             end,
             do_put_block(RBucket, RKey, VClock, Value, MD, RcPid,
                          [riakc, put_block_resolved], FailFun);
         NeedRepair andalso not is_binary(Value) ->
-            _ = lager:error("All checksums fail: ~P\n", [RObj, 200]);
+            logger:error("All checksums fail: ~P", [RObj, 200]);
         true ->
             ok
     end,

@@ -27,7 +27,6 @@ setup() ->
     application:start(sasl),
     TestNode = list_to_atom("testnode" ++ integer_to_list(element(3, now()))),
     net_kernel:start([TestNode, shortnames]),
-    application:start(lager),
     application:start(riakc),
     application:start(inets),
     application:start(mochiweb),

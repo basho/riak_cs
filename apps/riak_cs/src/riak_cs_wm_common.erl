@@ -221,8 +221,8 @@ maybe_create_user({error, disconnected}=Error, _, _, _, _, RcPid) ->
     riak_cs_pbc:check_connection_status(MasterPid, maybe_create_user),
     Error;
 maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
-    _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
-                    [Api, Reason]),
+    logger:error("Retrieval of user record for ~p failed. Reason: ~p",
+                 [Api, Reason]),
     Error.
 
 %% @doc Get the list of methods a resource supports.
@@ -478,31 +478,31 @@ post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
                               user_object=UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
     %% no keyid was given, proceed anonymously
-    _ = lager:debug("No user key"),
+    logger:debug("No user key"),
     Authorize(RD, Ctx);
 post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     %% no keyid was given, deny access
-    _ = lager:debug("No user key, deny"),
+    logger:debug("No user key, deny"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
-    _ = lager:debug("bad_auth"),
+    logger:debug("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, reqtime_tooskewed} = Error, RD,
                     #context{response_module = ResponseMod} = Ctx, _, _) ->
-    _ = lager:debug("reqtime_tooskewed"),
+    logger:debug("reqtime_tooskewed"),
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
-    _ = lager:debug("auth_not_supported: ~s", [AuthType]),
+    logger:debug("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
-    _ = lager:debug("User does not exist"),
+    logger:debug("User does not exist"),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx);
 post_authentication({error, Reason}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
     %% Lookup failed, basically due to disconnected stuff
-    _ = lager:debug("Authentication error: ~p", [Reason]),
+    logger:debug("Authentication error: ~p", [Reason]),
     ResponseMod:api_error(Reason, RD, Ctx).
 
 update_stats_inflow(_RD, undefined = _StatsPrefix) ->

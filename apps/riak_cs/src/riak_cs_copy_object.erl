@@ -76,7 +76,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
                 {undefined, undefined}
         end,
 
-    _ = lager:debug("UserKey: ~p / ~p", [UserKey, User]),
+    logger:debug("UserKey: ~p / ~p", [UserKey, User]),
 
     %% Build fake context for checking read access to the src object
     OtherLocalCtx = LocalCtx#key_context{bucket=SrcBucket,
@@ -91,8 +91,8 @@ authorize_on_src(RcPid, SrcManifest, RD,
     %% TODO: use unicode module for for key? or is this encoded?
     Path = string:join(["/buckets", binary_to_list(SrcBucket),
                         "objects", binary_to_list(SrcKey)], "/"),
-    _ = lager:debug("raw path: ~p => ~p", [wrq:raw_path(RD), Path]),
-    _ = lager:debug("src bucket obj: ~p", [SrcBucketObj]),
+    logger:debug("raw path: ~p => ~p", [wrq:raw_path(RD), Path]),
+    logger:debug("src bucket obj: ~p", [SrcBucketObj]),
     OtherRD0 = wrq:create('GET', wrq:version(RD), Path, wrq:req_headers(RD)),
     OtherRD = wrq:load_dispatch_data([{bucket, binary_to_list(SrcBucket)},
                                       {object, binary_to_list(SrcKey)}],
@@ -246,7 +246,7 @@ get_and_put(GetPid, PutPid, MD5, ContFun) ->
                     get_and_put(GetPid, PutPid, MD5, ContFun)
             end;
         false ->
-            _ = lager:debug("Connection lost during a copy", []),
+            logger:debug("Connection lost during a copy", []),
             catch riak_cs_get_fsm:stop(GetPid),
             catch riak_cs_put_fsm:force_stop(PutPid),
             {error, connection_lost}

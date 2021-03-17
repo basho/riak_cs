@@ -60,7 +60,7 @@ cluster_info([OutFile]) ->
         error:{badmatch, {error, enotdir}} ->
             io:format("Cluster_info failed, not a directory ~p~n", [filename:dirname(OutFile)]);
         Exception:Reason ->
-            lager:error("Cluster_info failed ~p:~p", [Exception, Reason]),
+            logger:error("Cluster_info failed ~p:~p", [Exception, Reason]),
             io:format("Cluster_info failed, see log for details~n"),
             error
     end.
@@ -86,13 +86,13 @@ audit_bucket_ownership() ->
 audit_bucket_ownership0(RcPid) ->
     FromUsers = ownership_from_users(RcPid),
     {FromBuckets, OwnedBy} = ownership_from_buckets(RcPid),
-    lager:debug("FromUsers: ~p~n", [lists:usort(gb_sets:to_list(FromUsers))]),
-    lager:debug("FromBuckets: ~p~n", [lists:usort(gb_sets:to_list(FromBuckets))]),
-    lager:debug("OwnedBy: ~p~n", [lists:usort(gb_trees:to_list(OwnedBy))]),
+    logger:debug("FromUsers: ~p~n", [lists:usort(gb_sets:to_list(FromUsers))]),
+    logger:debug("FromBuckets: ~p~n", [lists:usort(gb_sets:to_list(FromBuckets))]),
+    logger:debug("OwnedBy: ~p~n", [lists:usort(gb_trees:to_list(OwnedBy))]),
     Inconsistencies0 =
         gb_sets:fold(
           fun ({U, B}, Acc) ->
-                  lager:info(
+                  logger:info(
                     "Bucket is not tracked by user: {User, Bucket} = {~s, ~s}",
                     [U, B]),
                   [{not_tracked, {U, B}} | Acc]
@@ -101,11 +101,11 @@ audit_bucket_ownership0(RcPid) ->
       fun({U,B}, Acc) ->
               case gb_trees:lookup(B, OwnedBy) of
                   none ->
-                      lager:info(
+                      logger:info(
                         "Bucket does not exist: {User, Bucket} = {~s, ~s}", [U, B]),
                       [{no_bucket_object, {U, B}} | Acc];
                   {value, DifferentUser} ->
-                      lager:info(
+                      logger:info(
                         "Bucket is owned by different user: {User, Bucket, DifferentUser} = "
                         "{~s, ~s, ~s}", [U, B, DifferentUser]),
                       [{different_user, {U, B, DifferentUser}} | Acc]
@@ -171,7 +171,7 @@ cleanup_orphan_multipart(Timestamp) when is_list(Timestamp) ->
 cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
 
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
-    _ = lager:info("cleaning up with timestamp ~s", [Timestamp]),
+    logger:info("cleaning up with timestamp ~s", [Timestamp]),
     _ = io:format("cleaning up with timestamp ~s", [Timestamp]),
     Fun = fun(RcPidForOneBucket, BucketName, GetResult, Acc0) ->
                   ok = maybe_cleanup_csbucket(RcPidForOneBucket, BucketName,
@@ -181,7 +181,7 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = riak_cs_bucket:fold_all_buckets(Fun, [], RcPid),
 
     ok = riak_cs_riak_client:stop(RcPid),
-    _ = lager:info("All old unaborted orphan multipart uploads have been deleted.", []),
+    logger:info("All old unaborted orphan multipart uploads have been deleted.", []),
     _ = io:format("~nAll old unaborted orphan multipart uploads have been deleted.~n", []).
 
 
@@ -225,24 +225,24 @@ resolve_siblings(Pid, RawBucket, RawKey) ->
 
 resolve_siblings(Pid, RawBucket, RawKey, GetOptions, GetTimeout, PutOptions, PutTimeout)
   when is_integer(GetTimeout) andalso is_integer(PutTimeout) ->
-    _ = lager:info("Getting ~p:~p~n", [RawBucket, RawKey]),
+    logger:info("Getting ~p:~p~n", [RawBucket, RawKey]),
     case riakc_pb_socket:get(Pid, RawBucket, RawKey, GetOptions, GetTimeout) of
         {ok, RiakObj} ->
-            _ = lager:info("Trying to resolve ~p sibling(s) of ~p:~p",
-                           [riakc_obj:value_count(RiakObj), RawBucket, RawKey]),
+            logger:info("Trying to resolve ~p sibling(s) of ~p:~p",
+                        [riakc_obj:value_count(RiakObj), RawBucket, RawKey]),
             case resolve_ro_siblings(RiakObj, RawBucket, RawKey) of
                 {ok, RiakObj2} ->
                     R = riakc_pb_socket:put(Pid, RiakObj2, PutOptions, PutTimeout),
-                    _ = lager:info("Resolution result: ~p~n", [R]),
+                    logger:info("Resolution result: ~p~n", [R]),
                     R;
                 ok ->
-                    lager:info("No siblings in ~p:~p~n", [RawBucket, RawKey]);
+                    logger:info("No siblings in ~p:~p~n", [RawBucket, RawKey]);
                 {error, _} = E ->
-                    _ = lager:info("Not updating ~p:~p: ~p~n", [RawBucket, RawKey, E]),
+                    logger:info("Not updating ~p:~p: ~p~n", [RawBucket, RawKey, E]),
                     E
             end;
         {error, Reason} = E ->
-            _ = lager:info("Failed to get an object before resolution: ~p~n", [Reason]),
+            logger:info("Failed to get an object before resolution: ~p~n", [Reason]),
             E
     end.
 
@@ -283,7 +283,7 @@ resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
             RO1 = riakc_obj:update_metadata(RO, MD),
             {ok, riakc_obj:update_value(RO1, Value)};
         {E, true} ->
-            _ = lager:info("Cannot resolve: ~p~n", [E]),
+            logger:info("Cannot resolve: ~p~n", [E]),
             {error, E};
         {_, false} ->
             ok
@@ -291,8 +291,7 @@ resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
 resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
     [{_, Manifest}|_] = Manifests =
         riak_cs_manifest:manifests_from_riak_object(RiakObject),
-    _ = lager:info("Number of histories after sibling resolution: ~p.~n",
-                   [length(Manifests)]),
+    logger:info("Number of histories after sibling resolution: ~p.~n", [length(Manifests)]),
     ObjectToWrite0 = riak_cs_utils:update_obj_value(
                        RiakObject, riak_cs_utils:encode_term(Manifests)),
 
@@ -315,7 +314,7 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
                 {ok, Count} ->  io:format(" aborted ~p uploads.~n",
                                           [Count]);
                 Error ->
-                    lager:warning("Error in deleting old uploads: ~p~n", [Error]),
+                    logger:warning("Error in deleting old uploads: ~p~n", [Error]),
                     io:format("Error in deleting old uploads: ~p <<< ~n", [Error]),
                     Error
             end;
@@ -332,6 +331,6 @@ maybe_cleanup_csbucket(RcPidForOneBucket, BucketName, {ok, RiakObj}, Timestamp) 
 maybe_cleanup_csbucket(_, _, {error, notfound}, _) ->
     ok;
 maybe_cleanup_csbucket(_, BucketName, {error, _} = Error, _) ->
-    lager:error("~p on processing ~s", [Error, BucketName]),
+    logger:error("~p on processing ~s", [Error, BucketName]),
     io:format("Error: ~p on processing ~s\n", [Error, BucketName]),
     Error.

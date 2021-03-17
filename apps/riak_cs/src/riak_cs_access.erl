@@ -176,8 +176,8 @@ flush_access_object_to_log(User, RiakObj, Slice) ->
     Start = rts:iso8601(Start0),
     End = rts:iso8601(End0),
     Accesses = riakc_obj:get_update_value(RiakObj),
-    _ = lager:warning("lost access stat: User=~s, Slice=(~s, ~s), Accesses:'~s'",
-                      [User, Start, End, Accesses]).
+    logger:warning("lost access stat: User=~s, Slice=(~s, ~s), Accesses:'~s'",
+                   [User, Start, End, Accesses]).
 
 
 -ifdef(TEST).

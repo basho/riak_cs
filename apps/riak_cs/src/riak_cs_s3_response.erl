@@ -114,7 +114,7 @@ error_message(remaining_multipart_upload) -> "Concurrent multipart upload initia
 error_message(disconnected) -> "Please contact administrator.";
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
-    _ = lager:debug("Unknown error: ~p", [ErrorName]),
+    logger:debug("Unknown error: ~p", [ErrorName]),
     "Please reduce your request rate.".
 
 -spec error_code(error_reason()) -> string().
@@ -165,7 +165,7 @@ error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(disconnected) -> "ServiceUnavailable";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
-    _ = lager:debug("Unknown error: ~p", [ErrorName]),
+    logger:debug("Unknown error: ~p", [ErrorName]),
     "ServiceUnavailable".
 
 %% These should match:
@@ -223,7 +223,7 @@ status_code(remaining_multipart_upload)    -> 409;
 status_code(disconnected)                  -> 500;
 status_code(not_implemented)               -> 501;
 status_code(ErrorName) ->
-    _ = lager:debug("Unknown error: ~p", [ErrorName]),
+    logger:debug("Unknown error: ~p", [ErrorName]),
     503.
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
@@ -406,7 +406,7 @@ process_xml_error([]) ->
 process_xml_error([#xmlText{value=" "}|Rest]) ->
     process_xml_error(Rest);
 process_xml_error([HeadElement | RestElements]) ->
-    _ = lager:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    logger:debug("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'Code' ->

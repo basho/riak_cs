@@ -116,7 +116,7 @@ handle_cast({send_manifests, StartKey},
     _Rest = send_manifests_and_done(Caller, ReqId, StartKey, MaxResults, Manifests),
     {noreply, State};
 handle_cast(Event, State) ->
-    lager:warning("Received unknown cast event: ~p", [Event]),
+    logger:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
 
 %% @doc @TODO

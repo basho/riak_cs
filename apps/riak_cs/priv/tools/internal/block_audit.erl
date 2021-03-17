@@ -34,15 +34,13 @@
                }).
 
 main(Args) ->
-    _ = application:load(lager),
-    ok = application:set_env(lager, handlers, [{lager_console_backend, info}]),
-    ok = lager:start(),
+    logger:update_primary_config(#{level => info}),
     {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
     LogLevel = case proplists:get_value(debug, Options) of
                    0 ->
                        info;
                    _ ->
-                       ok = lager:set_loglevel(lager_console_backend, debug),
+                       logger:update_primary_config(#{level => debug}),
                        debug
                end,
     debug("Log level is set to ~p", [LogLevel]),
@@ -95,7 +93,7 @@ info(Format, Args) ->
     log(info, Format, Args).
 
 log(Level, Format, Args) ->
-    lager:log(Level, self(), Format, Args).
+    logger:log(Level, Format, Args).
 
 audit(Pid, Opts) ->
     Buckets = case proplists:get_all_values(bucket, Opts) of
