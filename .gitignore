@@ -1,5 +1,5 @@
-.eunit/*
-deps/*
+_build/
+.eunit/
 rel/riak-cs
 rel/vars/dev*_vars.config
 ebin/*
