@@ -5,7 +5,7 @@ PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR           ?= $(BASE_DIR)/rebar
+REBAR           ?= rebar3
 OVERLAY_VARS    ?=
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
@@ -17,10 +17,10 @@ all: compile
 compile: compile-riak-test
 
 compile-src: deps
-	@(./rebar compile)
+	@($(REBAR) compile)
 
 compile-client-test: all
-	@./rebar client_test_compile
+	@$(REBAR) client_test_compile
 
 bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
@@ -30,7 +30,7 @@ riak_test/src/downgrade_bitcask.erl:
 		-O riak_test/src/downgrade_bitcask.erl
 
 compile-riak-test: compile-src bitcask-downgrade-script
-	@./rebar skip_deps=true riak_test_compile
+	@$(REBAR) skip_deps=true riak_test_compile
 	## There are some Riak CS internal modules that our riak_test
 	## test would like to use.  But riak_test doesn't have a nice
 	## way of adding the -pz argument + code path that we need.
@@ -40,32 +40,32 @@ compile-riak-test: compile-src bitcask-downgrade-script
 	cp ebin/twop_set.beam riak_test/ebin
 
 clean-client-test:
-	@./rebar client_test_clean
+	@$(REBAR) client_test_clean
 
 clean-riak-test:
-	@./rebar riak_test_clean skip_deps=true
+	@$(REBAR) riak_test_clean skip_deps=true
 
 deps:
-	@./rebar get-deps
+	@$(REBAR) get-deps
 
 ##
 ## Lock Targets
 ##
 ##  see https://github.com/seth/rebar_lock_deps_plugin
 lock: deps compile
-	./rebar lock-deps
+	$(REBAR) lock-deps
 
 locked-all: locked-deps compile
 
 locked-deps:
 	@echo "Using rebar.config.lock file to fetch dependencies"
-	./rebar -C rebar.config.lock get-deps
+	$(REBAR) -C rebar.config.lock get-deps
 
 clean:
-	@./rebar clean
+	@$(REBAR) clean
 
 distclean: clean
-	@./rebar delete-deps
+	@$(REBAR) delete-deps
 	@rm -rf $(PKG_ID).tar.gz
 
 ## Create a dependency graph png
@@ -79,7 +79,7 @@ graphviz:
 
 pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
-	@./rebar -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
+	@$(REBAR) -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
 
 test-client: test-clojure test-boto test-ceph test-erlang test-ruby test-php test-go
 
@@ -97,7 +97,7 @@ test-ruby:
 	@cd client_tests/ruby && bundle exec rake spec
 
 test-erlang: compile-client-test
-	@./rebar skip_deps=true client_test_run
+	@$(REBAR) skip_deps=true client_test_run
 
 test-clojure:
 	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
@@ -114,7 +114,7 @@ test-go:
 ## Release targets
 ##
 rel: deps compile
-	@./rebar generate skip_deps=true $(OVERLAY_VARS)
+	@$(REBAR) generate skip_deps=true $(OVERLAY_VARS)
 
 relclean:
 	rm -rf rel/riak-cs
@@ -142,7 +142,7 @@ $(eval devrel : $(foreach n,$(SEQ),dev$(n)))
 dev% : all
 	mkdir -p dev
 	rel/gen_dev $@ rel/vars/dev_vars.config.src rel/vars/$@_vars.config
-	(cd rel && ../rebar generate target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
+	(cd rel && $(REBAR) generate target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
 
 stagedev% : dev%
 	$(foreach app,$(wildcard apps/*), rm -rf dev/$^/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) dev/$^/lib;)
