@@ -44,10 +44,14 @@ pr(Record) ->
 
 -spec pr(tuple(), non_neg_integer()) -> iolist().
 pr(Record, Indent) ->
-    {'$lager_record', RecordName, Zipped} = lager:pr(Record, ?MODULE), 
+    Zipped = rec_to_proplist(Record),
     ["\n", spaces(Indent), "#", atom_to_list(RecordName),
-     "\n", spaces(Indent), "--------------------\n", 
-     [print_field(Field, Indent) || Field <- Zipped]].
+     "\n", spaces(Indent), "--------------------\n",
+     [print_field(FV, Indent) || FV <- Zipped]].
+
+rec_to_proplist(R) ->
+    RFF = record_info(fields, R),
+    lists:zip(RFF, tl(tuple_to_list(RO))).
 
 print_field({_, undefined}, _) ->
     "";
