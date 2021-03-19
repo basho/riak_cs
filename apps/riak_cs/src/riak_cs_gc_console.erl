@@ -37,9 +37,9 @@
         try
             Code
         catch
-            Type:Reason ->
-                io:format("~s failed:~n  ~p:~p~n~p~n",
-                          [Description, Type, Reason, erlang:get_stacktrace()]),
+            Type:Reason:ST ->
+                io:format("~s failed:\n  ~p:~p\n~p\n",
+                          [Description, Type, Reason, ST]),
                 error
         end).
 
