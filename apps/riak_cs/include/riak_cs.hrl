@@ -135,11 +135,11 @@
 -type acl_owner() :: acl_owner2() | acl_owner3().
 -record(acl_v1, {owner={"", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
-                 creation_time=now() :: erlang:timestamp()}).
+                 creation_time = erlang:timestamp() :: erlang:timestamp()}).
 %% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
 -record(acl_v2, {owner={"", "", ""} :: acl_owner(),
                  grants=[] :: [acl_grant()],
-                 creation_time=now() :: erlang:timestamp()}).
+                 creation_time = erlang:timestamp() :: erlang:timestamp()}).
 -type acl() :: #acl_v1{} | #acl_v2{}.
 
 -type cluster_id() :: undefined | binary(). %% flattened string as binary

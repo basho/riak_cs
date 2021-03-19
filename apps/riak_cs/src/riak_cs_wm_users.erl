@@ -162,6 +162,6 @@ user_fold_fun(RcPid, Status) ->
     end.
 
 unique_id() ->
-    Rand = riak_cs_utils:sha(term_to_binary({make_ref(), now()})),
+    Rand = riak_cs_utils:sha(term_to_binary({make_ref(), erlang:timestamp()})),
     <<I:160/integer>> = Rand,
     integer_to_list(I, 36).
