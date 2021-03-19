@@ -22,8 +22,6 @@
 
 -behavior(riak_cs_auth).
 
--compile(export_all).
-
 -export([identify/2, authenticate/4]).
 
 -include("riak_cs.hrl").
