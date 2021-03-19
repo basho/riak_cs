@@ -241,7 +241,7 @@ retry_from_marked_time(MarkedTime, Now) ->
 -spec prune(orddict:orddict()) -> orddict:orddict().
 prune(Dict) ->
     MaxCount = riak_cs_gc:max_scheduled_delete_manifests(),
-    prune(Dict, erlang:now(), MaxCount).
+    prune(Dict, erlang:timestamp(), MaxCount).
 
 -spec prune(orddict:orddict(),
             erlang:timestamp(),

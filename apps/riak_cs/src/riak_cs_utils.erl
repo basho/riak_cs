@@ -195,8 +195,7 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
         Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
         ResolvedManifestsHandler(Resolved)
-    catch Type:Reason ->
-            StackTrace = erlang:get_stacktrace(),
+    catch Type:Reason:StackTrace ->
             logger:error("Riak CS object mapreduce failed for ~p:~p with reason ~p:~p at ~p",
                          [riak_object:bucket(Object),
                           riak_object:key(Object),

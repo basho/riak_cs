@@ -19,6 +19,9 @@
 %% ---------------------------------------------------------------------
 
 -module(riak_cs_wm_error_handler).
+
+-compile({nowarn_deprecated_function, [{erlang, get_stacktrace, 0}]}).
+
 -export([render_error/3, xml_error_body/4]).
 
 -include("riak_cs.hrl").

@@ -480,8 +480,8 @@ generate_key() ->
 
 -spec key_suffix(erlang:timestamp()) -> string().
 key_suffix(Time) ->
-    _ = random:seed(Time),
-    integer_to_list(random:uniform(riak_cs_config:gc_key_suffix_max())).
+    _ = rand:seed(exsss, Time),
+    integer_to_list(rand:uniform(riak_cs_config:gc_key_suffix_max())).
 
 %% @doc Given a list of riakc_obj-flavored object (with potentially
 %%      many siblings and perhaps a tombstone), decode and merge them.

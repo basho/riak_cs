@@ -103,10 +103,10 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest, RcPid
                                                    PartsToDelete, RcPid),
                         UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
                         ok = update_manifest_with_confirmation(RcPid, UpdManifest)
-                    catch X:Y ->
+                    catch X:Y:ST ->
                             logger:debug("clean_multipart_unused_parts: "
                                          "bkey ~p: ~p ~p @ ~p\n",
-                                         [BKey, X, Y, erlang:get_stacktrace()])
+                                         [BKey, X, Y, ST])
                     end,
                     %% Return same value to caller, regardless of ok/catch
                     updated;

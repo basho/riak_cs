@@ -296,7 +296,7 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
     %% zero-body put copy - just updating metadata
     #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
-    NewAcl = Acl?ACL{creation_time = now()},
+    NewAcl = Acl?ACL{creation_time = erlang:timestamp()},
     {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
     case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
                                       Mfst?MANIFEST{metadata=Metadata, content_type=ContentType}, NewAcl,
