@@ -207,7 +207,7 @@ update(User,
                  {#user_state.access_count, 1}],
     try
         case ets:update_counter(?MODULE, User, UpdateOps) of
-            [_, _] = R ->
+            [_, _] ->
                 ok;
             Error0 ->
                 logger:warning("something wrong? ~p", [Error0]),

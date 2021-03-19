@@ -411,7 +411,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         %% access to source object not authorized
                         %% TODO: check the return value / http status
                         ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
-                    {{halt, 403}, _RD, _OtherCtx} = Error ->
+                    {{halt, 403}, _RD, _OtherCtx} ->
                         %% access to source object not authorized either, but
                         %% in different return value
                         ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
