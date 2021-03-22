@@ -14,7 +14,8 @@
                   webmachine,
                   poolboy,
                   cluster_info,
-                  exometer_core
+                  exometer_core,
+                  riakc
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [
