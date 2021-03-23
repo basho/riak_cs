@@ -22,6 +22,7 @@
 
 -module(riak_cs_acl_utils_eqc).
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
 

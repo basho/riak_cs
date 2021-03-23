@@ -54,6 +54,7 @@
 
 -ifdef(TEST).
 -compile(export_all).
+-compile(nowarn_export_all).
 -endif.
 
 -type subresource() :: {string(), string()}.

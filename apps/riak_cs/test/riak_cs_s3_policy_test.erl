@@ -23,6 +23,7 @@
 -module(riak_cs_s3_policy_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").

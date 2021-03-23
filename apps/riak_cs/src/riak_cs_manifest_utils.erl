@@ -25,6 +25,7 @@
 -include("riak_cs.hrl").
 -ifdef(TEST).
 -compile(export_all).
+-compile(nowarn_export_all).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -491,12 +492,12 @@ cleanup(_Ctx) ->
 wrong_state_for_pruning() ->
     Mani = new_mani_helper(),
     Mani2 = Mani?MANIFEST{state=active},
-    ?assert(not needs_pruning(Mani2, erlang:now())).
+    ?assert(not needs_pruning(Mani2, erlang:timestamp())).
 
 wrong_state_for_pruning_2() ->
     Mani = new_mani_helper(),
     Mani2 = Mani?MANIFEST{state=pending_delete},
-    ?assert(not needs_pruning(Mani2, erlang:now())).
+    ?assert(not needs_pruning(Mani2, erlang:timestamp())).
 
 does_need_pruning() ->
     application:set_env(riak_cs, leeway_seconds, 1),

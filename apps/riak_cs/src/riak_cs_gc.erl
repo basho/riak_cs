@@ -25,6 +25,7 @@
 -include("riak_cs_gc.hrl").
 -ifdef(TEST).
 -compile(export_all).
+-compile(nowarn_export_all).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 

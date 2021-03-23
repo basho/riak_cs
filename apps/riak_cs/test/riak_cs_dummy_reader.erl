@@ -83,7 +83,7 @@ get_manifest(Pid) ->
 init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
     process_flag(trap_exit, true),
     %% Get a connection to riak
-    random:seed(now()),
+    rand:seed(exsss, erlang:timestamp()),
     {ok, #state{content_length=ContentLength,
                 remaining=ContentLength,
                 bucket=Bucket,

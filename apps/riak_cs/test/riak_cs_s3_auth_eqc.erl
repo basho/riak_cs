@@ -21,6 +21,7 @@
 -module(riak_cs_s3_auth_eqc).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -ifdef(EQC).
 

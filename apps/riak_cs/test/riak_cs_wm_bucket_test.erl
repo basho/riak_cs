@@ -21,6 +21,7 @@
 -module(riak_cs_wm_bucket_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -39,9 +40,9 @@ bucket_test_() ->
 %% The state needed for this test
 %% scares me
 create_bucket_and_list_keys() ->
-    PathInfo = dict:from_list([{bucket, "create_bucket_test"}]),
-    _RD = #wm_reqdata{path_info = PathInfo},
-    _Ctx = #context{},
+    _PathInfo = dict:from_list([{bucket, "create_bucket_test"}]),
+    %% _RD = #wm_reqdata{path_info = PathInfo},
+    %% _Ctx = #context{},
     ?assert(true).
 %%  {Result, _, _} = riak_cs_wm_bucket:to_json(RD, Ctx),
 %%  ?assertEqual(mochijson2:encode([]), Result).

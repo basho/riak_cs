@@ -26,11 +26,9 @@
 -include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
-
 -compile(export_all).
-
+-compile(nowarn_export_all).
 -include_lib("eunit/include/eunit.hrl").
-
 -endif.
 
 %% Public API
@@ -1024,7 +1022,7 @@ comment_space_test() ->
     ok.
 
 acl_from_json_test() ->
-    CreationTime = erlang:now(),
+    CreationTime = erlang:timestamp(),
     {AclMegaSecs, AclSecs, AclMicroSecs} = CreationTime,
     JsonTerm = [{<<"version">>,1},
                 {<<"owner">>,
@@ -1060,7 +1058,7 @@ acl_from_json_test() ->
     ?assertEqual(ExpectedAcl, Acl).
 
 acl_to_json_term_test() ->
-    CreationTime = erlang:now(),
+    CreationTime = erlang:timestamp(),
     Acl = acl("tester1",
               "TESTID1",
               "TESTKEYID1",
@@ -1103,7 +1101,7 @@ owner_to_json_term_test() ->
     ?assertEqual(ExpectedTerm, JsonTerm).
 
 grants_to_json_term_test() ->
-    CreationTime = erlang:now(),
+    CreationTime = erlang:timestamp(),
     Acl = acl("tester1",
               "TESTID1",
               "TESTKEYID1",

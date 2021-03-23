@@ -29,8 +29,9 @@
 -define(OOS_ACCOUNT_HEADER, "x-oos-account").
 
 -ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
 -compile(export_all).
+-compile(nowarn_export_all).
+-include_lib("eunit/include/eunit.hrl").
 -endif.
 
 %% @doc Function to rewrite headers prior to processing by webmachine.

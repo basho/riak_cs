@@ -21,6 +21,7 @@
 -module(riak_cs_wm_key_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -38,8 +39,8 @@ get_object() ->
     %% path info the wm_reqdata because
     %% riak_cs_wm_utils:ensure_doc uses
     %% it.
-    _Ctx= #key_context{bucket="keytest", key="foo"},
-    _RD = #wm_reqdata{},
+    %% _Ctx= #key_context{bucket="keytest", key="foo"},
+    %% _RD = #wm_reqdata{},
     ?assert(true).
 %%    {Object, _, _} = riak_cs_wm_key:produce_body(RD, Ctx),
 %%    ?assertEqual(<<>>, Object).

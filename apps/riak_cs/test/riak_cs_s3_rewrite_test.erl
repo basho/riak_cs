@@ -26,6 +26,7 @@
 
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
 -compile(export_all).
+-compile(nowarn_export_all).
 
 rewrite_path_test() ->
     application:set_env(riak_cs, cs_root_host, ?ROOT_HOST),

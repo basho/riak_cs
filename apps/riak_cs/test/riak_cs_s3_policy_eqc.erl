@@ -21,6 +21,7 @@
 -module(riak_cs_s3_policy_eqc).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -ifdef(TEST).
 -ifdef(EQC).

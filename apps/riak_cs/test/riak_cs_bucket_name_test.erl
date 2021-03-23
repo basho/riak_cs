@@ -21,6 +21,7 @@
 -module(riak_cs_bucket_name_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -ifdef(TEST).
 

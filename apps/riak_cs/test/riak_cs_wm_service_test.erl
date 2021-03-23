@@ -21,6 +21,7 @@
 -module(riak_cs_wm_service_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
@@ -41,11 +42,11 @@ get_bucket_to_json() ->
     {ok, User} = riak_cs_user:create_user(UserName, Email),
     KeyID = User?RCS_USER.key_id,
     [riak_cs_utils:create_bucket(KeyID, Name) || Name <- BucketNames],
-    {ok, UpdatedUser} = riak_cs_user:get_user(User?RCS_USER.key_id),
+    {ok, _UpdatedUser} = riak_cs_user:get_user(User?RCS_USER.key_id),
     CorrectJsonBucketNames = [list_to_binary(Name) ||
                                      Name <- lists:reverse(BucketNames)],
     _EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),
-    _Context = #context{user=UpdatedUser},
+    %%_Context = #context{user=UpdatedUser},
     ?assert(true).
     %%{ResultToTest, _, _} = riak_cs_wm_service:to_json(fake_rd, Context),
     %%?assertEqual(EncodedCorrectNames, ResultToTest).

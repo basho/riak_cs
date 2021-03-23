@@ -21,6 +21,7 @@
 -module(riak_cs_bucket_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -ifdef(TEST).
 -include("riak_cs.hrl").

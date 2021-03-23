@@ -23,10 +23,9 @@
 -module(riak_cs_storage_mr_test).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
-
--ifdef(TEST).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -202,5 +201,3 @@ count_multipart_parts_test_() ->
                      [{<<"pocketburgers">>,
                        ?MANIFEST{props=[{multipart, ValidMPManifest}], state=writing}}]))
     ].
-
--endif.
