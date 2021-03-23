@@ -689,9 +689,9 @@
 %% each line, in which the last token of key is member identifier and
 %% value is a PB address of Riak node to connect.
 {mapping, "supercluster.member.$member_id", "riak_cs.supercluster_members", [
-  {datatype, ip},
+  {datatype, [ip, fqdn]},
   {include_default, "bag-A"},
-  {commented, {"192.168.0.101", 8087}},
+  {commented, {"riak-A1.example.com:8087", 8087}},
   hidden
 ]}.
 
