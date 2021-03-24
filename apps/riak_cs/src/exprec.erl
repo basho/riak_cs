@@ -3,6 +3,7 @@
 -include("riak_cs.hrl").
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -define(ALL_RECORDS,
         [ moss_user

@@ -45,13 +45,13 @@ pr(Record) ->
 -spec pr(tuple(), non_neg_integer()) -> iolist().
 pr(Record, Indent) ->
     Zipped = rec_to_proplist(Record),
-    ["\n", spaces(Indent), "#", atom_to_list(RecordName),
+    ["\n", spaces(Indent), "#", atom_to_list(hd(tuple_to_list(Record))),
      "\n", spaces(Indent), "--------------------\n",
      [print_field(FV, Indent) || FV <- Zipped]].
 
 rec_to_proplist(R) ->
-    RFF = record_info(fields, R),
-    lists:zip(RFF, tl(tuple_to_list(RO))).
+    RFF = exprec:info(R),
+    lists:zip(RFF, tl(tuple_to_list(R))).
 
 print_field({_, undefined}, _) ->
     "";
