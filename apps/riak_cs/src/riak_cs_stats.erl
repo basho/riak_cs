@@ -331,11 +331,11 @@ metric_to_atom(Key, Suffix) ->
 -include_lib("eunit/include/eunit.hrl").
 
 stats_test_() ->
-    Apps = [setup, compiler, syntax_tools, goldrush, exometer_core],
+    Apps = [setup, compiler, syntax_tools, exometer_core],
     {setup,
      fun() ->
              logger:update_primary_config(#{level => none}),
-             [catch (application:start(App)) || App <- Apps],
+             [application:ensure_all_started(App) || App <- Apps],
              ok = init()
      end,
      fun(_) ->
