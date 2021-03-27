@@ -14,7 +14,7 @@ PULSE_TESTS      = riak_cs_get_fsm_pulse
 
 all: compile
 
-compile: compile-riak-test
+compile:
 
 compile-src: deps
 	@($(REBAR) compile)
@@ -24,26 +24,8 @@ compile-client-test: all
 
 bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
-## KLUDGE, as downgrade script is not included in the release.
-riak_test/src/downgrade_bitcask.erl:
-	@wget --no-check-certificate https://raw.githubusercontent.com/basho/bitcask/develop/priv/scripts/downgrade_bitcask.erl \
-		-O riak_test/src/downgrade_bitcask.erl
-
-compile-riak-test: compile-src bitcask-downgrade-script
-	@$(REBAR) skip_deps=true riak_test_compile
-	## There are some Riak CS internal modules that our riak_test
-	## test would like to use.  But riak_test doesn't have a nice
-	## way of adding the -pz argument + code path that we need.
-	## So we'll copy the BEAM files to a place that riak_test is
-	## already using.
-	cp ebin/riak_cs_wm_utils.beam riak_test/ebin
-	cp ebin/twop_set.beam riak_test/ebin
-
 clean-client-test:
 	@$(REBAR) client_test_clean
-
-clean-riak-test:
-	@$(REBAR) riak_test_clean skip_deps=true
 
 deps:
 	@$(REBAR) get-deps
