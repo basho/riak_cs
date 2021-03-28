@@ -24,18 +24,18 @@
 #  wholesale when a new version of tools.mk is released.
 #  -------------------------------------------------------------------
 
-REBAR ?= rebar3
+REBAR ?= ./rebar3
 REVISION ?= $(shell git rev-parse --short HEAD)
 PROJECT ?= $(shell basename `find src -name "*.app.src"` .app.src)
 
-.PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
+.PHONY: compile test docs xref dialyzer-run dialyzer-quick dialyzer \
 		cleanplt upload-docs
 
-compile-no-deps:
-	${REBAR} compile skip_deps=true
+compile:
+	${REBAR} compile
 
 test: compile
-	${REBAR} eunit skip_deps=true
+	${REBAR} eunit
 
 upload-docs: docs
 	@if [ -z "${BUCKET}" -o -z "${PROJECT}" -o -z "${REVISION}" ]; then \
@@ -45,10 +45,10 @@ upload-docs: docs
 	@echo "Docs built at: http://${BUCKET}.s3-website-us-east-1.amazonaws.com/${PROJECT}/${REVISION}"
 
 docs:
-	${REBAR} doc skip_deps=true
+	${REBAR} doc
 
 xref: compile
-	${REBAR} xref skip_deps=true
+	${REBAR} xref
 
 PLT ?= $(HOME)/.combo_dialyzer_plt
 LOCAL_PLT = .local_dialyzer_plt
@@ -135,7 +135,7 @@ dialyzer-run:
 		dialyzer $(DIALYZER_FLAGS) --plts $${PLTS} -c ebin; \
 	fi
 
-dialyzer-quick: compile-no-deps dialyzer-run
+dialyzer-quick: compile dialyzer-run
 
 dialyzer: ${PLT} ${LOCAL_PLT} dialyzer-run
 
