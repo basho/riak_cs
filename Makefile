@@ -1,24 +1,96 @@
-REPO		    ?= riak_cs
-PKG_REVISION    ?= $(shell git describe --tags)
-PKG_VERSION	    ?= $(shell git describe --tags | tr - .)
+REPO		?= riak_cs
+HEAD_REVISION   ?= $(shell git describe --tags --exact-match HEAD 2>/dev/null)
+PKG_REVISION    ?= $(shell git describe --tags 2>/dev/null)
+PKG_VERSION     ?= $(shell git describe --tags | tr - .)
 PKG_ID           = riak-cs-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
-ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR           ?= rebar3
-OVERLAY_VARS    ?=
+ERLANG_BIN       = $(shell dirname $(shell which erl 2>/dev/null) 2>/dev/null)
+OTP_VER          = $(shell echo $(ERLANG_BIN) | rev | cut -d "/" -f 2 | rev)
+REBAR           ?= $(BASE_DIR)/rebar3
+REL_DIR         ?= _build/default/rel
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test depgraph graphviz all compile compile-src
+.PHONY: rel stagedevrel deps test depgraph graphviz all compile
 
 all: compile
 
 compile:
-
-compile-src: deps
 	@($(REBAR) compile)
 
+deps:
+	$(if $(HEAD_REVISION),$(warning "Warning: you have checked out a tag ($(HEAD_REVISION)) and should use the compile target"))
+	$(REBAR) upgrade
+
+clean: testclean
+	$(REBAR) clean
+
+distclean: clean devclean relclean ballclean
+	@rm -rf _build
+
+##
+## Release targets
+##
+rel: compile
+	$(REBAR) as rel release
+	cp -a _build/rel/rel/riak rel/
+
+rel-rpm: compile
+	$(REBAR) as rpm release
+	cp -a _build/rpm/rel/riak rel/
+
+rel-deb: compile
+	$(REBAR) as deb release
+	cp -a _build/deb/rel/riak rel/
+
+relclean:
+	rm -rf $(REL_DIR)
+	rm -rf rel/riak_cs
+
+##
+## Developer targets
+##
+##  devN - Make a dev build for node N
+##  stagedevN - Make a stage dev build for node N (symlink libraries)
+##  devrel - Make a dev build for 1..$DEVNODES
+##  stagedevrel Make a stagedev build for 1..$DEVNODES
+##
+##  Example, make a 68 node devrel cluster
+##    make stagedevrel DEVNODES=68
+
+.PHONY : stagedevrel devrel
+DEVNODES ?= 8
+
+# 'seq' is not available on all *BSD, so using an alternate in awk
+SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
+
+$(eval stagedevrel : $(foreach n,$(SEQ),stagedev$(n)))
+$(eval devrel : $(foreach n,$(SEQ),dev$(n)))
+
+dev% : all
+	rel/gen_dev dev$* rel/vars/dev_vars.config.src rel/vars/$*_vars.config
+	$(REBAR) as dev release -o dev/dev$* --overlay_vars rel/vars/$*_vars.config
+
+stagedev% : all
+	rel/gen_dev dev$* rel/vars/dev_vars.config.src rel/vars/$*_vars.config
+	$(REBAR) as dev release -o dev/dev$* --overlay_vars rel/vars/$*_vars.config
+
+devclean: clean
+	rm -rf dev
+
+stage : rel
+	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
+	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
+
+
+DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
+	webtool eunit syntax_tools compiler
+PLT ?= $(HOME)/.riak-cs_dialyzer_plt
+
+
+
+## to fix:
 compile-client-test: all
 	@$(REBAR) client_test_compile
 
@@ -26,29 +98,6 @@ bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
 
 clean-client-test:
 	@$(REBAR) client_test_clean
-
-deps:
-	@$(REBAR) get-deps
-
-##
-## Lock Targets
-##
-##  see https://github.com/seth/rebar_lock_deps_plugin
-lock: deps compile
-	$(REBAR) lock-deps
-
-locked-all: locked-deps compile
-
-locked-deps:
-	@echo "Using rebar.config.lock file to fetch dependencies"
-	$(REBAR) -C rebar.config.lock get-deps
-
-clean:
-	@$(REBAR) clean
-
-distclean: clean
-	@$(REBAR) delete-deps
-	@rm -rf $(PKG_ID).tar.gz
 
 ## Create a dependency graph png
 depgraph: graphviz
@@ -93,56 +142,6 @@ test-go:
 	@cd client_tests/go && ${MAKE}
 
 ##
-## Release targets
-##
-rel: deps compile
-	@$(REBAR) generate skip_deps=true $(OVERLAY_VARS)
-
-relclean:
-	rm -rf rel/riak-cs
-
-##
-## Developer targets
-##
-##  devN - Make a dev build for node N
-##  stagedevN - Make a stage dev build for node N (symlink libraries)
-##  devrel - Make a dev build for 1..$DEVNODES
-##  stagedevrel Make a stagedev build for 1..$DEVNODES
-##
-##  Example, make a 68 node devrel cluster
-##    make stagedevrel DEVNODES=68
-
-.PHONY : stagedevrel devrel
-DEVNODES ?= 8
-
-# 'seq' is not available on all *BSD, so using an alternate in awk
-SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
-
-$(eval stagedevrel : $(foreach n,$(SEQ),stagedev$(n)))
-$(eval devrel : $(foreach n,$(SEQ),dev$(n)))
-
-dev% : all
-	mkdir -p dev
-	rel/gen_dev $@ rel/vars/dev_vars.config.src rel/vars/$@_vars.config
-	(cd rel && $(REBAR) generate target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
-
-stagedev% : dev%
-	$(foreach app,$(wildcard apps/*), rm -rf dev/$^/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) dev/$^/lib;)
-	$(foreach dep,$(wildcard deps/*), rm -rf dev/$^/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) dev/$^/lib;)
-
-devclean: clean
-	rm -rf dev
-
-stage : rel
-	$(foreach app,$(wildcard apps/*), rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
-	$(foreach dep,$(wildcard deps/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
-
-
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	webtool eunit syntax_tools compiler
-PLT ?= $(HOME)/.riak-cs_dialyzer_plt
-
-##
 ## Packaging targets
 ##
 .PHONY: package
@@ -172,5 +171,3 @@ package: package.src
 
 pkgclean: distclean
 	rm -rf package
-
-include tools.mk
