@@ -15,7 +15,8 @@
                   poolboy,
                   cluster_info,
                   exometer_core,
-                  riakc
+                  riakc,
+                  riak_repl_pb_api
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [
