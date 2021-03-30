@@ -34,19 +34,19 @@ distclean: clean devclean relclean ballclean
 ##
 rel: compile
 	$(REBAR) as rel release
-	cp -a _build/rel/rel/riak rel/
+	cp -a _build/rel/rel/riak-cs rel/
 
 rel-rpm: compile
 	$(REBAR) as rpm release
-	cp -a _build/rpm/rel/riak rel/
+	cp -a _build/rpm/rel/riak-cs rel/
 
 rel-deb: compile
 	$(REBAR) as deb release
-	cp -a _build/deb/rel/riak rel/
+	cp -a _build/deb/rel/riak-cs rel/
 
 relclean:
 	rm -rf $(REL_DIR)
-	rm -rf rel/riak_cs
+	rm -rf rel/riak-cs
 
 ##
 ## Developer targets
