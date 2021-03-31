@@ -64,7 +64,7 @@
 eqc_test_() ->
     {foreach,
      fun() ->
-             logger:update_primary_config(#{level => none}),
+             application:set_env(lager, handlers, []),
              exometer:start(),
              riak_cs_stats:init(),
 

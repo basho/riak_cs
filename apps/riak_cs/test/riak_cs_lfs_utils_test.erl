@@ -23,7 +23,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
-    ok.
+    application:start(lager).
 
 %% TODO:
 %% Implement this

@@ -113,12 +113,12 @@ refresher() ->
                   end,
     receive
         reset ->
-            logger:debug("reset received: ~p", [?MODULE]),
+            lager:debug("reset received: ~p", [?MODULE]),
             refresher();
         _ ->
             ets:delete(?MODULE)
     after IntervalSec * 1000 ->
-            logger:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
+            lager:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
             refresher()
     end.
@@ -127,7 +127,7 @@ refresher() ->
 allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 
     OwnerKey = list_to_binary(riak_cs_user:key_id(Owner)),
-    logger:debug("access => ~p", [OwnerKey]),
+    lager:debug("access => ~p", [OwnerKey]),
     UserState = case ets:lookup(?MODULE, OwnerKey) of
                     [UserState0] -> UserState0;
                     [] -> new_user_state(OwnerKey)
@@ -143,20 +143,20 @@ allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
                 ok ->
                     {ok, RD, Ctx};
                 {error, {_, Current, Threshold}} = Error ->
-                    logger:warning("User ~p has exceeded access limit: usage, limit = ~p, ~p (/sec)",
-                                   [OwnerKey, Current, Threshold]),
+                    lager:warning("User ~p has exceeded access limit: usage, limit = ~p, ~p (/sec)",
+                                  [OwnerKey, Current, Threshold]),
                     Error
             end;
         {error, {_, Current, Threshold}} = Error2 ->
-            logger:warning("User ~p has exceeded bandwidth limit: usage, limit = ~p, ~p (bytes/sec)",
-                           [OwnerKey, Current, Threshold]),
+            lager:warning("User ~p has exceeded bandwidth limit: usage, limit = ~p, ~p (bytes/sec)",
+                          [OwnerKey, Current, Threshold]),
             Error2
     end.
 
 -spec new_user_state(binary()) -> #user_state{}.
 new_user_state(User) ->
     UserState = #user_state{user = User},
-    logger:debug("quota init: ~p => ~p", [User, UserState]),
+    lager:debug("quota init: ~p => ~p", [User, UserState]),
     %% Here's a race condition where if so many concurrent access
     %% come, each access can yield a new fresh state and then
     %% receives not access limitation.
@@ -210,16 +210,16 @@ update(User,
             [_, _] ->
                 ok;
             Error0 ->
-                logger:warning("something wrong? ~p", [Error0]),
+                lager:warning("something wrong? ~p", [Error0]),
                 {error, Error0}
         end
     catch
         error:badarg -> %% record not just found here
-            logger:debug("Cache of ~p (maybe not found)", [User]),
+            lager:debug("Cache of ~p (maybe not found)", [User]),
             ok;
         Type:Error ->
             %% TODO: show out stacktrace heah
-            logger:warning("something wrong? ~p", [Error]),
+            _ = lager:warning("something wrong? ~p", [Error]),
             {error, {Type, Error}}
     end.
 

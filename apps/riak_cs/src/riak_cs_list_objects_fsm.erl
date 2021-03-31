@@ -229,7 +229,7 @@ handle_sync_event(get_internal_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
 handle_sync_event(Event, _From, StateName, State) ->
-    logger:debug("got unknown event ~p in state ~p", [Event, StateName]),
+    _ = lager:debug("got unknown event ~p in state ~p", [Event, StateName]),
     Reply = ok,
     {reply, Reply, StateName, State}.
 
@@ -276,10 +276,10 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
                                                   CallerPid,
                                                   ListOfListOfKeysLength) of
         true ->
-            logger:debug("writing to the cache"),
+            _ = lager:debug("writing to the cache"),
             riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys);
         false ->
-            logger:debug("not writing to the cache"),
+            _ = lager:debug("not writing to the cache"),
             ok
     end.
 
@@ -289,12 +289,12 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 -spec fetch_key_list(riak_client(), list_object_request(), state(),
                      cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
-    logger:debug("Using cached key list"),
+    _ = lager:debug("Using cached key list"),
     NewState = prepare_state_for_first_mapred(Value,
                                               State#state{key_buffer=Value}),
     maybe_map_reduce(NewState);
 fetch_key_list(RcPid, Request, State, false) ->
-    logger:debug("Requesting fresh key list"),
+    _ = lager:debug("Requesting fresh key list"),
     handle_streaming_list_keys_call(
       make_list_keys_request(RcPid, Request),
       State).
@@ -669,8 +669,8 @@ update_state_with_mr_end_profiling(State=#state{req_profiles=Profiling}) ->
     State#state{req_profiles=Profiling2}.
 
 print_profiling(Profiling) ->
-    logger:debug(format_list_keys_profile(Profiling)),
-    logger:debug(format_map_reduce_profile(Profiling)).
+    _ = lager:debug(format_list_keys_profile(Profiling)),
+    _ = lager:debug(format_map_reduce_profile(Profiling)).
 
 format_list_keys_profile(#profiling{list_keys_start_time=undefined,
                                     list_keys_num_results=NumResults}) ->

@@ -130,7 +130,8 @@ handle_token_info_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, TokenInfo}
 handle_token_info_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, _}}) ->
     failed;
 handle_token_info_response({error, Reason}) ->
-    logger:warning("Error occurred requesting token from keystone. Reason: ~p", [Reason]),
+    _ = lager:warning("Error occurred requesting token from keystone. Reason: ~p",
+                  [Reason]),
     failed.
 
 parse_auth_header("AWS " ++ Key) ->

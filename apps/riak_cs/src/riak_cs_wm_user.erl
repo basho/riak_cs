@@ -255,8 +255,8 @@ get_user(AdminCheckResult, _) ->
 handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
     {false, RD, Ctx#context{user=User, user_object=UserObj}};
 handle_get_user_result({error, Reason}, RD, Ctx) ->
-    logger:warning("Failed to fetch user record. KeyId: ~p"
-                   " Reason: ~p", [user_key(RD), Reason]),
+    _ = lager:warning("Failed to fetch user record. KeyId: ~p"
+                      " Reason: ~p", [user_key(RD), Reason]),
     riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
 
 -spec update_user([{atom(), term()}], #wm_reqdata{}, #context{}) ->

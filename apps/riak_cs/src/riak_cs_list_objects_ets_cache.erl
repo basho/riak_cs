@@ -72,11 +72,11 @@ start_link() ->
 -spec lookup(binary()) -> cache_lookup_result().
 lookup(Key) ->
     try
-        logger:debug("Reading info for ~p from cache", [Key]),
+        _ = lager:debug("Reading info for ~p from cache", [Key]),
         format_lookup_result(ets:lookup(default_ets_table(), Key))
     catch
         _:Reason ->
-            logger:warning("List objects cache lookup failed. Reason: ~p", [Reason]),
+            _ = lager:warning("List objects cache lookup failed. Reason: ~p", [Reason]),
             false
     end.
 
@@ -100,7 +100,7 @@ write(Key, Value) ->
         unsafe_write(Key, Value)
     catch
         _:Reason ->
-            logger:warning("List objects cache write failed. Reason: ~p", [Reason]),
+            _ = lager:warning("List objects cache write failed. Reason: ~p", [Reason]),
             ok
     end.
 
@@ -136,7 +136,7 @@ handle_call({can_write, {CacheKey, MonitorPid, NumKeys}},
     end,
     {reply, Bool, NewState};
 handle_call(Msg, _From, State) ->
-    logger:debug("got unknown message: ~p", [Msg]),
+    _ = lager:debug("got unknown message: ~p", [Msg]),
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
@@ -227,7 +227,7 @@ num_keys_to_bytes(NumKeys) ->
 
 unsafe_write(Key, Value) ->
     TS = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
-    logger:debug("Writing entry for ~p to LO Cache", [Key]),
+    _ = lager:debug("Writing entry for ~p to LO Cache", [Key]),
     ets:insert(default_ets_table(), {Key, Value, TS}),
     ok.
 

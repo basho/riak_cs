@@ -138,8 +138,8 @@ init([]) ->
                     Interval2 = Interval + InitialDelay,
                     Next = riak_cs_gc:timestamp() + Interval2,
                     TimerRef = erlang:send_after(Interval2 * 1000, self(), {start, []}),
-                    logger:info("Scheduled next batch at ~s",
-                                [riak_cs_gc_console:human_time(Next)]),
+                    _ = lager:info("Scheduled next batch at ~s",
+                                   [riak_cs_gc_console:human_time(Next)]),
 
                     #gc_manager_state{next=Next,
                                       interval=Interval,
@@ -215,7 +215,7 @@ handle_info({'EXIT', Pid, Reason}, _StateName,
             #gc_manager_state{gc_batch_pid=Pid} = State) ->
     case Reason of
         Reason when Reason =/= normal andalso Reason =/= cancel ->
-            logger:warning("GC batch has terminated for reason: ~p", [Reason]);
+            _ = lager:warning("GC batch has terminated for reason: ~p", [Reason]);
         _ ->
             ok
     end,
@@ -226,7 +226,7 @@ handle_info({start, Options}, idle, State) ->
         {ok, NextState} ->
             {next_state, running, NextState};
         Error ->
-            logger:error("Cannot start batch. Reason: ~p", [Error]),
+            _ = lager:error("Cannot start batch. Reason: ~p", [Error]),
             NextState = schedule_next(State),
             {next_state, idle, NextState}
     end;
@@ -235,8 +235,8 @@ handle_info({start, _}, running, State) ->
     {next_state, running, State};
 handle_info(Info, StateName, State) ->
     %% This is really unexpected and unknown - warning.
-    logger:warning("Unexpected message received at GC process (~p): ~p",
-                   [StateName, Info]),
+    _ = lager:warning("Unexpected message received at GC process (~p): ~p",
+                      [StateName, Info]),
     {next_state, StateName, State}.
 
 %% @private
@@ -320,7 +320,7 @@ schedule_next(#gc_manager_state{timer_ref=Ref}=State)
         false ->
             schedule_next(State#gc_manager_state{timer_ref=undefined});
         _ ->
-            logger:debug("Timer is already scheduled, maybe manually triggered?"),
+            _ = lager:debug("Timer is already scheduled, maybe manually triggered?"),
             %% Timer is already scheduled, do nothing
             State
     end;
@@ -331,7 +331,8 @@ schedule_next(#gc_manager_state{interval=Interval}=State) ->
     RevisedNext = riak_cs_gc:timestamp() + Interval,
     TimerValue = Interval * 1000,
     TimerRef = erlang:send_after(TimerValue, self(), {start, []}),
-    logger:info("Scheduled next batch at ~s", [riak_cs_gc_console:human_time(RevisedNext)]),
+    _ = lager:info("Scheduled next batch at ~s",
+                   [riak_cs_gc_console:human_time(RevisedNext)]),
     State#gc_manager_state{next=RevisedNext,
                            timer_ref=TimerRef}.
 

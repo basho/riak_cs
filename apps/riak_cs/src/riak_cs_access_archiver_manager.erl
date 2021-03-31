@@ -69,7 +69,8 @@ archive(Table, Slice) ->
                 ets:give_away(Table, Pid, Slice)
             catch error:badarg ->
 
-                    logger:error("~p was not available, access stats for ~p lost", [?MODULE, Slice]),
+                    _ = lager:error("~p was not available, access stats for ~p lost",
+                                    [?MODULE, Slice]),
                     riak_cs_access:flush_to_log(Table, Slice),
                     %% if the archiver had been alive just now, but crashed
                     %% during operation, the stats also would have been lost,
@@ -82,8 +83,8 @@ archive(Table, Slice) ->
                     false %% opposite of ets:give_away/3 success
             end;
         _ ->
-            logger:error("~p was not available, access stats for ~p lost",
-                         [?MODULE, Slice]),
+            _ = lager:error("~p was not available, access stats for ~p lost",
+                            [?MODULE, Slice]),
             riak_cs_access:flush_to_log(Table, Slice),
             ets:delete(Table),
             false
@@ -123,7 +124,7 @@ init([]) ->
                         riak_cs, access_archiver_max_workers) of
                      {ok, Workers} when is_integer(Workers) -> Workers;
                      _ ->
-                         logger:warning(
+                         _ = lager:warning(
                                "access_archiver_max_workers was unset or"
                                " invalid; overriding with default of ~b",
                                [?DEFAULT_MAX_ARCHIVERS]),
@@ -133,7 +134,7 @@ init([]) ->
                         riak_cs, access_archiver_max_backlog) of
                      {ok, MB} when is_integer(MB) -> MB;
                      _ ->
-                         logger:warning(
+                         _ = lager:warning(
                                "access_archiver_max_backlog was unset or"
                                " invalid; overriding with default of ~b",
                                [?DEFAULT_MAX_BACKLOG]),
@@ -179,9 +180,9 @@ handle_info({'ETS-TRANSFER', Table, _From, Slice}, State) ->
             false ->
                 %% too much in the backlog, drop the first item in the backlog
                 [{_DropTable, DropSlice}|RestBacklog] = Backlog,
-                logger:error("Skipping archival of accesses ~p to"
-                             " catch up on backlog",
-                             [DropSlice]),
+                ok = lager:error("Skipping archival of accesses ~p to"
+                                 " catch up on backlog",
+                                 [DropSlice]),
                 State#state{backlog=RestBacklog++[{Table, Slice}]}
         end,
     {noreply, NewState};
@@ -191,7 +192,7 @@ handle_info(_Info, State) ->
 terminate(_Reason, #state{backlog=[]}) ->
     ok;
 terminate(_Reason, _State) ->
-    logger:warning("Access archiver manager stopping with a backlog;"
+    _ = lager:warning("Access archiver manager stopping with a backlog;"
                       " logs will be dropped"),
     ok.
 

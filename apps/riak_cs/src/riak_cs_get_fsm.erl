@@ -219,7 +219,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
         [] ->
             %% We should never get here because empty
             %% files are handled by the wm resource.
-            logger:warning("~p:~p has no blocks", [BucketName, Key]),
+            _ = lager:warning("~p:~p has no blocks", [BucketName, Key]),
             {stop, normal, State};
         [InitialBlock|_] ->
             TotalBlocks = length(BlocksOrder),
@@ -230,7 +230,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
                     FreeReaders =
                     riak_cs_block_server:start_block_servers(Manifest, RcPid,
                         FetchConcurrency),
-                    logger:debug("Block Servers: ~p", [FreeReaders]);
+                    _ = lager:debug("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
             end,
@@ -246,7 +246,8 @@ waiting_continue_or_stop({continue, Range}, #state{manifest=Manifest,
     end.
 
 waiting_continue_or_stop(Event, From, State) ->
-    logger:info("Pid ~p got unknown event ~p from ~p", [self(), Event, From]),
+    _ = lager:info("Pid ~p got unknown event ~p from ~p\n",
+                   [self(), Event, From]),
     {next_state, waiting_continue_or_stop, State}.
 
 waiting_chunks(get_next_chunk, From, State=#state{num_sent=TotalNumBlocks,
@@ -280,7 +281,7 @@ perhaps_send_to_user(From, #state{got_blocks=Got,
         {{value, NextBlock}, UpdIntransit} ->
             case orddict:find(NextBlock, Got) of
                 {ok, Block} ->
-                    logger:debug("Returning block ~p to client", [NextBlock]),
+                    _ = lager:debug("Returning block ~p to client", [NextBlock]),
                     %% Must use gen_fsm:reply/2 here!  We are shared
                     %% with an async event func and must return next_state.
                     gen_fsm:reply(From, {chunk, Block}),
@@ -296,7 +297,7 @@ waiting_chunks(stop, State) ->
     {stop, normal, State};
 waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     GotSize = orddict:size(Got),
-    logger:debug("starting fetch again with ~p left in queue", [GotSize]),
+    _ = lager:debug("starting fetch again with ~p left in queue", [GotSize]),
     UpdState = read_blocks(State),
     {next_state, waiting_chunks, UpdState};
 
@@ -309,12 +310,12 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                       skip_bytes_initial=SkipInitial,
                       keep_bytes_final=KeepFinal
                      }=State) ->
-    logger:debug("Retrieved block ~p", [NextBlock]),
+    _ = lager:debug("Retrieved block ~p", [NextBlock]),
     case BlockReturnValue of
         {error, _} = ErrorRes ->
             #state{bucket=Bucket, key=Key} = State,
-            logger:error("~p: Cannot get S3 ~p ~p block# ~p: ~p",
-                         [?MODULE, Bucket, Key, NextBlock, ErrorRes]),
+            _ = lager:error("~p: Cannot get S3 ~p ~p block# ~p: ~p\n",
+                            [?MODULE, Bucket, Key, NextBlock, ErrorRes]),
             %% Our terminate() will explicitly stop dependent processes,
             %% we don't need an abnormal exit to kill them for us.
             exit(normal);
@@ -327,7 +328,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                                   {InitialBlock, FinalBlock},
                                   {SkipInitial, KeepFinal}),
     UpdGot = orddict:store(NextBlock, BlockValue, Got),
-    %% TODO: logger:debug("BlocksLeft: ~p", [BlocksLeft]),
+    %% TODO: _ = lager:debug("BlocksLeft: ~p", [BlocksLeft]),
     GotSize = orddict:size(UpdGot),
     UpdState0 = State#state{got_blocks = UpdGot, free_readers = [Pid|FreeReaders]},
     MaxGotSize = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
@@ -407,7 +408,7 @@ prepare(#state{bucket=Bucket,
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
-            logger:debug("Manifest: ~p", [Manifest]),
+            _ = lager:debug("Manifest: ~p", [Manifest]),
             case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest, RcPid) of
                 same ->
                     State#state{manifest=Manifest,

@@ -245,7 +245,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
 
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
-    logger:error("delete object failed with reason: ~p", [Error]),
+    _ = lager:error("delete object failed with reason: ~p", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
@@ -352,7 +352,7 @@ handle_normal_put(RD, Ctx) ->
             %% einval} or disconnected stuff, any errors prevents this
             %% manifests from being uploaded anymore
             Res = riak_cs_put_fsm:force_stop(Pid),
-            logger:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
+            _ = lager:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
             error({Type, Error})
     end.
 
@@ -387,8 +387,8 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                     {false, _, _} ->
 
                         %% start copying
-                        logger:debug("copying! > ~s ~s => ~s ~s via ~p",
-                                     [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
+                        _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
+                                        [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
 
                         {ContentType, Metadata} =
                             riak_cs_copy_object:new_metadata(SrcManifest, RD),
@@ -416,7 +416,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                         %% in different return value
                         ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
                     {Result, _, _} = Error ->
-                        logger:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
+                        _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
                         Error
 
                 end;

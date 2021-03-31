@@ -119,7 +119,7 @@ handle_cast({get_block, _From, _Bucket, _Key, UUID, BlockNumber}, State) ->
 handle_cast({get_block, _From, _Bucket, _Key, _ClusterID, UUID, BlockNumber}, State) ->
     send_fake_data(UUID, BlockNumber, State);
 handle_cast(Event, State) ->
-    loger:warning("Received unknown cast event: ~p", [Event]),
+    lager:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
 
 %% @doc @TODO

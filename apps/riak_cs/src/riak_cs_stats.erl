@@ -231,7 +231,7 @@ safe_update(ExometerKey, Arg) ->
     case exometer:update(ExometerKey, Arg) of
         ok -> ok;
         {error, Reason} ->
-            logger:warning("Stats update for key ~p error: ~p", [ExometerKey, Reason]),
+            lager:warning("Stats update for key ~p error: ~p", [ExometerKey, Reason]),
             ok
     end.
 
@@ -331,10 +331,10 @@ metric_to_atom(Key, Suffix) ->
 -include_lib("eunit/include/eunit.hrl").
 
 stats_test_() ->
-    Apps = [setup, compiler, syntax_tools, exometer_core],
+    Apps = [setup, compiler, syntax_tools, exometer_core, lager],
     {setup,
      fun() ->
-             logger:update_primary_config(#{level => none}),
+             lager:update_primary_config(#{level => none}),
              [application:ensure_all_started(App) || App <- Apps],
              ok = init()
      end,

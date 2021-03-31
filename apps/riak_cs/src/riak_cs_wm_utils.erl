@@ -180,23 +180,23 @@ handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
     {{halt, 503}, RD, Ctx};
 handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    logger:debug("No user key: ~p", [Reason]),
+    _ = lager:debug("No user key: ~p", [Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    logger:debug("No user key, deny"),
+    _ = lager:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    logger:debug("bad_auth"),
+    _ = lager:debug("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
-    logger:debug("key_id not found"),
+    _ = lager:debug("key_id not found"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    logger:debug("Authentication error: ~p", [Reason]),
+    _ = lager:debug("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 handle_auth_admin(RD, Ctx, undefined, true) ->
@@ -258,8 +258,8 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
             {error, NE};
         {error, Reason} ->
             %% other failures, like Riak fetch timeout, be loud about
-            logger:error("Retrieval of user record for ~p failed. Reason: ~p",
-                         [KeyId, Reason]),
+            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
+                            [KeyId, Reason]),
             {error, Reason}
     end.
 
@@ -473,7 +473,7 @@ maybe_update_context_with_acl_from_headers(RD,
                     {ok, Ctx#context{acl=DefaultAcl}}
             end;
         {error, Reason} ->
-            logger:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
+            _ = lager:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
             {error, {{halt, 500}, RD, Ctx}}
     end.
 
@@ -1017,7 +1017,7 @@ fetch_bucket_owner(Bucket, RcPid) ->
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->
-            logger:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
             undefined
     end.
 

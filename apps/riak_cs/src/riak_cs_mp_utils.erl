@@ -105,9 +105,9 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest, RcPid
                         UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
                         ok = update_manifest_with_confirmation(RcPid, UpdManifest)
                     catch X:Y:ST ->
-                            logger:debug("clean_multipart_unused_parts: "
-                                         "bkey ~p: ~p ~p @ ~p\n",
-                                         [BKey, X, Y, ST])
+                            lager:debug("clean_multipart_unused_parts: "
+                                        "bkey ~p: ~p ~p @ ~p\n",
+                                        [BKey, X, Y, ST])
                     end,
                     %% Return same value to caller, regardless of ok/catch
                     updated;
@@ -685,7 +685,7 @@ comb_parts(MpM, PartETags) ->
     KeepPartIDs = [PM?PART_MANIFEST.part_id || PM <- KeepPMs],
     ToDelete = [PM || PM <- Parts,
                       not lists:member(PM?PART_MANIFEST.part_id, KeepPartIDs)],
-    logger:debug("Part count to be deleted at completion = ~p~n", [length(ToDelete)]),
+    lager:debug("Part count to be deleted at completion = ~p~n", [length(ToDelete)]),
     {KeepBytes, riak_cs_utils:md5_final(MD5Context), lists:reverse(KeepPMs), ToDelete}.
 
 comb_parts_fold({LastPartNum, LastPartETag} = _K,

@@ -128,7 +128,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
                    RcPid) of
                 {ok, NewManifest} ->
                     ETag = riak_cs_manifest:etag(NewManifest),
-                    logger:debug("checksum of all parts checksum: ~p", [ETag]),
+                    _ = lager:debug("checksum of all parts checksum: ~p", [ETag]),
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
@@ -419,8 +419,8 @@ maybe_copy_part(PutPid,
 
     case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
         {false, _, _} ->
-            logger:debug("Start copying! > ~s ~s => ~s ~s via ~p",
-                         [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
+            _ = lager:debug("Start copying! > ~s ~s => ~s ~s via ~p",
+                            [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
 
             %% Prepare for connection loss or client close
             FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
@@ -448,10 +448,10 @@ maybe_copy_part(PutPid,
         {true, _RD, _OtherCtx} ->
             %% access to source object not authorized
             %% TODO: check the return value
-            logger:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
+            _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
             {{halt, 403}, RD, Ctx};
         Error ->
-            logger:debug("unknown error: ~p", [Error]),
+            _ = lager:debug("unknown error: ~p", [Error]),
             %% ResponseMod:api_error(Error, RD, Ctx#context{local_context=LocalCtx})
             Error
     end.

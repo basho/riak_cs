@@ -117,7 +117,7 @@ invoke_all_callbacks(Owner, Access, Ctx0) ->
                             {ok, _, _} = R->
                                 R;
                             {error, Reason} ->
-                                logger:debug("quota check failed at ~p: ~p", [Module, Reason]),
+                                lager:debug("quota check failed at ~p: ~p", [Module, Reason]),
                                 {error, Module, Reason, RD, Ctx}
                         end;
                    (_, Other) ->
@@ -128,7 +128,7 @@ invoke_all_callbacks(Owner, Access, Ctx0) ->
 update_all_states(User, LogData) ->
     Modules = riak_cs_config:quota_modules(),
     [begin
-         logger:debug("quota update at ~p: ~p", [Module, User]),
+         lager:debug("quota update at ~p: ~p", [Module, User]),
          (catch Module:update(list_to_binary(User), LogData))
      end || Module <- Modules].
 

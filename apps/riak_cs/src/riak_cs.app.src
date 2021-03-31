@@ -15,6 +15,7 @@
                   poolboy,
                   cluster_info,
                   exometer_core,
+                  lager,
                   riakc,
                   riak_repl_pb_api
                  ]},

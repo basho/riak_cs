@@ -219,7 +219,7 @@ handle_mark_as_pending_delete({ok, RiakObject}, Bucket, Key, UUIDsToMark, RcPid)
     end;
 
 handle_mark_as_pending_delete({error, _Error}=Error, _Bucket, _Key, _UUIDsToMark, _RcPid) ->
-    logger:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
+    _ = lager:warning("Failed to mark as pending_delete, reason: ~p", [Error]),
     Error.
 
 %% @doc Return the number of seconds to wait after finishing garbage
@@ -394,7 +394,7 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                   when ContentLength < Threshold ->
                     %% actually this won't be scheduled :P
                     UUIDManifest = {UUID, Manifest?MANIFEST{state=scheduled_delete}},
-                    logger:debug("trying to delete ~p at ~p", [UUIDManifest, BagId]),
+                    _ = lager:debug("trying to delete ~p at ~p", [UUIDManifest, BagId]),
                     case try_delete_blocks(BagId, UUIDManifest) of
                         ok ->
                             {Survivors, [UUID|UUIDsToDelete]};
@@ -404,8 +404,8 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
                     end;
                ({UUID, M}, {Survivors, UUIDsToDelete}) ->
                     ContentLength = M?MANIFEST.content_length,
-                    logger:debug("~p is not being deleted: (CL, threshold)=(~p, ~p)",
-                                 [UUID, ContentLength, Threshold]),
+                    _ = lager:debug("~p is not being deleted: (CL, threshold)=(~p, ~p)",
+                                    [UUID, ContentLength, Threshold]),
                     {[{UUID, M}|Survivors], UUIDsToDelete}
             end,
     %% Obtain a new history!
@@ -420,17 +420,18 @@ try_delete_blocks(BagId, {UUID, _} = UUIDManifest) ->
     case riak_cs_delete_fsm:sync_delete(Pid) of
         {Pid, {ok, {_, _, _, TotalBlocks, TotalBlocks}}} ->
             %% all the blocks are successfully deleted
-            logger:debug("Active deletion of ~p succeeded", [UUID]),
+            _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
             ok;
         {Pid, {ok, {_, _, _, NumDeleted, TotalBlocks}}} ->
-            logger:debug("Only ~p/~p blocks of ~p deleted",
-                         [NumDeleted, TotalBlocks, UUID]),
+            _ = lager:debug("Only ~p/~p blocks of ~p deleted",
+                            [NumDeleted, TotalBlocks, UUID]),
             {error, partially_deleted};
         {Pid, {error, _} = E} ->
-            logger:warning("Active deletion of ~p failed. Reason: ~p", [UUID, E]),
+            _ = lager:warning("Active deletion of ~p failed. Reason: ~p",
+                              [UUID, E]),
             E;
         Other ->
-            logger:error("Active deletion failed. Reason: ~p", [Other]),
+            _ = lager:error("Active deletion failed. Reason: ~p", [Other]),
             {error, Other}
     end.
 
@@ -463,7 +464,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
         end,
 
     %% Create a set from the list of manifests
-    logger:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
+    _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     Timeout1 = riak_cs_config:put_gckey_timeout(),
     riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 
