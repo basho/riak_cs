@@ -435,16 +435,16 @@
   {datatype, flag}
 ]}.
 
-%% @doc Where to emit the default log messages (typically at 'info'
-%% severity):
-%%     off: disabled
-%%    file: the file specified by log.console.file
-%% console: to standard output (seen when using `riak attach-direct`)
-%%    both: log.console.file and standard out.
-{mapping, "log.console", "lager.handlers", [
-  {default, {{console_log_default}} },
-  {datatype, {enum, [off, file, console, both]}}
-]}.
+%% %% @doc Where to emit the default log messages (typically at 'info'
+%% %% severity):
+%% %%     off: disabled
+%% %%    file: the file specified by log.console.file
+%% %% console: to standard output (seen when using `riak attach-direct`)
+%% %%    both: log.console.file and standard out.
+%% {mapping, "log.console", "lager.handlers", [
+%%   {default, {{console_log_default}} },
+%%   {datatype, {enum, [off, file, console, both]}}
+%% ]}.
 
 %% @doc The severity level of the console log, default is 'info'.
 {mapping, "log.console.level", "lager.handlers", [
