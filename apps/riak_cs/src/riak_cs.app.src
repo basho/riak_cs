@@ -10,6 +10,7 @@
                   stdlib,
                   inets,
                   crypto,
+                  uuid,
                   mochiweb,
                   webmachine,
                   poolboy,
