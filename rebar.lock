@@ -27,7 +27,7 @@
   {git,"https://github.com/basho/meck.git",
        {ref,"dde759050eff19a1a80fd854d7375174b191665d"}},
   2},
- {<<"mochiweb">>,{pkg,<<"mochiweb">>,<<"2.18.0">>},1},
+ {<<"mochiweb">>,{pkg,<<"mochiweb">>,<<"2.20.1">>},0},
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.3.0">>},0},
  {<<"poolboy">>,
   {git,"git://github.com/basho/poolboy",
@@ -80,7 +80,7 @@
  {<<"folsom">>, <<"A885F0AEEE4C84270954C88A55A5A473D6B2C7493E32FFDC5765412DD555A951">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
  {<<"hut">>, <<"08D46679523043424870723923971889E8A34D63B2F946A35B46CF921D1236E7">>},
- {<<"mochiweb">>, <<"EB55F1DB3E6E960FAC4E6DB4E2DB9EC3602CC9F30B86CD1481D56545C3145D2E">>},
+ {<<"mochiweb">>, <<"E4DBD0ED716F076366ECF62ADA5755A844E1D95C781E8C77DF1D4114BE868CDF">>},
  {<<"parse_trans">>, <<"09765507A3C7590A784615CFD421D101AEC25098D50B89D7AA1D66646BC571C1">>},
  {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>}]}
 ].
