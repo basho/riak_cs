@@ -71,7 +71,7 @@
 
 -spec init([{atom(),term()}]) -> {ok, #context{}}.
 init(Config) ->
-    _ = dyntrace:put_tag(pid_to_list(self())),
+    catch dyntrace:put_tag(pid_to_list(self())),
     Mod = proplists:get_value(submodule, Config),
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"init">>),
     %% Check if authentication is disabled and set that in the context.
