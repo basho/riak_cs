@@ -62,6 +62,7 @@ init([]) ->
     riak_cs_stats:init(),
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     PoolSpecs = pool_specs(Options),
+    application:set_env(webmachine, rewrite_module, proplists:get_value(rewrite_module, Options)),
     {ok, { {one_for_one, 10, 10}, PoolSpecs ++
                process_specs() ++
                web_specs(Options)}}.
