@@ -161,16 +161,16 @@ calculate_signature_v2(KeyData, RD) ->
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
                    undefined -> []; %% TODO: get noisy here?
-                   {Path,QS} -> [Path, canonicalize_qs(v2, QS)]
+                   {Path, QS} -> [Path, canonicalize_qs(v2, QS)]
                end,
     Date = case wrq:get_qs_value("Expires", RD) of
                undefined ->
-                   case proplists:is_defined("x-amz-date", Headers) of
-                       true ->  "\n";
-                       false -> [wrq:get_req_header("date", RD), "\n"]
+                   case wrq:get_req_header("x-amz-date", RD) of
+                       undefined -> wrq:get_req_header("date", RD);
+                       XAmzDate -> XAmzDate
                    end;
                Expires ->
-                   Expires ++ "\n"
+                   Expires
            end,
     CMD5 = case wrq:get_req_header("content-md5", RD) of
                undefined -> [];
@@ -186,6 +186,7 @@ calculate_signature_v2(KeyData, RD) ->
            ContentType,
            "\n",
            Date,
+           "\n",
            AmazonHeaders,
            Resource],
     _ = lager:debug("STS: ~p", [STS]),
