@@ -2,17 +2,15 @@
 # -*- tab-width:4;indent-tabs-mode:nil -*-
 # ex: ts=4 sw=4 et
 
-# Pull environment for this install
-. "{{runner_base_dir}}/lib/env.sh"
-
 # Make sure the user running this script is the owner and/or su to that user
 check_user "$@"
 
 # Make sure CWD is set to runner run dir
-cd $RUNNER_BASE_DIR
+cd "$RUNNER_BASE_DIR"
 
 # Identify the script name
 SCRIPT=`basename $0`
+NODETOOL=./nodetool
 
 usage() {
     echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
@@ -22,16 +20,12 @@ usage() {
 case "$1" in
     status)
         shift
-        node_up_check
         $NODETOOL rpc riak_cs_console status
         ;;
     gc)
         shift
         case "$1" in
             batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
-                # Make sure the local node IS running
-                node_up_check
-
                 $NODETOOL rpc riak_cs_gc_console "$@"
                 ;;
             *)
@@ -46,9 +40,6 @@ case "$1" in
         shift
         case "$1" in
             batch|status|pause|resume|cancel)
-                # Make sure the local node IS running
-                node_up_check
-
                 $NODETOOL rpc riak_cs_storage_console "$@"
                 ;;
             *)
@@ -61,9 +52,6 @@ case "$1" in
         shift
         case "$1" in
             flush)
-                # Make sure the local node IS running
-                node_up_check
-
                 $NODETOOL rpc riak_cs_access_console flush "$@"
                 ;;
             *)
@@ -76,9 +64,6 @@ case "$1" in
         shift
         case "$1" in
             switch|show)
-                # Make sure the local node IS running
-                node_up_check
-
                 $NODETOOL rpc riak_cs_stanchion_console "$@"
                 ;;
             *)
@@ -94,22 +79,15 @@ case "$1" in
         fi
         shift
 
-        # Make sure the local node is running
-        node_up_check
-
         $NODETOOL rpc_infinity riak_cs_console cluster_info "$@"
         ;;
     cleanup[_-]orphan[_-]multipart)
         shift
 
-        # Make sure the local node IS running
-        node_up_check
-
         $NODETOOL rpc riak_cs_console cleanup_orphan_multipart "$@"
         ;;
     audit[_-]bucket[_-]ownership)
         shift
-        node_up_check
         $NODETOOL rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
