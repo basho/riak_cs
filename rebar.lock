@@ -4,15 +4,9 @@
   {git,"git://github.com/basho/cluster_info",
        {ref,"389d43af7ac1550b3c01cd55b8147bcc0e20022f"}},
   0},
- {<<"exometer_core">>,
-  {git,"git://github.com/Feuerlabs/exometer_core",
-       {ref,"547f28bc93c7cb3d3f1174fb4c510667a4ebb645"}},
-  0},
+ {<<"exometer_core">>,{pkg,<<"exometer_core">>,<<"1.5.7">>},0},
  {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.7">>},1},
- {<<"getopt">>,
-  {git,"git://github.com/jcomellas/getopt.git",
-       {ref,"1c963cecd75cb5f7b37f28737abb120e61390c62"}},
-  0},
+ {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.2">>},0},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},2},
  {<<"hut">>,{pkg,<<"hut">>,<<"1.2.1">>},1},
  {<<"lager">>,
@@ -66,17 +60,17 @@
   {git,"git://github.com/okeuday/uuid.git",
        {ref,"9312cc158a94c76e40c82ca45fd5056fb191c889"}},
   0},
- {<<"webmachine">>,
-  {git,"git://github.com/webmachine/webmachine.git",
-       {ref,"92225b82fc702f78cf9d23248023ec841272df80"}},
-  0}]}.
+ {<<"webmachine">>,{pkg,<<"webmachine">>,<<"1.11.1">>},0}]}.
 [
 {pkg_hash,[
  {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
+ {<<"exometer_core">>, <<"AB97E34A5D69AB14E6AE161DB4CCA5B5E655E635B842F830EE6AB2CBFCFDC30A">>},
  {<<"folsom">>, <<"A885F0AEEE4C84270954C88A55A5A473D6B2C7493E32FFDC5765412DD555A951">>},
+ {<<"getopt">>, <<"33D9B44289FE7AD08627DDFE1D798E30B2DA0033B51DA1B3A2D64E72CD581D02">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
  {<<"hut">>, <<"08D46679523043424870723923971889E8A34D63B2F946A35B46CF921D1236E7">>},
  {<<"mochiweb">>, <<"E4DBD0ED716F076366ECF62ADA5755A844E1D95C781E8C77DF1D4114BE868CDF">>},
  {<<"parse_trans">>, <<"09765507A3C7590A784615CFD421D101AEC25098D50B89D7AA1D66646BC571C1">>},
- {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>}]}
+ {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>},
+ {<<"webmachine">>, <<"422BEAD629F3D6C10FB0F24BE4CEE9648338F90099072AE091FADF86BA70C53F">>}]}
 ].
