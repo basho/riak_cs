@@ -69,10 +69,6 @@
  {<<"webmachine">>,
   {git,"git://github.com/webmachine/webmachine.git",
        {ref,"92225b82fc702f78cf9d23248023ec841272df80"}},
-  0},
- {<<"xmerl">>,
-  {git,"git://github.com/hmmr/xmerl",
-       {ref,"dd32f193abc611f0dcb91248f7f4265220531c24"}},
   0}]}.
 [
 {pkg_hash,[
