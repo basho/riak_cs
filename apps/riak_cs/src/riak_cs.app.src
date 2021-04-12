@@ -11,6 +11,7 @@
                   inets,
                   crypto,
                   uuid,
+                  getopt,
                   mochiweb,
                   webmachine,
                   poolboy,
