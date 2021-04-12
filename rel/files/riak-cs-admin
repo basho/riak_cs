@@ -1,16 +1,15 @@
 #!/bin/sh
-# -*- tab-width:4;indent-tabs-mode:nil -*-
-# ex: ts=4 sw=4 et
 
-# Make sure the user running this script is the owner and/or su to that user
-check_user "$@"
+SCRIPT=$(readlink $0 || true)
+if [ -z $SCRIPT ]; then
+    SCRIPT=$0
+fi;
 
-# Make sure CWD is set to runner run dir
-cd "$RUNNER_BASE_DIR"
+SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
+RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+REL_NAME="riak-cs"
 
-# Identify the script name
-SCRIPT=`basename $0`
-NODETOOL=./nodetool
+RPC_HOP=$RELEASE_ROOT_DIR/bin/$REL_NAME
 
 usage() {
     echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
@@ -20,13 +19,13 @@ usage() {
 case "$1" in
     status)
         shift
-        $NODETOOL rpc riak_cs_console status
+        $RPC_HOP rpc riak_cs_console status
         ;;
     gc)
         shift
         case "$1" in
             batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
-                $NODETOOL rpc riak_cs_gc_console "$@"
+                $RPC_HOP rpc riak_cs_gc_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT gc { batch [<leeway_seconds>|--help] | status | pause | resume | cancel |"
@@ -40,7 +39,7 @@ case "$1" in
         shift
         case "$1" in
             batch|status|pause|resume|cancel)
-                $NODETOOL rpc riak_cs_storage_console "$@"
+                $RPC_HOP rpc riak_cs_storage_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT storage $1 { batch | status | pause | resume | cancel }"
@@ -52,7 +51,7 @@ case "$1" in
         shift
         case "$1" in
             flush)
-                $NODETOOL rpc riak_cs_access_console flush "$@"
+                $RPC_HOP rpc riak_cs_access_console flush "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT access $1 { flush }"
@@ -64,7 +63,7 @@ case "$1" in
         shift
         case "$1" in
             switch|show)
-                $NODETOOL rpc riak_cs_stanchion_console "$@"
+                $RPC_HOP rpc riak_cs_stanchion_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT stanchion $1 { switch HOST PORT | show }"
@@ -79,16 +78,16 @@ case "$1" in
         fi
         shift
 
-        $NODETOOL rpc_infinity riak_cs_console cluster_info "$@"
+        $RPC_HOP_INF rpc riak_cs_console cluster_info "$@"
         ;;
     cleanup[_-]orphan[_-]multipart)
         shift
 
-        $NODETOOL rpc riak_cs_console cleanup_orphan_multipart "$@"
+        $RPC_HOP rpc riak_cs_console cleanup_orphan_multipart "$@"
         ;;
     audit[_-]bucket[_-]ownership)
         shift
-        $NODETOOL rpc riak_cs_console audit_bucket_ownership "$@"
+        $RPC_HOP rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
         usage

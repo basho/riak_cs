@@ -18,7 +18,8 @@
                   exometer_core,
                   lager,
                   riakc,
-                  riak_repl_pb_api
+                  riak_repl_pb_api,
+                  riak_cs_multibag
                  ]},
   {mod, { riak_cs_app, []}},
   {env, [
