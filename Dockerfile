@@ -1,28 +1,36 @@
-# This is a draft Dockerfile for riak_cs
-# NOT TESTED! Final version will be re-uploaded when ready.
-
 FROM erlang:22.3.4.10 AS compile-image
+
+ARG stanchion_host=127.0.0.1 \
+    stanchion_port=8085 \
+    riak_host=127.0.0.1 \
+    riak_pb_port=8087 \
+    cs_ip=127.0.0.1 \
+    cs_port=8080 \
+    admin_ip=127.0.0.1 \
+    admin_port=8000
+
+EXPOSE $stanchion_port
 
 WORKDIR /usr/src/riak_cs
 COPY . /usr/src/riak_cs
 
-RUN rebar3 as prod tar
-
-RUN mkdir -p /opt/riak_cs
-RUN tar -zxvf /usr/src/riak_cs/_build/prod/rel/*/*.tar.gz -C /opt/riak_cs
+RUN sed -i \
+    -e "s/@stanchion_port@/${stanchion_port}/" \
+    -e "s/@riak_pb_port@/${riak_pb_port}/" \
+    rel/docker/vars.config
+RUN ./rebar3 as docker release
 
 FROM debian:buster AS runtime-image
 
-# the usual dance with libssl and crypto (depending on what's shipped
-# with this debian version):
-#RUN apt-get update && apt-get -y install libssl1.1
+RUN apt-get update && apt-get -y install libssl1.1
 
-COPY --from=compile-image /opt/riak_cs /opt/riak_cs
+COPY --from=compile-image /usr/src/riak_cs/_build/docker/rel/riak-cs /opt/riak-cs
 
-# Add Tini -- this is meant to solve the PID 1 zombie reaping problem
-ENV TINI_VERSION v0.18.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+RUN mkdir -p /etc/riak-cs /var/lib/riak-cs /var/lib/riak-cs/data
+RUN mv /opt/riak-cs/etc/riak-cs.conf /etc/riak-cs
+
+COPY --from=compile-image /usr/src/riak_cs/rel/docker/tini /tini
 RUN chmod +x /tini
 
 ENTRYPOINT ["/tini", "--"]
-CMD ["/opt/riak_cs/bin/riak_cs", "foreground"]
+CMD ["/opt/riak-cs/bin/riak-cs", "foreground"]
