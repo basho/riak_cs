@@ -12,8 +12,8 @@
 
 RETVAL=0
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
-DESC="Riak KV Database"
-NAME=riak
+DESC="Riak CS Database"
+NAME=riak-cs
 DAEMON=/usr/sbin/$NAME
 lockfile=/var/lock/subsys/$NAME
 pidfile=/var/run/$NAME/$NAME.pid
@@ -49,7 +49,7 @@ check_pid_status() {
 
 start() {
     # Start daemons.
-    echo -n $"Starting riak: "
+    echo -n $"Starting riak-cs: "
     $DAEMON start
     RETVAL=$?
     if [ $RETVAL -eq 0 ]; then
@@ -64,7 +64,7 @@ start() {
 
 stop() {
     # Stop daemon.
-    echo -n $"Shutting down riak: "
+    echo -n $"Shutting down riak-cs: "
     $DAEMON stop 2>/dev/null
     for n in $(seq 1 10); do
         sleep 1
