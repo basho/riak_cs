@@ -1,0 +1,60 @@
+version: "3.8"
+services:
+
+  riak_cs:
+    networks:
+      net0:
+        aliases:
+          - riak_cs
+        ipv4_address: 172.18.0.4
+    build:
+      dockerfile: riak_cs/Dockerfile
+      context: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - type: bind
+        source: ${RIAK_CS_DATA}
+        target: /var/lib/riak_cs
+
+  stanchion:
+    networks:
+      net0:
+        aliases:
+          - stanchion
+        ipv4_address: 172.18.0.2
+    build:
+      dockerfile: stanchion/Dockerfile
+      context: .
+    ports:
+      - "8085:8085"
+    volumes:
+      - type: bind
+        source: ${STANCHION_DATA}
+        target: /var/lib/stanchion
+
+  riak:
+    image: basho/riak-kv
+    networks:
+      net0:
+        aliases:
+          - riak
+        ipv4_address: 172.18.0.3
+    ports:
+      - "8087:8087"
+    environment:
+      - CLUSTER_NAME=rcs
+    labels:
+      - "com.basho.riak.cluster.name=rcs"
+    build:
+      context: .
+    volumes:
+      - type: bind
+        source: ${RIAK_DATA}
+        target: /var/lib/riak
+
+networks:
+  net0:
+    ipam:
+      config:
+        - subnet: "172.18.0.0/24"

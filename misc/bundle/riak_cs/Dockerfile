@@ -1,0 +1,48 @@
+FROM erlang:22.3.4.10 AS compile-image
+
+ARG cs_host=172.18.0.4 \
+    cs_port=8080 \
+    admin_host=172.18.0.4 \
+    admin_port=8000 \
+    stanchion_host=172.18.0.2 \
+    stanchion_port=8085 \
+    riak_host=172.18.0.3 \
+    riak_pb_port=8087
+
+ENV tag="3.0.0pre1"
+
+WORKDIR /usr/src/riak_cs
+ADD https://github.com/TI-Tokyo/riak_cs/archive/refs/tags/${tag}.tar.gz source.tar.gz
+RUN tar xzf source.tar.gz
+WORKDIR riak_cs-$tag
+
+EXPOSE $cs_port $admin_port
+
+RUN sed -i \
+    -e "s/@cs_ip@/$cs_host/" \
+    -e "s/@cs_port@/$cs_port/" \
+    -e "s/@admin_ip@/$admin_host/" \
+    -e "s/@admin_port@/$admin_port/" \
+    -e "s/@stanchion_ip@/$stanchion_host/" \
+    -e "s/@stanchion_port@/$stanchion_port/" \
+    -e "s/@riak_ip@/$riak_host/" \
+    -e "s/@riak_pb_port@/$riak_pb_port/" \
+    rel/docker/vars.config
+RUN ./rebar3 as docker release
+RUN mv _build/docker/rel/riak-cs ../rel
+RUN mv rel/docker/tini ..
+
+FROM debian:buster AS runtime-image
+
+RUN apt-get update && apt-get -y install libssl1.1
+
+COPY --from=compile-image /usr/src/riak_cs/rel /opt/riak-cs
+
+RUN mkdir -p /etc/riak-cs /var/lib/riak-cs /var/lib/riak-cs/data
+RUN mv /opt/riak-cs/etc/riak-cs.conf /etc/riak-cs
+
+COPY --from=compile-image /usr/src/riak_cs/tini /tini
+RUN chmod +x /tini
+
+ENTRYPOINT ["/tini", "--"]
+CMD ["/opt/riak-cs/bin/riak-cs", "foreground"]
