@@ -4,9 +4,9 @@ ARG stanchion_host=127.0.0.1 \
     stanchion_port=8085 \
     riak_host=127.0.0.1 \
     riak_pb_port=8087 \
-    cs_ip=127.0.0.1 \
+    cs_host=127.0.0.1 \
     cs_port=8080 \
-    admin_ip=127.0.0.1 \
+    admin_host=127.0.0.1 \
     admin_port=8000
 
 EXPOSE $stanchion_port
@@ -15,8 +15,14 @@ WORKDIR /usr/src/riak_cs
 COPY . /usr/src/riak_cs
 
 RUN sed -i \
-    -e "s/@stanchion_port@/${stanchion_port}/" \
-    -e "s/@riak_pb_port@/${riak_pb_port}/" \
+    -e "s/@cs_ip@/$cs_host/" \
+    -e "s/@cs_port@/$cs_port/" \
+    -e "s/@admin_ip@/$admin_host/" \
+    -e "s/@admin_port@/$admin_port/" \
+    -e "s/@stanchion_ip@/$stanchion_host/" \
+    -e "s/@stanchion_port@/$stanchion_port/" \
+    -e "s/@riak_ip@/$riak_host/" \
+    -e "s/@riak_pb_port@/$riak_pb_port/" \
     rel/docker/vars.config
 RUN ./rebar3 as docker release
 
