@@ -2,6 +2,7 @@ FROM erlang:22.3.4.10 AS compile-image
 
 ARG riak_host=172.18.0.3 \
     riak_pb_port=8087 \
+    riak_http_port=8098 \
     stanchion_host=172.18.0.2 \
     stanchion_port=8085
 
@@ -23,19 +24,18 @@ RUN sed -i \
 
 RUN ./rebar3 as docker release
 RUN mv _build/docker/rel/stanchion ../rel
-RUN mv rel/docker/tini ..
+
+RUN echo "riak:${riak_http_port}/ping" >/tmp/riak_host
+
 
 FROM debian:buster AS runtime-image
 
-RUN apt-get update && apt-get -y install libssl1.1
+RUN apt-get update && apt-get -y install libssl1.1 curl
 
 COPY --from=compile-image /usr/src/stanchion/rel /opt/stanchion
+COPY --from=compile-image /tmp/riak_host /tmp/riak_host
 
 RUN mkdir -p /etc/stanchion /var/lib/stanchion /var/lib/stanchion/data
 RUN mv /opt/stanchion/etc/stanchion.conf /etc/stanchion
 
-COPY --from=compile-image /usr/src/stanchion/tini /tini
-RUN chmod +x /tini
-
-ENTRYPOINT ["/tini", "--"]
-CMD ["/opt/stanchion/bin/stanchion", "foreground"]
+CMD while ! curl -s $(cat /tmp/riak_host); do sleep 1; done && /opt/stanchion/bin/stanchion foreground

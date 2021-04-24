@@ -7,6 +7,7 @@ ARG cs_host=172.18.0.4 \
     stanchion_host=172.18.0.2 \
     stanchion_port=8085 \
     riak_host=172.18.0.3 \
+    riak_http_port=8098 \
     riak_pb_port=8087
 
 ENV tag="3.0.0pre1"
@@ -28,21 +29,22 @@ RUN sed -i \
     -e "s/@riak_ip@/$riak_host/" \
     -e "s/@riak_pb_port@/$riak_pb_port/" \
     rel/docker/vars.config
+
 RUN ./rebar3 as docker release
 RUN mv _build/docker/rel/riak-cs ../rel
-RUN mv rel/docker/tini ..
+RUN echo "riak:${riak_http_port}/ping" >/tmp/riak_host
+
 
 FROM debian:buster AS runtime-image
 
-RUN apt-get update && apt-get -y install libssl1.1
+RUN apt-get update && apt-get -y install libssl1.1 curl
 
 COPY --from=compile-image /usr/src/riak_cs/rel /opt/riak-cs
+COPY --from=compile-image /tmp/riak_host /tmp/riak_host
 
 RUN mkdir -p /etc/riak-cs /var/lib/riak-cs /var/lib/riak-cs/data
 RUN mv /opt/riak-cs/etc/riak-cs.conf /etc/riak-cs
 
-COPY --from=compile-image /usr/src/riak_cs/tini /tini
-RUN chmod +x /tini
+RUN echo "anonymous_user_creation = on" >>/etc/riak-cs/riak-cs.conf
 
-ENTRYPOINT ["/tini", "--"]
-CMD ["/opt/riak-cs/bin/riak-cs", "foreground"]
+CMD while ! curl -s $(cat /tmp/riak_host); do sleep 1; done && /opt/riak-cs/bin/riak-cs foreground

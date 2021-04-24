@@ -1,26 +1,39 @@
-FROM centos:latest
+FROM debian:buster
 
-ARG RIAK_VERSION=3.0.4
+ARG RIAK_VERSION=3.0.4 \
+    listener_ip=172.18.0.3 \
+    listener_pb_port=8087 \
+    listener_http_port=8098
 
-LABEL Description="Riak" \
-      "Riak Version"="$RIAK_VERSION"
+ENV PKG=riak_${RIAK_VERSION}-OTP22.3_amd64.deb
 
-RUN set -euxo pipefail && \
-    yum install -y "http://s3.amazonaws.com/downloads.basho.com/riak/$(sed 's/.[[:digit:]]*$//' <<< "$RIAK_VERSION")/$RIAK_VERSION/rhel/6/riak-$RIAK_VERSION-1.el6.x86_64.rpm" && \
-    yum install -y java && \
-    yum autoremove -y && \
-    yum clean all && \
-    rm -rf /var/cache/yum
+RUN apt-get update && apt-get install -y wget logrotate sudo
+RUN wget -q https://files.tiot.jp/riak/kv/3.0/${RIAK_VERSION}/debian/10/${PKG}
+RUN dpkg -i ${PKG} && rm ${PKG}
 
-COPY conf/riak.conf /etc/riak/
+RUN sed -i \
+    -e "s|listener.protobuf.internal = 127.0.0.1:8087|listener.protobuf.internal = 0.0.0.0:${listener_pb_port}|" \
+    -e "s|listener.http.internal = 127.0.0.1:8098|listener.http.internal = 0.0.0.0:${listener_http_port}|" \
+    -e "s|storage_backend = bitcask|storage_backend = multi|" \
+    /etc/riak/riak.conf
+RUN echo "buckets.default.allow_mult = true" >>/etc/riak/riak.conf
+RUN echo "buckets.default.merge_strategy = 2" >>/etc/riak/riak.conf
 
-EXPOSE 8087 8098
+RUN sed -i \
+    -e "s|]\\.|, \
+    {riak_kv, [ \
+      {multi_backend, \
+          [{be_default,riak_kv_eleveldb_backend, \
+               [{max_open_files,20}]}, \
+           {be_blocks,riak_kv_bitcask_backend, \
+               []}]}, \
+      {multi_backend_default,be_default}, \
+      {multi_backend_prefix_list,[{<<\"0b:\">>,be_blocks}]}, \
+      {storage_backend,riak_kv_multi_backend} \
+     ]} \
+     ].|" \
+     /etc/riak/advanced.config
 
-RUN chown riak:riak /var/lib/riak
+EXPOSE ${listener_pb_port} ${listener_http_port}
 
-#USER riak
-CMD chown -R riak:riak /var/lib/riak && \
-    su riak -c \
-      "riak start && sleep 3 && \
-       cat /var/log/riak/*; \
-       tail -f /dev/null /var/log/riak/*"
+CMD riak foreground
