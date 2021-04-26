@@ -1,6 +1,7 @@
 FROM erlang:22.3.4.10 AS compile-image
 
-ARG cs_host=172.18.0.4 \
+ARG RIAK_CS_VSN=3.0.0 \
+    cs_host=172.18.0.4 \
     cs_port=8080 \
     admin_host=172.18.0.4 \
     admin_port=8000 \
@@ -10,7 +11,7 @@ ARG cs_host=172.18.0.4 \
     riak_http_port=8098 \
     riak_pb_port=8087
 
-ENV tag="3.0.0pre1"
+ENV tag=${RIAK_CS_VSN}
 
 WORKDIR /usr/src/riak_cs
 ADD https://github.com/TI-Tokyo/riak_cs/archive/refs/tags/${tag}.tar.gz source.tar.gz

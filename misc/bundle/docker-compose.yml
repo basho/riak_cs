@@ -10,10 +10,6 @@ services:
     ports:
       - "8087:8087"
       - "8098:8098"
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
     build:
       dockerfile: riak/Dockerfile
       context: .
@@ -21,6 +17,10 @@ services:
       - type: bind
         source: ${RIAK_DATA}
         target: /var/lib/riak/data
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
 
   stanchion:
     depends_on:

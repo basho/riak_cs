@@ -1,12 +1,13 @@
 FROM erlang:22.3.4.10 AS compile-image
 
-ARG riak_host=172.18.0.3 \
+ARG STANCHION_VSN=3.0.0 \
+    riak_host=172.18.0.3 \
     riak_pb_port=8087 \
     riak_http_port=8098 \
     stanchion_host=172.18.0.2 \
     stanchion_port=8085
 
-ENV tag="3.0.0pre1"
+ENV tag=${STANCHION_VSN}
 
 EXPOSE $stanchion_port
 
@@ -25,6 +26,9 @@ RUN sed -i \
 RUN ./rebar3 as docker release
 RUN mv _build/docker/rel/stanchion ../rel
 
+# relying on depends_on: in the docker-copose.yml is not sufficient,
+# so let's ensure riak is actually up and responding before starting
+# ourselves (also, variables don't seem to survive the FROM barrier):
 RUN echo "riak:${riak_http_port}/ping" >/tmp/riak_host
 
 
