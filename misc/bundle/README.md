@@ -31,7 +31,7 @@ a `--detach` option.
 ## Persisting state
 
 Within containers, application data are bind-mounted to local
-filesystem at locations `$RIAK_DATA`, `$RIAK_CS_DATA` and
-`$STANCHION_DATA`. Unless explicitly set, these directories will be
+filesystem at locations `RIAK_DATA`, `RIAK_CS_DATA` and
+`STANCHION_DATA`. Unless explicitly set, these directories will be
 created in "./data".
 
