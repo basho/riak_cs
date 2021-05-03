@@ -96,8 +96,6 @@ test-erlang: compile-client-test
 compile-client-test: all
 	@$(REBAR) client_test_compile
 
-bitcask-downgrade-script: riak_test/src/downgrade_bitcask.erl
-
 clean-client-test:
 	@$(REBAR) client_test_clean
 
