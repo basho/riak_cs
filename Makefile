@@ -89,6 +89,8 @@ DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto in
 PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
 
+test-erlang: compile-client-test
+	@$(REBAR) client_test_run
 
 ## to fix:
 compile-client-test: all
@@ -111,35 +113,6 @@ graphviz:
 pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
 	@$(REBAR) -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
-
-test-client: test-clojure test-boto test-ceph test-erlang test-ruby test-php test-go
-
-test-python:
-	@cd client_tests/python/ && ${MAKE} CS_HTTP_PORT=$(CS_HTTP_PORT)
-
-test-boto:
-	@cd client_tests/python/ && ${MAKE} boto_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
-
-test-ceph:
-	@cd client_tests/python/ && ${MAKE} ceph_tests CS_HTTP_PORT=$(CS_HTTP_PORT)
-
-test-ruby:
-	@bundle --gemfile client_tests/ruby/Gemfile --path vendor
-	@cd client_tests/ruby && bundle exec rake spec
-
-test-erlang: compile-client-test
-	@$(REBAR) skip_deps=true client_test_run
-
-test-clojure:
-	@command -v lein >/dev/null 2>&1 || { echo >&2 "I require lein but it's not installed. \
-	Please read client_tests/clojure/clj-s3/README."; exit 1; }
-	@cd client_tests/clojure/clj-s3 && lein do deps, midje
-
-test-php:
-	@cd client_tests/php && ${MAKE}
-
-test-go:
-	@cd client_tests/go && ${MAKE}
 
 ##
 ## Packaging targets
