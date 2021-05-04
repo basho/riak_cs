@@ -22,7 +22,8 @@
 
 -module(select_gc_bucket).
 
--compile(export_all).
+-export([main/1]).
+
 -mode(compile).
 
 -include_lib("riak_cs/include/riak_cs.hrl").
