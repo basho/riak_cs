@@ -55,6 +55,7 @@
 -ifdef(TEST).
 -compile(export_all).
 -compile(nowarn_export_all).
+-include_lib("eunit/include/eunit.hrl").
 -endif.
 
 -type subresource() :: {string(), string()}.
@@ -65,9 +66,12 @@
 -spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
                      {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
+    lager:debug("rewriting ~p ~p", [Method, Url]),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
-    rewrite_path_and_headers(Method, Headers, Url, Path, QueryString).
+    Res = rewrite_path_and_headers(Method, Headers, Url, Path, QueryString),
+    lager:debug("rewritten ~p", [Res]),
+    Res.
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
@@ -153,20 +157,24 @@ bucket_from_host(HostHeader, RootHost) ->
                      []    -> HostHeader;
                      [H|_] -> H
                  end,
-    extract_bucket_from_host(HostNoPort,
-                             string:rstr(HostNoPort, RootHost)).
+    extract_bucket_from_host(HostNoPort, RootHost).
 
-%% @doc Extract the bucket name from the `Host' header value if a
-%% bucket name is present.
--spec extract_bucket_from_host(string(), non_neg_integer()) -> undefined | string().
-extract_bucket_from_host(_Host, 0) ->
-    undefined;
-extract_bucket_from_host(_Host, 1) ->
-    undefined;
-extract_bucket_from_host(Host, RootHostIndex) ->
+extract_bucket_from_host(Host, RootHost) ->
     %% Take the substring of the everything up to
     %% the '.' preceding the root host
-    string:sub_string(Host, 1, RootHostIndex-2).
+    case re:run(Host, "(.+)\.(s3\.(?:(?:[a-z0-9-])+\.)?amazonaws\.com)",
+                [{capture, all_but_first, list}]) of
+        {match, [M1, M2]} ->
+            if RootHost == M2 ->
+                    M1;
+               el/=se ->
+                    lager:warning("accepting request sent to a (legitimate) AWS host"
+                                  " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
+                    M1
+            end;
+        _ ->
+            undefined
+    end.
 
 %% @doc Separate the bucket name from the rest of the raw path in the
 %% case where the bucket name is included in the path.
@@ -250,3 +258,19 @@ get_subresources(QueryString) ->
 valid_subresource({Key, _}) ->
     lists:member(Key, ?SUBRESOURCES).
 
+
+-ifdef(TEST).
+
+extract_bucket_from_host_test() ->
+    Cases = [ {"asdf.s3.amazonaws.com", "asdf"}
+            , {"a.s.df.s3.amazonaws.com", "a.s.df"}
+            , {"a-s.df.s3.amazonaws.com", "a-s.df"}
+            , {"asdfff.s3.eu-west-1.amazonaws.com", "asdfff"}
+            , {"a.s.df.s2.amazonaws.com", undefined}
+            , {"a.s.df.s3.amazonaws.org", undefined}
+            ],
+    lists:foreach(fun({A, E}) -> ?assertEqual(extract_bucket_from_host(A, "s3.amazonaws.com"), E) end, Cases),
+    lists:foreach(fun({A, E}) -> ?assertEqual(extract_bucket_from_host(A, "s3.us-east-2.amazonaws.com"), E) end, Cases),
+    ok.
+
+-endif.
