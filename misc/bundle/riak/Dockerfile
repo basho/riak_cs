@@ -1,6 +1,6 @@
 FROM debian:buster
 
-ARG RIAK_VERSION=3.0.4 \
+ARG RIAK_VERSION=3.0.6 \
     listener_ip=172.18.0.3 \
     listener_pb_port=8087 \
     listener_http_port=8098
