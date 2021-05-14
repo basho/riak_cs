@@ -11,12 +11,10 @@ ARG RIAK_CS_VSN=3.0.0 \
     riak_http_port=8098 \
     riak_pb_port=8087
 
-ENV tag=${RIAK_CS_VSN}
-
 WORKDIR /usr/src/riak_cs
-ADD https://github.com/TI-Tokyo/riak_cs/archive/refs/tags/${tag}.tar.gz source.tar.gz
+ADD https://github.com/TI-Tokyo/riak_cs/archive/refs/tags/${RIAK_CS_VSN}.tar.gz source.tar.gz
 RUN tar xzf source.tar.gz
-WORKDIR riak_cs-$tag
+WORKDIR riak_cs-${RIAK_CS_VSN}
 
 EXPOSE $cs_port $admin_port
 

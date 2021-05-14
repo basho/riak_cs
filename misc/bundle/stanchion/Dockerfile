@@ -7,14 +7,12 @@ ARG STANCHION_VSN=3.0.0 \
     stanchion_host=172.18.0.2 \
     stanchion_port=8085
 
-ENV tag=${STANCHION_VSN}
-
 EXPOSE $stanchion_port
 
 WORKDIR /usr/src/stanchion
-ADD https://github.com/TI-Tokyo/stanchion/archive/refs/tags/$tag.tar.gz source.tar.gz
+ADD https://github.com/TI-Tokyo/stanchion/archive/refs/tags/${STANCHION_VSN}.tar.gz source.tar.gz
 RUN tar xzf source.tar.gz
-WORKDIR stanchion-$tag
+WORKDIR stanchion-${STANCHION_VSN}
 
 RUN sed -i \
     -e "s/@stanchion_ip@/$stanchion_host/" \
