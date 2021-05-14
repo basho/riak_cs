@@ -17,10 +17,6 @@ services:
       - type: bind
         source: ${RIAK_DATA}
         target: /var/lib/riak/data
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
 
   stanchion:
     depends_on:

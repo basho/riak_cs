@@ -36,4 +36,8 @@ RUN sed -i \
 
 EXPOSE ${listener_pb_port} ${listener_http_port}
 
+RUN chown riak:riak /var/lib/riak
+RUN echo "riak soft nofile 65536" >>/etc/security/limits.conf
+RUN echo "riak hard nofile 65536" >>/etc/security/limits.conf
+
 CMD riak foreground
