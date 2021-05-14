@@ -15,8 +15,8 @@ services:
       context: .
     volumes:
       - type: bind
-        source: ${RIAK_DATA}
-        target: /var/lib/riak/data
+        source: ${RIAK_DATA:-./data/riak}
+        target: /var/lib/riak
 
   stanchion:
     depends_on:
@@ -33,8 +33,8 @@ services:
       context: .
     volumes:
       - type: bind
-        source: ${STANCHION_DATA}
-        target: /var/lib/stanchion/data
+        source: ${STANCHION_DATA:-./data/stanchion}
+        target: /var/lib/stanchion
 
   riak_cs:
     depends_on:
@@ -53,8 +53,8 @@ services:
       context: .
     volumes:
       - type: bind
-        source: ${RIAK_CS_DATA}
-        target: /var/lib/riak_cs/data
+        source: ${RIAK_CS_DATA:-./data/riak_cs}
+        target: /var/lib/riak_cs
 
 networks:
   net0:

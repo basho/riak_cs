@@ -6,10 +6,10 @@ in a docker-composed bundle.
 ## Building and running
 
 With `docker-compose up` (or `make up`), you will get riak\_cs,
-stanchion and riak images created and their containers
-started.  Applications versions are defined by environment variables
-`RIAK_VSN`, `RIAK_CS_VSN` and `STANCHION_VSN` (with 3.0.4, 3.0.0,
-3.0.0, respectively, as defaults).
+stanchion and riak images created and their containers started.
+Applications versions are defined as build args `RIAK_VSN`,
+`RIAK_CS_VSN` and `STANCHION_VSN` for `docker build` (with 3.0.6,
+3.0.0, 3.0.0, respectively, as defaults).
 
 Riak CS is reachable at 172.18.0.4. An admin user can be then
 created with
