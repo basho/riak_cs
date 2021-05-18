@@ -139,9 +139,9 @@ cs_etc_dir=$RUNNER_BASE_DIR/etc
 cs_log_dir=$RUNNER_BASE_DIR/log
 
 if [ -d {{platform_data_dir}}/generated.configs ]; then
-  cuttlefish_conf_dir={{platform_data_dir}}/generated.configs
+  cuttlefish_conf_dir={{platform_data_dir}}/generated.conf
 else
-  cuttlefish_conf_dir=$RUNNER_BASE_DIR/data/generated.configs
+  cuttlefish_conf_dir=$RUNNER_BASE_DIR/generated.conf
 fi
 
 get_cfgs=0
