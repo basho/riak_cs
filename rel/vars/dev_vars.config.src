@@ -24,7 +24,7 @@
 {stanchion_ip,      "127.0.0.1"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
-{cs_version,        010300}.
+{cs_version,        030000}.
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
 

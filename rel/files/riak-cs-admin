@@ -18,11 +18,15 @@ RPC_HOP=$RELEASE_ROOT_DIR/bin/$REL_NAME
 RPC_HOP_INF=$RPC_HOP
 
 usage() {
-    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
+    echo "Usage: $SCRIPT { version | status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
 }
 
 # Check the first argument for instructions
 case "$1" in
+    version)
+        shift
+        $RPC_HOP rpc riak_cs_console version
+        ;;
     status)
         shift
         $RPC_HOP rpc riak_cs_console status

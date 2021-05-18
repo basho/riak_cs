@@ -21,6 +21,7 @@
 -module(riak_cs_console).
 
 -export([
+         version/1,
          status/1,
          cluster_info/1,
          audit_bucket_ownership/1,
@@ -36,6 +37,11 @@
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+
+version([]) ->
+    {ok, Vsn} = application:get_env(riak_cs, cs_version),
+    io:format("version : ~p~n", [Vsn]),
+    ok.
 
 status([]) ->
     Stats = riak_cs_stats:get_stats(),
