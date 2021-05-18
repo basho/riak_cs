@@ -3,7 +3,7 @@
 SCRIPT=$(readlink $0 || true)
 if [ -z $SCRIPT ]; then
     SCRIPT=$0
-fi;
+fi
 
 SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
 RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"

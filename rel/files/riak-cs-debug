@@ -132,16 +132,16 @@ exit
 ###
 
 # These paths may be overridden with environment variables.
-RUNNER_BASE_DIR={{runner_base_dir}}
-cs_base_dir={{runner_base_dir}}
-cs_bin_dir={{runner_script_dir}}
-cs_etc_dir={{runner_etc_dir}}
-cs_log_dir={{runner_log_dir}}
+RUNNER_BASE_DIR=$(cd `dirname $0` && /bin/pwd -P)/..
+cs_base_dir=$RUNNER_BASE_DIR
+cs_bin_dir=$RUNNER_BASE_DIR/bin
+cs_etc_dir=$RUNNER_BASE_DIR/etc
+cs_log_dir=$RUNNER_BASE_DIR/log
 
 if [ -d {{platform_data_dir}}/generated.configs ]; then
   cuttlefish_conf_dir={{platform_data_dir}}/generated.configs
 else
-  cuttlefish_conf_dir={{runner_base_dir}}/{{platform_data_dir}}/generated.configs
+  cuttlefish_conf_dir=$RUNNER_BASE_DIR/data/generated.configs
 fi
 
 get_cfgs=0
