@@ -5,6 +5,7 @@ rel/vars/*_vars.config
 dev/
 log/
 misc/bundle/data
+*-riak-cs-debug.tar.gz
 current_counterexample.eqc
 .client_test/
 .local_dialyzer_plt
