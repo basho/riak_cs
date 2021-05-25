@@ -1,14 +1,14 @@
 FROM debian:buster
 
-ARG RIAK_VERSION=3.0.6 \
+ARG RIAK_VSN=3.0.6 \
     listener_ip=172.18.0.3 \
     listener_pb_port=8087 \
     listener_http_port=8098
 
-ENV PKG=riak_${RIAK_VERSION}-OTP22.3_amd64.deb
+ENV PKG=riak_${RIAK_VSN}-OTP22.3_amd64.deb
 
 RUN apt-get update && apt-get install -y wget logrotate sudo
-RUN wget -q https://files.tiot.jp/riak/kv/3.0/${RIAK_VERSION}/debian/10/${PKG}
+RUN wget -q https://files.tiot.jp/riak/kv/3.0/${RIAK_VSN}/debian/10/${PKG}
 RUN dpkg -i ${PKG} && rm ${PKG}
 
 RUN sed -i \
