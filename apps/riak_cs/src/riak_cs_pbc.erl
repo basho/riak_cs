@@ -193,6 +193,7 @@ get_cluster_id_sans_stats(Pbc) ->
     try
         riak_repl_pb_api:get_clusterid(Pbc, Timeout)
     catch C:R ->
+            lager:warning("failed to get cluster_id from riak: ~p:~p", [C, R]),
             %% Disable `proxy_get' so we do not repeatedly have to
             %% handle this same exception. This would happen if an OSS
             %% install has `proxy_get' enabled.
