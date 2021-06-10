@@ -173,6 +173,7 @@ extract_bucket_from_host(Host, RootHost) ->
                     M1
             end;
         _ ->
+            lager:warning("request domain not matching \"*.s3.*.amazonaws.com\": ~s", [Host]),
             undefined
     end.
 
