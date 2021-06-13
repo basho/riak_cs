@@ -162,19 +162,27 @@ bucket_from_host(HostHeader, RootHost) ->
 extract_bucket_from_host(Host, RootHost) ->
     %% Take the substring of the everything up to
     %% the '.' preceding the root host
-    case re:run(Host, "(.+)\.(s3\.(?:(?:[a-z0-9-])+\.)?amazonaws\.com)",
-                [{capture, all_but_first, list}]) of
-        {match, [M1, M2]} ->
-            if RootHost == M2 ->
-                    M1;
-               el/=se ->
-                    lager:warning("accepting request sent to a (legitimate) AWS host"
-                                  " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
-                    M1
-            end;
+    Bucket =
+        case re:run(Host, "(.+\.|)(s3\.(?:(?:[a-z0-9-])+\.)?amazonaws\.com)",
+                    [{capture, all_but_first, list}]) of
+            {match, [M1, M2]} ->
+                if RootHost == M2 ->
+                        M1;
+                   el/=se ->
+                        lager:warning("accepting request sent to a (legitimate) AWS host"
+                                      " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
+                        M1
+                end;
+            _ ->
+                undefined
+        end,
+    case Bucket of
+        [] ->
+            undefined;
+        undefined ->
+            undefined;
         _ ->
-            lager:warning("request domain not matching \"*.s3.*.amazonaws.com\": ~s", [Host]),
-            undefined
+            lists:droplast(Bucket)
     end.
 
 %% @doc Separate the bucket name from the rest of the raw path in the
