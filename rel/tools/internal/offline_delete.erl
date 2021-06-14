@@ -30,7 +30,8 @@
 
 -module(offline_delete).
 
--compile(export_all).
+-export([main/1]).
+
 -mode(compile).
 
 options() ->
