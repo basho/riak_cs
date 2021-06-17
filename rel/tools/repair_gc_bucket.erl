@@ -54,7 +54,7 @@
 
 main(Args) ->
     _ = application:load(lager),
-    ok = application:set_env(lager, handlers, [{lager_console_backend, info}]),
+    ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, info}]}]),
     ok = lager:start(),
     {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
     LogLevel = case proplists:get_value(debug, Options) of
