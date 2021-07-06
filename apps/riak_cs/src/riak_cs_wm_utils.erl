@@ -625,7 +625,6 @@ extract_amazon_headers(Headers) ->
 %% @doc Extract user metadata from request header
 %% Expires, Content-Disposition, Content-Encoding, Cache-Control and x-amz-meta-*
 %% TODO: pass in x-amz-server-side-encryption?
-%% TODO: pass in x-amz-storage-class?
 %% TODO: pass in x-amz-grant-* headers?
 -spec extract_user_metadata(#wm_reqdata{}) -> proplists:proplist().
 extract_user_metadata(RD) ->
@@ -654,6 +653,9 @@ extract_user_metadata([{Name, Value} | Headers], Acc) when is_list(Name) ->
     LowerName = string:to_lower(any_to_list(Name)),
     case LowerName of
         "x-amz-meta" ++ _ ->
+            extract_user_metadata(
+              Headers, [{LowerName, unicode:characters_to_list(Value, utf8)} | Acc]);
+        "x-amz-storage-class" ->
             extract_user_metadata(
               Headers, [{LowerName, unicode:characters_to_list(Value, utf8)} | Acc]);
         _ ->
