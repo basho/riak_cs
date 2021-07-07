@@ -17,7 +17,7 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 10300),
+    cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 030000),
     cuttlefish_unit:assert_config(Config, "riak_cs.proxy_get", false),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.rewrite_module"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),
@@ -220,7 +220,7 @@ supercluster_weight_refresh_interval_test_() ->
     ].
 
 schema_files() ->
-    ["apps/riak_cs/priv/riak_cs.schema"].
+    ["priv/riak_cs.schema"].
 
 context() ->
     {ok, Context} = file:consult("rel/vars.config"),
