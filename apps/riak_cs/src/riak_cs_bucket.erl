@@ -699,8 +699,6 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPi
         ok ->
             BucketRecord = bucket_record(Bucket, BucketOp),
             case update_user_buckets(User, BucketRecord) of
-                {ok, ignore} when BucketOp == update_acl ->
-                    OpResult;
                 {ok, ignore} ->
                     OpResult;
                 {ok, UpdUser} ->

@@ -69,9 +69,9 @@
 
 -type block_queue() :: queue:queue().
 
--record(state, {from :: {pid(), reference()},
+-record(state, {from :: undefined | {pid(), reference()},
                 riak_client :: riak_client(),
-                mani_fsm_pid :: pid(),
+                mani_fsm_pid :: undefined | pid(),
                 bucket :: term(),
                 caller :: reference(),
                 key :: term(),
@@ -79,17 +79,17 @@
                 buffer_factor :: pos_integer(),
                 got_blocks=orddict:new() :: orddict:orddict(),
                 manifest :: term(),
-                blocks_order :: [block_name()],
-                blocks_intransit=queue:new() :: block_queue(),
-                test=false :: boolean(),
-                total_blocks :: pos_integer(),
+                blocks_order = [] :: [block_name()],
+                blocks_intransit = queue:new() :: block_queue(),
+                test = false :: boolean(),
+                total_blocks :: undefined | pos_integer(),
                 num_sent=0 :: non_neg_integer(),
-                initial_block :: block_name(),
-                final_block :: block_name(),
-                skip_bytes_initial :: non_neg_integer(),
-                keep_bytes_final :: non_neg_integer(),
-                free_readers :: [pid()],
-                all_reader_pids :: [pid()]}).
+                initial_block :: undefined | block_name(),
+                final_block :: undefined | block_name(),
+                skip_bytes_initial = 0 :: non_neg_integer(),
+                keep_bytes_final = 0 :: non_neg_integer(),
+                free_readers :: undefined | [pid()],
+                all_reader_pids :: undefined | [pid()]}).
 -type state() :: #state{}.
 
 %% ===================================================================

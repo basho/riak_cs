@@ -50,7 +50,7 @@
          code_change/3,
          format_status/2]).
 
--record(state, {riak_client :: riak_client(),
+-record(state, {riak_client :: undefined | riak_client(),
                 close_riak_connection=true :: boolean(),
                 bag_id :: bag_id()}).
 

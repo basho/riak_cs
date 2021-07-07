@@ -55,9 +55,9 @@
           %% Riak connection pid
           riak_client :: undefined | riak_client(),
           bag_id :: bag_id(),
-          current_files :: [lfs_manifest()],
-          current_fileset :: twop_set:twop_set(),
-          current_riak_object :: riakc_obj:riakc_obj(),
+          current_files = [] :: [lfs_manifest()],
+          current_fileset = twop_set:new() :: twop_set:twop_set(),
+          current_riak_object :: undefined | riakc_obj:riakc_obj(),
           %% Count of filesets collected successfully
           batch_count=0 :: non_neg_integer(),
           %% Count of filesets skipped in this batch
@@ -65,7 +65,7 @@
           batch=[] :: undefined | [binary()], % `undefined' only for testing
           manif_count=0 :: non_neg_integer(),
           block_count=0 :: non_neg_integer(),
-          delete_fsm_pid :: pid()
+          delete_fsm_pid :: undefined | pid()
          }).
 
 -record(gc_key_list_state, {
@@ -105,6 +105,6 @@
           batch_history = [] :: list(#gc_batch_state{}),
           current_batch :: undefined | #gc_batch_state{},
           interval = ?DEFAULT_GC_INTERVAL:: non_neg_integer() | infinity,
-          initial_delay :: non_neg_integer(),
+          initial_delay :: undefined | non_neg_integer(),
           timer_ref :: undefined | reference()
          }).

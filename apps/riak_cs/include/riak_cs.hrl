@@ -69,25 +69,25 @@
           last_action :: created | deleted,
           creation_date :: string(),
           modification_time :: erlang:timestamp(),
-          acl :: acl()}).
+          acl :: undefined | acl()}).
 
 -type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy.
 -type bucket_action() :: created | deleted.
 
--record(context, {start_time :: erlang:timestamp(),
+-record(context, {start_time :: undefined | erlang:timestamp(),
                   auth_bypass :: atom(),
                   user :: undefined | moss_user(),
-                  user_object :: riakc_obj:riakc_obj(),
-                  bucket :: binary(),
+                  user_object :: undefined | riakc_obj:riakc_obj(),
+                  bucket :: undefined | binary(),
                   acl :: 'undefined' | acl(),
-                  requested_perm :: acl_perm(),
-                  riak_client :: riak_client(),
+                  requested_perm :: undefined | acl_perm(),
+                  riak_client :: undefined | riak_client(),
                   rc_pool :: atom(),    % pool name which riak_client belongs to
                   auto_rc_close = true :: boolean(),
                   submodule :: atom(),
-                  exports_fun :: function(),
+                  exports_fun :: undefined | function(),
                   auth_module :: atom(),
                   response_module :: atom(),
                   policy_module :: atom(),
@@ -186,7 +186,7 @@
         %% was written. Needed if the user
         %% ever changes the block size after writing
         %% data
-        block_size :: integer(),
+        block_size :: undefined | integer(),
 
         %% identifying properties
         %% -----------------------------------------------------------------

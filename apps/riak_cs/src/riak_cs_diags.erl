@@ -1,6 +1,14 @@
 -module(riak_cs_diags).
 -behaviour(gen_server).
 
+-dialyzer([ {nowarn_function, pr/1}
+          , {nowarn_function, pr/2}
+          , {nowarn_function, rec_to_proplist/1}
+          , {nowarn_function, print_field/2}
+          , {nowarn_function, spaces/1}
+          , {nowarn_function, print_multipart_manifest/2}
+          ]).
+
 -include("riak_cs.hrl").
 
 %% API

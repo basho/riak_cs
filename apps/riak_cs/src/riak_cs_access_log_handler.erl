@@ -85,8 +85,8 @@
           size :: integer(),           %% num. accesses since last archival
           current :: {calendar:datetime(), calendar:datetime()},
                      %% current agg. slice
-          archive :: reference(),      %% reference for archive msg
-          table :: ets:tid()           %% the table aggregating stats
+          archive :: undefined | reference(), %% reference for archive msg
+          table :: ets:tid()                  %% the table aggregating stats
          }).
 
 -type state() :: #state{}.
@@ -168,10 +168,12 @@ init(_) ->
             %% webmachine/mochiweb will just ignore the failed
             %% startup; using init:stop/0 here so that the user isn't
             %% suprised later when there are no logs
-            init:stop();
+            init:stop(),
+            {error, doesnt_matter_as_node_is_going_down};
         {_, {error, Reason}} ->
             _ = lager:error("Error starting access logger: ~s", [Reason]),
-            init:stop()
+            init:stop(),
+            {error, doesnt_matter_as_node_is_going_down}
     end.
 
 %% @private

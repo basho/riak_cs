@@ -58,7 +58,7 @@
                 %% For active deletion, not used.
                 %% Set only once at init and unchanged. Used only for logs.
                 gc_key :: binary(),
-                delete_blocks_remaining :: ordsets:ordset({binary(), integer()}),
+                delete_blocks_remaining :: undefined | ordsets:ordset({binary(), integer()}),
                 unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),

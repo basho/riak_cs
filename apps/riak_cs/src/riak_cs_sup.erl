@@ -53,9 +53,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc supervisor callback.
--spec init([]) -> {ok, {{supervisor:strategy(),
-                         non_neg_integer(),
-                         non_neg_integer()},
+-spec init([]) -> {ok, {supervisor:sup_flags(),
                         [supervisor:child_spec()]}}.
 init([]) ->
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
@@ -63,9 +61,10 @@ init([]) ->
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     PoolSpecs = pool_specs(Options),
     application:set_env(webmachine, rewrite_module, proplists:get_value(rewrite_module, Options)),
-    {ok, { {one_for_one, 10, 10}, PoolSpecs ++
-               process_specs() ++
-               web_specs(Options)}}.
+    {ok, {#{strategy => one_for_one,
+            intensity => 10,
+            period => 10},
+          PoolSpecs ++ process_specs() ++ web_specs(Options)}}.
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
