@@ -437,49 +437,68 @@ root_host() ->
 %% ALL Timeouts hitting Riak
 %% ===================================================================
 
--define(TIMEOUT_CONFIG_FUNC(ConfigName),
-        ConfigName() ->
-               get_env(riak_cs, ConfigName,
-                       get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT))).
-
 %% @doc Return the configured ping timeout. Default is 5 seconds.
 -spec ping_timeout() -> pos_integer().
 ping_timeout() ->
     get_env(riak_cs, ping_timeout, ?DEFAULT_PING_TIMEOUT).
 
 %% timeouts in milliseconds
-?TIMEOUT_CONFIG_FUNC(get_user_timeout).
-?TIMEOUT_CONFIG_FUNC(get_bucket_timeout).
-?TIMEOUT_CONFIG_FUNC(get_manifest_timeout).
-?TIMEOUT_CONFIG_FUNC(get_block_timeout).
-
 local_get_block_timeout() ->
     get_env(riak_cs, local_get_block_timeout, timer:seconds(5)).
 
-?TIMEOUT_CONFIG_FUNC(proxy_get_block_timeout).
-?TIMEOUT_CONFIG_FUNC(get_access_timeout).
-?TIMEOUT_CONFIG_FUNC(get_gckey_timeout).
-?TIMEOUT_CONFIG_FUNC(put_user_timeout).
-?TIMEOUT_CONFIG_FUNC(put_manifest_timeout).
-?TIMEOUT_CONFIG_FUNC(put_block_timeout).
-?TIMEOUT_CONFIG_FUNC(put_access_timeout).
-?TIMEOUT_CONFIG_FUNC(put_gckey_timeout).
-?TIMEOUT_CONFIG_FUNC(put_user_usage_timeout).
-?TIMEOUT_CONFIG_FUNC(delete_manifest_timeout).
-?TIMEOUT_CONFIG_FUNC(delete_block_timeout).
-?TIMEOUT_CONFIG_FUNC(delete_gckey_timeout).
-?TIMEOUT_CONFIG_FUNC(list_keys_list_objects_timeout).
-?TIMEOUT_CONFIG_FUNC(list_keys_list_users_timeout).
-?TIMEOUT_CONFIG_FUNC(list_keys_list_buckets_timeout).
-?TIMEOUT_CONFIG_FUNC(storage_calc_timeout).
-?TIMEOUT_CONFIG_FUNC(list_objects_timeout).
-?TIMEOUT_CONFIG_FUNC(fold_objects_timeout).
-?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_timeout).
-?TIMEOUT_CONFIG_FUNC(get_index_range_gckeys_call_timeout).
-?TIMEOUT_CONFIG_FUNC(get_index_list_multipart_uploads_timeout).
-?TIMEOUT_CONFIG_FUNC(cluster_id_timeout).
+get_user_timeout() ->
+    get_env(riak_cs, get_user_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_bucket_timeout() ->
+    get_env(riak_cs, get_bucket_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_manifest_timeout() ->
+    get_env(riak_cs, get_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_block_timeout() ->
+    get_env(riak_cs, get_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
 
--undef(TIMEOUT_CONFIG_FUNC).
+proxy_get_block_timeout() ->
+    get_env(riak_cs, proxy_get_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_access_timeout() ->
+    get_env(riak_cs, get_access_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_gckey_timeout() ->
+    get_env(riak_cs, get_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_user_timeout() ->
+    get_env(riak_cs, put_user_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_manifest_timeout() ->
+    get_env(riak_cs, put_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_block_timeout() ->
+    get_env(riak_cs, put_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_access_timeout() ->
+    get_env(riak_cs, put_access_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_gckey_timeout() ->
+    get_env(riak_cs, put_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+put_user_usage_timeout() ->
+    get_env(riak_cs, put_user_usage_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+delete_manifest_timeout() ->
+    get_env(riak_cs, delete_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+delete_block_timeout() ->
+    get_env(riak_cs, delete_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+delete_gckey_timeout() ->
+    get_env(riak_cs, delete_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+list_keys_list_objects_timeout() ->
+    get_env(riak_cs, list_keys_list_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+list_keys_list_users_timeout() ->
+    get_env(riak_cs, list_keys_list_users_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+list_keys_list_buckets_timeout() ->
+    get_env(riak_cs, list_keys_list_buckets_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+storage_calc_timeout() ->
+    get_env(riak_cs, storage_calc_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+list_objects_timeout() ->
+    get_env(riak_cs, list_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+fold_objects_timeout() ->
+    get_env(riak_cs, fold_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_index_range_gckeys_timeout() ->
+    get_env(riak_cs, get_index_range_gckeys_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_index_range_gckeys_call_timeout() ->
+    get_env(riak_cs, get_index_range_gckeys_call_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+get_index_list_multipart_uploads_timeout() ->
+    get_env(riak_cs, get_index_list_multipart_uploads_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+cluster_id_timeout() ->
+    get_env(riak_cs, cluster_id_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
 
 %% ===================================================================
 %% S3 config options
