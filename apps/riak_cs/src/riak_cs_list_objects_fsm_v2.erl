@@ -99,7 +99,7 @@
 
 -type continuation() :: binary() | 'undefined'.
 -type list_objects_event() :: {ReqID :: reference(), {done, continuation()}} |
-                              {ReqID :: reference(), {objects, list()}} |
+                              {ReqID :: reference(), {ok, list()}} |
                               {ReqID :: reference(), {error, term()}}.
 
 %% `Start' and `End' are inclusive
@@ -145,12 +145,9 @@ prepare(timeout, State=#state{riak_client=RcPid}) ->
     end.
 
 -spec waiting_object_list(list_objects_event(), state()) -> fsm_state_return().
-waiting_object_list({ReqId, {ok, _}=Objs}, State) ->
-    waiting_object_list({ReqId, [Objs, undefined]}, State);
-waiting_object_list({ReqId, [{ok, ObjectList} | _]},
-                    State=#state{object_list_req_id=ReqId,
-                                 object_buffer=ObjectBuffer}) ->
-    NewStateData = State#state{object_buffer=ObjectBuffer ++ ObjectList},
+waiting_object_list({ReqId, {ok, ObjectList}}, State = #state{object_list_req_id = ReqId,
+                                                              object_buffer = ObjectBuffer}) ->
+    NewStateData = State#state{object_buffer = ObjectBuffer ++ ObjectList},
     {next_state, waiting_object_list, NewStateData};
 waiting_object_list({ReqId, {done, _Continuation}}, State=#state{object_list_req_id=ReqId}) ->
     handle_done(State);
