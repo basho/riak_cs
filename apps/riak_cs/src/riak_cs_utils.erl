@@ -224,16 +224,16 @@ md5(IOData) ->
 
 -define(MAX_UPDATE_SIZE, (32*1024)).
 
--spec md5_init() -> crypto_context().
+-spec md5_init() -> crypto:hash_state().
 md5_init() -> crypto:hash_init(md5).
 
--spec md5_update(crypto_context(), binary()) -> crypto_context().
+-spec md5_update(crypto:hash_state(), binary()) -> crypto:hash_state().
 md5_update(Ctx, Bin) when size(Bin) =< ?MAX_UPDATE_SIZE ->
     crypto:hash_update(Ctx, Bin);
 md5_update(Ctx, <<Part:?MAX_UPDATE_SIZE/binary, Rest/binary>>) ->
     md5_update(crypto:hash_update(Ctx, Part), Rest).
 
--spec md5_final(crypto_context()) -> digest().
+-spec md5_final(crypto:hash_state()) -> digest().
 md5_final(Ctx) -> crypto:hash_final(Ctx).
 
 -spec active_manifest_from_response({ok, orddict:orddict()} |

@@ -58,7 +58,7 @@
                 block_size :: pos_integer(),
                 caller :: reference(),
                 uuid :: binary(),
-                md5 :: undefined | crypto_context() | digest(),
+                md5 :: crypto:hash_state() | digest(),
                 reported_md5 :: undefined | string(),
                 reply_pid :: undefined | {pid(), reference()},
                 riak_client :: riak_client(),
@@ -158,6 +158,7 @@ init({{Bucket, Key, ContentLength, ContentType,
     %%    live.
     CallerRef = erlang:monitor(process, Caller),
 
+    Md5 = riak_cs_utils:md5_init(),
     UUID = uuid:get_v4(),
     BagId = case BagId0 of
                 undefined ->
@@ -167,6 +168,7 @@ init({{Bucket, Key, ContentLength, ContentType,
             end,
     {ok, prepare, #state{bucket=Bucket,
                          key=Key,
+                         md5=Md5,
                          block_size=BlockSize,
                          caller=CallerRef,
                          uuid=UUID,
@@ -424,7 +426,6 @@ prepare(State=#state{bucket=Bucket,
                                               BagId),
     NewManifest = Manifest?MANIFEST{write_start_time=os:timestamp()},
 
-    Md5 = riak_cs_utils:md5_init(),
     WriterPids = case ContentLength of
                      0 ->
                          %% Don't start any writers
@@ -448,7 +449,6 @@ prepare(State=#state{bucket=Bucket,
     TRef = erlang:send_after(60000, self(), save_manifest),
     ok = maybe_add_new_manifest(ManiPid, NewManifest),
     State#state{manifest=NewManifest,
-                md5=Md5,
                 timer_ref=TRef,
                 mani_pid=ManiPid,
                 max_buffer_size=MaxBufferSize,

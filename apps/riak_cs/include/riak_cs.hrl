@@ -504,10 +504,6 @@
 
 -type policy() :: riak_cs_s3_policy:policy1().
 
-%% just to persuade dyalizer
--type crypto_context() :: {'md4' | 'md5' | 'ripemd160' | 'sha' |
-                           'sha224' | 'sha256' | 'sha384' | 'sha512',
-                           binary()}.
 -type digest() :: binary().
 
 -define(USERMETA_BUCKET, "RCS-bucket").
