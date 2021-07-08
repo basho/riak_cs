@@ -267,7 +267,7 @@
 
         %% The ACL for the version of the object represented
         %% by this manifest.
-        acl :: acl() | no_acl_yet,
+        acl = no_acl_yet :: acl() | no_acl_yet,
 
         %% There are a couple of cases where we want to add record
         %% member'ish data without adding new members to the record,

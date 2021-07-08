@@ -156,7 +156,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
     riak_cs_get_fsm:stop(GetFsmPid),
     Acl = Mfst?MANIFEST.acl,
     {AclXml, DtraceTag} = case Acl of
-                              undefined -> {riak_cs_acl_utils:empty_acl_xml(), -1};
+                              no_acl_yet -> {riak_cs_acl_utils:empty_acl_xml(), -1};
                               _ -> {riak_cs_xml:to_xml(Acl), -2}
                           end,
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_get">>,
