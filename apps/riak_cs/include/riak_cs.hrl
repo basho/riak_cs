@@ -398,7 +398,7 @@
 -define(DEFAULT_MAX_CONTENT_LENGTH, 5368709120). %% 5 GB
 -define(DEFAULT_LFS_BLOCK_SIZE, 1048576).%% 1 MB
 -define(XML_PROLOG, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
--define(S3_XMLNS, 'http://s3.amazonaws.com/doc/2006-03-01/').
+-define(S3_XMLNS, "http://s3.amazonaws.com/doc/2006-03-01/").
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).
