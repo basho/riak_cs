@@ -26,6 +26,6 @@
 -callback bucket_policy(riakc_obj:riakc_obj()) -> {ok, policy()} | {error, term()}.
 -callback eval(access(), policy() | undefined | binary() ) -> boolean() | undefined.
 -callback check_policy(access(), policy()) -> ok | {error, atom()}.
--callback reqdata_to_access(RD :: term(), Target::atom(), ID::binary()|undefined) -> access().
+-callback reqdata_to_access(RD :: term(), Target::atom(), ID::string()|undefined) -> access().
 -callback policy_from_json(JSON::binary()) -> {ok, policy()} | {error, term()}.
 -callback policy_to_json_term(policy()) -> JSON::binary().

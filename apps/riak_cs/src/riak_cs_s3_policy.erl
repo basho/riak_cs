@@ -185,7 +185,7 @@ check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
     [B|_] = string:tokens(Path, "/"),
     B =:= binary_to_list(BucketBin).
 
--spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::binary()|undefined) -> access().
+-spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::string()|undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;
