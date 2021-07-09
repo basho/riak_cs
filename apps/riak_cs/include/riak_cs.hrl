@@ -66,9 +66,9 @@
 
 -record(moss_bucket_v1, {
           name :: string() | binary(),
-          last_action :: created | deleted,
-          creation_date :: string(),
-          modification_time :: erlang:timestamp(),
+          last_action :: undefined | created | deleted,
+          creation_date :: undefined | string(),
+          modification_time :: undefined | erlang:timestamp(),
           acl :: undefined | acl()}).
 
 -type cs_bucket() :: #moss_bucket_v1{}.
@@ -107,19 +107,19 @@
                   api :: atom()
                  }).
 
--record(key_context, {manifest :: 'notfound' | lfs_manifest(),
-                      upload_id :: 'undefined' | binary(),
-                      part_number :: 'undefined' | integer(),
-                      part_uuid :: 'undefined' | binary(),
-                      get_fsm_pid :: pid(),
-                      putctype :: string(),
-                      bucket :: binary(),
+-record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
+                      upload_id :: undefined | binary(),
+                      part_number :: undefined | integer(),
+                      part_uuid :: undefined | binary(),
+                      get_fsm_pid :: undefined | pid(),
+                      putctype :: undefined | string(),
+                      bucket :: undefined | binary(),
                       bucket_object :: undefined | notfound | riakc_obj:riakc_obj(),
-                      key :: list(),
-                      owner :: 'undefined' | string(),
-                      size :: non_neg_integer(),
-                      content_md5 :: 'undefined' | binary(),
-                      update_metadata=false :: boolean()}).
+                      key :: undefined | list(),
+                      owner :: undefined | string(),
+                      size :: undefined | non_neg_integer(),
+                      content_md5 :: undefined | binary(),
+                      update_metadata = false :: boolean()}).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].
@@ -235,7 +235,7 @@
         %% (rather than growing) set to that the
         %% set is empty after the write has completed,
         %% which should be most of the lifespan on disk
-        write_blocks_remaining :: ordsets:ordset(integer()),
+        write_blocks_remaining :: undefined | ordsets:ordset(integer()),
 
         %% pending_delete/deleted state
         %% -----------------------------------------------------------------
@@ -258,7 +258,7 @@
         %% See write_blocks_remaining for
         %% an explanation of why we chose
         %% a shrinking set
-        delete_blocks_remaining :: ordsets:ordset(integer()),
+        delete_blocks_remaining :: undefined | ordsets:ordset(integer()),
 
         %% the time the manifest was put
         %% into the scheduled_delete

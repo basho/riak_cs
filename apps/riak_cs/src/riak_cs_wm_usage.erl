@@ -150,14 +150,14 @@
 -define(ATTR_END, 'EndTime').
 
 -record(ctx, {
-          auth_bypass :: boolean(),
-          riak_client :: pid(),
-          user :: rcs_user(),
+          auth_bypass = false :: boolean(),
+          riak_client :: undefined | pid(),
+          user :: undefined | rcs_user(),
           admin_access=false :: boolean(),
-          start_time :: calendar:datetime(),
-          end_time :: calendar:datetime(),
-          body :: iodata(),
-          etag :: iolist()
+          start_time :: undefined | calendar:datetime(),
+          end_time :: undefined | calendar:datetime(),
+          body :: undefined | iodata(),
+          etag :: undefined | iolist()
          }).
 
 on_load() ->

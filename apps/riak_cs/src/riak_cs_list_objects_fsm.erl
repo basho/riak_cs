@@ -57,14 +57,14 @@
 
 -record(profiling, {
         %% floating point secs
-        list_keys_start_time :: float(),
-        list_keys_end_time :: float(),
-        list_keys_num_results :: non_neg_integer(),
+        list_keys_start_time :: undefined | float(),
+        list_keys_end_time :: undefined | float(),
+        list_keys_num_results :: undefined | non_neg_integer(),
 
-        temp_mr_req :: {Request :: {StartIdx :: non_neg_integer(),
-                                    EndIdx :: non_neg_integer()},
-                        NumKeysRequested :: non_neg_integer(),
-                        StartTime :: float()},
+        temp_mr_req :: undefined | {Request :: {StartIdx :: non_neg_integer(),
+                                                EndIdx :: non_neg_integer()},
+                                    NumKeysRequested :: non_neg_integer(),
+                                    StartTime :: float()},
         mr_requests=[] :: [{Request :: {StartIdx :: non_neg_integer(),
                                         EndIdx :: non_neg_integer()},
                             NumKeysRequested :: non_neg_integer(),

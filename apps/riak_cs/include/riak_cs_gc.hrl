@@ -48,7 +48,7 @@
           %% Used for paginated 2I querying of GC bucket
           key_list_state :: undefined | gc_key_list_state(),
           %% Options to use when start workers
-          bag_id :: binary()
+          bag_id :: undefined | binary()
          }).
 
 -record(gc_worker_state, {
