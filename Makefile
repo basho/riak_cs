@@ -89,16 +89,6 @@ DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto in
 PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
 
-test-erlang: compile-client-test
-	@$(REBAR) client_test_run
-
-## to fix:
-compile-client-test: all
-	@$(REBAR) client_test_compile
-
-clean-client-test:
-	@$(REBAR) client_test_clean
-
 ## Create a dependency graph png
 depgraph: graphviz
 	@echo "Note: If you have nothing in deps/ this might be boring"
@@ -110,7 +100,7 @@ graphviz:
 
 pulse: all
 	@rm -rf $(BASE_DIR)/.eunit
-	@$(REBAR) -D PULSE eunit skip_deps=true suites=$(PULSE_TESTS)
+	@ERLOPTS="-D PULSE" $(REBAR) eunit --module=$(PULSE_TESTS)
 
 ##
 ## Packaging targets
