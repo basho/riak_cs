@@ -331,10 +331,11 @@ metric_to_atom(Key, Suffix) ->
 -include_lib("eunit/include/eunit.hrl").
 
 stats_test_() ->
-    Apps = [setup, compiler, syntax_tools, exometer_core, lager],
+    Apps = [setup, compiler, syntax_tools, exometer_core],
     {setup,
      fun() ->
-             lager:update_primary_config(#{level => none}),
+             application:ensure_all_started(lager),
+             lager:set_loglevel(lager_console_backend, alert),
              [application:ensure_all_started(App) || App <- Apps],
              ok = init()
      end,
