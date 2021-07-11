@@ -489,7 +489,7 @@ example_delete() ->
                                {"Date", "Tue, 27 Mar 2007 21:20:27 +0000"},
                                {"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
+    ExpectedSignature = "amG66fXy2/BJ/HvrN2jUKINWfrE=",
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example delete test", ExpectedSignature, CalculatedSignature).
 
