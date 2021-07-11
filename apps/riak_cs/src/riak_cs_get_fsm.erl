@@ -125,6 +125,7 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
+-ifndef(TEST).
 init([Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor])
   when is_binary(Bucket), is_binary(Key), is_pid(Caller),
        is_pid(RcPid),
@@ -154,7 +155,8 @@ init([Bucket, Key, Caller, RcPid, FetchConcurrency, BufferFactor])
                    riak_client=RcPid,
                    buffer_factor=BufferFactor,
                    fetch_concurrency=FetchConcurrency},
-    {ok, prepare, State, 0};
+    {ok, prepare, State, 0}.
+-else.
 init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency,
       BufferFactor]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key, Caller, self(),
@@ -177,6 +179,7 @@ init([test, Bucket, Key, Caller, ContentLength, BlockSize, FetchConcurrency,
     {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
                                      test=true}}.
+-endif.
 
 prepare(timeout, State) ->
     NewState = prepare(State),
