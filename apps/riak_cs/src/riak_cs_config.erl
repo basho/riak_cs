@@ -446,57 +446,83 @@ ping_timeout() ->
 local_get_block_timeout() ->
     get_env(riak_cs, local_get_block_timeout, timer:seconds(5)).
 
+-spec get_user_timeout() -> non_neg_integer().
 get_user_timeout() ->
     get_env(riak_cs, get_user_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_bucket_timeout() -> non_neg_integer().
 get_bucket_timeout() ->
     get_env(riak_cs, get_bucket_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_manifest_timeout() -> non_neg_integer().
 get_manifest_timeout() ->
     get_env(riak_cs, get_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_block_timeout() -> non_neg_integer().
 get_block_timeout() ->
     get_env(riak_cs, get_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
 
+-spec proxy_get_block_timeout() -> non_neg_integer().
 proxy_get_block_timeout() ->
     get_env(riak_cs, proxy_get_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_access_timeout() -> non_neg_integer().
 get_access_timeout() ->
     get_env(riak_cs, get_access_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_gckey_timeout() -> non_neg_integer().
 get_gckey_timeout() ->
     get_env(riak_cs, get_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_user_timeout() -> non_neg_integer().
 put_user_timeout() ->
     get_env(riak_cs, put_user_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_manifest_timeout() -> non_neg_integer().
 put_manifest_timeout() ->
     get_env(riak_cs, put_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_block_timeout() -> non_neg_integer().
 put_block_timeout() ->
     get_env(riak_cs, put_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_access_timeout() -> non_neg_integer().
 put_access_timeout() ->
     get_env(riak_cs, put_access_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_gckey_timeout() -> non_neg_integer().
 put_gckey_timeout() ->
     get_env(riak_cs, put_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec put_user_usage_timeout() -> non_neg_integer().
 put_user_usage_timeout() ->
     get_env(riak_cs, put_user_usage_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec delete_manifest_timeout() -> non_neg_integer().
 delete_manifest_timeout() ->
     get_env(riak_cs, delete_manifest_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec delete_block_timeout() -> non_neg_integer().
 delete_block_timeout() ->
     get_env(riak_cs, delete_block_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec delete_gckey_timeout() -> non_neg_integer().
 delete_gckey_timeout() ->
     get_env(riak_cs, delete_gckey_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec list_keys_list_objects_timeout() -> non_neg_integer().
 list_keys_list_objects_timeout() ->
     get_env(riak_cs, list_keys_list_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec list_keys_list_users_timeout() -> non_neg_integer().
 list_keys_list_users_timeout() ->
     get_env(riak_cs, list_keys_list_users_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec list_keys_list_buckets_timeout() -> non_neg_integer().
 list_keys_list_buckets_timeout() ->
     get_env(riak_cs, list_keys_list_buckets_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec storage_calc_timeout() -> non_neg_integer().
 storage_calc_timeout() ->
     get_env(riak_cs, storage_calc_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec list_objects_timeout() -> non_neg_integer().
 list_objects_timeout() ->
     get_env(riak_cs, list_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec fold_objects_timeout() -> non_neg_integer().
 fold_objects_timeout() ->
     get_env(riak_cs, fold_objects_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_index_range_gckeys_timeout() -> non_neg_integer().
 get_index_range_gckeys_timeout() ->
     get_env(riak_cs, get_index_range_gckeys_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_index_range_gckeys_call_timeout() -> non_neg_integer().
 get_index_range_gckeys_call_timeout() ->
     get_env(riak_cs, get_index_range_gckeys_call_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec get_index_list_multipart_uploads_timeout() -> non_neg_integer().
 get_index_list_multipart_uploads_timeout() ->
     get_env(riak_cs, get_index_list_multipart_uploads_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
+-spec cluster_id_timeout() -> non_neg_integer().
 cluster_id_timeout() ->
     get_env(riak_cs, cluster_id_timeout, get_env(riak_cs, riakc_timeouts, ?DEFAULT_RIAK_TIMEOUT)).
 
