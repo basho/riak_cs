@@ -33,6 +33,7 @@ distclean: clean devclean relclean
 ## Release targets
 ##
 rel: compile
+	rm -rf _build/rel/rel/riak-cs
 	$(REBAR) as rel release
 	cp -a _build/rel/rel/riak-cs rel/
 
