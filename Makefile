@@ -64,7 +64,7 @@ relclean:
 DEVNODES ?= 8
 
 # 'seq' is not available on all *BSD, so using an alternate in awk
-SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
+SEQ = $(shell seq $(DEVNODES))
 
 $(eval stagedevrel : $(foreach n,$(SEQ),stagedev$(n)))
 $(eval devrel : $(foreach n,$(SEQ),dev$(n)))
