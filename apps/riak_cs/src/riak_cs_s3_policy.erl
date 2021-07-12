@@ -720,7 +720,7 @@ print_principal(Principals) when is_list(Principals) ->
     PrintFun = fun(Principal) -> print_principal(Principal) end,
     lists:map(PrintFun, Principals).
 
--spec parse_arns(binary()|[binary()]) -> {ok, arn()} | {error, bad_arn}.
+-spec parse_arns(binary()|[binary()]) -> {ok, [arn()]} | {error, bad_arn}.
 parse_arns(<<"*">>) -> {ok, '*'};
 parse_arns(Bin) when is_binary(Bin) ->
     Str = binary_to_list(Bin),
@@ -734,7 +734,7 @@ parse_arns(List) when is_list(List) ->
                          {ok, ARN} -> {ok, ARN ++ Acc0};
                          {error, bad_arn} -> {error, bad_arn}
                      end;
-                ({error, bad_arn}, _)   ->  {error, bad_arn}
+                (_, {error, bad_arn})   ->  {error, bad_arn}
              end,
     case lists:foldl(AccFun, {ok, []}, List) of
         {ok, ARNs} -> {ok, lists:reverse(ARNs)};
@@ -901,5 +901,21 @@ statement_eq(LHS, RHS) ->
     resource_eq(LHS#statement.resource, RHS#statement.resource)
         andalso
     (LHS#statement.condition_block =:= RHS#statement.condition_block).
+
+valid_arn_parse_test() ->
+    A1 = <<"arn:aws:s3::123456789012:user/Development/product_1234/*">>,
+    E1 = ?ARN{provider = aws,
+              service = s3,
+              region = [],
+              id = <<"123456789012">>,
+              path = "user/Development/product_1234/*"},
+    AAEE = [{{ok, [E1]}, A1},
+            {{ok, [E1]}, [A1]},
+            {{ok, [E1, E1]}, [A1, A1]}
+           ],
+    lists:foreach(fun({E, A}) -> ?assertEqual(E, parse_arns(A)) end, AAEE).
+
+invalid_arn_parse_test() ->
+    ?assertEqual({error, bad_arn}, parse_arns([<<"arn:aws:s2::123456789012:user/Development/product_1234/*">>])).
 
 -endif.
