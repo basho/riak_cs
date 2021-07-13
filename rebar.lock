@@ -45,7 +45,7 @@
   1},
  {<<"riak_repl_pb_api">>,
   {git,"git://github.com/TI-Tokyo/riak_repl_pb_api.git",
-       {ref,"c85a3db7272e8cf8fa3147fa744cea5d2dd33029"}},
+       {ref,"39bbd1af655b1855e1af32b2624417750f9e7bdd"}},
   0},
  {<<"riakc">>,
   {git,"git://github.com/basho/riak-erlang-client",
