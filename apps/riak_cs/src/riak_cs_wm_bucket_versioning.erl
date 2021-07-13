@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -43,13 +44,13 @@ allowed_methods() ->
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec authorize(#wm_reqdata{}, #context{}) -> 
+-spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, term()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_version, false, RD, Ctx).
 
 
--spec to_xml(#wm_reqdata{}, #context{}) -> 
+-spec to_xml(#wm_reqdata{}, #context{}) ->
                     {binary() | {halt, term()}, #wm_reqdata{}, #context{}}.
 to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
     StrBucket = binary_to_list(Bucket),
@@ -61,5 +62,3 @@ to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
             {<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>">>,
              RD, Ctx}
     end.
-
-

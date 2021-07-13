@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -44,7 +45,7 @@ allowed_methods() ->
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec authorize(#wm_reqdata{}, #context{}) -> 
+-spec authorize(#wm_reqdata{}, #context{}) ->
                        {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_location, false, RD, Ctx).
@@ -63,5 +64,3 @@ to_xml(RD, Ctx=#context{user=User,bucket=Bucket}) ->
                     [riak_cs_config:region()]}],
             {riak_cs_xml:to_xml(Doc), RD, Ctx}
     end.
-
-

@@ -1,3 +1,24 @@
+%% ---------------------------------------------------------------------
+%%
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% ---------------------------------------------------------------------
+
 -module(table).
 
 %% API
@@ -30,7 +51,7 @@ create_table(Spec, [Row | Rows], Length, IoList) ->
 -spec get_row_length(list(tuple())) -> non_neg_integer().
 get_row_length(Spec) ->
     lists:foldl(fun({_Name, Size}, Total) ->
-                    Total + Size + 2 
+                    Total + Size + 2
                 end, 0, Spec) + 2.
 
 -spec row(list(), list(string())) -> iolist().
@@ -56,9 +77,9 @@ align(Str, Size) when is_binary(Str) ->
     align(binary_to_list(Str), Size);
 align(Str, Size) when is_atom(Str) ->
     align(atom_to_list(Str), Size);
-align(Str, Size) when is_list(Str), length(Str) > Size -> 
+align(Str, Size) when is_list(Str), length(Str) > Size ->
     Truncated = lists:sublist(Str, Size),
-    Truncated ++ " |"; 
+    Truncated ++ " |";
 align(Str, Size) when is_list(Str), length(Str) =:= Size ->
     Str ++ " |";
 align(Str, Size) when is_list(Str) ->
@@ -81,4 +102,3 @@ spaces(Length) ->
 -spec char_seq(non_neg_integer(), char()) -> string().
 char_seq(Length, Char) ->
     [Char || _ <- lists:seq(1, Length)].
-

@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -84,7 +85,7 @@ prop_active_manifests() ->
                     %% the manifest has a write_start_time < delete_marked_time of
                     %% some other deleted manifest's delete_marked_time.
                     ActiveManis = lists:filter(fun(?MANIFEST{state=State}) ->
-                                              State == active 
+                                              State == active
                                           end, AlteredManifests),
                     ActiveUUIDs = lists:sort([M?MANIFEST.uuid || M <- ActiveManis]),
                     ActiveUUIDs =:= ToGcUUIDs;

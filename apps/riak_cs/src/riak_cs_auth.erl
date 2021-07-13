@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -36,4 +37,4 @@
 
 -callback authenticate(rcs_user(), string() | {string(), term()} | undefined,
                        wm_reqdata(), wm_context()) ->
-    ok | {error, atom()}.     
+    ok | {error, atom()}.

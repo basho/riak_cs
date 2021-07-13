@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -61,8 +62,8 @@ new_dict(UUID, Manifest) ->
 %% from an orddict of manifests.
 -spec active_manifest(orddict:orddict()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 active_manifest(Dict) ->
-    live_manifest(lists:foldl(fun most_recent_active_manifest/2, 
-            {no_active_manifest, undefined}, orddict_values(Dict))). 
+    live_manifest(lists:foldl(fun most_recent_active_manifest/2,
+            {no_active_manifest, undefined}, orddict_values(Dict))).
 
 %% @doc Ensure the manifest hasn't been deleted during upload.
 -spec live_manifest(tuple()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
@@ -366,7 +367,7 @@ delete_time(Manifest) ->
     end.
 
 %% @doc Return all active manifests that have timestamps before the latest deletion
-%% This happens when a manifest is still uploading while it is deleted. The upload 
+%% This happens when a manifest is still uploading while it is deleted. The upload
 %% is allowed to complete, but is not visible afterwards.
 -spec deleted_while_writing(orddict:orddict()) -> [binary()].
 deleted_while_writing(Manifests) ->
@@ -378,7 +379,7 @@ deleted_while_writing(Manifests) ->
 find_deleted_active_manifests(_Manifests, undefined) ->
     [];
 find_deleted_active_manifests(Manifests, DeleteTime) ->
-    [M?MANIFEST.uuid || M <- Manifests, M?MANIFEST.state =:= active, 
+    [M?MANIFEST.uuid || M <- Manifests, M?MANIFEST.state =:= active,
                         M?MANIFEST.write_start_time < DeleteTime].
 
 -spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
@@ -389,7 +390,7 @@ latest_delete_time(Manifests) ->
                 end, undefined, Manifests).
 
 %% @doc Return the later of two times, accounting for undefined
--spec later(undefined | erlang:timestamp(), undefined | erlang:timestamp()) -> 
+-spec later(undefined | erlang:timestamp(), undefined | erlang:timestamp()) ->
     undefined | erlang:timestamp().
 later(undefined, undefined) ->
     undefined;
@@ -408,36 +409,36 @@ later(DeleteTime1, DeleteTime2) ->
 %% NOTE: This is a foldl function, initial acc = {no_active_manifest, undefined}
 %% Return the most recent active manifest as well as the most recent manifest delete time
 -spec most_recent_active_manifest(lfs_manifest(), {
-    no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) -> 
+    no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) ->
         {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, 
-                            {MostRecent, undefined}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete},
+                            {MostRecent, undefined}) ->
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete}, 
-                            {MostRecent, DeleteTime}) -> 
-    Dt=delete_time(Manifest), 
+most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete},
+                            {MostRecent, DeleteTime}) ->
+    Dt=delete_time(Manifest),
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, 
-                            {MostRecent, undefined}) -> 
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete},
+                            {MostRecent, undefined}) ->
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete}, 
-                           {MostRecent, DeleteTime}) -> 
-    Dt=delete_time(Manifest), 
+most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete},
+                           {MostRecent, DeleteTime}) ->
+    Dt=delete_time(Manifest),
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=active}, 
+most_recent_active_manifest(Manifest=?MANIFEST{state=active},
                             {no_active_manifest, undefined}) ->
     {Manifest, undefined};
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, 
-                            {Man2=?MANIFEST{state=active}, DeleteTime}) 
+most_recent_active_manifest(Man1=?MANIFEST{state=active},
+                            {Man2=?MANIFEST{state=active}, DeleteTime})
     when Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time ->
         {Man1, DeleteTime};
-most_recent_active_manifest(_Man1=?MANIFEST{state=active}, 
+most_recent_active_manifest(_Man1=?MANIFEST{state=active},
                             {Man2=?MANIFEST{state=active}, DeleteTime}) ->
     {Man2, DeleteTime};
-most_recent_active_manifest(Man1=?MANIFEST{state=active}, 
-                            {no_active_manifest, DeleteTime}) -> 
+most_recent_active_manifest(Man1=?MANIFEST{state=active},
+                            {no_active_manifest, DeleteTime}) ->
     {Man1, DeleteTime};
-most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) -> 
+most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
     {Man2, DeleteTime};
 most_recent_active_manifest(_Manifest, {MostRecent, DeleteTime}) ->
     {MostRecent, DeleteTime}.

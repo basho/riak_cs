@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -151,7 +152,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
 response_location(Bucket, Key) ->
     lists:append(["http://",
         binary:bin_to_list(Bucket), ".", riak_cs_config:root_host(), "/", Key]).
-    
+
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx) ->
     MaxLen = riak_cs_lfs_utils:max_content_len(),

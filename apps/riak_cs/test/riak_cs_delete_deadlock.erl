@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -88,7 +89,7 @@ prop_delete_deadlock() ->
                              undefined,
                              undefined),
                 MpM = ?MULTIPART_MANIFEST{parts = Parts},
-                NewManifest = Manifest?MANIFEST{props = 
+                NewManifest = Manifest?MANIFEST{props =
                     riak_cs_mp_utils:replace_mp_manifest(MpM, Manifest?MANIFEST.props)},
 
                 OutputList = riak_cs_lfs_utils:block_sequences_for_manifest(NewManifest),
@@ -111,14 +112,14 @@ assemble_test_list(ContentLength, BlockSize, Parts) ->
 part_manifests() ->
     not_empty(eqc_gen:list(part())).
 
-raw_part() ->    
-    ?PART_MANIFEST{bucket= <<"part_bucket">>, 
+raw_part() ->
+    ?PART_MANIFEST{bucket= <<"part_bucket">>,
                    key = <<"part_key">>,
                    start_time = os:timestamp(),
                    part_id = g_uuid(),
                    content_length = ?CONTENT_LENGTH,
                    block_size=?BLOCK_SIZE}.
-part() ->          
+part() ->
     ?LET(Part, raw_part(), process_part(Part)).
 
 process_part(Part) ->

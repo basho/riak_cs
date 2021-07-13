@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -43,9 +44,9 @@ parse_ip_test_()->
                    riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4">>))),
      ?_assertEqual(<<"1.2.3.4/13">>,
                    riak_cs_s3_policy:print_ip(riak_cs_s3_policy:parse_ip(<<"1.2.3.4/13">>))),
-     ?_assertEqual({error, einval}, 
+     ?_assertEqual({error, einval},
                    riak_cs_s3_policy:parse_ip(<<"0">>)),
-     ?_assertEqual({error, einval}, 
+     ?_assertEqual({error, einval},
                    riak_cs_s3_policy:parse_ip(<<"0/0">>))
     ].
 
@@ -137,7 +138,7 @@ eval_ip_address_test_trust_x_forwarded_for_false_test() ->
     Conds = [garbage,{chiba, boo},"saitama",
              {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage],
     %% This test fails because it tries to use the socket from wm_reqstate to
-    %% get the peer address, but it's not a real wm request. 
+    %% get the peer address, but it's not a real wm request.
     %% If trust_x_forwarded_for = true, it would just use the peer address and the call would
     %% succeed
     ?assertError({badrecord, wm_reqstate},

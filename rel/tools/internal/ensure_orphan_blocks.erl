@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,.
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -243,4 +244,3 @@ write_uuid(_Opts, Output, CSBucket, UUID, Seq, CSKey) ->
                      mochihex:to_hex(CSKey), $\t,
                      mochihex:to_hex(UUID), $\t,
                      integer_to_list(Seq), $\n]).
-
