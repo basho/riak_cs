@@ -1,0 +1,57 @@
+Riak CS was created at Basho Tecnologies, Inc. by various contributors
+employed by that company during 2007-15.  Committers' names, as
+extracted from git history, are as follows:
+
+  Alex Wilson
+  Andrew J. Stone
+  Andrew Thompson
+  Andy Gross
+  Bishop Bors
+  Bryan Fink
+  Charlie Voiselle
+  Christian Dahlqvist
+  Christopher Meiklejohn
+  Christopher Molozian
+  Dave Parfitt
+  Dave Smith
+  Drew Pirrone-Brusse
+  Gabriel Nicolas Avellaneda
+  Greg Cymbalski
+  Hector Castro
+  Ian Plosker
+  Jared Morrow
+  Jimmy Mullen
+  Joe Caswell
+  Joe DeVivo
+  John Daily
+  Jon Anderson
+  Jon Glick
+  Jordan West
+  Junya Namai
+  Justin Pease
+  Kazuhiro Suzuki
+  Kelly McLaughlin
+  Kenji Rikitake
+  Lauren Rother
+  Luc Perkins
+  Macneil Shonle
+  Magnus Kessler
+  Marcel Neuhausler
+  Mark Allen
+  Martin Cox
+  Nicholas Adams
+  Paul Hagan
+  Reid Draper
+  Scott Lystig Fritchie
+  Sean Cribbs
+  Seema Jethani
+  Shunichi Shinohara
+  Ted Burghart
+  Uenishi Kota
+
+Plus, a few persons whose names could not be ascertained:
+
+  mexicat
+  pavlobaron
+
+In 2021, Andriy (Andrei) Zavada resumed development, as an employee at TI Tokyo.
