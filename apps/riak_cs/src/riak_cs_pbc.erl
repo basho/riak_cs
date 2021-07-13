@@ -190,18 +190,10 @@ get_cluster_id(Pbc) ->
         {error, _} -> undefined
     end.
 
+-spec get_cluster_id_sans_stats(pid()) -> {ok, binary()} | {error, term()}.
 get_cluster_id_sans_stats(Pbc) ->
     Timeout = riak_cs_config:cluster_id_timeout(),
-    try
-        riak_repl_pb_api:get_clusterid(Pbc, Timeout)
-    catch C:R ->
-            lager:warning("failed to get cluster_id from riak: ~p:~p", [C, R]),
-            %% Disable `proxy_get' so we do not repeatedly have to
-            %% handle this same exception. This would happen if an OSS
-            %% install has `proxy_get' enabled.
-            application:set_env(riak_cs, proxy_get, disabled),
-            {error, {C, R}}
-    end.
+    riak_repl_pb_api:get_clusterid(Pbc, Timeout).
 
 %% @doc don't reuse return value
 -spec check_connection_status(pid(), term()) -> any().
