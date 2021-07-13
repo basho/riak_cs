@@ -178,6 +178,8 @@ get_index_range(PbcPid, Bucket, Index, StartKey, EndKey, Opts, StatsKey) ->
                 riakc_pb_socket:get_index_range(PbcPid, Bucket, Index,
                                                 StartKey, EndKey, Opts)).
 
+-dialyzer({[no_match], get_cluster_id/1}).
+
 %% @doc Attempt to determine the cluster id
 -spec get_cluster_id(pid()) -> undefined | binary().
 get_cluster_id(Pbc) ->

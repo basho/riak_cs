@@ -310,6 +310,11 @@ try_local_get(RcPid, FullBucket, FullKey, GetOptions1, GetOptions2,
             RetryFun({failure, [{local_one, Other}|ErrorReasons]})
     end.
 
+
+%% having spent three days trying to deal with this warning in a
+%% non-violent manner:
+-dialyzer([{no_match, handle_local_notfound/10}]).
+
 handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
                       ProceedFun, RetryFun, ErrorReasons, UseProxyGet,
                       ProxyActive, ClusterID) ->
@@ -356,6 +361,8 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey) ->
         Else ->
             Else
     end.
+
+-dialyzer([{no_match, get_block_remote/6}]).
 
 -spec get_block_remote(riak_client(), binary(), binary(), binary(), get_options(),
                        riak_cs_stats:key()) ->
@@ -551,7 +558,7 @@ do_put_block(FullBucket, FullKey, VClock, Value, MD, RcPid, StatsKey, FailFun) -
             Else
     end.
 
--spec sleep_retries(integer()) -> 'ok'.
+-spec sleep_retries(non_neg_integer()) -> 'ok'.
 sleep_retries(N) ->
     timer:sleep(num_retries_to_sleep_millis(N)).
 
