@@ -37,7 +37,7 @@
   1},
  {<<"riak_cs_multibag">>,
   {git,"git://github.com/TI-Tokyo/riak_cs_multibag.git",
-       {ref,"230127a0acc537094225ba802e880275e2455480"}},
+       {ref,"df75f4e4ce4c5748a984521d8580bfbcf67e3462"}},
   0},
  {<<"riak_pb">>,
   {git,"git://github.com/basho/riak_pb.git",
