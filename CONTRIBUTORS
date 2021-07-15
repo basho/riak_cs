@@ -38,8 +38,7 @@ extracted from git history, are as follows:
   Magnus Kessler
   Marcel Neuhausler
   Mark Allen
-  Martin Cox
-  Nicholas Adams
+  Pavlo Baron
   Paul Hagan
   Reid Draper
   Scott Lystig Fritchie
@@ -48,10 +47,12 @@ extracted from git history, are as follows:
   Shunichi Shinohara
   Ted Burghart
   Uenishi Kota
-
-Plus, a few persons whose names could not be ascertained:
-
   mexicat
-  pavlobaron
 
-In 2021, Andriy (Andrei) Zavada resumed development, as an employee at TI Tokyo.
+Since the days of Basho, development and maintenance work has been
+done with contributions from:
+
+  Andriy Zavada
+  Martin Cox
+  Nicholas Adams
+  Peter Clark
