@@ -19,16 +19,13 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_cs_acl_utils'.
+%% @doc PropErtest module for `riak_cs_acl_utils'.
 
--module(riak_cs_acl_utils_eqc).
--compile(export_all).
--compile(nowarn_export_all).
+-module(prop_riak_cs_acl_utils).
 
 -include("riak_cs.hrl").
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% eqc property
@@ -39,7 +36,7 @@
          test/1]).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
+        proper:on_output(fun(Str, Args) ->
                               io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 1000).
 
@@ -50,8 +47,8 @@
 eqc_test_() ->
     {spawn,
      [
-      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant_idempotent()))))},
-      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_grant_gives_permission()))))}
+      {timeout, 60, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_add_grant_idempotent()))))},
+      {timeout, 60, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_grant_gives_permission()))))}
      ]
     }.
 
@@ -100,7 +97,5 @@ test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_add_grant_idempotent())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_grant_gives_permission())).
-
--endif.
+    proper:quickcheck(proper:numtests(Iterations, prop_add_grant_idempotent())),
+    proper:quickcheck(proper:numtests(Iterations, prop_grant_gives_permission())).

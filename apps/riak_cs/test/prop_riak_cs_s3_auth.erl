@@ -19,29 +19,23 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_s3_auth_eqc).
-
--compile(export_all).
--compile(nowarn_export_all).
-
--ifdef(EQC).
+-module(prop_riak_cs_s3_auth).
 
 -include("riak_cs.hrl").
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
-                              io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) ->
+                          io:format(user, Str, Args) end, P)).
 -define(TESTING_TIME, 20).
 
-auth_v2_eqc_test_() ->
+auth_v2_proper_test_() ->
     Tests =
         [{timeout, ?TESTING_TIME*2,
-          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
-                                                          ?QC_OUT(prop_v2_auth()))))
-          }],
+          ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_v2_auth())))
+         }],
     [{inparallel, Tests}].
 
 
@@ -126,4 +120,3 @@ format_subresource({Subresource, Value}) when is_integer(Value) ->
     Subresource ++ "=" ++ integer_to_list(Value);
 format_subresource(Subresource) ->
     Subresource.
--endif.

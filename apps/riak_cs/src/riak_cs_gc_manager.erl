@@ -129,6 +129,8 @@ finished(Report) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
+-ifndef(TEST).
+
 init([]) ->
     process_flag(trap_exit, true),
     InitialDelay = riak_cs_gc:initial_gc_delay(),
@@ -147,9 +149,14 @@ init([]) ->
                                       initial_delay=InitialDelay,
                                       timer_ref=TimerRef}
         end,
-    {ok, idle, State};
+    {ok, idle, State}.
+
+-else.
+
 init([testing]) ->
     {ok, idle, #gc_manager_state{}}.
+
+-endif.
 
 %%--------------------------------------------------------------------
 %% @private

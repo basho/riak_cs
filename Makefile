@@ -50,6 +50,14 @@ relclean:
 	rm -rf rel/riak-cs
 
 ##
+## test targets
+##
+test: eunit proper
+
+eunit:
+	$(REBAR) eunit
+
+##
 ## Developer targets
 ##
 ##  devN - Make a dev build for node N

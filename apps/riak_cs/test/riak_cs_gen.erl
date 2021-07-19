@@ -19,13 +19,11 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Common QuickCheck generators for Riak CS
+%% @doc Common PropEr generators for Riak CS
 
 -module(riak_cs_gen).
 
--ifdef(EQC).
-
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 
 %% Generators
 -export([base64string/0,
@@ -177,6 +175,3 @@ char_mid() ->
 
 char_end() ->
     oneof(?ALPHABET ++ ?DIGIT).
-
-
--endif.

@@ -19,18 +19,18 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_cs_gc_manager'.
+%% @doc PropEr test module for `riak_cs_gc_manager'.
 
--module(riak_cs_gc_manager_eqc).
+-module(prop_riak_cs_gc_manager).
+
+-compile([{nowarn_deprecated_function, [{gen_fsm, sync_send_all_state_event, 2}]}]).
 
 -include("include/riak_cs_gc.hrl").
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--include_lib("eqc/include/eqc_fsm.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc properties
+%% proper properties
 -export([prop_set_interval/0,
          prop_manual_commands/0]).
 
@@ -38,7 +38,7 @@
 -export([idle/1,
          running/1]).
 
-%% eqc_fsm callbacks
+%% proper_fsm callbacks
 -export([initial_state/0,
          initial_state_data/0,
          next_state_data/5,
@@ -46,8 +46,8 @@
          postcondition/5]).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
-                              io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) ->
+                          io:format(user, Str, Args) end, P)).
 
 -define(TEST_ITERATIONS, 500).
 
@@ -65,7 +65,7 @@
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
      [{foreach,
        fun() ->
@@ -78,8 +78,8 @@ eqc_test_() ->
                meck:unload()
        end,
        [
-        {timeout, 20, ?_assertEqual(true, eqc:quickcheck(eqc:testing_time(10, ?QC_OUT(prop_set_interval()))))},
-        {timeout, 60, ?_assertEqual(true, eqc:quickcheck(eqc:testing_time(30, ?QC_OUT(prop_manual_commands()))))}
+        {timeout, 20, ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_set_interval())))},
+        {timeout, 60, ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_manual_commands())))}
        ]
       }]}.
 
@@ -109,19 +109,19 @@ prop_set_interval() ->
 
 prop_manual_commands() ->
     ?FORALL(Cmds,
-            commands(?MODULE),
+            proper_fsm:commands(?MODULE),
             begin
                 {ok, Pid} = riak_cs_gc_manager:test_link(),
                 try
-                    {H, {_F, _S}, Res} = run_commands(?MODULE, Cmds),
-                    aggregate(zip(state_names(H), command_names(Cmds)),
+                    {H, _, Res} = proper_fsm:run_commands(?MODULE, Cmds),
+                    aggregate(zip(proper_fsm:state_names(H), command_names(Cmds)),
                               ?WHENFAIL(
                                  begin
-                                     eqc:format("Cmds: ~p~n~n",
-                                                [zip(state_names(H),
-                                                     command_names(Cmds))]),
-                                     eqc:format("Result: ~p~n~n", [Res]),
-                                     eqc:format("History: ~p~n~n", [H])
+                                     io:format("Cmds: ~p~n~n",
+                                               [zip(proper_fsm:state_names(H),
+                                                    command_names(Cmds))]),
+                                     io:format("Result: ~p~n~n", [Res]),
+                                     io:format("History: ~p~n~n", [H])
                                  end,
                                  equals(ok, Res)))
                 after
@@ -130,7 +130,7 @@ prop_manual_commands() ->
             end).
 
 %%====================================================================
-%% eqc_fsm callbacks
+%% proper_fsm callbacks
 %%====================================================================
 
 idle(_S) ->
@@ -161,7 +161,7 @@ next_state_data(_From, _To, S, _R, _C) ->
 precondition(_From, _To, _S, _C) ->
     true.
 
-postcondition(From, To, S , {call, _M, ManualCommad, _A}=C, R) ->
+postcondition(From, To, S, {call, _M, ManualCommad, _A}=C, R) ->
     {ok, {Actual, _, _}} = riak_cs_gc_manager:status(),
     ?assertEqual(To, Actual),
     ExpectedRes = expected_result(From, To, ManualCommad),
@@ -169,9 +169,9 @@ postcondition(From, To, S , {call, _M, ManualCommad, _A}=C, R) ->
         ExpectedRes when ManualCommad =/= status -> true;
         {ok, {S, _}} -> true;
         _ ->
-            eqc:format("Result:   ~p~n", [R]),
-            eqc:format("Expected: ~p~n", [ExpectedRes]),
-            eqc:format("when {From, To, S, C}: ~p <- ~p~n", [{From, To, S, C}, ManualCommad]),
+            io:format("Result:   ~p~n", [R]),
+            io:format("Expected: ~p~n", [ExpectedRes]),
+            io:format("when {From, To, S, C}: ~p <- ~p~n", [{From, To, S, C}, ManualCommad]),
             false
     end.
 
@@ -211,5 +211,3 @@ hold_until_unregisterd(RegName, N) ->
             timer:sleep(1),
             hold_until_unregisterd(RegName, N - 1)
     end.
-
--endif.

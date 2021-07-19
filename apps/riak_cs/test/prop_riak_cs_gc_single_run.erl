@@ -19,19 +19,22 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc EQC test module for single gc run.
+%% @doc PropEr test module for single gc run.
 %% Test targets is a combination of `riak_cs_gc_batch' and `riak_cs_gc_worker'.
 %% All calls to riak, 2i/GET/DELETE, are mocked away by `meck'.
 
--module(riak_cs_gc_single_run_eqc).
+-module(prop_riak_cs_gc_single_run).
+
+-export([prop_epochspec/0,
+         prop_gc_batch/1]).
+
+-export([]).
 
 -include("riak_cs_gc.hrl").
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--compile(export_all).
 
 -type fileset_keys_input() :: {num_fileset_keys(), no_error}.
 -type num_fileset_keys() :: non_neg_integer().
@@ -55,14 +58,14 @@
 -define(BLOCK_NUM_IN_MANIFEST, 20).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+        proper:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 -define(TESTING_TIME, 30).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {foreach,
      fun() ->
              application:set_env(lager, handlers, []),
@@ -87,20 +90,17 @@ eqc_test_() ->
      end,
      [
       {timeout, ?TESTING_TIME*2,
-       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
-                                            ?QC_OUT(prop_epochspec()))))},
+       ?_assert(proper:quickcheck(?QC_OUT(prop_epochspec())))},
       {timeout, ?TESTING_TIME*2,
-       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
-                                            ?QC_OUT(prop_gc_batch(no_error)))))},
+       ?_assert(proper:quickcheck(?QC_OUT(prop_gc_batch(no_error))))},
       {timeout, ?TESTING_TIME*2,
-       ?_assert(quickcheck(eqc:testing_time(?TESTING_TIME,
-                                            ?QC_OUT(prop_gc_batch(with_errors)))))}
+       ?_assert(proper:quickcheck(?QC_OUT(prop_gc_batch(with_errors))))}
      ]}.
 
 prop_epochspec() ->
     ?FORALL({N0, N1, N2, Leeway, BatchSize, MaxWorkers},
             {nat2(), nat2(), nat2(), oneof([nat(), nat2()]),
-             pos_integer(), pos_integer()},
+             small_pos_integer(), small_pos_integer()},
             begin
                 %[StartKey, EndKey, BatchStart] = [N+1000000000||N<-lists:sort([N0,N1,N2])],
                 [StartKey, EndKey, BatchStart] = lists:sort([N0,N1,N2]),
@@ -117,7 +117,7 @@ prop_epochspec() ->
 nat2() ->
     low_bounded_int(1000000000).
 
-pos_integer() ->
+small_pos_integer() ->
     low_bounded_int(1).
 
 low_bounded_int(LB) ->
@@ -136,7 +136,7 @@ prop_gc_batch(ErrorOrNot) ->
     ?FORALL({ListOfFilesetKeysInput,
              BatchSize, MaxWorkers},
             {non_empty(list(fileset_keys_input(ErrorOrNot))),
-             pos_integer(), pos_integer()},
+             small_pos_integer(), small_pos_integer()},
             begin
                 Self = self(),
                 meck:expect(riak_cs_gc_manager, finished,
@@ -151,7 +151,7 @@ prop_gc_batch(ErrorOrNot) ->
                 stop_and_wait_for_gc_batch(),
                 ?WHENFAIL(
                    begin
-                       eqc:format("ListOfFilesetKeysInput: ~p~n",
+                       proper:format("ListOfFilesetKeysInput: ~p~n",
                                   [ListOfFilesetKeysInput])
                    end,
                    conjunction([{batch_count, equals(ExpectedBatchCount, element(1, Res))},
@@ -176,7 +176,7 @@ wait_for_stop(Pid) ->
             ok
     end.
 
--spec gc_batch([fileset_keys_input()], pos_integer(), pos_integer()) -> eqc:property().
+-spec gc_batch([fileset_keys_input()], pos_integer(), pos_integer()) -> proper:property().
 gc_batch(ListOfFilesetKeysInput, BatchSize, MaxWorkers) ->
     %% For `riak-cs-gc' 2i query, use a process to hold `ListOfFilesetKeysInput'.
     %% ?debugVal(ListOfFilesetKeysInput),
@@ -201,7 +201,7 @@ gc_batch(ListOfFilesetKeysInput, BatchSize, MaxWorkers) ->
                                          block_count=BlockCount} = _State} ->
             {BatchCount, BatchSkips, ManifCount, BlockCount};
         OtherMsg ->
-            eqc:format("OtherMsg: ~p~n", [OtherMsg]),
+            proper:format("OtherMsg: ~p~n", [OtherMsg]),
             {error, error, error, error}
     end.
 
@@ -232,7 +232,7 @@ expectations(ListOfFilesetKeysInput) ->
 %% Generator of numbers of fileset keys included in a single object
 %% of the `riak-cs-gc' bucket, with information of error injection.
 -spec fileset_keys_input(no_error | with_errors) ->
-                                eqc_gen:gen({non_neg_integer(), error_or_not()}).
+                                proper_gen:gen({non_neg_integer(), error_or_not()}).
 fileset_keys_input(no_error) ->
     {num_fileset_keys(), no_error};
 fileset_keys_input(with_errors) ->
@@ -241,7 +241,7 @@ fileset_keys_input(with_errors) ->
                {1, {num_fileset_keys(), {error, in_fileset_delete}}},
                {1, {num_fileset_keys(), {error, in_block_delete}}}]).
 
--spec num_fileset_keys() -> eqc_gen:gen(Positive::integer()).
+-spec num_fileset_keys() -> proper_gen:gen(Positive::integer()).
 num_fileset_keys() ->
     ?LET(N, nat(), N+1).
 
@@ -409,12 +409,10 @@ meck_pool_worker() ->
 dummy_pbc() ->
     receive
         stop -> ok;
-        M -> eqc:format("dummy_worker received M: ~p~n", [M]),
+        M -> proper:format("dummy_worker received M: ~p~n", [M]),
              dummy_pbc()
     end.
 
 -spec i2b(integer()) -> binary().
 i2b(Integer) ->
     list_to_binary(integer_to_list(Integer)).
-
--endif.

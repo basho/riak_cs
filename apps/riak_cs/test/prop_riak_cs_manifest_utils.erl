@@ -19,18 +19,14 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_manifest_utils_eqc).
+-module(prop_riak_cs_manifest_utils).
 
--ifdef(EQC).
-
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("riak_cs.hrl").
 
--compile(export_all).
-
-%% eqc property
+%% proper property
 -export([prop_active_manifests/0]).
 
 %% helpers
@@ -38,23 +34,23 @@
 
 -define(TEST_ITERATIONS, 100).
 -define(QC_OUT(P),
-    eqc:on_output(fun(Str, Args) ->
-                io:format(user, Str, Args) end, P)).
+    on_output(fun(Str, Args) ->
+                      io:format(user, Str, Args) end, P)).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
      [{setup,
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
         {timeout, 300,
-         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_active_manifests())))))},
+         ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_active_manifests())))))},
         {timeout, 300,
-         ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_prune_manifests())))))}
+         ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_prune_manifests())))))}
        ]
       }
      ]
@@ -72,7 +68,7 @@ cleanup(_) ->
 %% ====================================================================
 
 prop_active_manifests() ->
-    ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
+    ?FORALL(Manifests, resize(50, manifests()),
         begin
             AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
@@ -100,7 +96,7 @@ prop_active_manifests() ->
 
 prop_prune_manifests() ->
     ?FORALL({Manifests, MaxCount},
-            {eqc_gen:resize(50, manifests()), frequency([{9, nat()}, {1, 'unlimited'}])},
+            {resize(50, manifests()), frequency([{9, nat()}, {1, 'unlimited'}])},
         begin
             AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
@@ -149,16 +145,16 @@ manifest() ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=erlang:now(),
+            Manifest?MANIFEST{last_block_written_time=erlang:timestamp(),
                               write_blocks_remaining=blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now(),
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
                               write_start_time=riak_cs_gen:timestamp()};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now(),
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
                               delete_blocks_remaining=blocks_set(),
                               delete_marked_time=riak_cs_gen:timestamp(),
                               props=riak_cs_gen:props()};
@@ -169,10 +165,10 @@ process_manifest(Manifest=?MANIFEST{state=State}) ->
     end.
 
 manifests() ->
-    eqc_gen:list(manifest()).
+    list(manifest()).
 
 blocks_set() ->
-    ?LET(L, eqc_gen:list(int()), ordsets:from_list(L)).
+    ?LET(L, list(int()), ordsets:from_list(L)).
 
 %%====================================================================
 %% Helpers
@@ -182,7 +178,5 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    [eqc:quickcheck(eqc:numtests(Iterations, prop_active_manifests())),
-     eqc:quickcheck(eqc:numtests(Iterations, prop_prune_manifests()))].
-
--endif. %EQC
+    [proper:quickcheck(numtests(Iterations, prop_active_manifests())),
+     proper:quickcheck(numtests(Iterations, prop_prune_manifests()))].

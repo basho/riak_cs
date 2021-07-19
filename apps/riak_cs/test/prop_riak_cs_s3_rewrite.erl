@@ -19,40 +19,36 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_cs_s3_rewrite'.
+%% @doc PropEr test module for `riak_cs_s3_rewrite'.
 
--module(riak_cs_s3_rewrite_eqc).
+-module(prop_riak_cs_s3_rewrite).
 
 -include("riak_cs.hrl").
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc property
+%% PropEr property
 -export([prop_extract_bucket_from_host/0]).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
-                              io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) ->
+                          io:format(user, Str, Args) end, P)).
 -define(TESTING_TIME, 20).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     Tests =
         [
          {timeout, ?TESTING_TIME*2,
-          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
-                                                          ?QC_OUT(prop_s3_rewrite(pathstyle)))))},
+          ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_s3_rewrite(pathstyle))))},
          {timeout, ?TESTING_TIME*2,
-          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
-                                                          ?QC_OUT(prop_s3_rewrite(hoststyle)))))},
+          ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_s3_rewrite(hoststyle))))},
          {timeout, ?TESTING_TIME*2,
-          ?_assertEqual(true, quickcheck(eqc:testing_time(?TESTING_TIME,
-                                                          ?QC_OUT(prop_extract_bucket_from_host()))))
+          ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_extract_bucket_from_host())))
          }],
     [{inparallel, Tests}].
 
@@ -64,7 +60,7 @@ eqc_test_() ->
 %% the key before URL encoding. This is also a regression test of riak_cs#1040.
 prop_s3_rewrite(Style) ->
     RewriteModule = riak_cs_s3_rewrite,
-    RootHost = "example.com",
+    RootHost = "s3.amazonaws.com",
     ok = application:set_env(riak_cs, cs_root_host, RootHost),
     DispatchTable = riak_cs_web:object_api_dispatch_table(),
     ?FORALL({CSBucket, CSKey, Verb, Scheme, Version},
@@ -132,7 +128,7 @@ build_original_path_info(pathstyle, CSBucket, CSKey, RootHost) ->
     {Encoded, RootHost}.
 
 base_host() ->
-    oneof(["s3.amazonaws.com", "riakcs.net", "snarf", "hah-hah", ""]).
+    oneof(["s3.amazonaws.com", "s3.out-west.amazonaws.com"]).
 
 compose_host([], BaseHost) ->
     BaseHost;
@@ -147,5 +143,3 @@ expected_bucket(_Bucket, []) ->
     undefined;
 expected_bucket(Bucket, _) ->
     Bucket.
-
--endif.

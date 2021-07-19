@@ -19,16 +19,12 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_list_objects_fsm_eqc).
+-module(prop_riak_cs_list_objects_fsm).
 
--ifdef(EQC).
-
--compile(export_all).
--include_lib("eqc/include/eqc.hrl").
--include_lib("eqc/include/eqc_fsm.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc properties
+%% proper properties
 -export([prop_index_of_first_greater_element/0]).
 
 %% Helpers
@@ -37,14 +33,14 @@
 
 -define(TEST_ITERATIONS, 500).
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test() ->
-    ?assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_index_of_first_greater_element())))).
+proper_test() ->
+    ?assert(proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_index_of_first_greater_element())))).
 
 %% ====================================================================
 %% EQC Properties
@@ -79,7 +75,7 @@ test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_index_of_first_greater_element())).
+    proper:quickcheck(proper:numtests(Iterations, prop_index_of_first_greater_element())).
 
 
 %%====================================================================
@@ -105,5 +101,3 @@ positive_int() ->
 
 sorted_unique() ->
     ?LET(L, list(positive_int()), lists:usort(L)).
-
--endif.

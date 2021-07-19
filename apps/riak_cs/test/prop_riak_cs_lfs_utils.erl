@@ -19,17 +19,16 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_cs_lfs_utils'.
+%% @doc PropEr test module for `riak_cs_lfs_utils'.
 
--module(riak_cs_lfs_utils_eqc).
+-module(prop_riak_cs_lfs_utils).
 
 -include("riak_cs.hrl").
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc property
+%% proper property
 -export([prop_block_count/0]).
 
 %% Helpers
@@ -37,19 +36,19 @@
          test/1]).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
-                              io:format(user, Str, Args) end, P)).
+        proper:on_output(fun(Str, Args) ->
+                                 io:format(user, Str, Args) end, P)).
 -define(TEST_ITERATIONS, 500).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
      [
-      {timeout, 20, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
-      {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))}
+      {timeout, 20, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_block_count()))))},
+      {timeout, 60, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_manifest_manipulation()))))}
      ]
     }.
 
@@ -114,7 +113,5 @@ test() ->
     test(500).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_block_count())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_manifest_manipulation())).
-
--endif.
+    proper:quickcheck(proper:numtests(Iterations, prop_block_count())),
+    proper:quickcheck(proper:numtests(Iterations, prop_manifest_manipulation())).

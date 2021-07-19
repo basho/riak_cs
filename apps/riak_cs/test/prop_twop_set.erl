@@ -19,17 +19,14 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc twop_set_eqc: Quickcheck testing for the `twop_set' module.
+%% @doc prop_twop_set: PropEr testing for the `twop_set' module.
 
--module(twop_set_eqc).
+-module(prop_twop_set).
 
--ifdef(EQC).
-
--include_lib("eqc/include/eqc.hrl").
--include_lib("eqc/include/eqc_fsm.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% eqc properties
+%% proper properties
 -export([prop_twop_set_api/0,
          prop_twop_set_resolution/0]).
 
@@ -37,7 +34,7 @@
 -export([stopped/1,
          running/1]).
 
-%% eqc_fsm callbacks
+%% proper_fsm callbacks
 -export([initial_state/0,
          initial_state_data/0,
          next_state_data/5,
@@ -51,26 +48,26 @@
 -define(TEST_ITERATIONS, 500).
 -define(SET_MODULE, twop_set).
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+        proper:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 -type stdlib_set() :: sets:set().
 
--record(eqc_state, {adds=sets:new() :: stdlib_set(),
-                    deletes=sets:new() :: stdlib_set(),
-                    operation_count=0 :: non_neg_integer(),
-                    operation_limit=500 :: pos_integer(),
-                    set :: twop_set:twop_set(),
-                    size=0 :: non_neg_integer()}).
+-record(proper_state, {adds=sets:new() :: stdlib_set(),
+                       deletes=sets:new() :: stdlib_set(),
+                       operation_count=0 :: non_neg_integer(),
+                       operation_limit=500 :: pos_integer(),
+                       set :: twop_set:twop_set(),
+                       size=0 :: non_neg_integer()}).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
         [
-            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))},
-            {timeout, 60, ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_resolution()))))}
+            {timeout, 60, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_api()))))},
+            {timeout, 60, ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_twop_set_resolution()))))}
         ]
     }.
 
@@ -80,24 +77,24 @@ eqc_test_() ->
 
 prop_twop_set_api() ->
     ?FORALL(Cmds,
-            commands(?MODULE),
+            proper_fsm:commands(?MODULE),
             begin
-                {H, {_F, S}, Res} = run_commands(?MODULE, Cmds),
-                aggregate(zip(state_names(H), command_names(Cmds)),
+                {H, {_F, S}, Res} = proper_fsm:run_commands(?MODULE, Cmds),
+                aggregate(zip(proper_fsm:state_names(H), command_names(Cmds)),
                           ?WHENFAIL(
                              begin
                                  ?debugFmt("Cmds: ~p~n",
-                                           [zip(state_names(H),
+                                           [zip(proper_fsm:state_names(H),
                                                 command_names(Cmds))]),
                                  ?debugFmt("Result: ~p~n", [Res]),
                                  ?debugFmt("History: ~p~n", [H]),
-                                 ?debugFmt("Current expected size: ~p~n", [S#eqc_state.size]),
-                                 ?debugFmt("Current actual size: ~p~n", [twop_set:size(S#eqc_state.set)]),
-                                 ?debugFmt("Operation count: ~p~n", [S#eqc_state.operation_count]),
-                                 ?debugFmt("Operation limit: ~p~n", [S#eqc_state.operation_limit]),
-                                 ?debugFmt("Adds: ~p~n", [sets:to_list(S#eqc_state.adds)]),
-                                 ?debugFmt("Deletes: ~p~n", [sets:to_list(S#eqc_state.deletes)]),
-                                 ?debugFmt("Set: ~p~n", [twop_set:to_list(S#eqc_state.set)])
+                                 ?debugFmt("Current expected size: ~p~n", [S#proper_state.size]),
+                                 ?debugFmt("Current actual size: ~p~n", [twop_set:size(S#proper_state.set)]),
+                                 ?debugFmt("Operation count: ~p~n", [S#proper_state.operation_count]),
+                                 ?debugFmt("Operation limit: ~p~n", [S#proper_state.operation_limit]),
+                                 ?debugFmt("Adds: ~p~n", [sets:to_list(S#proper_state.adds)]),
+                                 ?debugFmt("Deletes: ~p~n", [sets:to_list(S#proper_state.deletes)]),
+                                 ?debugFmt("Set: ~p~n", [twop_set:to_list(S#proper_state.set)])
                              end,
                              equals(ok, Res)))
             end
@@ -131,13 +128,13 @@ prop_twop_set_resolution() ->
               )).
 
 %%====================================================================
-%% eqc_fsm callbacks
+%% proper_fsm callbacks
 %%====================================================================
 
 stopped(_S) ->
     [{running, {call, ?SET_MODULE, new, []}}].
 
-running(#eqc_state{operation_count=OpCount,
+running(#proper_state{operation_count=OpCount,
                    operation_limit=OpLimit,
                    set=Set}) ->
     [{stopped, {call, ?SET_MODULE, size, [Set]}} || OpCount > OpLimit] ++
@@ -152,21 +149,21 @@ initial_state() ->
     stopped.
 
 initial_state_data() ->
-    #eqc_state{}.
+    #proper_state{}.
 
 next_state_data(running, stopped, S, _R, _C) ->
-    S#eqc_state{adds=sets:new(),
-                deletes=sets:new(),
-                operation_count=0,
-                set=undefined,
-                size=0};
+    S#proper_state{adds=sets:new(),
+                   deletes=sets:new(),
+                   operation_count=0,
+                   set=undefined,
+                   size=0};
 next_state_data(stopped, running, S, R, {call, _M, new, _}) ->
-    S#eqc_state{set=R};
+    S#proper_state{set=R};
 next_state_data(_From, _To, S, R, {call, _M, add_element, [Element, _Set]}) ->
-    Adds = S#eqc_state.adds,
-    Dels = S#eqc_state.deletes,
-    Size = S#eqc_state.size,
-    OpCount = S#eqc_state.operation_count,
+    Adds = S#proper_state.adds,
+    Dels = S#proper_state.deletes,
+    Size = S#proper_state.size,
+    OpCount = S#proper_state.operation_count,
     case sets:is_element(Element, Adds)
         orelse
         sets:is_element(Element, Dels) of
@@ -177,15 +174,15 @@ next_state_data(_From, _To, S, R, {call, _M, add_element, [Element, _Set]}) ->
             UpdAdds = sets:add_element(Element, Adds),
             UpdSize = Size + 1
     end,
-    S#eqc_state{adds=UpdAdds,
-                operation_count=OpCount+1,
-                set=R,
-                size=UpdSize};
+    S#proper_state{adds=UpdAdds,
+                   operation_count=OpCount+1,
+                   set=R,
+                   size=UpdSize};
 next_state_data(_From, _To, S, R, {call, _M, del_element, [Element, _Set]}) ->
-    Adds = S#eqc_state.adds,
-    Dels = S#eqc_state.deletes,
-    Size = S#eqc_state.size,
-    OpCount = S#eqc_state.operation_count,
+    Adds = S#proper_state.adds,
+    Dels = S#proper_state.deletes,
+    Size = S#proper_state.size,
+    OpCount = S#proper_state.operation_count,
     case sets:is_element(Element, Dels) of
         true ->
             UpdDels = Dels,
@@ -201,32 +198,32 @@ next_state_data(_From, _To, S, R, {call, _M, del_element, [Element, _Set]}) ->
                     UpdSize = Size
             end
     end,
-    S#eqc_state{deletes=UpdDels,
-                operation_count=OpCount+1,
-                set=R,
-                size=UpdSize};
+    S#proper_state{deletes=UpdDels,
+                   operation_count=OpCount+1,
+                   set=R,
+                   size=UpdSize};
 next_state_data(_From, _To, S, _R, _C) ->
-    OpCount = S#eqc_state.operation_count,
-    S#eqc_state{operation_count=OpCount+1}.
+    OpCount = S#proper_state.operation_count,
+    S#proper_state{operation_count=OpCount+1}.
 
 precondition(_From, _To, _S, _C) ->
     true.
 
-postcondition(_From, _To, #eqc_state{size=Size} ,{call, _M, size, _}, R) ->
+postcondition(_From, _To, #proper_state{size=Size} ,{call, _M, size, _}, R) ->
     R =:= Size;
 postcondition(_From, _To, S, {call, _M, to_list, _}, R) ->
-    #eqc_state{adds=Adds,
-               deletes=Dels} = S,
+    #proper_state{adds=Adds,
+                  deletes=Dels} = S,
     R =:= sets:to_list(sets:subtract(Adds, Dels));
 postcondition(_From, _To, S, {call, _M, is_element, [Element, _Set]}, R) ->
-    #eqc_state{adds=Adds,
-               deletes=Dels} = S,
+    #proper_state{adds=Adds,
+                  deletes=Dels} = S,
     (sets:is_element(Element, Adds)
      andalso
      not sets:is_element(Element, Dels)) =:= R;
 postcondition(_From, _To, S, {call, _M, add_element, [Element, Set]}, R) ->
-    #eqc_state{adds=Adds,
-               deletes=Dels} = S,
+    #proper_state{adds=Adds,
+                  deletes=Dels} = S,
     ResultContainsElement = sets:is_element(Element, twop_set:adds(R)),
     ShouldContainElement = not sets:is_element(Element, Dels),
     case sets:is_element(Element, Adds)
@@ -253,7 +250,7 @@ test() ->
     test(500).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_twop_set_api())).
+    proper:quickcheck(numtests(Iterations, prop_twop_set_api())).
 
 -spec sibling_sets([{[term()], [term()]}]) -> [twop_set:twop_set()].
 sibling_sets(Siblings) ->
@@ -281,5 +278,3 @@ expected_adds_and_dels(Siblings) ->
 
 siblings() ->
     list({list(int()), list(int())}).
-
--endif.

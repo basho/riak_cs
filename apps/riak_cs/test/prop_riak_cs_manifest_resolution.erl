@@ -19,18 +19,14 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_manifest_resolution_eqc).
+-module(prop_riak_cs_manifest_resolution).
 
--ifdef(EQC).
-
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("riak_cs.hrl").
 
--compile(export_all).
-
-%% eqc property
+%% proper property
 -export([prop_resolution_commutative/0]).
 
 %% helpers
@@ -38,21 +34,21 @@
 
 -define(TEST_ITERATIONS, 500).
 -define(QC_OUT(P),
-    eqc:on_output(fun(Str, Args) ->
-                io:format(user, Str, Args) end, P)).
+    on_output(fun(Str, Args) ->
+                      io:format(user, Str, Args) end, P)).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
      [{setup,
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
         {timeout, 300,
-            ?_assertEqual(true, quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_resolution_commutative())))))}
+            ?_assertEqual(true, proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT((prop_resolution_commutative())))))}
        ]
       }
      ]
@@ -66,11 +62,11 @@ cleanup(_) ->
 
 
 %% ====================================================================
-%% eqc property
+%% PropEr property
 %% ====================================================================
 
 prop_resolution_commutative() ->
-    ?FORALL(Manifests, eqc_gen:resize(50, manifests()),
+    ?FORALL(Manifests, resize(50, manifests()),
         begin
             MapFun = fun(Mani) ->
                 riak_cs_manifest_utils:new_dict(Mani?MANIFEST.uuid, Mani)
@@ -97,28 +93,28 @@ manifest() ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=erlang:now(),
+            Manifest?MANIFEST{last_block_written_time=erlang:timestamp(),
                                      write_blocks_remaining=blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now()};
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp()};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now(),
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
                                      delete_blocks_remaining=blocks_set()};
         scheduled_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now(),
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
                                      delete_blocks_remaining=blocks_set()};
         deleted ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:now()}
+            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp()}
     end.
 
 manifests() ->
-    eqc_gen:list(manifest()).
+    list(manifest()).
 
 blocks_set() ->
-    ?LET(L, eqc_gen:list(int()), ordsets:from_list(L)).
+    ?LET(L, list(int()), ordsets:from_list(L)).
 
 %%====================================================================
 %% Helpers
@@ -128,7 +124,7 @@ test() ->
     test(100).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_resolution_commutative())).
+    proper:quickcheck(numtests(Iterations, prop_resolution_commutative())).
 
 only_one_active(Manifests) ->
     {_, FilteredManifests} = lists:foldl(fun only_one_active_helper/2, {not_found, []}, Manifests),
@@ -142,5 +138,3 @@ only_one_active_helper(Manifest=?MANIFEST{state=active}, {not_found, List}) ->
     {found, [Manifest | List]};
 only_one_active_helper(Manifest, {not_found, List}) ->
     {not_found, [Manifest | List]}.
-
--endif. %EQC

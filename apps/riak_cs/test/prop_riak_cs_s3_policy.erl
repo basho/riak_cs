@@ -19,46 +19,49 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_s3_policy_eqc).
+-module(prop_riak_cs_s3_policy).
 
--compile(export_all).
--compile(nowarn_export_all).
+-export([prop_ip_filter/0,
+         prop_secure_transport/0,
+         prop_eval/0,
+         prop_policy_v1/0]).
 
--ifdef(TEST).
--ifdef(EQC).
+-export([string_condition/0,
+         numeric_condition/0,
+         date_condition/0]).
 
 -include("riak_cs.hrl").
 -include("s3_api.hrl").
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("webmachine/include/wm_reqdata.hrl").
 
 -define(TEST_ITERATIONS, 500).
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 -define(TIMEOUT, 60).
 
-eqc_test_()->
+proper_test_()->
     {inparallel,
      [
       {timeout, ?TIMEOUT,
        ?_assertEqual(true,
-                     quickcheck(numtests(?TEST_ITERATIONS,
-                                         ?QC_OUT(prop_ip_filter()))))},
+                     proper:quickcheck(numtests(?TEST_ITERATIONS,
+                                                ?QC_OUT(prop_ip_filter()))))},
       {timeout, ?TIMEOUT,
        ?_assertEqual(true,
-                     quickcheck(numtests(?TEST_ITERATIONS,
-                                         ?QC_OUT(prop_secure_transport()))))},
+                     proper:quickcheck(numtests(?TEST_ITERATIONS,
+                                                ?QC_OUT(prop_secure_transport()))))},
       {timeout, ?TIMEOUT,
        ?_assertEqual(true,
-                     quickcheck(numtests(?TEST_ITERATIONS,
-                                         ?QC_OUT(prop_eval()))))},
+                     proper:quickcheck(numtests(?TEST_ITERATIONS,
+                                                ?QC_OUT(prop_eval()))))},
       {timeout, ?TIMEOUT,
        ?_assertEqual(true,
-                     quickcheck(numtests(?TEST_ITERATIONS,
-                                         ?QC_OUT(prop_policy_v1()))))}
+                     proper:quickcheck(numtests(?TEST_ITERATIONS,
+                                                ?QC_OUT(prop_policy_v1()))))}
      ]}.
 
 %% accept case of ip filtering
@@ -237,10 +240,10 @@ statements() ->
 creation_time() ->
     {nat(), choose(0, 1000000), choose(0, 1000000)}.
 
-string() -> list(choose(33,127)).
+ustring() -> list(choose(33,127)).
 
 binary_char_string() ->
-    ?LET(String, string(), list_to_binary(String)).
+    ?LET(String, ustring(), list_to_binary(String)).
 
 nonempty_binary_char_string() ->
     ?LET({Char, BinString}, {choose(33,127), binary_char_string()},
@@ -280,7 +283,7 @@ access_v1() ->
               #access_v1{
                  method = Method,
                  target = Target,
-                 id     = string(),
+                 id     = ustring(),
                  bucket = nonempty_binary_char_string(),
                  key    = oneof([undefined, binary_char_string()]),
                  req    = wm_reqdata()
@@ -305,8 +308,8 @@ wm_reqdata() ->
             response_code = oneof([undefined, http_response_code()]),
             max_recv_body = nat(),
             max_recv_hunk = nat(),
-            req_cookie    = string(),
-            req_qs        = string(),
+            req_cookie    = ustring(),
+            req_qs        = ustring(),
             req_headers   = undefined,
             req_body      = binary_char_string(),
             resp_redirect = bool(),
@@ -317,6 +320,3 @@ wm_reqdata() ->
             port          = choose(1,65535),
             notes         = list(nonempty_binary_char_string()) %% any..?
            }).
-
--endif.
--endif.

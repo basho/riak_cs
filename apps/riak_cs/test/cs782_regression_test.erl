@@ -21,9 +21,6 @@
 
 -module(cs782_regression_test).
 
--compile(export_all).
--compile(nowarn_export_all).
-
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 

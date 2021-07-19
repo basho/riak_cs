@@ -19,18 +19,15 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_list_objects_fsm_v2_eqc).
+-module(prop_riak_cs_list_objects_fsm_v2).
 
--ifdef(EQC).
-
--compile(export_all).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("riak_cs.hrl").
 -include("list_objects.hrl").
 
-%% eqc properties
+%% properties
 -export([prop_skip_past_prefix_and_delimiter/0,
          prop_prefix_must_be_in_between/0,
          prop_list_all_active_keys_without_delimiter/0,
@@ -42,36 +39,36 @@
 
 -define(TEST_ITERATIONS, 1000).
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     {spawn,
      [
       {setup,
        fun setup/0,
        fun cleanup/1,
        [
-        ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
-        ?_assert(quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
+        ?_assert(proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_skip_past_prefix_and_delimiter())))),
+        ?_assert(proper:quickcheck(numtests(?TEST_ITERATIONS, ?QC_OUT(prop_prefix_must_be_in_between())))),
         {timeout, 10*60, % 10min.
-         ?_assert(quickcheck(numtests(
-                               ?TEST_ITERATIONS,
-                               ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))},
+         ?_assert(proper:quickcheck(numtests(
+                                      ?TEST_ITERATIONS,
+                                      ?QC_OUT(prop_list_all_active_keys_without_delimiter()))))},
         {timeout, 10*60, % 10min.
-         ?_assert(quickcheck(numtests(
-                               ?TEST_ITERATIONS,
-                               ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
+         ?_assert(proper:quickcheck(numtests(
+                                      ?TEST_ITERATIONS,
+                                      ?QC_OUT(prop_list_all_active_keys_with_delimiter()))))}
        ]
       }
      ]}.
 
 setup() ->
     error_logger:tty(false),
-    error_logger:logfile({open, "riak_cs_list_objects_fsm_v2_eqc.log"}),
+    error_logger:logfile({open, "riak_cs_list_objects_fsm_v2_proper.log"}),
     application:set_env(lager, handlers, []),
     exometer:start(),
     riak_cs_stats:init(),
@@ -232,13 +229,10 @@ test() ->
     test(?TEST_ITERATIONS).
 
 test(Iterations) ->
-    eqc:quickcheck(eqc:numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_prefix_must_be_in_between())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_without_delimiter())),
-    eqc:quickcheck(eqc:numtests(Iterations, prop_list_all_active_keys_with_delimiter())).
-
-test(Iterations, Prop) ->
-    eqc:quickcheck(eqc:numtests(Iterations, ?MODULE:Prop())).
+    proper:quickcheck(numtests(Iterations, prop_skip_past_prefix_and_delimiter())),
+    proper:quickcheck(numtests(Iterations, prop_prefix_must_be_in_between())),
+    proper:quickcheck(numtests(Iterations, prop_list_all_active_keys_without_delimiter())),
+    proper:quickcheck(numtests(Iterations, prop_list_all_active_keys_with_delimiter())).
 
 
 %% TODO: Common prefix, more randomness
@@ -367,7 +361,7 @@ format_diff({NumKeys, StateFlavor, PrefixFlavor},
     ok.
 
 output_entries(Manifests) ->
-    FileName = <<".riak_cs_list_objects_fsm_v2_eqc.txt">>,
+    FileName = <<".riak_cs_list_objects_fsm_v2_proper.txt">>,
     io:format("Write states and keys to file: ~s ...", [filename:absname(FileName)]),
     {ok, File} = file:open(FileName, [write, raw]),
     output_entries(File, Manifests, 1),
@@ -424,5 +418,3 @@ print_key_and_manifest(Key, Label, [M | Manifests]) ->
         _ ->
             print_key_and_manifest(Key, Label, Manifests)
     end.
-
--endif.

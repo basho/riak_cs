@@ -19,31 +19,29 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc Quickcheck test module for `riak_cs_utils'.
+%% @doc PropEr test module for `riak_cs_utils'.
 
--module(riak_cs_utils_eqc).
-
--ifdef(EQC).
+-module(prop_riak_cs_utils).
 
 -include("riak_cs.hrl").
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--compile(export_all).
+-export([prop_md5/0]).
 
 -define(QC_OUT(P),
-        eqc:on_output(fun(Str, Args) ->
-                              io:format(user, Str, Args) end, P)).
+        on_output(fun(Str, Args) ->
+                          io:format(user, Str, Args) end, P)).
 
 %%====================================================================
 %% Eunit tests
 %%====================================================================
 
-eqc_test_() ->
+proper_test_() ->
     Time = 8,
     [
      {timeout, Time*4, ?_assertEqual(true,
-                                     eqc:quickcheck(eqc:testing_time(Time,?QC_OUT(prop_md5()))))}
+                                     proper:quickcheck(?QC_OUT(prop_md5())))}
     ].
 
 %% ====================================================================
@@ -59,9 +57,3 @@ gen_bin() ->
     oneof([binary(),
            ?LET({Size, Char}, {choose(5, 2*1024*1024 + 1024), choose(0, 255)},
                 list_to_binary(lists:duplicate(Size, Char)))]).
-
-%%====================================================================
-%% Helpers
-%%====================================================================
-
--endif.

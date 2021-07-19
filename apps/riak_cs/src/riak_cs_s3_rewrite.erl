@@ -67,12 +67,9 @@
 -spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
                      {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
-    lager:debug("rewriting ~p ~p", [Method, Url]),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
-    Res = rewrite_path_and_headers(Method, Headers, Url, Path, QueryString),
-    lager:debug("rewritten ~p", [Res]),
-    Res.
+    rewrite_path_and_headers(Method, Headers, Url, Path, QueryString).
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
