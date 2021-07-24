@@ -41,6 +41,8 @@
 -define(QC_OUT(P),
         on_output(fun(Str, Args) -> io:format(user, Str, Args) end, P)).
 
+-define(LOGFILE, "riak_cs_list_objects_fsm_v2_proper.log").
+
 %%====================================================================
 %% Eunit tests
 %%====================================================================
@@ -68,7 +70,7 @@ proper_test_() ->
 
 setup() ->
     error_logger:tty(false),
-    error_logger:logfile({open, "riak_cs_list_objects_fsm_v2_proper.log"}),
+    error_logger:logfile({open, ?LOGFILE}),
     application:set_env(lager, handlers, []),
     exometer:start(),
     riak_cs_stats:init(),
@@ -76,6 +78,7 @@ setup() ->
 
 cleanup(_) ->
     exometer:stop(),
+    file:delete(?LOGFILE),
     ok.
 
 %% ====================================================================
