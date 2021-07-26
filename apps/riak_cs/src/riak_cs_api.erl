@@ -22,7 +22,7 @@
 -module(riak_cs_api).
 
 -export([list_buckets/1,
-         list_objects/5]).
+         list_objects/6]).
 
 -include("riak_cs.hrl").
 -include("riak_cs_api.hrl").
@@ -36,25 +36,26 @@ list_buckets(User=?RCS_USER{buckets=Buckets}) ->
                                Bucket?RCS_BUCKET.last_action /= deleted]}.
 
 -type options() :: [{atom(), 'undefined' | binary()}].
--spec list_objects([string()], binary(), non_neg_integer(), options(), riak_client()) ->
+-spec list_objects(list_objects_req_type(), [string()], binary(), non_neg_integer(), options(), riak_client()) ->
                           {ok, ?LORESP{}} | {error, term()}.
-list_objects([], _, _, _, _) ->
+list_objects(_, [], _, _, _, _) ->
     {error, no_such_bucket};
-list_objects(_UserBuckets, _Bucket, {error, _}=Error, _Options, _RcPid) ->
+list_objects(_, _UserBuckets, _Bucket, {error, _}=Error, _Options, _RcPid) ->
     Error;
-list_objects(_UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
-    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
-                                                       MaxKeys,
-                                                       Options),
+list_objects(ReqType, _UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
+    Request = riak_cs_list_objects:new_request(ReqType,
+                                               Bucket,
+                                               MaxKeys,
+                                               Options),
     BinPid = riak_cs_utils:pid_to_binary(self()),
     CacheKey = << BinPid/binary, <<":">>/binary, Bucket/binary >>,
     UseCache = riak_cs_list_objects_ets_cache:cache_enabled(),
-    list_objects(RcPid, ListKeysRequest, CacheKey, UseCache).
+    list_objects(RcPid, Request, CacheKey, UseCache).
 
-list_objects(RcPid, ListKeysRequest, CacheKey, UseCache) ->
+list_objects(RcPid, Request, CacheKey, UseCache) ->
     case riak_cs_list_objects_utils:start_link(RcPid,
                                                self(),
-                                               ListKeysRequest,
+                                               Request,
                                                CacheKey,
                                                UseCache) of
         {ok, ListFSMPid} ->

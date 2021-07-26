@@ -27,10 +27,10 @@
 -include("list_objects.hrl").
 
 %% API
--export([new_request/1,
-         new_request/3,
+-export([new_request/2,
+         new_request/4,
          new_response/5,
-         manifest_to_keycontent/1]).
+         manifest_to_keycontent/2]).
 
 %%%===================================================================
 %%% API
@@ -39,14 +39,15 @@
 %% Request
 %%--------------------------------------------------------------------
 
--spec new_request(binary()) -> list_object_request().
-new_request(Name) ->
-    new_request(Name, 1000, []).
+-spec new_request(list_objects_req_type(), binary()) -> list_object_request().
+new_request(Type, Name) ->
+    new_request(Type, Name, 1000, []).
 
--spec new_request(binary(), pos_integer(), list()) -> list_object_request().
-new_request(Name, MaxKeys, Options) ->
-    process_options(#list_objects_request_v1{name=Name,
-                                             max_keys=MaxKeys},
+-spec new_request(list_objects_req_type(), binary(), pos_integer(), list()) -> list_object_request().
+new_request(Type, Name, MaxKeys, Options) ->
+    process_options(#list_objects_request_v1{req_type = Type,
+                                             name = Name,
+                                             max_keys = MaxKeys},
                     Options).
 
 %% @private
@@ -73,31 +74,35 @@ process_options_helper({marker, Val}, Req) ->
                    CommonPrefixes :: list(list_objects_common_prefixes()),
                    ObjectContents :: list(list_objects_key_content())) ->
     list_object_response().
-new_response(?LOREQ{name=Name,
-                    max_keys=MaxKeys,
-                    prefix=Prefix,
-                    delimiter=Delimiter,
-                    marker=Marker},
+new_response(?LOREQ{req_type = ReqType,
+                    name = Name,
+                    max_keys = MaxKeys,
+                    prefix = Prefix,
+                    delimiter = Delimiter,
+                    marker = Marker
+                   },
              IsTruncated, NextMarker, CommonPrefixes, ObjectContents) ->
-    ?LORESP{name=Name,
-            max_keys=MaxKeys,
-            prefix=Prefix,
-            delimiter=Delimiter,
-            marker=Marker,
-            next_marker=NextMarker,
-            is_truncated=IsTruncated,
-            contents=ObjectContents,
-            common_prefixes=CommonPrefixes}.
+    ?LORESP{resp_type = ReqType,
+            name = Name,
+            max_keys = MaxKeys,
+            prefix = Prefix,
+            delimiter = Delimiter,
+            marker = Marker,
+            next_marker = NextMarker,
+            is_truncated = IsTruncated,
+            contents = ObjectContents,
+            common_prefixes = CommonPrefixes}.
 
 %% Rest
 %%--------------------------------------------------------------------
 
--spec manifest_to_keycontent(lfs_manifest()) -> list_objects_key_content().
-manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
-                                 created=Created,
-                                 content_md5=ContentMd5,
-                                 content_length=ContentLength,
-                                 acl=ACL}) ->
+-spec manifest_to_keycontent(list_objects_req_type(), lfs_manifest()) -> list_objects_key_content().
+manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
+                                          created = Created,
+                                          content_md5 = ContentMd5,
+                                          content_length = ContentLength,
+                                          metadata = Metadata,
+                                          acl = ACL}) ->
 
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
 
@@ -110,12 +115,31 @@ manifest_to_keycontent(?MANIFEST{bkey={_Bucket, Key},
     %% hardcoded since we don't support reduced redundancy or glacier
     StorageClass = <<"STANDARD">>,
 
-    #list_objects_key_content_v1{key=Key,
-                              last_modified=LastModified,
-                              etag=Etag,
-                              size=Size,
-                              owner=Owner,
-                              storage_class=StorageClass}.
+    case ReqType of
+        versions ->
+            VersionId =
+                case orddict:find(version_id, Metadata) of
+                    {ok, V} ->
+                        V;
+                    error ->
+                        null
+                end,
+            ?LOVKC{key = Key,
+                   last_modified = LastModified,
+                   etag = Etag,
+                   is_latest = true,
+                   version_id = VersionId,
+                   size = ContentLength,
+                   owner = Owner,
+                   storage_class = StorageClass};
+        objects ->
+            ?LOKC{key = Key,
+                  last_modified = LastModified,
+                  etag = Etag,
+                  size = Size,
+                  owner = Owner,
+                  storage_class = StorageClass}
+    end.
 
 %% ====================================================================
 %% Internal functions

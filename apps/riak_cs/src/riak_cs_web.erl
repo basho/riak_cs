@@ -77,7 +77,7 @@ base_resources() ->
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
      {["buckets", bucket, "requestPayment"], riak_cs_wm_common, props(riak_cs_wm_bucket_request_payment)},
      %% NYI
-     {["buckets", bucket, "versions"], riak_cs_wm_common, props(riak_cs_wm_not_implemented)},
+     {["buckets", bucket, "versions"], riak_cs_wm_common, props(riak_cs_wm_object_versions)},
      {["buckets", bucket, "lifecycle"], riak_cs_wm_common, props(riak_cs_wm_not_implemented)},
      %% Object resources
      {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},

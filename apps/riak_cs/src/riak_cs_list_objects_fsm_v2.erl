@@ -171,7 +171,7 @@ handle_sync_event(get_internal_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
 handle_sync_event(Event, _From, StateName, State) ->
-    _ = lager:debug("got unknown event ~p in state ~p", [Event, StateName]),
+    _ = lager:warning("got unknown event ~p in state ~p", [Event, StateName]),
     Reply = ok,
     {reply, Reply, StateName, State}.
 
@@ -181,8 +181,8 @@ handle_sync_event(Event, _From, StateName, State) ->
 handle_info(Info, waiting_object_list, State) ->
     waiting_object_list(Info, State);
 handle_info(Info, StateName, _State) ->
-    _ = lager:debug("Received unknown info message ~p"
-                    "in state ~p", [Info, StateName]),
+    _ = lager:warning("Received unknown info message ~p"
+                      "in state ~p", [Info, StateName]),
     ok.
 
 terminate(normal, _StateName, State) ->
@@ -337,11 +337,11 @@ next_marker_from_element({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
 next_marker_from_element({manifest, {Key, ?MANIFEST{}}}) ->
     Key.
 
-response_from_manifests_and_common_prefixes(Request,
+response_from_manifests_and_common_prefixes(?LOREQ{req_type = ReqType} = Request,
                                             Truncated,
                                             NextMarker,
                                             {Manifests, CommonPrefixes}) ->
-    KeyContent = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
+    KeyContent = lists:map(fun(M) -> riak_cs_list_objects:manifest_to_keycontent(ReqType, M) end,
                            Manifests),
     riak_cs_list_objects:new_response(Request, Truncated, NextMarker,
                                       CommonPrefixes,
@@ -349,8 +349,8 @@ response_from_manifests_and_common_prefixes(Request,
 
 -spec make_2i_request(riak_client(), state()) ->
                              {state(), {ok, reference()} | {error, term()}}.
-make_2i_request(RcPid, State=#state{req=?LOREQ{name=BucketName,prefix=Prefix},
-                                    fold_objects_batch_size=BatchSize}) ->
+make_2i_request(RcPid, State=#state{req = ?LOREQ{name = BucketName, prefix = Prefix},
+                                    fold_objects_batch_size = BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
     StartKey = make_start_key(State),
     EndKey = riak_cs_utils:big_end_key(Prefix),

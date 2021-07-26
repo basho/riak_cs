@@ -151,33 +151,81 @@ owner_content({OwnerName, OwnerId}) ->
     [make_external_node('ID', OwnerId),
      make_external_node('DisplayName', OwnerName)].
 
-list_objects_response_to_simple_form(Resp) ->
-    KeyContents = [{'Contents', key_content_to_simple_form(Content)} ||
-                      Content <- (Resp?LORESP.contents)],
+list_objects_response_to_simple_form(?LORESP{resp_type = objects,
+                                             contents = Contents,
+                                             common_prefixes = CommonPrefixes,
+                                             name = Name,
+                                             prefix = Prefix,
+                                             marker = Marker,
+                                             next_marker = NextMarker,
+                                             max_keys = MaxKeys,
+                                             delimiter = Delimiter,
+                                             is_truncated = IsTruncated}) ->
+    KeyContents = [{'Contents', key_content_to_simple_form(objects, Content)} ||
+                      Content <- Contents],
     CommonPrefixes = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
-                         CommonPrefix <- Resp?LORESP.common_prefixes],
-    Contents = [{'Name',       [Resp?LORESP.name]},
-                {'Prefix',     [Resp?LORESP.prefix]},
-                {'Marker',     [Resp?LORESP.marker]}] ++
-                %% use a list-comprehension trick to only include
-                %% the `NextMarker' element if it's not `undefined'
-               [{'NextMarker',  [NextMarker]} ||
-                   NextMarker <- [Resp?LORESP.next_marker],
-                   NextMarker =/= undefined,
-                   Resp?LORESP.is_truncated] ++
-               [{'MaxKeys',     [Resp?LORESP.max_keys]},
-                {'Delimiter',   [Resp?LORESP.delimiter]},
-                {'IsTruncated', [Resp?LORESP.is_truncated]}] ++
+                         CommonPrefix <- CommonPrefixes],
+    Body = [{'Name',       [Name]},
+            {'Prefix',     [Prefix]},
+            {'Marker',     [Marker]}] ++
+        %% use a list-comprehension trick to only include
+        %% the `NextMarker' element if it's not `undefined'
+        [{'NextMarker',  [M]} ||
+            M <- [NextMarker],
+            M =/= undefined,
+            IsTruncated] ++
+        [{'MaxKeys',     [MaxKeys]},
+         {'Delimiter',   [Delimiter]},
+         {'IsTruncated', [IsTruncated]}] ++
         KeyContents ++ CommonPrefixes,
-    [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Contents}].
+    [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Body}];
 
-key_content_to_simple_form(KeyContent) ->
+list_objects_response_to_simple_form(?LORESP{resp_type = versions,
+                                             contents = Contents,
+                                             common_prefixes = CommonPrefixes,
+                                             name = Name,
+                                             prefix = Prefix,
+                                             marker = Marker,
+                                             next_marker = NextMarker,
+                                             max_keys = MaxKeys,
+                                             delimiter = Delimiter,
+                                             is_truncated = IsTruncated}) ->
+    KeyContents = [{'Version', key_content_to_simple_form(versions, Content)} ||
+                      Content <- Contents],
+    CommonPrefixes = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
+                         CommonPrefix <- CommonPrefixes],
+    Body = [{'Name',       [Name]},
+            {'Prefix',     [Prefix]},
+            {'Marker',     [Marker]}] ++
+        [{'NextMarker',  [M]} ||
+            M <- [NextMarker],
+            M =/= undefined,
+            IsTruncated] ++
+        [{'MaxKeys',     [MaxKeys]},
+         {'Delimiter',   [Delimiter]},
+         {'IsTruncated', [IsTruncated]}] ++
+        KeyContents ++ CommonPrefixes,
+    [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Body}].
+
+key_content_to_simple_form(objects, KeyContent) ->
     #list_objects_owner_v1{id=Id, display_name=Name} = KeyContent?LOKC.owner,
     [{'Key',          [KeyContent?LOKC.key]},
      {'LastModified', [KeyContent?LOKC.last_modified]},
      {'ETag',         [KeyContent?LOKC.etag]},
      {'Size',         [KeyContent?LOKC.size]},
      {'StorageClass', [KeyContent?LOKC.storage_class]},
+     {'Owner',        [{'ID', [Id]},
+                       {'DisplayName', [Name]}]}];
+
+key_content_to_simple_form(versions, KeyContent) ->
+    #list_objects_owner_v1{id=Id, display_name=Name} = KeyContent?LOVKC.owner,
+    [{'Key',          [KeyContent?LOVKC.key]},
+     {'LastModified', [KeyContent?LOVKC.last_modified]},
+     {'ETag',         [KeyContent?LOVKC.etag]},
+     {'Size',         [KeyContent?LOVKC.size]},
+     {'StorageClass', [KeyContent?LOVKC.storage_class]},
+     {'IsLatest',     [KeyContent?LOVKC.is_latest]},
+     {'VersionId',    [KeyContent?LOVKC.version_id]},
      {'Owner',        [{'ID', [Id]},
                        {'DisplayName', [Name]}]}].
 

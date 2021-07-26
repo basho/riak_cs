@@ -48,7 +48,7 @@ respond(?LBRESP{}=Response, RD, Ctx) ->
                                 "text/plain",
                                 RD),
     {BucketsDoc, UpdRD, Ctx};
-respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
+respond({ok, ?LORESP{resp_type = _RespType} = Response}, RD, Ctx) ->
     %% @TODO Expand to handle common prefixes
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "text/plain",

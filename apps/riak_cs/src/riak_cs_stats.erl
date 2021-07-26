@@ -70,6 +70,7 @@ duration_metrics() ->
          [list_uploads, get],
          [multiple_delete, post],
          [list_objects, get],
+         [list_object_versions, get],
 
          [object, get],
          [object, put],

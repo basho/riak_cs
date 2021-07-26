@@ -22,24 +22,30 @@
 %% see also: http://docs.amazonwebservices.com/AmazonS3/latest/API/RESTBucketGET.html
 %% non mandatory keys have `| undefined' as a
 %% type option.
-%%
+
+-type list_objects_req_type() :: objects | versions.
+
 %% This record actually does not need to be versioned,
 %% as it's never persisted.
--record(list_objects_request_v1, {
-        %% the name of the bucket
-        name :: binary(),
+-record(list_objects_request_v1,
+        {
+         req_type :: list_objects_req_type(),
 
-        %% how many keys to return in the response
-        max_keys :: non_neg_integer(),
+         %% the name of the bucket
+         name :: binary(),
 
-        %% a 'starts-with' parameter
-        prefix :: binary() | undefined,
+         %% how many keys to return in the response
+         max_keys :: non_neg_integer(),
 
-        %% a binary to group keys by
-        delimiter :: binary() | undefined,
+         %% a 'starts-with' parameter
+         prefix :: binary() | undefined,
 
-        %% the key to start with
-        marker :: binary() | undefined}).
+         %% a binary to group keys by
+         delimiter :: binary() | undefined,
+
+         %% the key to start with
+         marker :: binary() | undefined
+        }).
 -type list_object_request() :: #list_objects_request_v1{}.
 -define(LOREQ, #list_objects_request_v1).
 
@@ -47,47 +53,68 @@
 
 %% This record actually does not need to be versioned,
 %% as it's never persisted.
--record(list_objects_response_v1, {
-        %% Params just echoed back from the request --------------------------
+-record(list_objects_response_v1,
+        {
+         %% Params just echoed back from the request --------------------------
 
-        %% the name of the bucket
-        name :: binary(),
+         %% the name of the bucket
+         name :: binary(),
 
-        %% how many keys were requested to be
-        %% returned in the response
-        max_keys :: non_neg_integer(),
+         %% how many keys were requested to be
+         %% returned in the response
+         max_keys :: non_neg_integer(),
 
-        %% a 'starts-with' parameter
-        prefix :: binary() | undefined,
+         %% a 'starts-with' parameter
+         prefix :: binary() | undefined,
 
-        %% a binary to group keys by
-        delimiter :: binary() | undefined,
+         %% a binary to group keys by
+         delimiter :: binary() | undefined,
 
-        %% the marker used in the _request_
-        marker :: binary() | undefined,
+         %% the marker used in the _request_
+         marker :: binary() | undefined,
 
-        %% the (optional) marker to use for pagination
-        %% in the _next_ request
-        next_marker :: next_marker(),
+         %% the (optional) marker to use for pagination
+         %% in the _next_ request
+         next_marker :: next_marker(),
 
-        %% The actual response -----------------------------------------------
-        is_truncated :: boolean(),
+         %% The actual response -----------------------------------------------
+         is_truncated :: boolean(),
 
-        contents :: list(list_objects_key_content()),
+         contents :: list(list_objects_key_content() | list_object_versions_key_content()),
 
-        common_prefixes :: list_objects_common_prefixes()}).
+         common_prefixes :: list_objects_common_prefixes(),
+
+         resp_type :: list_objects_req_type()
+        }).
+
 -type list_object_response() :: #list_objects_response_v1{}.
 -define(LORESP, #list_objects_response_v1).
 
--record(list_objects_key_content_v1, {
-        key :: binary(),
-        last_modified :: term(),
-        etag :: binary(),
-        size :: non_neg_integer(),
-        owner :: list_objects_owner(),
-        storage_class :: binary()}).
+-record(list_objects_key_content_v1,
+        {
+         key :: binary(),
+         last_modified :: term(),
+         etag :: binary(),
+         size :: non_neg_integer(),
+         owner :: list_objects_owner(),
+         storage_class :: binary()
+        }).
 -type list_objects_key_content() :: #list_objects_key_content_v1{}.
 -define(LOKC, #list_objects_key_content_v1).
+
+-record(list_object_versions_key_content_v1,
+        {
+         key :: binary(),
+         last_modified :: term(),
+         etag :: binary(),
+         is_latest :: boolean(),
+         version_id :: binary(),
+         size :: non_neg_integer(),
+         owner :: list_objects_owner(),
+         storage_class :: binary()
+        }).
+-type list_object_versions_key_content() :: #list_object_versions_key_content_v1{}.
+-define(LOVKC, #list_object_versions_key_content_v1).
 
 -record(list_objects_owner_v1, {
         id :: binary(),

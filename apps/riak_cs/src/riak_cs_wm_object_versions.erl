@@ -19,9 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc WM resource for object listing
+%% @doc WM resource for object version listing
 
--module(riak_cs_wm_objects).
+-module(riak_cs_wm_object_versions).
 
 -export([init/1,
          stats_prefix/0,
@@ -40,37 +40,34 @@
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{rc_pool=?RIAKCPOOL}}.
+    {ok, Ctx#context{rc_pool = ?RIAKCPOOL}}.
 
--spec stats_prefix() -> list_objects.
-stats_prefix() -> list_objects.
+-spec stats_prefix() -> list_object_versions.
+stats_prefix() -> list_object_versions.
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    %% GET is for object listing
     ['GET'].
 
-%% TODO: change to authorize/spec/cleanup unneeded cases
-%% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
 -spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
-api_request(RD, Ctx=#context{bucket=Bucket,
-                             riak_client=RcPid,
-                             user=User}) ->
+api_request(RD, Ctx = #context{bucket = Bucket,
+                               riak_client = RcPid,
+                               user = User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [UserName, Bucket]),
+    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_key_versions">>, [], [UserName, Bucket]),
     Res = riak_cs_api:list_objects(
-            objects,
+            versions,
             [B || B <- riak_cs_bucket:get_buckets(User),
                   B?RCS_BUCKET.name =:= binary_to_list(Bucket)],
             Ctx#context.bucket,
             get_max_keys(RD),
             get_options(RD),
             RcPid),
-    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_keys">>, [200], [UserName, Bucket]),
+    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_key_versions">>, [200], [UserName, Bucket]),
     Res.
 
 -spec get_options(#wm_reqdata{}) -> [{atom(), 'undefined' | binary()}].
