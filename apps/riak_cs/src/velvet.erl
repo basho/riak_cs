@@ -29,6 +29,7 @@
          ping/3,
          set_bucket_acl/6,
          set_bucket_policy/6,
+         set_bucket_versioning/6,
          delete_bucket_policy/5,
          update_user/6
          % @TODO: update_bucket/3
@@ -163,7 +164,7 @@ set_bucket_acl(Ip, Port, Bucket, ContentType, AclDoc, Options) ->
     Path = buckets_path(Bucket, acl),
     update_bucket(Ip, Port, Path, ContentType, AclDoc, Options, 204).
 
-%% @doc Create a bucket for a requesting party.
+%% @doc Set bucket policy
 -spec set_bucket_policy(string(),
                         inet:port_number(),
                         binary(),
@@ -173,6 +174,17 @@ set_bucket_acl(Ip, Port, Bucket, ContentType, AclDoc, Options) ->
 set_bucket_policy(Ip, Port, Bucket, ContentType, PolicyDoc, Options) ->
     Path = buckets_path(Bucket, policy),
     update_bucket(Ip, Port, Path, ContentType, PolicyDoc, Options, 204).
+
+%% @doc Set bucket versioning
+-spec set_bucket_versioning(string(),
+                            inet:port_number(),
+                            binary(),
+                            string(),
+                            string(),
+                            proplists:proplist()) -> ok | {error, term()}.
+set_bucket_versioning(Ip, Port, Bucket, ContentType, Doc, Options) ->
+    Path = buckets_path(Bucket, versioning),
+    update_bucket(Ip, Port, Path, ContentType, Doc, Options, 204).
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
@@ -300,11 +312,13 @@ buckets_path(Bucket) ->
              ["/" ++ binary_to_list(Bucket) || Bucket /= <<>>]]).
 
 %% @doc Assemble the path for a bucket request
--spec buckets_path(binary(), acl|policy) -> string().
+-spec buckets_path(binary(), acl|policy|versioning) -> string().
 buckets_path(Bucket, acl) ->
     stringy([buckets_path(Bucket), "/acl"]);
 buckets_path(Bucket, policy) ->
-    stringy([buckets_path(Bucket), "/policy"]).
+    stringy([buckets_path(Bucket), "/policy"]);
+buckets_path(Bucket, versioning) ->
+    stringy([buckets_path(Bucket), "/versioning"]).
 
 %% @doc Assemble the URL for a buckets request
 -spec url(string(), pos_integer(), boolean(), [string()]) ->

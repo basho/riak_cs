@@ -66,6 +66,7 @@ duration_metrics() ->
          [bucket_policy, delete],
          [bucket_location, get],
          [bucket_versioning, get],
+         [bucket_versioning, put],
          [bucket_request_payment, get],
          [list_uploads, get],
          [multiple_delete, post],
@@ -94,6 +95,7 @@ duration_metrics() ->
          [velvet, set_bucket_acl],
          [velvet, set_bucket_policy],
          [velvet, delete_bucket_policy],
+         [velvet, set_bucket_versioning],
 
          %% Riak PB client, per key operations
          [riakc, ping],

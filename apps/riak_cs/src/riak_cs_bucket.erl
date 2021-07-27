@@ -34,6 +34,8 @@
          set_bucket_policy/5,
          delete_bucket_policy/4,
          get_bucket_acl_policy/3,
+         set_bucket_versioning/5,
+         get_bucket_versioning/2,
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
          update_bucket_record/1,
@@ -356,6 +358,42 @@ format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
 format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
+-spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
+                            binary(), bucket_versioning_option(), riak_client()) ->
+          ok | {error, term()}.
+set_bucket_versioning(User, UserObj, Bucket, Option, RcPid) ->
+    serialized_bucket_op(Bucket,
+                         Option,
+                         User,
+                         UserObj,
+                         update_versioning,
+                         [velvet, set_bucket_versioning],
+                         RcPid).
+
+-spec get_bucket_versioning(binary(), riak_client()) ->
+          {ok, bucket_versioning_option()} | {error, term()}.
+get_bucket_versioning(Bucket, RcPid) ->
+    case fetch_bucket_object(Bucket, RcPid) of
+        {ok, Obj} ->
+            MD = riakc_obj:get_metadata(Obj),
+            case dict:find(?MD_USERMETA, MD) of
+                {ok, UM} ->
+                    case proplists:get_value(?MD_VERSIONING, UM) of
+                        undefined ->
+                            {ok, disabled};
+                        Defined ->
+                            {ok, versioning_term_to_option(binary_to_term(Defined))}
+                    end;
+                error ->
+                    {ok, disabled}
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+versioning_term_to_option(<<"enabled">>) -> enabled;
+versioning_term_to_option(<<"disabled">>) -> disabled.
+
 
 %% ===================================================================
 %% Internal functions
@@ -378,6 +416,16 @@ bucket_policy_json(PolicyJson, KeyId)  ->
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
                                     {<<"policy">>, PolicyJson}]
                           }))).
+
+%% @doc Generate a JSON document to use in setting bucket versioning option
+-spec bucket_versioning_json(bucket_versioning_option(), string()) -> string().
+bucket_versioning_json(Option, KeyId)  ->
+    binary_to_list(
+      iolist_to_binary(
+        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
+                                    {<<"versioning">>, versioning_option_to_binary(Option)}]
+                          }))).
+versioning_option_to_binary(A) -> atom_to_binary(A, latin1).
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), riak_client()) -> {ok, boolean()} | {error, term()}.
@@ -519,6 +567,18 @@ bucket_fun(update_policy, Bucket, _BagId, PolicyJson, KeyId, AdminCreds, Stanchi
                                      [{ssl, StanchionSSL},
                                       {auth_creds, AdminCreds}])
     end;
+bucket_fun(update_versioning, Bucket, _BagId, VsnOption, KeyId, AdminCreds, StanchionData) ->
+    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+    Doc = bucket_versioning_json(VsnOption, KeyId),
+    fun() ->
+            velvet:set_bucket_versioning(StanchionIp,
+                                         StanchionPort,
+                                         Bucket,
+                                         "application/json",
+                                         Doc,
+                                         [{ssl, StanchionSSL},
+                                          {auth_creds, AdminCreds}])
+    end;
 bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) ->
     {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
     %% Generate the bucket JSON document for the ACL request
@@ -658,7 +718,7 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
 
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
-                           [] | acl() | policy(),
+                           [] | acl() | policy() | bucket_versioning_option(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
@@ -673,7 +733,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
 %% @doc Shared code used when doing a bucket creation or deletion.
 -spec serialized_bucket_op(binary(),
                            bag_id(),
-                           [] | acl() | policy(),
+                           [] | acl() | policy() | bucket_versioning_option(),
                            rcs_user(),
                            riakc_obj:riakc_obj(),
                            bucket_operation(),
@@ -681,7 +741,7 @@ serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
                            riak_client()) ->
                                   ok |
                                   {error, term()}.
-serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPid) ->
+serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPid) ->
     StartTime = os:timestamp(),
     _ = riak_cs_stats:inflow(StatsKey),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -689,7 +749,7 @@ serialized_bucket_op(Bucket, BagId, ACL, User, UserObj, BucketOp, StatsKey, RcPi
     BucketFun = bucket_fun(BucketOp,
                            Bucket,
                            BagId,
-                           ACL,
+                           Arg,
                            User?RCS_USER.key_id,
                            AdminCreds,
                            riak_cs_utils:stanchion_data()),

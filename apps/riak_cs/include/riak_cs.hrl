@@ -74,8 +74,9 @@
 
 -type cs_bucket() :: #moss_bucket_v1{}.
 -type bucket_operation() :: create | delete | update_acl | update_policy
-                          | delete_policy.
+                          | delete_policy | update_versioning.
 -type bucket_action() :: created | deleted.
+-type bucket_versioning_option() :: enabled | disabled.
 
 -record(context, {start_time :: undefined | erlang:timestamp(),
                   auth_bypass :: atom(),
@@ -406,6 +407,7 @@
 -define(MD_BAG, <<"X-Rcs-Bag">>).
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(MD_POLICY, <<"X-Rcs-Policy">>).
+-define(MD_VERSIONING, <<"X-Rcs-Versioning">>).
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
 -define(KEY_INDEX, <<"$key">>).
