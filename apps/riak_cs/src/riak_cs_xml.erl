@@ -163,7 +163,7 @@ list_objects_response_to_simple_form(?LORESP{resp_type = objects,
                                              is_truncated = IsTruncated}) ->
     KeyContents = [{'Contents', key_content_to_simple_form(objects, Content)} ||
                       Content <- Contents],
-    CommonPrefixes = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
+    CCPP = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
                          CommonPrefix <- CommonPrefixes],
     Body = [{'Name',       [Name]},
             {'Prefix',     [Prefix]},
@@ -177,7 +177,7 @@ list_objects_response_to_simple_form(?LORESP{resp_type = objects,
         [{'MaxKeys',     [MaxKeys]},
          {'Delimiter',   [Delimiter]},
          {'IsTruncated', [IsTruncated]}] ++
-        KeyContents ++ CommonPrefixes,
+        KeyContents ++ CCPP,
     [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Body}];
 
 list_objects_response_to_simple_form(?LORESP{resp_type = versions,
@@ -391,7 +391,8 @@ list_objects_response_to_xml_test() ->
                      size = 54321,
                      owner = Owner2,
                      storage_class = <<"STANDARD">>},
-    ListObjectsResponse = ?LORESP{name = <<"bucket">>,
+    ListObjectsResponse = ?LORESP{resp_type = objects,
+                                  name = <<"bucket">>,
                                   max_keys = 1000,
                                   prefix = undefined,
                                   delimiter = undefined,

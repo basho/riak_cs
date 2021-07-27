@@ -34,24 +34,24 @@
 filter_prefix_keys_test_() ->
     [
         %% simple test
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>),
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>),
                      {manifests(), []}),
 
         %% simple prefix
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"a">>}]),
                      {manifests([<<"a">>]), []}),
 
         %% simple prefix 2
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"photos/">>}]),
                      {lists:sublist(manifests(), 4,
                       length(manifests())), []}),
 
         %% prefix and delimiter
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"photos/">>},
                                                        {delimiter, <<"/">>}]),
@@ -60,14 +60,14 @@ filter_prefix_keys_test_() ->
         %% prefix and delimiter 2
         %% The only difference from the above test is
         %% in the `prefix', note the lack of `/' after `photos'
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>,
                                                       1000,
                                                       [{prefix, <<"photos">>},
                                                        {delimiter, <<"/">>}]),
                      {[], [<<"photos/">>]}),
 
         %% prefix and delimiter
-        test_creator(riak_cs_list_objects:new_request(<<"bucket">>,
+        test_creator(riak_cs_list_objects:new_request(objects, <<"bucket">>,
                                                       1000,
                                                       [{delimiter, <<"/">>}]),
                      {manifests([<<"a">>, <<"b">>, <<"c">>]),

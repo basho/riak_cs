@@ -310,7 +310,8 @@ list_manifests_to_the_end(DummyRc, Opts, UserPage, BatchSize, CPrefixesAcc, Cont
     Bucket = <<"bucket">>,
     %% TODO: Generator?
     %% delimeter, marker and prefix should be generated?
-    ListKeysRequest = riak_cs_list_objects:new_request(Bucket,
+    ListKeysRequest = riak_cs_list_objects:new_request(objects,
+                                                       Bucket,
                                                        UserPage,
                                                        Opts),
     {ok, FsmPid} = riak_cs_list_objects_fsm_v2:start_link(DummyRc, ListKeysRequest, BatchSize),
