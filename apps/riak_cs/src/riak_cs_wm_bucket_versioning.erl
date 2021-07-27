@@ -86,10 +86,10 @@ vsn_option_to_string(disabled) -> "Disabled".
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx = #context{user = User,
-                               user_object=UserObj,
-                               bucket=Bucket,
-                               response_module=ResponseMod,
-                               riak_client=RcPid}) ->
+                               user_object = UserObj,
+                               bucket = Bucket,
+                               response_module = ResponseMod,
+                               riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_versioning">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_xml:scan(binary_to_list(wrq:req_body(RD))) of

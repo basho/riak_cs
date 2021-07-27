@@ -414,7 +414,8 @@ prepare_state_for_mapred(State=#state{req=Request,
 
 -spec make_response(list_object_request(), list(), list()) ->
     list_object_response().
-make_response(Request=?LOREQ{max_keys=NumKeysRequested},
+make_response(Request=?LOREQ{req_type = ReqType,
+                             max_keys = NumKeysRequested},
               ObjectBuffer, CommonPrefixes) ->
     ObjectPrefixTuple = {ObjectBuffer, CommonPrefixes},
     NumObjects =
@@ -425,7 +426,7 @@ make_response(Request=?LOREQ{max_keys=NumKeysRequested},
                                                           NumKeysRequested),
     {NewManis, NewPrefixes} =
     riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
-    KeyContents = lists:map(fun riak_cs_list_objects:manifest_to_keycontent/1,
+    KeyContents = lists:map(fun(M) -> riak_cs_list_objects:manifest_to_keycontent(ReqType, M) end,
                             NewManis),
     riak_cs_list_objects:new_response(Request, IsTruncated, undefined, NewPrefixes,
                                       KeyContents).

@@ -525,7 +525,7 @@ bucket_exists(Buckets, CheckBucket) ->
 -spec bucket_fun(bucket_operation(),
                  binary(),
                  bag_id(),
-                 [] | policy() | acl(),
+                 [] | policy() | acl() | bucket_versioning_option(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().
@@ -717,30 +717,10 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
 %% @doc Shared code used when doing a bucket creation or deletion.
--spec serialized_bucket_op(binary(),
-                           [] | acl() | policy() | bucket_versioning_option(),
-                           rcs_user(),
-                           riakc_obj:riakc_obj(),
-                           bucket_operation(),
-                           riak_cs_stats:key(),
-                           riak_client()) ->
-                                  ok |
-                                  {error, term()}.
-serialized_bucket_op(Bucket, ACL, User, UserObj, BucketOp, StatKey, RcPid) ->
-    serialized_bucket_op(Bucket, undefined, ACL, User, UserObj,
+serialized_bucket_op(Bucket, Arg, User, UserObj, BucketOp, StatKey, RcPid) ->
+    serialized_bucket_op(Bucket, undefined, Arg, User, UserObj,
                          BucketOp, StatKey, RcPid).
 
-%% @doc Shared code used when doing a bucket creation or deletion.
--spec serialized_bucket_op(binary(),
-                           bag_id(),
-                           [] | acl() | policy() | bucket_versioning_option(),
-                           rcs_user(),
-                           riakc_obj:riakc_obj(),
-                           bucket_operation(),
-                           riak_cs_stats:key(),
-                           riak_client()) ->
-                                  ok |
-                                  {error, term()}.
 serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPid) ->
     StartTime = os:timestamp(),
     _ = riak_cs_stats:inflow(StatsKey),
