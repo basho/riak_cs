@@ -76,7 +76,15 @@
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy | update_versioning.
 -type bucket_action() :: created | deleted.
--type bucket_versioning_option() :: enabled | disabled.
+
+-record(bucket_versioning, {status = suspended :: enabled | suspended,
+                            mfa_delete = disabled :: disabled | enabled,
+                            %% Riak CS extensions
+                            use_subversioning = false :: boolean(),
+                            can_update_versions = false :: boolean(),
+                            repl_siblings = true :: boolean()
+                           }).
+-type bucket_versioning() :: #bucket_versioning{}.
 
 -record(context, {start_time :: undefined | erlang:timestamp(),
                   auth_bypass :: atom(),

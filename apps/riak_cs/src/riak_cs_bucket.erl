@@ -359,7 +359,7 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
 -spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
-                            binary(), bucket_versioning_option(), riak_client()) ->
+                            binary(), bucket_versioning(), riak_client()) ->
           ok | {error, term()}.
 set_bucket_versioning(User, UserObj, Bucket, Option, RcPid) ->
     serialized_bucket_op(Bucket,
@@ -371,7 +371,7 @@ set_bucket_versioning(User, UserObj, Bucket, Option, RcPid) ->
                          RcPid).
 
 -spec get_bucket_versioning(binary(), riak_client()) ->
-          {ok, bucket_versioning_option()} | {error, term()}.
+          {ok, bucket_versioning()} | {error, term()}.
 get_bucket_versioning(Bucket, RcPid) ->
     case fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
@@ -380,19 +380,29 @@ get_bucket_versioning(Bucket, RcPid) ->
                 {ok, UM} ->
                     case proplists:get_value(?MD_VERSIONING, UM) of
                         undefined ->
-                            {ok, disabled};
+                            {ok, #bucket_versioning{status = suspended}};
                         Defined ->
-                            {ok, versioning_term_to_option(binary_to_term(Defined))}
+                            {ok, versioning_json_to_struct(binary_to_term(Defined))}
                     end;
                 error ->
-                    {ok, disabled}
+                    {ok, #bucket_versioning{status = suspended}}
             end;
         {error, _} = Error ->
             Error
     end.
 
-versioning_term_to_option(<<"enabled">>) -> enabled;
-versioning_term_to_option(<<"disabled">>) -> disabled.
+versioning_json_to_struct({struct, Doc}) ->
+    lists:foldl(
+      fun({<<"Status">>, <<"enabled">>}, Acc) -> Acc#bucket_versioning{status = enabled};
+         ({<<"Status">>, <<"suspended">>}, Acc) -> Acc#bucket_versioning{status = suspended};
+         ({<<"MFADelete">>, <<"enabled">>}, Acc) -> Acc#bucket_versioning{mfa_delete = enabled};
+         ({<<"MFADelete">>, <<"disabled">>}, Acc) -> Acc#bucket_versioning{mfa_delete = disabled};
+         ({<<"CanUpdateVersions">>, V}, Acc) -> Acc#bucket_versioning{can_update_versions = V};
+         ({<<"UseSubversioning">>, V}, Acc) -> Acc#bucket_versioning{use_subversioning = V};
+         ({<<"ReplSiblings">>, V}, Acc) -> Acc#bucket_versioning{repl_siblings = V}
+      end,
+      #bucket_versioning{},
+      Doc).
 
 
 %% ===================================================================
@@ -418,14 +428,22 @@ bucket_policy_json(PolicyJson, KeyId)  ->
                           }))).
 
 %% @doc Generate a JSON document to use in setting bucket versioning option
--spec bucket_versioning_json(bucket_versioning_option(), string()) -> string().
-bucket_versioning_json(Option, KeyId)  ->
+-spec bucket_versioning_json(bucket_versioning(), string()) -> string().
+bucket_versioning_json(#bucket_versioning{status = Status,
+                                          mfa_delete = MfaDelete,
+                                          can_update_versions = CanUpdateVersions,
+                                          use_subversioning = UseSubversioning,
+                                          repl_siblings = ReplSiblings}, KeyId)  ->
+    lager:debug("MMMMMM ~p", [MfaDelete]),
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
-                                    {<<"versioning">>, versioning_option_to_binary(Option)}]
+                                    {<<"versioning">>, [{<<"Status">>, Status},
+                                                        {<<"MFADelete">>, MfaDelete},
+                                                        {<<"CanUpdateVersions">>, CanUpdateVersions},
+                                                        {<<"UseSubversioning">>, UseSubversioning},
+                                                        {<<"ReplSiblings">>, ReplSiblings}]}]
                           }))).
-versioning_option_to_binary(A) -> atom_to_binary(A, latin1).
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), riak_client()) -> {ok, boolean()} | {error, term()}.
@@ -525,7 +543,7 @@ bucket_exists(Buckets, CheckBucket) ->
 -spec bucket_fun(bucket_operation(),
                  binary(),
                  bag_id(),
-                 [] | policy() | acl() | bucket_versioning_option(),
+                 [] | policy() | acl() | bucket_versioning(),
                  string(),
                  {string(), string()},
                  {string(), pos_integer(), boolean()}) -> function().

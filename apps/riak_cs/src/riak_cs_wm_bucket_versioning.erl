@@ -74,15 +74,28 @@ to_xml(RD, Ctx=#context{user = User,
         [] ->
             riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
         [_BucketRecord] ->
-            {ok, VsnOption} = riak_cs_bucket:get_bucket_versioning(Bucket, RcPid),
+            {ok, #bucket_versioning{status = Status,
+                                    mfa_delete = MFADelete,
+                                    use_subversioning = UseSubVersioning,
+                                    can_update_versions = CanUpdateVersions,
+                                    repl_siblings = ReplSiblings}} =
+                riak_cs_bucket:get_bucket_versioning(Bucket, RcPid),
             {iolist_to_binary(["<VersioningConfiguration>",
-                               "<Status>", vsn_option_to_string(VsnOption), "</Status>"
+                               "<Status>", to_string(status, Status), "</Status>",
+                               "<MFADelete>", to_string(mfa_delete, MFADelete), "</MFADelete>",
+                               "<UseSubVersioning>", to_string(bool, UseSubVersioning), "</UseSubVersioning>",
+                               "<CanUpdateVersions>", to_string(bool, CanUpdateVersions), "</CanUpdateVersions>",
+                               "<ReplSiblings>", to_string(bool, ReplSiblings), "</ReplSiblings>",
                                "</VersioningConfiguration>"]),
              RD, Ctx}
     end.
 
-vsn_option_to_string(enabled) -> "Enabled";
-vsn_option_to_string(disabled) -> "Disabled".
+to_string(status, enabled) -> "Enabled";
+to_string(status, suspended) -> "Suspended";
+to_string(mfa_delete, enabled) -> "Enabled";
+to_string(mfa_delete, disabled) -> "Disabled";
+to_string(bool, true) -> "True";
+to_string(bool, false) -> "False".
 
 -spec accept_body(#wm_reqdata{}, #context{}) -> {{halt, integer()}, #wm_reqdata{}, #context{}}.
 accept_body(RD, Ctx = #context{user = User,
@@ -92,30 +105,23 @@ accept_body(RD, Ctx = #context{user = User,
                                riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_versioning">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+    {ok, OldV} = riak_cs_bucket:get_bucket_versioning(Bucket, RcPid),
     case riak_cs_xml:scan(binary_to_list(wrq:req_body(RD))) of
-        {ok, #xmlElement{name = 'VersioningConfiguration',
-                         content = CC}} ->
-            case lists:search(fun(#xmlElement{name = N}) -> N == 'Status' end, CC) of
-                {value, #xmlElement{content = [#xmlText{value = VsnOption}]}}
-                  when VsnOption == "Enabled";
-                       VsnOption == "Disabled" ->
-                    case riak_cs_bucket:set_bucket_versioning(User,
-                                                              UserObj,
-                                                              Bucket,
-                                                              versioning_string_to_internal(VsnOption),
-                                                              RcPid) of
-                        ok ->
-                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                                            [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                            {{halt, 200}, RD, Ctx};
-                        {error, Reason} ->
-                            Code = ResponseMod:status_code(Reason),
-                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                            ResponseMod:api_error(Reason, RD, Ctx)
-                    end;
+        {ok, Doc} ->
+            {NewV, IsUpdated} =
+                update_versioning_struct_from_xml(OldV, Doc),
+            case IsUpdated of
+                true ->
+                    riak_cs_bucket:set_bucket_versioning(
+                      User, UserObj, Bucket, NewV, RcPid),
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
+                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    {{halt, 200}, RD, Ctx};
                 false ->
-                    Reason = malformed_xml,
+                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
+                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                    {{halt, 200}, RD, Ctx};
+                {error, Reason} ->
                     Code = ResponseMod:status_code(Reason),
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
                                                     [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
@@ -128,5 +134,60 @@ accept_body(RD, Ctx = #context{user = User,
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
-versioning_string_to_internal("Enabled") -> enabled;
-versioning_string_to_internal("Disabled") -> disabled.
+update_versioning_struct_from_xml(Old, #xmlElement{name = 'VersioningConfiguration',
+                                                   content = Content}) ->
+    MaybeNew =
+        lists:foldl(
+          fun(#xmlElement{name = 'Status', content = C}, Acc) ->
+                  Acc#bucket_versioning{status = from_xml_node_content(status, C, Old#bucket_versioning.status)};
+             (#xmlElement{name = 'MFADelete', content = C}, Acc) ->
+                  Acc#bucket_versioning{mfa_delete = from_xml_node_content(mfa_delete, C, Old#bucket_versioning.mfa_delete)};
+             (#xmlElement{name = 'UseSubVersioning', content = C}, Acc) ->
+                  Acc#bucket_versioning{use_subversioning = from_xml_node_content(use_subversioning, C, Old#bucket_versioning.use_subversioning)};
+             (#xmlElement{name = 'CanUpdateVersions', content = C}, Acc) ->
+                  Acc#bucket_versioning{can_update_versions = from_xml_node_content(can_update_versions, C, Old#bucket_versioning.can_update_versions)};
+             (#xmlElement{name = 'ReplSiblings', content = C}, Acc) ->
+                  Acc#bucket_versioning{repl_siblings = from_xml_node_content(repl_siblings, C, Old#bucket_versioning.repl_siblings)};
+             (#xmlElement{}, Acc) ->
+                  Acc
+          end,
+          Old,
+          Content),
+    case Old == MaybeNew of
+        true ->
+            {Old, false};
+        false ->
+            {MaybeNew, true}
+    end;
+update_versioning_struct_from_xml(Old, _) ->
+    {Old, {error, malformed_xml}}.
+
+from_xml_node_content(status, CC, Old) ->
+    case lists:search(fun(#xmlText{}) -> true; (_) -> false end, CC) of
+        {value, #xmlText{value = "Enabled"}} ->
+            enabled;
+        {value, #xmlText{value = "Suspended"}} ->
+            suspended;
+        _ ->
+            Old
+    end;
+from_xml_node_content(mfa_delete, CC, Old) ->
+    case lists:search(fun(#xmlText{}) -> true; (_) -> false end, CC) of
+        {value, #xmlText{value = "Enabled"}} ->
+            enabled;
+        {value, #xmlText{value = "Disabled"}} ->
+            disabled;
+        _ ->
+            Old
+    end;
+from_xml_node_content(_, CC, Old) ->
+    case lists:search(fun(#xmlText{}) -> true; (_) -> false end, CC) of
+        {value, #xmlText{value = V}} when V == "True";
+                                          V == "true" ->
+            true;
+        {value, #xmlText{value = V}} when V == "False";
+                                          V == "false" ->
+            false;
+        _ ->
+            Old
+    end.
