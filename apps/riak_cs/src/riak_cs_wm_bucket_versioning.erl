@@ -109,7 +109,9 @@ accept_body(RD, Ctx = #context{user = User,
     case riak_cs_xml:scan(binary_to_list(wrq:req_body(RD))) of
         {ok, Doc} ->
             {NewV, IsUpdated} =
-                update_versioning_struct_from_xml(OldV, Doc),
+                update_versioning_struct_from_headers(
+                  update_versioning_struct_from_xml(OldV, Doc),
+                  RD),
             case IsUpdated of
                 true ->
                     riak_cs_bucket:set_bucket_versioning(
@@ -191,3 +193,32 @@ from_xml_node_content(_, CC, Old) ->
         _ ->
             Old
     end.
+
+update_versioning_struct_from_headers({OldV, IsUpdated0}, RD) ->
+    MaybeNew =
+        lists:foldl(fun({H, F}, Q) -> maybe_set_field(F, to_bool(wrq:get_req_header(H, RD)), Q) end,
+                    OldV,
+                    [{"x-rcs-versioning-use_subversioning", #bucket_versioning.use_subversioning},
+                     {"x-rcs-versioning-can_update_versions", #bucket_versioning.can_update_versions},
+                     {"x-rcs-versioning-repl_siblings", #bucket_versioning.repl_siblings}]),
+    if MaybeNew == OldV ->
+            {OldV, IsUpdated0};
+       el/=se ->
+            {MaybeNew, true}
+    end.
+maybe_set_field(_, undefined, OldV) ->
+    OldV;
+maybe_set_field(F, V, OldV) ->
+    if element(F, OldV) == V ->
+            OldV;
+       el/=se ->
+            setelement(F, OldV, V)
+    end.
+
+to_bool("True") -> true;
+to_bool("true") -> true;
+to_bool("1") -> true;
+to_bool("False") -> false;
+to_bool("false") -> false;
+to_bool("0") -> false;
+to_bool(_) -> undefined.

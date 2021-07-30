@@ -434,7 +434,6 @@ bucket_versioning_json(#bucket_versioning{status = Status,
                                           can_update_versions = CanUpdateVersions,
                                           use_subversioning = UseSubversioning,
                                           repl_siblings = ReplSiblings}, KeyId)  ->
-    lager:debug("MMMMMM ~p", [MfaDelete]),
     binary_to_list(
       iolist_to_binary(
         mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
