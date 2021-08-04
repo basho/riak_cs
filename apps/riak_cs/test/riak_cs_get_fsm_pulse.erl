@@ -21,7 +21,6 @@
 
 -module(riak_cs_get_fsm_pulse).
 
--ifdef(EQC).
 -ifdef(PULSE).
 
 -include_lib("eqc/include/eqc.hrl").
@@ -167,4 +166,3 @@ test(Iterations) ->
     eqc:quickcheck(eqc:numtests(Iterations, prop_blocks_in_order())).
 
 -endif. %% PULSE
--endif. %% EQC

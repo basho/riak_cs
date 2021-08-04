@@ -30,9 +30,7 @@
 -ifdef(TEST).
 -compile(export_all).
 -compile(nowarn_export_all).
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--endif.
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -859,12 +857,10 @@ comb_parts_test() ->
 
     ok.
 
--ifdef(EQC).
+eval_part_sizes_eqc_test() ->
+    true = proper:quickcheck(numtests(500, prop_part_sizes())).
 
-eval_part_sizes_eqc_test()                                                              ->
-    true = eqc:quickcheck(eqc:numtests(500, prop_part_sizes())).
-
-prop_part_sizes()                                                                       ->
+prop_part_sizes() ->
     Min = ?MIN_MP_PART_SIZE,
     Min_1 = Min - 1,
     MinMinus100 = Min - 100,
@@ -874,7 +870,5 @@ prop_part_sizes()                                                               
             true == eval_part_sizes_wrapper(L ++ [Last]) andalso
             false == eval_part_sizes_wrapper(L ++ [Min_1] ++ L ++ [Either])
            ).
-
--endif. % EQC
 
 -endif.

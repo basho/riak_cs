@@ -119,10 +119,8 @@
 -on_load(on_load/0).
 
 -ifdef(TEST).
--ifdef(EQC).
--compile([export_all]).
--include_lib("eqc/include/eqc.hrl").
--endif.
+-compile([export_all, nowarn_export_all]).
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -494,11 +492,10 @@ too_many_periods(Start, End) ->
     ((Seconds div Access) > Limit) orelse ((Seconds div Storage) > Limit).
 
 -ifdef(TEST).
--ifdef(EQC).
 
 
 datetime_test() ->
-    true = eqc:quickcheck(datetime_invalid_prop()).
+    true = proper:quickcheck(datetime_invalid_prop()).
 
 %% make sure that datetime correctly returns 'error' for invalid
 %% iso8601 date strings
@@ -526,5 +523,4 @@ valid_iso8601(L) ->
 is_digit(C) ->
     C >= $0 andalso C =< $9.
 
--endif. % EQC
 -endif. % TEST
