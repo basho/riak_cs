@@ -31,7 +31,7 @@
          malformed_request/1,
          new_metadata/2,
          get_copy_source/1,
-         start_put_fsm/7,
+         start_put_fsm/8,
          copy/4, copy/5,
          copy_range/2]).
 
@@ -131,13 +131,14 @@ new_metadata(SrcManifest, RD) ->
              orddict:to_list(SrcManifest?MANIFEST.metadata)}
     end.
 
--spec start_put_fsm(binary(), binary(), non_neg_integer(), binary(),
+-spec start_put_fsm(binary(), binary(), binary(), non_neg_integer(), binary(),
                     proplists:proplist(), acl(), riak_client()) -> {ok, pid()}.
-start_put_fsm(Bucket, Key, ContentLength, ContentType, Metadata, Acl, RcPid) ->
+start_put_fsm(Bucket, Key, Vsn, ContentLength, ContentType, Metadata, Acl, RcPid) ->
     BlockSize = riak_cs_lfs_utils:block_size(),
     riak_cs_put_fsm_sup:start_put_fsm(node(),
                                       [{Bucket,
                                         Key,
+                                        Vsn,
                                         ContentLength,
                                         ContentType,
                                         Metadata,
@@ -151,7 +152,7 @@ start_put_fsm(Bucket, Key, ContentLength, ContentType, Metadata, Acl, RcPid) ->
 %% @doc check "x-amz-copy-source" to know whether it requests copying
 %% from another object
 -spec get_copy_source(#wm_reqdata{}) -> undefined |
-                                        {binary(), binary()} |
+                                        {binary(), binary(), binary()} |
                                         {error, atom()}.
 get_copy_source(RD) ->
     %% for oos (TODO)
@@ -167,22 +168,13 @@ handle_copy_source([$/|Path]) ->
     handle_copy_source(Path);
 handle_copy_source(Path0) when is_list(Path0) ->
     Path = mochiweb_util:unquote(Path0),
-    Length = length(Path),
-    case string:chr(Path, $/) of
-        0 ->
-            {error, bad_request};
-        Length ->
-            {error, bad_request};
-        Offset ->
-            Bucket = string:substr(Path, 1, Offset-1),
-            SplitKey = string:substr(Path, Offset+1),
-            case SplitKey of
-                [] ->
-                    {error, bad_request};
-                _ ->
-                    {iolist_to_binary(Bucket),
-                     iolist_to_binary(SplitKey)}
-            end
+    case re:split(Path, "/+", [{return, binary}]) of
+        [Bucket, Key] when size(Key) > 0 ->
+            {Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION};
+        [Bucket, Key, VId] when size(VId) > 0 ->
+            {Bucket, Key, VId};
+        _ ->
+            {error, bad_request}
     end.
 
 %% @doc runs copy
@@ -254,13 +246,14 @@ get_and_put(GetPid, PutPid, MD5, ContFun) ->
     end.
 
 -spec start_get_fsm(lfs_manifest(), riak_client()) -> {ok, pid()}.
-start_get_fsm(SrcManifest, ReadRcPid) ->
-    {Bucket, Key} = SrcManifest?MANIFEST.bkey,
+start_get_fsm(?MANIFEST{bkey = {Bucket, Key},
+                        object_version = Vsn}, ReadRcPid) ->
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
     riak_cs_get_fsm_sup:start_get_fsm(node(),
                                       Bucket,
                                       Key,
+                                      Vsn,
                                       self(),
                                       ReadRcPid,
                                       FetchConcurrency,

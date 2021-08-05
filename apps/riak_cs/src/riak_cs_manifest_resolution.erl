@@ -38,7 +38,7 @@
 %% and values are dictionaries whose
 %% keys are UUIDs and whose values
 %% are manifests.
--spec resolve(list()) -> term().
+-spec resolve([wrapped_manifest()]) -> wrapped_manifest().
 resolve(Siblings) ->
     lists:foldl(fun resolve_dicts/2, orddict:new(), Siblings).
 
@@ -49,14 +49,12 @@ resolve(Siblings) ->
 %% @doc Take two dictionaries
 %% of manifests and resolve them.
 %% @private
--spec resolve_dicts(term(), term()) -> term().
 resolve_dicts(A, B) ->
     orddict:merge(fun resolve_manifests/3, A, B).
 
 %% @doc Take two manifests with
 %% the same UUID and resolve them
 %% @private
--spec resolve_manifests(term(), term(), term()) -> term().
 resolve_manifests(_Key, A, B) ->
     AState = state_to_stage_number(A?MANIFEST.state),
     BState = state_to_stage_number(B?MANIFEST.state),
@@ -73,8 +71,6 @@ state_to_stage_number(scheduled_delete) -> 40.
 %% The third and fourth args, A, B, are the
 %% manifests themselves.
 %% @private
--spec resolve_manifests(integer(), integer(), term(), term()) -> term().
-
 resolve_manifests(StageA, StageB, A, _B) when StageA > StageB ->
     A;
 resolve_manifests(StageA, StageB, _A, B) when StageB > StageA ->
@@ -87,8 +83,8 @@ resolve_manifests(_, _,
     WriteBlocksRemaining = resolve_written_blocks(A, B),
     LastBlockWrittenTime = resolve_last_written_time(A, B),
     Props = resolve_props(A, B),
-    A?MANIFEST{write_blocks_remaining=WriteBlocksRemaining,
-               last_block_written_time=LastBlockWrittenTime,
+    A?MANIFEST{write_blocks_remaining = WriteBlocksRemaining,
+               last_block_written_time = LastBlockWrittenTime,
                props = Props};
 
 resolve_manifests(_, _,
@@ -107,16 +103,16 @@ resolve_manifests(_, _,
                   ?MANIFEST{state = pending_delete} = B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
-    A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
-                      last_block_deleted_time=LastDeletedTime};
+    A?MANIFEST{delete_blocks_remaining = BlocksLeftToDelete,
+                      last_block_deleted_time = LastDeletedTime};
 
 resolve_manifests(_, _,
                   ?MANIFEST{state = scheduled_delete} = A,
                   ?MANIFEST{state = scheduled_delete} = B) ->
     BlocksLeftToDelete = resolve_deleted_blocks(A, B),
     LastDeletedTime = resolve_last_deleted_time(A, B),
-    A?MANIFEST{delete_blocks_remaining=BlocksLeftToDelete,
-                      last_block_deleted_time=LastDeletedTime}.
+    A?MANIFEST{delete_blocks_remaining = BlocksLeftToDelete,
+                      last_block_deleted_time = LastDeletedTime}.
 
 resolve_written_blocks(A, B) ->
     AWritten = A?MANIFEST.write_blocks_remaining,

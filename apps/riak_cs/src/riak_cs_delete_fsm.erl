@@ -60,7 +60,7 @@
                 %% Set only once at init and unchanged. Used only for logs.
                 gc_key :: binary(),
                 delete_blocks_remaining :: undefined | ordsets:ordset({binary(), integer()}),
-                unacked_deletes=ordsets:new() :: ordsets:ordset(integer()),
+                unacked_deletes = ordsets:new() :: ordsets:ordset(integer()),
                 all_delete_workers=[] :: list(pid()),
                 free_deleters = ordsets:new() :: ordsets:ordset(pid()),
                 deleted_blocks = 0 :: non_neg_integer(),
@@ -94,21 +94,20 @@ block_deleted(Pid, Response) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
-init([BagId, {UUID, Manifest}, FinishedCallback, GCKey, Options]) ->
-    {Bucket, Key} = Manifest?MANIFEST.bkey,
+init([BagId, {UUID, Manifest = ?MANIFEST{bkey = {Bucket, Key}}}, FinishedCallback, GCKey, Options]) ->
     {ok, RcPid} = riak_cs_riak_client:checkout(),
     ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
     ok = riak_cs_riak_client:set_manifest(RcPid, Manifest),
     CleanupManifests = proplists:get_value(cleanup_manifests,
                                            Options, true),
-    State = #state{bucket=Bucket,
-                   key=Key,
-                   manifest=Manifest,
-                   uuid=UUID,
-                   riak_client=RcPid,
-                   finished_callback=FinishedCallback,
-                   gc_key=GCKey,
-                   cleanup_manifests=CleanupManifests},
+    State = #state{bucket = Bucket,
+                   key = Key,
+                   manifest = Manifest,
+                   uuid = UUID,
+                   riak_client = RcPid,
+                   finished_callback = FinishedCallback,
+                   gc_key = GCKey,
+                   cleanup_manifests = CleanupManifests},
     {ok, prepare, State}.
 
 %% @TODO Make sure we avoid any race conditions here
@@ -117,15 +116,15 @@ prepare(delete, State) ->
     handle_receiving_manifest(State).
 
 prepare(delete, From, State) ->
-    handle_receiving_manifest(State#state{caller=From}).
+    handle_receiving_manifest(State#state{caller = From}).
 
 deleting({block_deleted, {ok, BlockID}, DeleterPid},
-         State=#state{deleted_blocks=DeletedBlocks}) ->
+         State = #state{deleted_blocks = DeletedBlocks}) ->
     UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks+1, State),
     ManifestState = UpdState#state.manifest?MANIFEST.state,
     deleting_state_result(ManifestState, UpdState);
 deleting({block_deleted, {error, {unsatisfied_constraint, _, BlockID}}, DeleterPid},
-         State=#state{deleted_blocks=DeletedBlocks}) ->
+         State = #state{deleted_blocks = DeletedBlocks}) ->
     UpdState = deleting_state_update(BlockID, DeleterPid, DeletedBlocks, State),
     ManifestState = UpdState#state.manifest?MANIFEST.state,
     deleting_state_result(ManifestState, UpdState);
@@ -142,15 +141,15 @@ handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(Reason, _StateName,
-          #state{all_delete_workers=AllDeleteWorkers,
-                 manifest=?MANIFEST{state=ManifestState},
-                 bucket=Bucket,
-                 key=Key,
-                 uuid=UUID,
-                 riak_client=RcPid,
-                 cleanup_manifests=CleanupManifests} = State) ->
+          #state{all_delete_workers = AllDeleteWorkers,
+                 manifest = ?MANIFEST{state = ManifestState, object_version = ObjVsn},
+                 bucket = Bucket,
+                 key = Key,
+                 uuid = UUID,
+                 riak_client = RcPid,
+                 cleanup_manifests = CleanupManifests} = State) ->
     if CleanupManifests ->
-            manifest_cleanup(ManifestState, Bucket, Key, UUID, RcPid);
+            manifest_cleanup(ManifestState, Bucket, Key, ObjVsn, UUID, RcPid);
        true ->
             noop
     end,
@@ -168,20 +167,20 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% @doc Update the state record following notification of the
 %% completion of a block deletion.
 -spec deleting_state_update(pos_integer(), pid(), non_neg_integer(), #state{}) ->
-                                   #state{}.
+          #state{}.
 deleting_state_update(BlockID,
                       DeleterPid,
                       DeletedBlocks,
-                      State=#state{manifest=Manifest,
-                                   free_deleters=FreeDeleters,
-                                   unacked_deletes=UnackedDeletes}) ->
+                      State = #state{manifest = Manifest,
+                                     free_deleters = FreeDeleters,
+                                     unacked_deletes = UnackedDeletes}) ->
     NewManifest = riak_cs_lfs_utils:remove_delete_block(Manifest, BlockID),
-    State#state{free_deleters=ordsets:add_element(DeleterPid,
-                                                  FreeDeleters),
-                unacked_deletes=ordsets:del_element(BlockID,
-                                                    UnackedDeletes),
-                manifest=NewManifest,
-                deleted_blocks=DeletedBlocks}.
+    State#state{free_deleters = ordsets:add_element(DeleterPid,
+                                                    FreeDeleters),
+                unacked_deletes = ordsets:del_element(BlockID,
+                                                      UnackedDeletes),
+                manifest = NewManifest,
+                deleted_blocks = DeletedBlocks}.
 
 %% @doc Determine the appropriate `deleting' state
 %% fsm callback result based on the given manifest state.
@@ -194,20 +193,21 @@ deleting_state_result(_, State) ->
 
 -spec handle_receiving_manifest(state()) ->
     {next_state, atom(), state()} | {stop, normal, state()}.
-handle_receiving_manifest(State=#state{manifest=Manifest,
-                                       gc_key=GCKey}) ->
+handle_receiving_manifest(State = #state{manifest = Manifest,
+                                         gc_key = GCKey}) ->
     case blocks_to_delete_from_manifest(Manifest) of
         {ok, {NewManifest, BlocksToDelete}} ->
             BlockCount = ordsets:size(BlocksToDelete),
-            NewState = State#state{manifest=NewManifest,
-                                   delete_blocks_remaining=BlocksToDelete,
-                                   total_blocks=BlockCount},
+            NewState = State#state{manifest = NewManifest,
+                                   delete_blocks_remaining = BlocksToDelete,
+                                   total_blocks = BlockCount},
             start_block_servers(NewState);
         {error, invalid_state} ->
             {Bucket, Key} = Manifest?MANIFEST.bkey,
+            ObjVsn = Manifest?MANIFEST.object_version,
             _ = lager:warning("Invalid state manifest in GC bucket at ~p, "
-                              "bucket=~p key=~p: ~p",
-                              [GCKey, Bucket, Key, Manifest]),
+                              "b/k:v = ~s/~s:~s: ~p",
+                              [GCKey, Bucket, Key, ObjVsn, Manifest]),
             %% If total blocks and deleted blocks are the same,
             %% gc worker attempt to delete the manifest in fileset.
             %% Then manifests and blocks becomes orphan.
@@ -215,14 +215,14 @@ handle_receiving_manifest(State=#state{manifest=Manifest,
             %% For now delete FSM stops with pseudo-normal termination to
             %% let other valid manifests be collected, as the root cause
             %% of #827 is still unidentified.
-            {stop, normal, State#state{total_blocks=1}}
+            {stop, normal, State#state{total_blocks = 1}}
     end.
 
 -spec start_block_servers(state()) -> {next_state, atom(), state()} |
                                       {stop, normal, state()}.
-start_block_servers(#state{riak_client=RcPid,
-                           manifest=Manifest,
-                           delete_blocks_remaining=BlocksToDelete} = State) ->
+start_block_servers(#state{riak_client = RcPid,
+                           manifest = Manifest,
+                           delete_blocks_remaining = BlocksToDelete} = State) ->
     %% Handle the case where there are 0 blocks to delete,
     %% i.e. content length of 0,
     %% and can not check-out any workers.
@@ -237,8 +237,8 @@ start_block_servers(#state{riak_client=RcPid,
                     {stop, normal, State};
                 _ ->
                     FreeDeleters = ordsets:from_list(AllDeleteWorkers),
-                    NewState = State#state{all_delete_workers=AllDeleteWorkers,
-                                           free_deleters=FreeDeleters},
+                    NewState = State#state{all_delete_workers = AllDeleteWorkers,
+                                           free_deleters = FreeDeleters},
                     StateAfterDeleteStart = maybe_delete_blocks(NewState),
                     {next_state, deleting, StateAfterDeleteStart}
             end;
@@ -246,62 +246,61 @@ start_block_servers(#state{riak_client=RcPid,
             {stop, normal, State}
     end.
 
-maybe_delete_blocks(State=#state{free_deleters=[]}) ->
+maybe_delete_blocks(State = #state{free_deleters = []}) ->
     State;
-maybe_delete_blocks(State=#state{delete_blocks_remaining=[]}) ->
+maybe_delete_blocks(State = #state{delete_blocks_remaining = []}) ->
     State;
-maybe_delete_blocks(State=#state{bucket=Bucket,
-                                 key=Key,
-                                 free_deleters=FreeDeleters=[DeleterPid | _Rest],
-                                 unacked_deletes=UnackedDeletes,
-                                 delete_blocks_remaining=DeleteBlocksRemaining=
-                                     [BlockID | _RestBlocks]}) ->
+maybe_delete_blocks(State = #state{bucket = Bucket,
+                                   key = Key,
+                                   manifest = ?MANIFEST{object_version = ObjVsn},
+                                   free_deleters = FreeDeleters = [DeleterPid | _Rest],
+                                   unacked_deletes = UnackedDeletes,
+                                   delete_blocks_remaining = DeleteBlocksRemaining = [BlockID | _RestBlocks]}) ->
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     {UUID, Seq} = BlockID,
-    _ = lager:debug("Deleting block: ~p ~p ~p ~p", [Bucket, Key, UUID, Seq]),
+    lager:debug("Deleting block #~b (~s) of ~s/~s:~s", [Seq, UUID, Bucket, Key, ObjVsn]),
     riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
-    maybe_delete_blocks(State#state{unacked_deletes=NewUnackedDeletes,
-                                    free_deleters=NewFreeDeleters,
-                                    delete_blocks_remaining=NewDeleteBlocksRemaining}).
+    maybe_delete_blocks(State#state{unacked_deletes = NewUnackedDeletes,
+                                    free_deleters = NewFreeDeleters,
+                                    delete_blocks_remaining = NewDeleteBlocksRemaining}).
 
-reply_or_callback(Reason, #state{caller=Caller}=State) when Caller =/= undefined ->
+reply_or_callback(Reason, #state{caller = Caller} = State) when Caller =/= undefined ->
     gen_fsm:reply(Caller, notification_msg(Reason, State));
-reply_or_callback(Reason, #state{finished_callback=Callback}=State) ->
+reply_or_callback(Reason, #state{finished_callback = Callback} = State) ->
     Callback(notification_msg(Reason, State)).
 
--spec notification_msg(term(), state()) -> {pid(),
-                                            {ok, {non_neg_integer(), non_neg_integer()}} |
-                                            {error, term()}}.
-notification_msg(normal, #state{
-                            bucket=Bucket,
-                            key=Key,
-                            uuid=UUID,
-                            deleted_blocks = DeletedBlocks,
-                            total_blocks = TotalBlocks}) ->
-    Reply = {ok, {Bucket, Key, UUID, DeletedBlocks, TotalBlocks}},
+-spec notification_msg(term(), state()) ->
+          {pid(), {ok, {non_neg_integer(), non_neg_integer()}} | {error, term()}}.
+notification_msg(normal, #state{bucket = Bucket,
+                                key = Key,
+                                manifest = ?MANIFEST{object_version = ObjVsn},
+                                uuid = UUID,
+                                deleted_blocks = DeletedBlocks,
+                                total_blocks = TotalBlocks}) ->
+    Reply = {ok, {Bucket, Key, ObjVsn, UUID, DeletedBlocks, TotalBlocks}},
     {self(), Reply};
 notification_msg(Reason, _State) ->
     {self(), {error, Reason}}.
 
--spec manifest_cleanup(atom(), binary(), binary(), binary(), riak_client()) -> ok.
-manifest_cleanup(deleted, Bucket, Key, UUID, RcPid) ->
-    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
+-spec manifest_cleanup(atom(), binary(), binary(), binary(), binary(), riak_client()) -> ok.
+manifest_cleanup(deleted, Bucket, Key, ObjVsn, UUID, RcPid) ->
+    {ok, ManiFsmPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn, RcPid),
     _ = try
             _ = riak_cs_manifest_fsm:delete_specific_manifest(ManiFsmPid, UUID)
         after
             _ = riak_cs_manifest_fsm:stop(ManiFsmPid)
         end,
     ok;
-manifest_cleanup(_, _, _, _, _) ->
+manifest_cleanup(_, _, _, _, _, _) ->
     ok.
 
 -spec blocks_to_delete_from_manifest(lfs_manifest()) ->
-                                            {ok, {lfs_manifest(), ordsets:ordset(integer())}} |
-                                            {error, term()}.
-blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
-                                                  delete_blocks_remaining=undefined})
+          {ok, {lfs_manifest(), ordsets:ordset(integer())}} |
+          {error, term()}.
+blocks_to_delete_from_manifest(Manifest = ?MANIFEST{state = State,
+                                                    delete_blocks_remaining = undefined})
   when State =:= pending_delete;State =:= writing; State =:= scheduled_delete ->
     {UpdState, Blocks} =
         case riak_cs_lfs_utils:block_sequences_for_manifest(Manifest) of
@@ -311,10 +310,10 @@ blocks_to_delete_from_manifest(Manifest=?MANIFEST{state=State,
                 {State, BlockSequence}
 
         end,
-    UpdManifest = Manifest?MANIFEST{delete_blocks_remaining=Blocks,
-                                    state=UpdState},
+    UpdManifest = Manifest?MANIFEST{delete_blocks_remaining = Blocks,
+                                    state = UpdState},
     {ok, {UpdManifest, Blocks}};
-blocks_to_delete_from_manifest(?MANIFEST{delete_blocks_remaining=undefined}) ->
+blocks_to_delete_from_manifest(?MANIFEST{delete_blocks_remaining = undefined}) ->
     {error, invalid_state};
 blocks_to_delete_from_manifest(Manifest) ->
     {ok, {Manifest, Manifest?MANIFEST.delete_blocks_remaining}}.

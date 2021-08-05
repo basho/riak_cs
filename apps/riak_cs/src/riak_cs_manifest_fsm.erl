@@ -34,7 +34,7 @@
 -endif.
 
 %% API
--export([start_link/3,
+-export([start_link/4,
          get_all_manifests/1,
          get_active_manifest/1,
          get_specific_manifest/2,
@@ -47,7 +47,7 @@
          update_manifests_with_confirmation/2,
          maybe_stop_manifest_fsm/1,
          stop/1]).
--export([update_md_with_multipart_2i/4]).
+-export([update_md_with_multipart_2i/3]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -71,6 +71,7 @@
 
 -record(state, {bucket :: binary(),
                 key :: binary(),
+                obj_vsn :: binary(),
                 riak_object :: term(),
                 manifests :: term(), % an orddict mapping UUID -> Manifest
                 riak_client :: riak_client()
@@ -88,8 +89,8 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
-start_link(Bucket, Key, RcPid) ->
-    gen_fsm:start_link(?MODULE, [Bucket, Key, RcPid], []).
+start_link(Bucket, Key, ObjVsn, RcPid) ->
+    gen_fsm:start_link(?MODULE, [Bucket, Key, ObjVsn, RcPid], []).
 
 get_all_manifests(Pid) ->
     gen_fsm:sync_send_event(Pid, get_manifests, infinity).
@@ -102,12 +103,12 @@ get_specific_manifest(Pid, UUID) ->
     case gen_fsm:sync_send_event(Pid, get_manifests, infinity) of
         {ok, Manifests} ->
             case orddict:fetch(UUID, Manifests) of
-                {ok, _}=Result ->
+                {ok, _} = Result ->
                     Result;
                 error ->
                     {error, notfound}
             end;
-        {error, notfound}=NotFound ->
+        {error, notfound} = NotFound ->
             NotFound
     end.
 
@@ -115,9 +116,11 @@ add_new_manifest(Pid, Manifest) ->
     Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     gen_fsm:send_event(Pid, {add_new_dict, Dict}).
 
+-spec update_manifests(pid(), wrapped_manifest()) -> ok.
 update_manifests(Pid, Manifests) ->
     gen_fsm:send_event(Pid, {update_manifests, Manifests}).
 
+-spec update_manifest(pid(), lfs_manifest()) -> ok.
 update_manifest(Pid, Manifest) ->
     Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     update_manifests(Pid, Dict).
@@ -161,16 +164,20 @@ stop(Pid) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
-init([Bucket, Key, RcPid]) ->
+init([Bucket, Key, ObjVsn, RcPid]) ->
     process_flag(trap_exit, true),
-    {ok, waiting_command, #state{bucket=Bucket,
-                                 key=Key,
-                                 riak_client=RcPid}};
+    {ok, waiting_command, #state{bucket = Bucket,
+                                 key = Key,
+                                 obj_vsn = ObjVsn,
+                                 riak_client = RcPid}};
 init([test, Bucket, Key]) ->
     %% creating the "mock" riakc_pb_socket
     %% gen_server here
     {ok, FakePbc} = riakc_pb_socket_fake:start_link(),
-    {ok, waiting_command, #state{bucket=Bucket, key=Key, riak_client=FakePbc}}.
+    {ok, waiting_command, #state{bucket = Bucket,
+                                 key = Key,
+                                 obj_vsn = ?LFS_DEFAULT_OBJECT_VERSION,
+                                 riak_client = FakePbc}}.
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.
@@ -178,47 +185,50 @@ init([test, Bucket, Key]) ->
 %% with a particular UUID, update_manifest
 %% should be used from then on out.
 waiting_command({add_new_dict, WrappedManifest},
-                State=#state{riak_client=RcPid,
-                             bucket=Bucket,
-                             key=Key}) ->
-    {_, RiakObj, Manifests} = get_and_update(RcPid, WrappedManifest, Bucket, Key),
-    UpdState = State#state{riak_object=RiakObj, manifests=Manifests},
+                State = #state{riak_client = RcPid,
+                               bucket = Bucket,
+                               key = Key,
+                               obj_vsn = ObjVsn}) ->
+    {_, RiakObj, Manifests} = get_and_update(RcPid, WrappedManifest, Bucket, Key, ObjVsn),
+    UpdState = State#state{riak_object = RiakObj, manifests = Manifests},
     {next_state, waiting_update_command, UpdState}.
 
 waiting_update_command({update_manifests, WrappedManifests},
-                       State=#state{riak_client=RcPid,
-                                    bucket=Bucket,
-                                    key=Key,
-                                    riak_object=undefined,
-                                    manifests=undefined}) ->
-    _Res = get_and_update(RcPid, WrappedManifests, Bucket, Key),
+                       State = #state{riak_client = RcPid,
+                                      bucket = Bucket,
+                                      key = Key,
+                                      obj_vsn = ObjVsn,
+                                      riak_object = undefined,
+                                      manifests = undefined}) ->
+    _Res = get_and_update(RcPid, WrappedManifests, Bucket, Key, ObjVsn),
     {next_state, waiting_update_command, State};
 waiting_update_command({update_manifests, WrappedManifests},
-                       State=#state{riak_client=RcPid,
-                                    bucket=Bucket,
-                                    key=Key,
-                                    riak_object=PreviousRiakObject,
-                                    manifests=PreviousManifests}) ->
+                       State = #state{riak_client = RcPid,
+                                      bucket = Bucket,
+                                      riak_object = PreviousRiakObject,
+                                      manifests = PreviousManifests}) ->
     _ = update_from_previous_read(RcPid,
                                   PreviousRiakObject,
-                                  Bucket, Key,
+                                  Bucket,
                                   PreviousManifests,
                                   WrappedManifests),
-    {next_state, waiting_update_command, State#state{riak_object=undefined, manifests=undefined}}.
+    {next_state, waiting_update_command, State#state{riak_object = undefined,
+                                                     manifests = undefined}}.
 
 waiting_command(get_manifests, _From, State) ->
     {Reply, NewState} = handle_get_manifests(State),
     {reply, Reply, waiting_update_command, NewState};
 waiting_command({delete_manifest, UUID},
-                       _From,
-                       State=#state{riak_client=RcPid,
-                                    bucket=Bucket,
-                                    key=Key,
-                                    riak_object=undefined,
-                                    manifests=undefined}) ->
-    Reply = get_and_delete(RcPid, UUID, Bucket, Key),
+                _From,
+                State = #state{riak_client = RcPid,
+                               bucket = Bucket,
+                               key = Key,
+                               obj_vsn = ObjVsn,
+                               riak_object = undefined,
+                               manifests = undefined}) ->
+    Reply = get_and_delete(RcPid, UUID, Bucket, Key, ObjVsn),
     {reply, Reply, waiting_update_command, State};
-waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
+waiting_command({update_manifests_with_confirmation, _} = Cmd, From, State) ->
     %% Used by multipart commit: this FSM was just started a moment
     %% ago, and we don't need this FSM to re-do work that multipart
     %% commit has already done.
@@ -226,54 +236,50 @@ waiting_command({update_manifests_with_confirmation, _}=Cmd, From, State) ->
 
 
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
-                                            State=#state{riak_client=RcPid,
-                                                         bucket=Bucket,
-                                                         key=Key,
-                                                         riak_object=undefined,
-                                                         manifests=undefined}) ->
-    {Reply, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key),
+                       State = #state{riak_client = RcPid,
+                                      bucket = Bucket,
+                                      key = Key,
+                                      obj_vsn = ObjVsn,
+                                      riak_object = undefined,
+                                      manifests = undefined}) ->
+    {Reply, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key, ObjVsn),
     {reply, Reply, waiting_update_command, State};
 waiting_update_command({update_manifests_with_confirmation, WrappedManifests}, _From,
-                                            State=#state{riak_client=RcPid,
-                                                         bucket=Bucket,
-                                                         key=Key,
-                                                         riak_object=PreviousRiakObject,
-                                                         manifests=PreviousManifests}) ->
+                       State = #state{riak_client = RcPid,
+                                      bucket = Bucket,
+                                      key = Key,
+                                      obj_vsn = ObjVsn,
+                                      riak_object = PreviousRiakObject,
+                                      manifests = PreviousManifests}) ->
     Reply =
         case riak_cs_config:read_before_last_manifest_write() of
             true ->
-                {R, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key),
+                {R, _, _} = get_and_update(RcPid, WrappedManifests, Bucket, Key, ObjVsn),
                 R;
             false ->
-                update_from_previous_read(RcPid,
-                                          PreviousRiakObject,
-                                          Bucket,
-                                          Key,
-                                          PreviousManifests,
-                                          WrappedManifests)
+                update_from_previous_read(
+                  RcPid, PreviousRiakObject, Bucket,
+                  PreviousManifests, WrappedManifests)
         end,
-    {reply, Reply, waiting_update_command, State#state{riak_object=undefined,
-                                                       manifests=undefined}};
+    {reply, Reply, waiting_update_command, State#state{riak_object = undefined,
+                                                       manifests = undefined}};
 waiting_update_command({gc_specific_manifest, UUID}, _From,
-                       #state{
-                          riak_object = RiakObj0,
-                          bucket = Bucket,
-                          key = Key,
-                          riak_client = RcPid
-                         } = State) ->
+                       State = #state{riak_object = RiakObj0,
+                                      bucket = Bucket,
+                                      key = Key,
+                                      obj_vsn = ObjVsn,
+                                      riak_client = RcPid}) ->
     %% put_fsm has issued delete_manifest caused by force_stop
     Res = case RiakObj0 of
               undefined ->
-                  case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+                  case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn) of
                       {ok, RiakObj, _} ->
-                          riak_cs_gc:gc_specific_manifests([UUID], RiakObj,
-                                                           Bucket, Key, RcPid);
+                          riak_cs_gc:gc_specific_manifests([UUID], RiakObj, Bucket, RcPid);
                       Error ->
                           Error
                   end;
               RiakObj ->
-                  riak_cs_gc:gc_specific_manifests([UUID], RiakObj,
-                                                   Bucket, Key, RcPid)
+                  riak_cs_gc:gc_specific_manifests([UUID], RiakObj, Bucket, RcPid)
           end,
     {stop, normal, Res, State}.
 
@@ -300,15 +306,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %% @doc Return all (resolved) manifests, or notfound
 -spec handle_get_manifests(#state{}) ->
     {{ok, [lfs_manifest()]}, #state{}} | {{error, notfound}, #state{}}.
-handle_get_manifests(State=#state{riak_client=RcPid,
-                           bucket=Bucket,
-                           key=Key}) ->
-    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+handle_get_manifests(State = #state{riak_client = RcPid,
+                                    bucket = Bucket,
+                                    key = Key,
+                                    obj_vsn = ObjVsn}) ->
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn) of
         {ok, RiakObject, Resolved} ->
             Reply = {ok, Resolved},
-            NewState = State#state{riak_object=RiakObject, manifests=Resolved},
+            NewState = State#state{riak_object = RiakObject,
+                                   manifests = Resolved},
             {Reply, NewState};
-        {error, notfound}=NotFound ->
+        {error, notfound} = NotFound ->
             {NotFound, State}
     end.
 
@@ -316,13 +324,10 @@ handle_get_manifests(State=#state{riak_client=RcPid,
 %% delete the manifest corresponding to `UUID', and then
 %% write the value back to Riak or delete the manifest value
 %% if there are no manifests remaining.
--spec get_and_delete(riak_client(), binary(), binary(), binary()) -> ok |
-                                                             {error, term()}.
-get_and_delete(RcPid, UUID, Bucket, Key) ->
-    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+get_and_delete(RcPid, UUID, Bucket, Key, ObjVsn) ->
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn) of
         {ok, RiakObject, Manifests} ->
-            ResolvedManifests = riak_cs_manifest_resolution:resolve([Manifests]),
-            UpdatedManifests = orddict:erase(UUID, ResolvedManifests),
+            UpdatedManifests = orddict:erase(UUID, Manifests),
             case UpdatedManifests of
                 [] ->
                     DeleteTimeout = riak_cs_config:delete_manifest_timeout(),
@@ -333,7 +338,7 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
                         riak_cs_utils:update_obj_value(
                           RiakObject, riak_cs_utils:encode_term(UpdatedManifests)),
                     ObjectToWrite = update_md_with_multipart_2i(
-                                      ObjectToWrite0, UpdatedManifests, Bucket, Key),
+                                      ObjectToWrite0, UpdatedManifests, Bucket),
                     PutTimeout = riak_cs_config:put_manifest_timeout(),
                     riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite,
                                     PutTimeout, [riakc, put_manifest])
@@ -342,13 +347,11 @@ get_and_delete(RcPid, UUID, Bucket, Key) ->
             ok
     end.
 
--spec get_and_update(riak_client(), orddict:orddict(), binary(), binary()) ->
-                            {ok | error, undefined | riakc_obj:riakc_obj(),
-                             undefined | orddict:orddict()}.
-get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
-    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key) of
+
+get_and_update(RcPid, WrappedManifests, Bucket, Key, ObjVsn) ->
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn) of
         {ok, RiakObject, Manifests} ->
-            case update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket, Key) of
+            case update(RcPid, Manifests, RiakObject, WrappedManifests, Bucket) of
                 {ok, _, _} = Res ->
                     case maybe_backpressure_sleep(riakc_obj:value_count(RiakObject)) of
                         true ->
@@ -364,9 +367,11 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key) ->
             end;
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
-            ObjectToWrite0 = riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(WrappedManifests)),
+            ObjectToWrite0 = riakc_obj:new(ManifestBucket,
+                                           riak_cs_manifest:versioned_key(Key, ObjVsn),
+                                           riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
-                              ObjectToWrite0, WrappedManifests, Bucket, Key),
+                              ObjectToWrite0, WrappedManifests, Bucket),
             Timeout = riak_cs_config:put_manifest_timeout(),
             PutResult = riak_cs_pbc:put(manifest_pbc(RcPid), ObjectToWrite,
                                         Timeout, [riakc, put_manifest]),
@@ -396,7 +401,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     ok = timer:sleep(SleepMS),
     true.
 
-update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
+update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket) ->
     NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
     %% Update the object here so that if there are any
     %% overwritten UUIDs, then gc_specific_manifests() will
@@ -405,7 +410,7 @@ update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
     ObjectToWrite0 = riak_cs_utils:update_obj_value(
                        OldRiakObject, riak_cs_utils:encode_term(NewManiAdded)),
     ObjectToWrite = update_md_with_multipart_2i(
-                      ObjectToWrite0, NewManiAdded, Bucket, Key),
+                      ObjectToWrite0, NewManiAdded, Bucket),
     {Result, NewRiakObject} =
         case riak_cs_manifest_utils:overwritten_UUIDs(NewManiAdded) of
             [] ->
@@ -415,7 +420,7 @@ update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket, Key) ->
             OverwrittenUUIDs ->
                 riak_cs_gc:gc_specific_manifests(OverwrittenUUIDs,
                                                  ObjectToWrite,
-                                                 Bucket, Key,
+                                                 Bucket,
                                                  RcPid)
         end,
     UpdatedManifests = riak_cs_manifest:manifests_from_riak_object(NewRiakObject),
@@ -425,18 +430,11 @@ manifest_pbc(RcPid) ->
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     ManifestPbc.
 
--spec update_from_previous_read(riak_client(), riakc_obj:riakc_obj(),
-                                binary(), binary(),
-                                orddict:orddict(), orddict:orddict()) ->
-    ok | {error, term()}.
-update_from_previous_read(RcPid, RiakObject, Bucket, Key,
-                          PreviousManifests, NewManifests) ->
-    Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests,
-            NewManifests]),
+update_from_previous_read(RcPid, RiakObject, Bucket, PreviousManifests, NewManifests) ->
+    Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests, NewManifests]),
     NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,
                                                     riak_cs_utils:encode_term(Resolved)),
-    NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved,
-                                                Bucket, Key),
+    NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved, Bucket),
     %% TODO:
     %% currently we don't do
     %% anything to make sure
@@ -445,7 +443,7 @@ update_from_previous_read(RcPid, RiakObject, Bucket, Key,
     riak_cs_pbc:put(manifest_pbc(RcPid), NewRiakObject, [],
                     Timeout, [riakc, put_manifest]).
 
-update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
+update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket) ->
     %% During testing, it's handy to delete Riak keys in the
     %% S3 bucket, e.g., cleaning up from a previous test.
     %% Let's not trip over tombstones here.
@@ -457,7 +455,7 @@ update_md_with_multipart_2i(RiakObject, WrappedManifests, Bucket, Key) ->
                   merge_dicts(MDs)
           end,
     {K_i, V_i} = riak_cs_mp_utils:calc_multipart_2i_dict(
-                   [M || {_, M} <- WrappedManifests], Bucket, Key),
+                   [M || {_, M} <- WrappedManifests], Bucket),
     MD = dict:store(K_i, V_i, MD0),
     riakc_obj:update_metadata(RiakObject, MD).
 

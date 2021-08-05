@@ -114,9 +114,9 @@ overwritten_UUIDs_active_fold_helper(Active) ->
     [binary()].
 update_acc(_UUID, _Manifest, Acc, true) ->
     Acc;
-update_acc(UUID, ?MANIFEST{state=active}, Acc, false) ->
+update_acc(UUID, ?MANIFEST{state = active}, Acc, false) ->
     [UUID | Acc];
-update_acc(UUID, Manifest=?MANIFEST{state=writing}, Acc, _) ->
+update_acc(UUID, Manifest=?MANIFEST{state = writing}, Acc, _) ->
     LBWT = Manifest?MANIFEST.last_block_written_time,
     WST = Manifest?MANIFEST.write_start_time,
     acc_leeway_helper(UUID, Acc, LBWT, WST);
@@ -153,8 +153,8 @@ mark_deleted(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=pending_delete,
-                               delete_marked_time=os:timestamp(),
+                    V?MANIFEST{state = pending_delete,
+                               delete_marked_time = os:timestamp(),
                                props=[{deleted, true} | V?MANIFEST.props]};
                 false ->
                     V
@@ -171,8 +171,8 @@ mark_pending_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=pending_delete,
-                               delete_marked_time=os:timestamp()};
+                    V?MANIFEST{state = pending_delete,
+                               delete_marked_time = os:timestamp()};
                 false ->
                     V
             end
@@ -189,7 +189,7 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
                     V?MANIFEST{state=scheduled_delete,
-                               scheduled_delete_time=os:timestamp()};
+                               scheduled_delete_time = os:timestamp()};
                 false ->
                     V
             end
@@ -221,8 +221,8 @@ pending_delete_helper(UUIDs) ->
 %% Return true if this manifest should be retried
 %% moving to the GC bucket
 -spec retry_manifest(lfs_manifest()) -> boolean().
-retry_manifest(?MANIFEST{state=pending_delete,
-                         delete_marked_time=MarkedTime}) ->
+retry_manifest(?MANIFEST{state = pending_delete,
+                         delete_marked_time = MarkedTime}) ->
     retry_from_marked_time(MarkedTime, os:timestamp());
 retry_manifest(_Manifest) ->
     false.
@@ -272,7 +272,7 @@ prune_count(Manifests, MaxCount) ->
             Manifests
     end.
 
--spec upgrade_wrapped_manifests([orddict:orddict()]) -> [orddict:orddict()].
+-spec upgrade_wrapped_manifests([wrapped_manifest()]) -> [wrapped_manifest()].
 upgrade_wrapped_manifests(ListofOrdDicts) ->
     DictMapFun = fun(_Key, Value) -> upgrade_manifest(Value) end,
     MapFun = fun(Value) -> orddict:map(DictMapFun, Value) end,
@@ -282,53 +282,129 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
 %% version of the manifest record. This is so that
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
--spec upgrade_manifest(lfs_manifest() | #lfs_manifest_v2{}) -> lfs_manifest().
-upgrade_manifest(#lfs_manifest_v2{block_size=BlockSize,
-                                 bkey=Bkey,
-                                 metadata=Metadata,
-                                 created=Created,
-                                 uuid=UUID,
-                                 content_length=ContentLength,
-                                 content_type=ContentType,
-                                 content_md5=ContentMd5,
-                                 state=State,
-                                 write_start_time=WriteStartTime,
-                                 last_block_written_time=LastBlockWrittenTime,
-                                 write_blocks_remaining=WriteBlocksRemaining,
-                                 delete_marked_time=DeleteMarkedTime,
-                                 last_block_deleted_time=LastBlockDeletedTime,
-                                 delete_blocks_remaining=DeleteBlocksRemaining,
-                                 acl=Acl,
-                                 props=Properties,
-                                 cluster_id=ClusterID}) ->
+-spec upgrade_manifest(#lfs_manifest_v2{} | #lfs_manifest_v3{} | #lfs_manifest_v4{}) -> lfs_manifest().
+upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
+                                  bkey = Bkey,
+                                  metadata = Metadata,
+                                  created = Created,
+                                  uuid = UUID,
+                                  content_length = ContentLength,
+                                  content_type = ContentType,
+                                  content_md5 = ContentMd5,
+                                  state = State,
+                                  write_start_time = WriteStartTime,
+                                  last_block_written_time = LastBlockWrittenTime,
+                                  write_blocks_remaining = WriteBlocksRemaining,
+                                  delete_marked_time = DeleteMarkedTime,
+                                  last_block_deleted_time = LastBlockDeletedTime,
+                                  delete_blocks_remaining = DeleteBlocksRemaining,
+                                  acl = Acl,
+                                  props = Props,
+                                  cluster_id = ClusterID}) ->
 
-    upgrade_manifest(?MANIFEST{block_size=BlockSize,
-                               bkey=Bkey,
-                               metadata=Metadata,
-                               created=Created,
-                               uuid=UUID,
-                               content_length=ContentLength,
-                               content_type=ContentType,
-                               content_md5=ContentMd5,
-                               state=State,
-                               write_start_time=WriteStartTime,
-                               last_block_written_time=LastBlockWrittenTime,
-                               write_blocks_remaining=WriteBlocksRemaining,
-                               delete_marked_time=DeleteMarkedTime,
-                               last_block_deleted_time=LastBlockDeletedTime,
-                               delete_blocks_remaining=DeleteBlocksRemaining,
-                               acl=Acl,
-                               props=Properties,
-                               cluster_id=ClusterID});
+    upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
+                                      bkey = Bkey,
+                                      metadata = Metadata,
+                                      created = Created,
+                                      uuid = UUID,
+                                      content_length = ContentLength,
+                                      content_type = ContentType,
+                                      content_md5 = ContentMd5,
+                                      state = State,
+                                      write_start_time = WriteStartTime,
+                                      last_block_written_time = LastBlockWrittenTime,
+                                      write_blocks_remaining = WriteBlocksRemaining,
+                                      delete_marked_time = DeleteMarkedTime,
+                                      last_block_deleted_time = LastBlockDeletedTime,
+                                      delete_blocks_remaining = DeleteBlocksRemaining,
+                                      acl = Acl,
+                                      props = fixup_props(Props),
+                                      cluster_id = ClusterID});
 
-upgrade_manifest(?MANIFEST{props=Props}=M) ->
-    M?MANIFEST{props=fixup_props(Props)}.
+upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
+                                  bkey = Bkey,
+                                  metadata = Metadata,
+                                  created = Created,
+                                  uuid = UUID,
+                                  content_length = ContentLength,
+                                  content_type = ContentType,
+                                  content_md5 = ContentMd5,
+                                  state = State,
+                                  write_start_time = WriteStartTime,
+                                  last_block_written_time = LastBlockWrittenTime,
+                                  write_blocks_remaining = WriteBlocksRemaining,
+                                  delete_marked_time = DeleteMarkedTime,
+                                  last_block_deleted_time = LastBlockDeletedTime,
+                                  delete_blocks_remaining = DeleteBlocksRemaining,
+                                  scheduled_delete_time = ScheduledDeleteTime,
+                                  acl = Acl,
+                                  props = Props,
+                                  cluster_id = ClusterID}) ->
 
--spec fixup_props(undefined | list()) -> list().
+    upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
+                                      bkey = Bkey,
+                                      object_version = ?LFS_DEFAULT_OBJECT_VERSION,
+                                      metadata = Metadata,
+                                      created = Created,
+                                      uuid = UUID,
+                                      content_length = ContentLength,
+                                      content_type = ContentType,
+                                      content_md5 = ContentMd5,
+                                      state = State,
+                                      write_start_time = WriteStartTime,
+                                      last_block_written_time = LastBlockWrittenTime,
+                                      write_blocks_remaining = WriteBlocksRemaining,
+                                      delete_marked_time = DeleteMarkedTime,
+                                      last_block_deleted_time = LastBlockDeletedTime,
+                                      delete_blocks_remaining = DeleteBlocksRemaining,
+                                      scheduled_delete_time = ScheduledDeleteTime,
+                                      acl = Acl,
+                                      props = fixup_multipart_manifests_in_props(Props),
+                                      cluster_id = ClusterID});
+upgrade_manifest(M = #lfs_manifest_v4{}) ->
+    M.
+
+
 fixup_props(undefined) ->
     [];
 fixup_props(Props) when is_list(Props) ->
     Props.
+
+fixup_multipart_manifests_in_props(Props) ->
+    fixup_multipart_manifest(
+      proplists:get_value(multipart, Props), Props).
+
+fixup_multipart_manifest(undefined, Props) ->
+    Props;
+fixup_multipart_manifest(MPM0 = ?MULTIPART_MANIFEST{parts = Parts0,
+                                                    cleanup_parts = CleanupParts0}, Props) ->
+    F = fun(PM, Q) -> ordsets:add_element(upgrade_part_manifest(PM), Q) end,
+    MPM9 = MPM0?MULTIPART_MANIFEST{parts = ordsets:fold(F, ordsets:new(), Parts0),
+                                   cleanup_parts = ordsets:fold(F, ordsets:new(), CleanupParts0)},
+    lists:keyreplace(multipart, 1, Props, MPM9).
+
+upgrade_part_manifest(#part_manifest_v1{bucket = Bucket,
+                                        key = Key,
+                                        start_time = StartTime,
+                                        part_number = PartNumber,
+                                        part_id = PartId,
+                                        content_length = ContentLength,
+                                        content_md5 = ContentMd5,
+                                        block_size = BlockSize}) ->
+    #part_manifest_v2{bucket = Bucket,
+                      key = Key,
+                      object_version = ?LFS_DEFAULT_OBJECT_VERSION,
+                      start_time = StartTime,
+                      part_number = PartNumber,
+                      part_id = PartId,
+                      content_length = ContentLength,
+                      content_md5 = ContentMd5,
+                      block_size = BlockSize};
+upgrade_part_manifest(M) ->
+    M.
+
+
+
 
 %%%===================================================================
 %%% Internal functions
@@ -339,7 +415,7 @@ fixup_props(Props) when is_list(Props) ->
 -spec filter_manifests_by_state(orddict:orddict(), [atom()]) -> orddict:orddict().
 filter_manifests_by_state(Dict, AcceptedStates) ->
     AcceptManifest =
-        fun(_, ?MANIFEST{state=State}) ->
+        fun(_, ?MANIFEST{state = State}) ->
                 lists:member(State, AcceptedStates)
         end,
     orddict:filter(AcceptManifest, Dict).
@@ -354,7 +430,7 @@ leeway_elapsed(Timestamp) ->
 orddict_values(OrdDict) ->
     [V || {_K, V} <- orddict:to_list(OrdDict)].
 
-manifest_is_active(?MANIFEST{state=active}) -> true;
+manifest_is_active(?MANIFEST{state = active}) -> true;
 manifest_is_active(_Manifest) -> false.
 
 -spec delete_time(lfs_manifest()) -> erlang:timestamp() | undefined.
@@ -411,41 +487,41 @@ later(DeleteTime1, DeleteTime2) ->
 -spec most_recent_active_manifest(lfs_manifest(), {
     no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) ->
         {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete},
+most_recent_active_manifest(Manifest = ?MANIFEST{state = scheduled_delete},
                             {MostRecent, undefined}) ->
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=scheduled_delete},
+most_recent_active_manifest(Manifest = ?MANIFEST{state = scheduled_delete},
                             {MostRecent, DeleteTime}) ->
-    Dt=delete_time(Manifest),
+    Dt = delete_time(Manifest),
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete},
+most_recent_active_manifest(Manifest = ?MANIFEST{state = pending_delete},
                             {MostRecent, undefined}) ->
     {MostRecent, delete_time(Manifest)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=pending_delete},
+most_recent_active_manifest(Manifest = ?MANIFEST{state = pending_delete},
                            {MostRecent, DeleteTime}) ->
-    Dt=delete_time(Manifest),
+    Dt = delete_time(Manifest),
     {MostRecent, later(Dt, DeleteTime)};
-most_recent_active_manifest(Manifest=?MANIFEST{state=active},
+most_recent_active_manifest(Manifest = ?MANIFEST{state = active},
                             {no_active_manifest, undefined}) ->
     {Manifest, undefined};
-most_recent_active_manifest(Man1=?MANIFEST{state=active},
-                            {Man2=?MANIFEST{state=active}, DeleteTime})
+most_recent_active_manifest(Man1 = ?MANIFEST{state = active},
+                            {Man2 = ?MANIFEST{state = active}, DeleteTime})
     when Man1?MANIFEST.write_start_time > Man2?MANIFEST.write_start_time ->
         {Man1, DeleteTime};
-most_recent_active_manifest(_Man1=?MANIFEST{state=active},
-                            {Man2=?MANIFEST{state=active}, DeleteTime}) ->
+most_recent_active_manifest(_Man1 = ?MANIFEST{state = active},
+                            {Man2 = ?MANIFEST{state = active}, DeleteTime}) ->
     {Man2, DeleteTime};
-most_recent_active_manifest(Man1=?MANIFEST{state=active},
+most_recent_active_manifest(Man1 = ?MANIFEST{state = active},
                             {no_active_manifest, DeleteTime}) ->
     {Man1, DeleteTime};
-most_recent_active_manifest(_Man1, {Man2=?MANIFEST{state=active}, DeleteTime}) ->
+most_recent_active_manifest(_Man1, {Man2 = ?MANIFEST{state = active}, DeleteTime}) ->
     {Man2, DeleteTime};
 most_recent_active_manifest(_Manifest, {MostRecent, DeleteTime}) ->
     {MostRecent, DeleteTime}.
 
 -spec needs_pruning(lfs_manifest(), erlang:timestamp()) -> boolean().
-needs_pruning(?MANIFEST{state=scheduled_delete,
-                              scheduled_delete_time=ScheduledDeleteTime}, Time) ->
+needs_pruning(?MANIFEST{state = scheduled_delete,
+                        scheduled_delete_time = ScheduledDeleteTime}, Time) ->
     seconds_diff(Time, ScheduledDeleteTime) > riak_cs_gc:leeway_seconds();
 needs_pruning(_Manifest, _Time) ->
     false.
@@ -461,18 +537,17 @@ seconds_diff(T2, T1) ->
 -ifdef(TEST).
 
 new_mani_helper() ->
-    riak_cs_lfs_utils:new_manifest(<<"bucket">>,
-        <<"key">>,
-        <<"uuid">>,
-        100, %% content-length
-        <<"ctype">>,
-        undefined, %% md5
-        orddict:new(),
-        10,
-        undefined,
-        [],
-        undefined,
-        undefined).
+    riak_cs_lfs_utils:new_manifest(
+      <<"bucket">>, <<"key">>, <<"1.0">>, <<"uuid">>,
+      100, %% content-length
+      <<"ctype">>,
+      undefined, %% md5
+      orddict:new(),
+      10,
+      undefined,
+      [],
+      undefined,
+      undefined).
 
 manifest_test_() ->
     {setup,

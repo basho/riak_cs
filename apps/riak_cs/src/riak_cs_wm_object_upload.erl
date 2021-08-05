@@ -92,8 +92,11 @@ process_post(RD, Ctx) ->
             HaltResponse
     end.
 
-process_post_helper(RD, Ctx=#context{riak_client=RcPid, local_context=LocalCtx, acl=ACL}) ->
-    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+process_post_helper(RD, Ctx = #context{riak_client = RcPid,
+                                       local_context = #key_context{bucket = Bucket,
+                                                                    key = Key,
+                                                                    obj_vsn = ObjVsn},
+                                       acl = ACL}) ->
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
@@ -104,9 +107,10 @@ process_post_helper(RD, Ctx=#context{riak_client=RcPid, local_context=LocalCtx, 
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 
-    case riak_cs_mp_utils:initiate_multipart_upload(Bucket, list_to_binary(Key),
-                                                    ContentType, User, Opts,
-                                                    RcPid) of
+    case riak_cs_mp_utils:initiate_multipart_upload(
+           Bucket, Key, ObjVsn,
+           ContentType, User, Opts,
+           RcPid) of
         {ok, UploadId} ->
             XmlDoc = {'InitiateMultipartUploadResult',
                        [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],

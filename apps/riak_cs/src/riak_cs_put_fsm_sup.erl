@@ -46,7 +46,7 @@ start_link() ->
 
 %% @doc Start a `riak_cs_put_fsm' child process.
 -spec start_put_fsm(node(),
-                    [{binary(), binary(), non_neg_integer(), binary(),
+                    [{binary(), binary(), binary(), non_neg_integer(), binary(),
                       term(), pos_integer(), acl(), timeout(), pid(), pid()}])->
                            {ok, pid()} | {error, term()}.
 start_put_fsm(Node, ArgList) ->

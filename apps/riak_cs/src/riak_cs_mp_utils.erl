@@ -30,9 +30,7 @@
 -ifdef(TEST).
 -compile(export_all).
 -compile(nowarn_export_all).
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--endif.
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -42,28 +40,29 @@
 
 %% export Public API
 -export([
-         abort_multipart_upload/4, abort_multipart_upload/5,
-         calc_multipart_2i_dict/3,
+         abort_multipart_upload/6,
+         calc_multipart_2i_dict/2,
          clean_multipart_unused_parts/2,
-         complete_multipart_upload/5, complete_multipart_upload/6,
-         initiate_multipart_upload/5, initiate_multipart_upload/6,
+         complete_multipart_upload/7,
+         get_mp_manifest/1,
+         initiate_multipart_upload/7,
+         is_multipart_manifest/1,
          list_all_multipart_uploads/3,
-         list_multipart_uploads/3, list_multipart_uploads/4,
-         list_parts/5, list_parts/6,
+         list_multipart_uploads/4,
+         list_parts/7,
          make_content_types_accepted/2,
          make_content_types_accepted/3,
-         upload_part/6, upload_part/7,
+         upload_part/8,
          upload_part_1blob/2,
-         upload_part_finished/7, upload_part_finished/8,
-         is_multipart_manifest/1
-        ]).
--export([get_mp_manifest/1]).
+         upload_part_finished/9]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
+-spec calc_multipart_2i_dict([lfs_manifest()], binary()) ->
+          {string(), [{binary(), binary()}]}.
+calc_multipart_2i_dict(Ms, Bucket) when is_list(Ms) ->
     %% According to API Version 2006-03-01, page 139-140, bucket
     %% owners have some privileges for multipart uploads performed by
     %% other users, i.e, see those MP uploads via list multipart uploads,
@@ -82,13 +81,18 @@ calc_multipart_2i_dict(Ms, Bucket, _Key) when is_list(Ms) ->
                    M?MANIFEST.state == writing],
     {?MD_INDEX, lists:usort(lists:append(L_2i))}.
 
-abort_multipart_upload(Bucket, Key, UploadId, Caller) ->
-    abort_multipart_upload(Bucket, Key, UploadId, Caller, nopid).
 
-abort_multipart_upload(Bucket, Key, UploadId, Caller, RcPidUnW) ->
-    do_part_common(abort, Bucket, Key, UploadId, Caller, [], RcPidUnW).
+-spec abort_multipart_upload(binary(), binary(), binary(),
+                             binary(), acl_owner3(), nopid | pid()) ->
+          ok | {error, term()}.
+abort_multipart_upload(Bucket, Key, ObjVsn, UploadId, Caller, RcPidUnW) ->
+    do_part_common(abort, Bucket, Key, ObjVsn, UploadId, Caller, [], RcPidUnW).
 
-clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest, RcPid) ->
+-spec clean_multipart_unused_parts(lfs_manifest(), nopid | pid()) ->
+          same | updated.
+clean_multipart_unused_parts(?MANIFEST{bkey = {Bucket, Key},
+                                       object_version = ObjVsn,
+                                       props = Props} = Manifest, RcPid) ->
     case get_mp_manifest(Manifest) of
         undefined ->
             same;
@@ -99,16 +103,15 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest, RcPid
                     same;
                 {false, PartsToDelete} ->
                     _ = try
-                        {Bucket, Key} = BKey,
                         BagId = riak_cs_mb_helper:bag_id_from_manifest(Manifest),
-                        ok = move_dead_parts_to_gc(Bucket, Key, BagId,
+                        ok = move_dead_parts_to_gc(Bucket, Key, ObjVsn, BagId,
                                                    PartsToDelete, RcPid),
-                        UpdManifest = Manifest?MANIFEST{props=[multipart_clean|Props]},
+                        UpdManifest = Manifest?MANIFEST{props = [multipart_clean|Props]},
                         ok = update_manifest_with_confirmation(RcPid, UpdManifest)
                     catch X:Y:ST ->
                             lager:debug("clean_multipart_unused_parts: "
-                                        "bkey ~p: ~p ~p @ ~p\n",
-                                        [BKey, X, Y, ST])
+                                        "b/key:vsn ~s/~s:~s : ~p ~p @ ~p\n",
+                                        [Bucket, Key, ObjVsn, X, Y, ST])
                     end,
                     %% Return same value to caller, regardless of ok/catch
                     updated;
@@ -117,60 +120,27 @@ clean_multipart_unused_parts(?MANIFEST{bkey=BKey, props=Props} = Manifest, RcPid
             end
     end.
 
-complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller) ->
-    complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, nopid).
 
-complete_multipart_upload(Bucket, Key, UploadId, PartETags, Caller, RcPidUnW) ->
+-spec complete_multipart_upload(binary(), binary(), binary(),
+                                binary(), binary(), string(), nopid | pid()) ->
+          {ok, lfs_manifest()} | {error, atom()}.
+complete_multipart_upload(Bucket, Key, ObjVsn, UploadId, PartETags, Caller, RcPidUnW) ->
     Extra = {PartETags},
-    do_part_common(complete, Bucket, Key, UploadId, Caller, [{complete, Extra}],
+    do_part_common(complete, Bucket, Key, ObjVsn, UploadId, Caller, [{complete, Extra}],
                    RcPidUnW).
 
-initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts) ->
-    initiate_multipart_upload(Bucket, Key, ContentType, Owner, Opts, nopid).
 
-initiate_multipart_upload(Bucket, Key, ContentType, {_,_,_} = Owner,
+-spec initiate_multipart_upload(binary(), binary(), binary(),
+                                binary(), acl_owner3(), proplists:proplist(), nopid | pid()) ->
+          {ok, binary()} | {error, term()}.
+initiate_multipart_upload(Bucket, Key, ObjVsn, ContentType, {_,_,_} = Owner,
                           Opts, RcPidUnW) ->
-    write_new_manifest(new_manifest(Bucket, Key, ContentType, Owner, Opts),
+    write_new_manifest(new_manifest(Bucket, Key, ObjVsn, ContentType, Owner, Opts),
                        Opts, RcPidUnW).
 
-make_content_types_accepted(RD, Ctx) ->
-    make_content_types_accepted(RD, Ctx, unused_callback).
 
-make_content_types_accepted(RD, Ctx, Callback) ->
-    make_content_types_accepted(wrq:get_req_header("Content-Type", RD),
-                                RD,
-                                Ctx,
-                                Callback).
-
-make_content_types_accepted(CT, RD, Ctx, Callback)
-  when CT =:= undefined;
-       CT =:= [] ->
-    make_content_types_accepted("application/octet-stream", RD, Ctx, Callback);
-make_content_types_accepted(CT, RD, Ctx=#context{local_context=LocalCtx0}, Callback) ->
-    %% This was shamelessly ripped out of
-    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
-    {Media, _Params} = mochiweb_util:parse_header(CT),
-    case string:tokens(Media, "/") of
-        [_Type, _Subtype] ->
-            %% accept whatever the user says
-            LocalCtx = LocalCtx0#key_context{putctype=Media},
-            {[{Media, Callback}], RD, Ctx#context{local_context=LocalCtx}};
-        _ ->
-            {[],
-             wrq:set_resp_header(
-               "Content-Type",
-               "text/plain",
-               wrq:set_resp_body(
-                 ["\"", Media, "\""
-                  " is not a valid media type"
-                  " for the Content-type header.\n"],
-                 RD)),
-             Ctx}
-    end.
-
-list_multipart_uploads(Bucket, Caller, Opts) ->
-    list_multipart_uploads(Bucket, Caller, Opts, nopid).
-
+-spec list_multipart_uploads(binary(), acl_owner3(), proplists:proplist(), nopid | pid()) ->
+          {[lfs_manifest()], [ordsets:ordset()]} | {error, term()}.
 list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                        Opts, RcPidUnW) ->
     case wrap_riak_client(RcPidUnW) of
@@ -206,60 +176,38 @@ list_multipart_uploads_with_2ikey(Bucket, Opts, RcPid, Key2i) ->
     case riak_cs_pbc:get_index_eq(ManifestPbc, HashBucket,
                                   Key2i, <<"1">>, [{timeout, Timeout}],
                                   [riakc, get_uploads_by_index]) of
-        {ok, ?INDEX_RESULTS{keys=Names}} ->
+        {ok, ?INDEX_RESULTS{keys = Names}} ->
             {ok, list_multipart_uploads2(Bucket, RcPid,
                                          Names, Opts)};
         Else2 ->
             Else2
     end.
 
-list_parts(Bucket, Key, UploadId, Caller, Opts) ->
-    list_parts(Bucket, Key, UploadId, Caller, Opts, nopid).
 
-list_parts(Bucket, Key, UploadId, Caller, Opts, RcPidUnW) ->
+-spec list_parts(binary(), binary(), binary(),
+                 binary(), acl_owner3(), proplists:proplist(), nopid | pid()) ->
+          {ok, [part_descr()]} | {error, term()}.
+list_parts(Bucket, Key, ObjVsn, UploadId, Caller, Opts, RcPidUnW) ->
     Extra = {Opts},
-    do_part_common(list, Bucket, Key, UploadId, Caller, [{list, Extra}], RcPidUnW).
+    do_part_common(list, Bucket, Key, ObjVsn, UploadId, Caller, [{list, Extra}], RcPidUnW).
 
-%% @doc
--spec new_manifest(binary(), binary(), binary(), acl_owner(), list()) -> lfs_manifest().
-new_manifest(Bucket, Key, ContentType, {_, _, _} = Owner, Opts) ->
-    UUID = uuid:get_v4(),
-    %% TODO: add object metadata here, e.g. content-disposition et al.
-    MetaData = case proplists:get_value(meta_data, Opts) of
-                   undefined -> [];
-                   AsIsHdrs  -> AsIsHdrs
-               end,
-    M = riak_cs_lfs_utils:new_manifest(Bucket,
-                                       Key,
-                                       UUID,
-                                       0,
-                                       ContentType,
-                                       %% we won't know the md5 of a multipart
-                                       undefined,
-                                       MetaData,
-                                       riak_cs_lfs_utils:block_size(),
-                                       %% ACL: needs Riak client pid, so we wait
-                                       no_acl_yet,
-                                       [],
-                                       %% Cluster ID and Bag ID are added later
-                                       undefined,
-                                       undefined),
-    MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
-                              owner = Owner},
-    M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)}.
 
-upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller) ->
-    upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, nopid).
-
-upload_part(Bucket, Key, UploadId, PartNumber, Size, Caller, RcPidUnW) ->
-    Extra = {Bucket, Key, UploadId, Caller, PartNumber, Size},
-    do_part_common(upload_part, Bucket, Key, UploadId, Caller,
+-spec upload_part(binary(), binary(), binary(),
+                  binary(), non_neg_integer(), non_neg_integer(), acl_owner3(), pid()) ->
+          {upload_part_ready, binary(), pid()} | {error, riak_unavailable}.
+upload_part(Bucket, Key, ObjVsn, UploadId, PartNumber, Size, Caller, RcPidUnW) ->
+    Extra = {Bucket, Key, ObjVsn, UploadId, Caller, PartNumber, Size},
+    do_part_common(upload_part, Bucket, Key, ObjVsn, UploadId, Caller,
                    [{upload_part, Extra}], RcPidUnW).
 
+
+-spec upload_part_1blob(pid(), binary()) ->
+          {ok, lfs_manifest()}.
 upload_part_1blob(PutPid, Blob) ->
     ok = riak_cs_put_fsm:augment_data(PutPid, Blob),
     {ok, M} = riak_cs_put_fsm:finalize(PutPid, undefined),
     {ok, M?MANIFEST.content_md5}.
+
 
 %% Once upon a time, in a naive land far away, I thought that it would
 %% be sufficient to use each part's UUID as the ETag when the part
@@ -270,17 +218,71 @@ upload_part_1blob(PutPid, Blob) ->
 %% must thread the MD5 value through upload_part_finished and update
 %% the ?MULTIPART_MANIFEST in a mergeable way.  {sigh}
 
-upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5, Caller) ->
-    upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
-                         Caller, nopid).
-
-upload_part_finished(Bucket, Key, UploadId, _PartNumber, PartUUID, MD5,
+-spec upload_part_finished(binary(), binary(), binary(),
+                           binary(), non_neg_integer(), binary(), term(), acl_owner3(), pid()) ->
+          {ok, lfs_manifest()} | {error, any()}.
+upload_part_finished(Bucket, Key, ObjVsn,
+                     UploadId, _PartNumber, PartUUID, MD5,
                      Caller, RcPidUnW) ->
     Extra = {PartUUID, MD5},
-    do_part_common(upload_part_finished, Bucket, Key, UploadId,
+    do_part_common(upload_part_finished, Bucket, Key, ObjVsn, UploadId,
                    Caller, [{upload_part_finished, Extra}], RcPidUnW).
 
-write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) ->
+
+
+-spec is_multipart_manifest(?MANIFEST{}) -> boolean().
+is_multipart_manifest(?MANIFEST{props = Props}) ->
+    case proplists:get_value(multipart, Props) of
+        undefined ->
+            false;
+        _ ->
+             true
+    end.
+
+
+make_content_types_accepted(RD, Ctx) ->
+    make_content_types_accepted(RD, Ctx, unused_callback).
+
+make_content_types_accepted(RD, Ctx, Callback) ->
+    make_content_types_accepted(wrq:get_req_header("Content-Type", RD),
+                                RD,
+                                Ctx,
+                                Callback).
+
+make_content_types_accepted(CT, RD, Ctx, Callback)
+  when CT =:= undefined;
+       CT =:= [] ->
+    make_content_types_accepted("application/octet-stream", RD, Ctx, Callback);
+make_content_types_accepted(CT, RD, Ctx = #context{local_context = LocalCtx0}, Callback) ->
+    %% This was shamelessly ripped out of
+    %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
+    {Media, _Params} = mochiweb_util:parse_header(CT),
+    case string:tokens(Media, "/") of
+        [_Type, _Subtype] ->
+            %% accept whatever the user says
+            LocalCtx = LocalCtx0#key_context{putctype = Media},
+            {[{Media, Callback}], RD, Ctx#context{local_context = LocalCtx}};
+        _ ->
+            {[],
+             wrq:set_resp_header(
+               "Content-Type",
+               "text/plain",
+               wrq:set_resp_body(
+                 ["\"", Media, "\""
+                  " is not a valid media type"
+                  " for the Content-type header.\n"],
+                 RD)),
+             Ctx}
+    end.
+
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+write_new_manifest(?MANIFEST{bkey = {Bucket, Key},
+                             object_version = ObjVsn,
+                             uuid = UUID} = M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
     case wrap_riak_client(RcPidUnW) of
@@ -296,9 +298,9 @@ write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) -
                 M2 = riak_cs_lfs_utils:set_bag_id(BagId, M),
                 ClusterId = riak_cs_mb_helper:cluster_id(BagId),
                 M3 = M2?MANIFEST{acl = Acl,
-                                 cluster_id=ClusterId,
-                                 write_start_time=os:timestamp()},
-                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key,
+                                 cluster_id = ClusterId,
+                                 write_start_time = os:timestamp()},
+                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn,
                                                                 ?PID(RcPid)),
                 try
                     ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M3),
@@ -313,15 +315,44 @@ write_new_manifest(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M, Opts, RcPidUnW) -
             Else
     end.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
+new_manifest(Bucket, Key, ObjVsn, ContentType, {_, _, _} = Owner, Opts) ->
+    UUID = uuid:get_v4(),
+    %% TODO: add object metadata here, e.g. content-disposition et al.
+    MetaData = case proplists:get_value(meta_data, Opts) of
+                   undefined -> [];
+                   AsIsHdrs  -> AsIsHdrs
+               end,
+    M = riak_cs_lfs_utils:new_manifest(
+          Bucket, Key, UUID,
+          0,
+          ContentType,
+          %% we won't know the md5 of a multipart
+          undefined,
+          MetaData,
+          riak_cs_lfs_utils:block_size(),
+          %% ACL: needs Riak client pid, so we wait
+          no_acl_yet,
+          [],
+          %% Cluster ID and Bag ID are added later
+          undefined,
+          undefined),
+    MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
+                              owner = Owner},
+    {VsnType, M9} =
+        riak_cs_manifest:link_version(
+          nopid, Bucket, Key,
+          M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)},
+          ObjVsn),
+    lager:debug("created mp manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, ObjVsn]),
 
-do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, RcPidUnW) ->
+    M9.
+
+
+do_part_common(Op, Bucket, Key, ObjVsn, UploadId, {_,_,CallerKeyId} = _Caller, Props, RcPidUnW) ->
     case wrap_riak_client(RcPidUnW) of
         {ok, RcPid} ->
             try
-                case riak_cs_manifest:get_manifests(?PID(RcPid), Bucket, Key) of
+                case riak_cs_manifest:get_manifests(?PID(RcPid), Bucket, Key, ObjVsn) of
                     {ok, Obj, Manifests} ->
                         case find_manifest_with_uploadid(UploadId, Manifests) of
                             false ->
@@ -353,17 +384,20 @@ do_part_common(Op, Bucket, Key, UploadId, {_,_,CallerKeyId} = _Caller, Props, Rc
             Else
     end.
 
-do_part_common2(abort, RcPid, M, Obj, _Mpm, _Props) ->
-        {Bucket, Key} = M?MANIFEST.bkey,
+do_part_common2(abort, RcPid, ?MANIFEST{uuid = UUID,
+                                        bkey = {Bucket, _Key}}, Obj, _Mpm, _Props) ->
         case riak_cs_gc:gc_specific_manifests(
-               [M?MANIFEST.uuid], Obj, Bucket, Key, RcPid) of
+               [UUID], Obj, Bucket, RcPid) of
             {ok, _NewObj} ->
                 ok;
-            Else3 ->
-                Else3
+            Else ->
+                Else
         end;
 do_part_common2(complete, RcPid,
-                ?MANIFEST{uuid = _UUID, props = MProps} = Manifest,
+                ?MANIFEST{uuid = _UUID,
+                          bkey = {Bucket, Key},
+                          object_version = ObjVsn,
+                          props = MProps} = Manifest,
                 _Obj, MpM, Props) ->
     %% The content_md5 is used by WM to create the ETags header.
     %% However/fortunately/sigh-of-relief, Amazon's S3 doesn't use
@@ -378,8 +412,7 @@ do_part_common2(complete, RcPid,
     %% BogoMD5 = iolist_to_binary([UUID, "-1"]),
     {PartETags} = proplists:get_value(complete, Props),
     try
-        {Bucket, Key} = Manifest?MANIFEST.bkey,
-        {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
+        {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn, RcPid),
         try
             {Bytes, OverAllMD5, PartsToKeep, PartsToDelete} = comb_parts(MpM, PartETags),
             true = enforce_part_size(PartsToKeep),
@@ -409,7 +442,7 @@ do_part_common2(complete, RcPid,
                     %% then pass them to the GC monster for immediate
                     %% deletion.
                     BagId = riak_cs_mb_helper:bag_id_from_manifest(NewManifest),
-                    ok = move_dead_parts_to_gc(Bucket, Key, BagId,
+                    ok = move_dead_parts_to_gc(Bucket, Key, ObjVsn, BagId,
                                                PartsToDelete, RcPid),
                     MProps3 = [multipart_clean|MProps2],
                     New2Manifest = NewManifest?MANIFEST{props = MProps3},
@@ -450,12 +483,12 @@ do_part_common2(list, _RcPid, _M, _Obj, MpM, Props) ->
              {ETag, P} <- ETagPs],
     {ok, Ds};
 do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
-    {Bucket, Key, _UploadId, _Caller, PartNumber, Size} =
+    {Bucket, Key, ObjVsn, _UploadId, _Caller, PartNumber, Size} =
         proplists:get_value(upload_part, Props),
     BlockSize = riak_cs_lfs_utils:block_size(),
     BagId = riak_cs_mb_helper:bag_id_from_manifest(M),
     {ok, PutPid} = riak_cs_put_fsm:start_link(
-                     {Bucket, Key, Size, <<"x-riak/multipart-part">>,
+                     {Bucket, Key, ObjVsn, Size, <<"x-riak/multipart-part">>,
                       orddict:new(), BlockSize, M?MANIFEST.acl,
                       infinity, self(), RcPid},
                      false, BagId),
@@ -466,6 +499,7 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
         PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
         PM = ?PART_MANIFEST{bucket = Bucket,
                             key = Key,
+                            object_version = ObjVsn,
                             start_time = os:timestamp(),
                             part_number = PartNumber,
                             part_id = PartUUID,
@@ -481,6 +515,7 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
             riak_cs_put_fsm:force_stop(PutPid),
             {error, riak_unavailable}
     end;
+
 do_part_common2(upload_part_finished, RcPid, M, _Obj, MpM, Props) ->
     {PartUUID, MD5} = proplists:get_value(upload_part_finished, Props),
     try
@@ -505,40 +540,39 @@ do_part_common2(upload_part_finished, RcPid, M, _Obj, MpM, Props) ->
             {error, riak_unavailable}
     end.
 
-update_manifest_with_confirmation(RcPid, Manifest) ->
-    {Bucket, Key} = Manifest?MANIFEST.bkey,
-    {m_umwc, {ok, ManiPid}} = {m_umwc,
-                               riak_cs_manifest_fsm:start_link(Bucket, Key,
-                                                               RcPid)},
+
+update_manifest_with_confirmation(RcPid, M = ?MANIFEST{bkey = {Bucket, Key},
+                                                       object_version = ObjVsn}) ->
+    {ok, ManiPid} =
+        riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn, RcPid),
     try
-        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid,
-                                                                    Manifest)
+        ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(ManiPid, M)
     after
         ok = riak_cs_manifest_fsm:stop(ManiPid)
     end.
 
--spec make_2i_key(binary()) -> binary().
+
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
 
--spec make_2i_key(binary(), acl_owner()) -> binary().
 make_2i_key(Bucket, {_, _, OwnerStr}) ->
     make_2i_key2(Bucket, OwnerStr).
 
--spec make_2i_key2(binary(), string()) -> binary().
 make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
+
+%% TODO: fix wrt object versions
 list_multipart_uploads2(Bucket, RcPid, Names, Opts) ->
     FilterFun =
         fun(K, Acc) ->
-                filter_uploads_list(Bucket, K, Opts, RcPid, Acc)
+                filter_uploads_list(Bucket, K, ?LFS_DEFAULT_OBJECT_VERSION, Opts, RcPid, Acc)
         end,
     {Manifests, Prefixes} = lists:foldl(FilterFun, {[], ordsets:new()}, Names),
     {lists:sort(Manifests), ordsets:to_list(Prefixes)}.
 
-filter_uploads_list(Bucket, Key, Opts, RcPid, Acc) ->
-    multipart_manifests_for_key(Bucket, Key, Opts, Acc, RcPid).
+filter_uploads_list(Bucket, Key, Vsn, Opts, RcPid, Acc) ->
+    multipart_manifests_for_key(Bucket, Key, Vsn, Opts, Acc, RcPid).
 
 parameter_filter(M, Acc, _, _, KeyMarker, _)
   when M?MULTIPART_DESCR.key =< KeyMarker->
@@ -560,7 +594,7 @@ parameter_filter(M, {Manifests, Prefixes}, Prefix, undefined, _, _) ->
         _ ->
             {Manifests, Prefixes}
     end;
-parameter_filter(M, {Manifests, Prefixes}=Acc, Prefix, Delimiter, _, _) ->
+parameter_filter(M, {Manifests, Prefixes} = Acc, Prefix, Delimiter, _, _) ->
     PrefixLen = byte_size(Prefix),
     case M?MULTIPART_DESCR.key of
         << Prefix:PrefixLen/binary, Rest/binary >> ->
@@ -584,10 +618,10 @@ update_keys_and_prefixes({Keys, Prefixes}, _, Prefix, PrefixLen, Group) ->
     NewPrefix = << Prefix:PrefixLen/binary, Group/binary >>,
     {Keys, ordsets:add_element(NewPrefix, Prefixes)}.
 
-multipart_manifests_for_key(Bucket, Key, Opts, Acc, RcPid) ->
+multipart_manifests_for_key(Bucket, Key, Vsn, Opts, Acc, RcPid) ->
     ParameterFilter = build_parameter_filter(Opts),
     Manifests = handle_get_manifests_result(
-                  riak_cs_manifest:get_manifests(RcPid, Bucket, Key)),
+                  riak_cs_manifest:get_manifests(RcPid, Bucket, Key, Vsn)),
     lists:foldl(ParameterFilter, Acc, Manifests).
 
 build_parameter_filter(Opts) ->
@@ -607,28 +641,22 @@ handle_get_manifests_result({ok, _Obj, Manifests}) ->
    [multipart_description(M)
                  || {_, M} <- Manifests,
                     M?MANIFEST.state == writing,
-                    is_multipart_manifest(M)];
-handle_get_manifests_result(_) ->
-    [].
+                    is_multipart_manifest(M)].
 
--spec is_multipart_manifest(?MANIFEST{}) -> boolean().
-is_multipart_manifest(?MANIFEST{props=Props}) ->
-    case proplists:get_value(multipart, Props) of
-        undefined ->
-            false;
-        _ ->
-             true
-    end.
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
-multipart_description(Manifest) ->
-    MpM =  proplists:get_value(multipart, Manifest?MANIFEST.props),
+multipart_description(?MANIFEST{bkey = {_, Key},
+                                uuid = UUID,
+                                props = Props,
+                                created = Created}) ->
+    ?MULTIPART_MANIFEST{owner = {OwnerDisplay, _, OwnerKeyId}} =
+        proplists:get_value(multipart, Props),
     ?MULTIPART_DESCR{
-       key = element(2, Manifest?MANIFEST.bkey),
-       upload_id = Manifest?MANIFEST.uuid,
-       owner_key_id = element(3, MpM?MULTIPART_MANIFEST.owner),
-       owner_display = element(1, MpM?MULTIPART_MANIFEST.owner),
-       initiated = Manifest?MANIFEST.created}.
+       key = Key,
+       upload_id = UUID,
+       owner_key_id = OwnerKeyId,
+       owner_display = OwnerDisplay,
+       initiated = Created}.
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
@@ -707,12 +735,10 @@ comb_parts_fold({PartNum, ETag} = K,
             throw(bad_etag)
     end.
 
-move_dead_parts_to_gc(Bucket, Key, BagId, PartsToDelete, RcPid) ->
+move_dead_parts_to_gc(Bucket, Key, ObjVsn, BagId, PartsToDelete, RcPid) ->
     PartDelMs = [{P_UUID,
                   riak_cs_lfs_utils:new_manifest(
-                    Bucket,
-                    Key,
-                    P_UUID,
+                    Bucket, Key, ObjVsn, P_UUID,
                     ContentLength,
                     <<"x-delete/now">>,
                     undefined,
@@ -859,12 +885,10 @@ comb_parts_test() ->
 
     ok.
 
--ifdef(EQC).
+eval_part_sizes_eqc_test() ->
+    true = proper:quickcheck(numtests(500, prop_part_sizes())).
 
-eval_part_sizes_eqc_test()                                                              ->
-    true = eqc:quickcheck(eqc:numtests(500, prop_part_sizes())).
-
-prop_part_sizes()                                                                       ->
+prop_part_sizes() ->
     Min = ?MIN_MP_PART_SIZE,
     Min_1 = Min - 1,
     MinMinus100 = Min - 100,
@@ -874,7 +898,5 @@ prop_part_sizes()                                                               
             true == eval_part_sizes_wrapper(L ++ [Last]) andalso
             false == eval_part_sizes_wrapper(L ++ [Min_1] ++ L ++ [Either])
            ).
-
--endif. % EQC
 
 -endif.

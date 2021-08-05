@@ -122,7 +122,7 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
                     {ok, V} ->
                         V;
                     error ->
-                        null
+                        ?LFS_DEFAULT_OBJECT_VERSION
                 end,
             ?LOVKC{key = Key,
                    last_modified = LastModified,

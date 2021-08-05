@@ -227,7 +227,7 @@ fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
                            %% <<"2012-02-17T18:22:50.000Z">> < <<"2014-05-11-....">> => true
                            andalso M?MANIFEST.created < Timestamp ->
             case riak_cs_gc:gc_specific_manifests(
-                   [M?MANIFEST.uuid], Obj, Bucket, Key, RcPid) of
+                   [M?MANIFEST.uuid], Obj, Bucket, RcPid) of
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->

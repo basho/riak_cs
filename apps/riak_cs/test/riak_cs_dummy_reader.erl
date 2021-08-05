@@ -80,24 +80,23 @@ get_manifest(Pid) ->
 %% ===================================================================
 
 %% @doc Initialize the server.
--spec init([pid()] | {test, [pid()]}) -> {ok, state()} | {stop, term()}.
 init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
     process_flag(trap_exit, true),
     %% Get a connection to riak
     rand:seed(exsss, erlang:timestamp()),
-    {ok, #state{content_length=ContentLength,
-                remaining=ContentLength,
-                bucket=Bucket,
-                key=Key,
-                block_size=BlockSize,
-                caller_pid=CallerPid}}.
+    {ok, #state{content_length = ContentLength,
+                remaining = ContentLength,
+                bucket = Bucket,
+                key = Key,
+                block_size = BlockSize,
+                caller_pid = CallerPid}}.
 
 %% @doc Unused
 -spec handle_call(term(), {pid(), term()}, state()) ->
                          {reply, ok, state()}.
-handle_call(get_manifest, _From, #state{bucket=Bucket,
-                                               key=Key,
-                                               content_length=ContentLength}=State) ->
+handle_call(get_manifest, _From, #state{bucket = Bucket,
+                                        key = Key,
+                                        content_length = ContentLength} = State) ->
     Manifest = riak_cs_lfs_utils:new_manifest(
                  Bucket,
                  Key,

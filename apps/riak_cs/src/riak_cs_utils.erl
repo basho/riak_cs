@@ -29,7 +29,7 @@
          etag_from_binary_no_quotes/1,
          close_riak_connection/1,
          close_riak_connection/2,
-         delete_object/3,
+         delete_object/4,
          encode_term/1,
          has_tombstone/1,
          map_keys_and_manifests/3,
@@ -54,7 +54,7 @@
          riak_connection/1,
          safe_base64url_decode/1,
          safe_list_to_integer/1,
-         set_object_acl/5,
+         set_object_acl/6,
          second_resolution_timestamp/1,
          timestamp_to_seconds/1,
          timestamp_to_milliseconds/1,
@@ -160,10 +160,10 @@ close_riak_connection(Pool, Pid) ->
 %% Garbage collection. Otherwise returns an error. Note,
 %% {error, notfound} counts as success in this case,
 %% with the list of UUIDs being [].
--spec delete_object(binary(), binary(), riak_client()) ->
+-spec delete_object(binary(), binary(), binary(), riak_client()) ->
                            {ok, [binary()]} | {error, term()}.
-delete_object(Bucket, Key, RcPid) ->
-    riak_cs_gc:gc_active_manifests(Bucket, Key, RcPid).
+delete_object(Bucket, Key, ObjVsn, RcPid) ->
+    riak_cs_gc:gc_active_manifests(Bucket, Key, ObjVsn, RcPid).
 
 -spec encode_term(term()) -> binary().
 encode_term(Term) ->
@@ -375,10 +375,10 @@ riak_connection(Pool) ->
 
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_object_acl(binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
+-spec set_object_acl(binary(), binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
                             ok | {error, term()}.
-set_object_acl(Bucket, Key, Manifest, Acl, RcPid) ->
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, RcPid),
+set_object_acl(Bucket, Key, Vsn, Manifest, Acl, RcPid) ->
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn, RcPid),
     try
         _ActiveMfst = riak_cs_manifest_fsm:get_active_manifest(ManiPid),
         UpdManifest = Manifest?MANIFEST{acl=Acl},
@@ -430,7 +430,8 @@ update_obj_value(Obj, Value) when is_binary(Value) ->
 %% we'll take care of calling `to_bucket_name'
 -spec key_exists(riak_client(), binary(), binary()) -> boolean().
 key_exists(RcPid, Bucket, Key) ->
-    key_exists_handle_get_manifests(riak_cs_manifest:get_manifests(RcPid, Bucket, Key)).
+    key_exists_handle_get_manifests(
+      riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION)).
 
 
 -spec big_end_key() -> binary().

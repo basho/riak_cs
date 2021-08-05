@@ -19,16 +19,16 @@
 %%
 %% ---------------------------------------------------------------------
 
--define(MANIFEST, #lfs_manifest_v3).
-
+-define(MANIFEST, #lfs_manifest_v4).
+-define(LFS_DEFAULT_OBJECT_VERSION, <<"null">>).
 -define(ACL, #acl_v2).
 -define(RCS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v2).
 -define(MULTIPART_MANIFEST, #multipart_manifest_v1).
 -define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
--define(PART_MANIFEST, #part_manifest_v1).
--define(PART_MANIFEST_RECNAME, part_manifest_v1).
+-define(PART_MANIFEST, #part_manifest_v2).
+-define(PART_MANIFEST_RECNAME, part_manifest_v2).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
 -define(COMPRESS_TERMS, false).
 -define(PART_DESCR, #part_descr_v1).
@@ -126,11 +126,14 @@
                       bucket :: undefined | binary(),
                       bucket_object :: undefined | notfound | riakc_obj:riakc_obj(),
                       key :: undefined | list(),
+                      obj_vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
                       owner :: undefined | string(),
                       size :: undefined | non_neg_integer(),
                       content_md5 :: undefined | binary(),
                       update_metadata = false :: boolean()}).
 
+-type lfs_manifest_state() :: writing | active |
+                              pending_delete | scheduled_delete | deleted.
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type acl_perms() :: [acl_perm()].
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
@@ -158,7 +161,7 @@
 -type riak_client() :: pid().
 
 -record(lfs_manifest_v2, {
-        version=2 :: integer(),
+        version = 2 :: 2,
         block_size :: integer(),
         bkey :: {binary(), binary()},
         metadata :: orddict:orddict(),
@@ -167,8 +170,7 @@
         content_length :: non_neg_integer(),
         content_type :: binary(),
         content_md5 :: term(),
-        state=undefined :: undefined | writing | active |
-                           pending_delete | scheduled_delete | deleted,
+        state=undefined :: undefined | lfs_manifest_state(),
         write_start_time :: term(), %% immutable
         last_block_written_time :: term(),
         write_blocks_remaining :: ordsets:ordset(integer()),
@@ -181,6 +183,39 @@
     }).
 
 -record(lfs_manifest_v3, {
+        version = 3 :: 3,
+
+        block_size :: undefined | integer(),
+
+        bkey :: {binary(), binary()},
+
+        metadata :: orddict:orddict(),
+
+        created=riak_cs_wm_utils:iso_8601_datetime(),
+        uuid :: cs_uuid(),
+
+        content_length :: non_neg_integer(),
+        content_type :: binary(),
+        content_md5 :: term(),
+
+        state :: undefined | lfs_manifest_state(),
+
+        write_start_time :: term(), %% immutable
+        last_block_written_time :: term(),
+        write_blocks_remaining :: undefined | ordsets:ordset(integer()),
+        delete_marked_time :: term(),
+        last_block_deleted_time :: term(),
+        delete_blocks_remaining :: undefined | ordsets:ordset(integer()),
+        scheduled_delete_time :: term(),  %% new in v3
+
+        acl = no_acl_yet :: acl() | no_acl_yet,
+
+        props = [] :: 'undefined' | proplists:proplist(),
+
+        cluster_id :: cluster_id()
+    }).
+
+-record(lfs_manifest_v4, {
         %% "global" properties
         %% -----------------------------------------------------------------
 
@@ -190,7 +225,7 @@
         %% but I figured it's worth keeping
         %% in case we change serialization
         %% formats in the future.
-        version=3 :: integer(),
+        version = 4 :: 4,
 
         %% the block_size setting when this manifest
         %% was written. Needed if the user
@@ -201,6 +236,12 @@
         %% identifying properties
         %% -----------------------------------------------------------------
         bkey :: {binary(), binary()},
+        %% added in v4:
+        %% there's always a primary version, which is head of a
+        %% double-linked list of all versions
+        object_version = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
+        next_object_version = eol :: eol | binary(),
+        prev_object_version = eol :: eol | binary(),
 
         %% user metadata that would normally
         %% be placed on the riak_object. We avoid
@@ -215,7 +256,7 @@
         %% resolution, but I suppose there's no
         %% reason we can't change created
         %% to have millisecond as well.
-        created=riak_cs_wm_utils:iso_8601_datetime(),
+        created = riak_cs_wm_utils:iso_8601_datetime(),
         uuid :: cs_uuid(),
 
         %% content properties
@@ -226,8 +267,7 @@
 
         %% state properties
         %% -----------------------------------------------------------------
-        state=undefined :: undefined | writing | active |
-                           pending_delete | scheduled_delete | deleted,
+        state :: undefined | lfs_manifest_state(),
 
         %% writing/active state
         %% -----------------------------------------------------------------
@@ -290,7 +330,7 @@
         %%       until sometime later.
         %% 'undefined' is for backward compatibility with v3 manifests
         %% written with Riak CS 1.2.2 or earlier.
-        props = [] :: 'undefined' | proplists:proplist(),
+        props = [] :: undefined | proplists:proplist(),
 
         %% cluster_id: A couple of uses, both short- and longer-term
         %%  possibilities:
@@ -310,13 +350,27 @@
         %%     fetch us the missing data.
         cluster_id :: cluster_id()
     }).
--type lfs_manifest() :: #lfs_manifest_v3{}.
+-type lfs_manifest() :: #lfs_manifest_v4{}.
 
 -type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
+-type wrapped_manifest() :: orddict:orddict(cs_uuid(), lfs_manifest()).
 
 -record(part_manifest_v1, {
     bucket :: binary(),
     key :: binary(),
+    start_time :: erlang:timestamp(),
+    part_number :: integer(),
+    part_id :: binary(),
+    content_length :: integer(),
+    content_md5 :: undefined | binary(),
+    block_size :: integer()
+}).
+
+-record(part_manifest_v2, {
+    bucket :: binary(),
+    key :: binary(),
+    %% new in v2
+    object_version = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
 
     %% used to judge races between concurrent uploads
     %% of the same part_number
@@ -332,13 +386,13 @@
     %% each individual part upload always has a content-length
     %% content_md5 is used for the part ETag, alas.
     content_length :: integer(),
-    content_md5 :: 'undefined' | binary(),
+    content_md5 :: undefined | binary(),
 
     %% block size just like in `lfs_manifest_v2'. Concievably,
     %% parts for the same upload id could have different block_sizes.
     block_size :: integer()
 }).
--type part_manifest() :: #part_manifest_v1{}.
+-type part_manifest() :: #part_manifest_v2{}.
 
 -record(multipart_manifest_v1, {
     upload_id :: binary(),
@@ -397,6 +451,8 @@
     etag :: binary(),
     size :: integer()
 }).
+
+-type part_descr() :: #part_descr_v1{}.
 
 -define(USER_BUCKET, <<"moss.users">>).
 -define(ACCESS_BUCKET, <<"moss.access">>).

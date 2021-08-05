@@ -269,34 +269,32 @@ get_fsm_buffer_size_factor() ->
     end.
 
 %% @doc Initialize a new file manifest
--spec new_manifest(binary(),
-                   binary(),
-                   binary(),
-                   non_neg_integer(),
-                   binary(),
-                   term(),
-                   term(),
-                   pos_integer(),
-                   acl() | no_acl_yet,
-                   proplists:proplist(),
-                   cluster_id(),
-                   bag_id()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID, ContentLength, ContentType, ContentMd5,
-             MetaData, BlockSize, Acl, Props, ClusterID, BagId) ->
+-spec new_manifest(binary(), binary(), cs_uuid(),
+                   non_neg_integer(), binary(), term(),
+                   orddict:orddict(), pos_integer(), acl() | no_acl_yet,
+                   proplists:proplist(), cluster_id(), bag_id()) -> lfs_manifest().
+new_manifest(Bucket, FileName, UUID,
+             ContentLength, ContentType, ContentMd5,
+             MetaData, BlockSize, Acl,
+             Props, ClusterID, BagId) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
-    Manifest = ?MANIFEST{bkey={Bucket, FileName},
-                         uuid=UUID,
-                         state=writing,
-                         content_length=ContentLength,
-                         content_type=ContentType,
-                         content_md5=ContentMd5,
-                         block_size=BlockSize,
-                         write_blocks_remaining=Blocks,
-                         metadata=MetaData,
-                         acl=Acl,
-                         props=Props,
-                         cluster_id=ClusterID},
+    Manifest = ?MANIFEST{bkey = {Bucket, FileName},
+                         uuid = UUID,
+                         state = writing,
+                         content_length = ContentLength,
+                         content_type = ContentType,
+                         content_md5 = ContentMd5,
+                         block_size = BlockSize,
+                         write_blocks_remaining = Blocks,
+                         metadata = MetaData,
+                         acl = Acl,
+                         props = Props,
+                         cluster_id = ClusterID},
     set_bag_id(BagId, Manifest).
+%% it's intentional that new manifests cannot be created for file
+%% versions as that involves updating manifests for its neighbours in
+%% the chain. Use link_version for that.
+
 
 -spec set_bag_id(bag_id(), lfs_manifest()) -> lfs_manifest().
 set_bag_id(BagId, Manifest) ->
@@ -313,9 +311,9 @@ remove_write_block(Manifest, Chunk) ->
                     _ ->
                         writing
                 end,
-    Manifest?MANIFEST{write_blocks_remaining=Updated,
-                             state=ManiState,
-                             last_block_written_time=os:timestamp()}.
+    Manifest?MANIFEST{write_blocks_remaining = Updated,
+                             state = ManiState,
+                             last_block_written_time = os:timestamp()}.
 
 %% @doc Remove a chunk from the `delete_blocks_remaining'
 %% field of `Manifest'
@@ -328,6 +326,6 @@ remove_delete_block(Manifest, Chunk) ->
                     _ ->
                         scheduled_delete
                 end,
-    Manifest?MANIFEST{delete_blocks_remaining=Updated,
-                             state=ManiState,
-                             last_block_deleted_time=os:timestamp()}.
+    Manifest?MANIFEST{delete_blocks_remaining = Updated,
+                             state = ManiState,
+                             last_block_deleted_time = os:timestamp()}.
