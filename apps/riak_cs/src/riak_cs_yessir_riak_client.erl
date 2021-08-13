@@ -201,7 +201,7 @@ default_acl(DisplayName, CannicalId, KeyId) ->
 new_manifest_ro(BucketName, RiakBucket, Key, Acl) ->
     ContentLength = 10,
     M = new_manifest(BucketName, Key, ContentLength, Acl),
-    Dict = riak_cs_manifest_utils:new_dict(M?MANIFEST.uuid, M),
+    Dict = rcs_common_manifest_utils:new_dict(M?MANIFEST.uuid, M),
     ValueBin = riak_cs_utils:encode_term(Dict),
     RObj = riakc_obj:new_obj(RiakBucket, Key, <<"vclock">>,
                             [{dict:new(), ValueBin}]),
@@ -229,7 +229,7 @@ manifests_to_robjs(Manifests) ->
     [manifest_to_robj(M) || M <- Manifests].
 
 manifest_to_robj(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M) ->
-    Dict = riak_cs_manifest_utils:new_dict(UUID, M),
+    Dict = rcs_common_manifest_utils:new_dict(UUID, M),
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(Dict)).
 

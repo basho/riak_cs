@@ -477,7 +477,7 @@ make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
 
 -spec map_active_manifests([orddict:orddict()]) -> list(lfs_manifest()).
 map_active_manifests(Manifests) ->
-    ActiveTuples = [riak_cs_manifest_utils:active_manifest(M) ||
+    ActiveTuples = [rcs_common_manifest_utils:active_manifest(M) ||
             M <- Manifests],
     [A || {ok, A} <- ActiveTuples].
 

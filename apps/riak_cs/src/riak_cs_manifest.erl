@@ -25,7 +25,6 @@
          get_manifests/4,
          get_manifests_of_all_versions/3,
          manifests_from_riak_object/1,
-         versioned_key/2,
          link_version/5,
          unlink_version/4,
          etag/1,
@@ -38,7 +37,7 @@
 fetch(RcPid, Bucket, Key, ObjVsn) ->
     case get_manifests(RcPid, Bucket, Key, ObjVsn) of
         {ok, _, Manifests} ->
-            riak_cs_manifest_utils:active_manifest(orddict:from_list(Manifests));
+            rcs_common_manifest_utils:active_manifest(orddict:from_list(Manifests));
         Error ->
             Error
     end.
@@ -101,7 +100,7 @@ unlink_version2(RcPid, Bucket, Key, ?MANIFEST{next_object_version = NextOV,
             {ok, _, PrevM} = get_manifests(RcPid, Bucket, Key, PrevOV),
             riak_cs_manifest_fsm:update_manifests(
               ManiPid1,
-              ordsets:map(fun(_, M) -> M?MANIFEST{next_object_version = NextOV} end, PrevM)),
+              orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = NextOV} end, PrevM)),
             riak_cs_manifest_fsm:stop(ManiPid1);
        el/=se ->
             nop
@@ -111,7 +110,7 @@ unlink_version2(RcPid, Bucket, Key, ?MANIFEST{next_object_version = NextOV,
             {ok, _, NextM} = get_manifests(RcPid, Bucket, Key, NextOV),
             riak_cs_manifest_fsm:update_manifests(
               ManiPid2,
-              ordsets:map(fun(_, M) -> M?MANIFEST{next_object_version = PrevOV} end, NextM)),
+              orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = PrevOV} end, NextM)),
             riak_cs_manifest_fsm:stop(ManiPid2);
        el/=se ->
             nop
@@ -167,7 +166,7 @@ link_version2(M0 = ?MANIFEST{bkey = {Bucket, Key}}, ObjVsn, UUVVMM, RcPid) ->
                 {ok, MPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, FirstAfter, RcPid),
                 riak_cs_manifest_fsm:update_manifests(
                   MPid1,
-                  ordsets:map(fun(_, M) -> M?MANIFEST{prev_object_version = ObjVsn} end, FirstAfter)),
+                  orddict:map(fun(_, M) -> M?MANIFEST{prev_object_version = ObjVsn} end, FirstAfter)),
                 riak_cs_manifest_fsm:stop(MPid1),
                 M0?MANIFEST{next_object_version = FirstAfter?MANIFEST.object_version};
            el/=se ->
@@ -179,7 +178,7 @@ link_version2(M0 = ?MANIFEST{bkey = {Bucket, Key}}, ObjVsn, UUVVMM, RcPid) ->
                 {ok, MPid2} = riak_cs_manifest_fsm:start_link(Bucket, Key, LastBefore, RcPid),
                 riak_cs_manifest_fsm:update_manifests(
                   MPid2,
-                  ordsets:map(fun(_, M) -> M?MANIFEST{next_object_version = ObjVsn} end, LastBefore)),
+                  orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = ObjVsn} end, LastBefore)),
                 riak_cs_manifest_fsm:stop(MPid2),
                 M1?MANIFEST{prev_object_version = LastBefore?MANIFEST.object_version};
            el/=se ->
@@ -204,20 +203,6 @@ find_adjoining(V, UUVVMM, {Operand, Fun}) ->
       UUVVMM).
 
 
-
-%% -spec versioned_key(binary()) -> binary().
-%% versioned_key(Key) ->
-%%     Key.
-
--spec versioned_key(binary(), binary()) -> binary().
-versioned_key(Key, ?LFS_DEFAULT_OBJECT_VERSION) ->
-%% old keys written without a version should continue to be accessible
-%% for reads with the default version
-    Key;
-versioned_key(Key, Vsn) ->
-    <<Key/binary, $:, Vsn/binary>>.
-
-
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> wrapped_manifest().
 manifests_from_riak_object(RiakObject) ->
     %% For example, riak_cs_manifest_fsm:get_and_update/4 may wish to
@@ -238,10 +223,10 @@ manifests_from_riak_object(RiakObject) ->
 
     %% Upgrade the manifests to be the latest erlang
     %% record version
-    Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
+    Upgraded = rcs_common_manifest_utils:upgrade_wrapped_manifests(DecodedSiblings),
 
     %% resolve the siblings
-    Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+    Resolved = rcs_common_manifest_resolution:resolve(Upgraded),
 
     %% prune old scheduled_delete manifests
     riak_cs_manifest_utils:prune(Resolved).
@@ -268,12 +253,13 @@ object_acl(?MANIFEST{acl = Acl}) ->
 %% ===================================================================
 
 %% Retrieve the riak object at a bucket/key/version
-get_manifests_raw(RcPid, Bucket, Key, ObjVsn) ->
+get_manifests_raw(RcPid, Bucket, Key, Vsn) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     ok = riak_cs_riak_client:set_bucket_name(RcPid, Bucket),
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     Timeout = riak_cs_config:get_manifest_timeout(),
-    case riakc_pb_socket:get(ManifestPbc, ManifestBucket, versioned_key(Key, ObjVsn), Timeout) of
+    case riakc_pb_socket:get(ManifestPbc, ManifestBucket,
+                             rcs_common_manifest:make_versioned_key(Key, Vsn), Timeout) of
         {ok, _} = Result ->
             Result;
         {error, disconnected} ->
@@ -284,7 +270,7 @@ get_manifests_raw(RcPid, Bucket, Key, ObjVsn) ->
     end.
 
 gc_deleted_while_writing_manifests(Object, Manifests, Bucket, RcPid) ->
-    UUIDs = riak_cs_manifest_utils:deleted_while_writing(Manifests),
+    UUIDs = rcs_common_manifest_utils:deleted_while_writing(Manifests),
     riak_cs_gc:gc_specific_manifests(UUIDs, Object, Bucket, RcPid).
 
 -spec maybe_warn_bloated_manifests(binary(), binary(), riakc_obj:riakc_obj(), [term()]) -> ok.

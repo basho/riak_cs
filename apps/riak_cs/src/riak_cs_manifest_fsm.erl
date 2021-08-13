@@ -113,7 +113,7 @@ get_specific_manifest(Pid, UUID) ->
     end.
 
 add_new_manifest(Pid, Manifest) ->
-    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    Dict = rcs_common_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     gen_fsm:send_event(Pid, {add_new_dict, Dict}).
 
 -spec update_manifests(pid(), wrapped_manifest()) -> ok.
@@ -122,7 +122,7 @@ update_manifests(Pid, Manifests) ->
 
 -spec update_manifest(pid(), lfs_manifest()) -> ok.
 update_manifest(Pid, Manifest) ->
-    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    Dict = rcs_common_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     update_manifests(Pid, Dict).
 
 %% @doc Delete a specific manifest version from a manifest and
@@ -147,7 +147,7 @@ update_manifests_with_confirmation(Pid, Manifests) ->
 
 -spec update_manifest_with_confirmation(pid(), lfs_manifest()) -> ok | {error, term()}.
 update_manifest_with_confirmation(Pid, Manifest) ->
-    Dict = riak_cs_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
+    Dict = rcs_common_manifest_utils:new_dict(Manifest?MANIFEST.uuid, Manifest),
     update_manifests_with_confirmation(Pid, Dict).
 
 -spec maybe_stop_manifest_fsm(undefined | pid()) -> ok.
@@ -324,9 +324,10 @@ handle_get_manifests(State = #state{riak_client = RcPid,
 %% delete the manifest corresponding to `UUID', and then
 %% write the value back to Riak or delete the manifest value
 %% if there are no manifests remaining.
-get_and_delete(RcPid, UUID, Bucket, Key, ObjVsn) ->
-    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn) of
+get_and_delete(RcPid, UUID, Bucket, Key, Vsn) ->
+    case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, Vsn) of
         {ok, RiakObject, Manifests} ->
+            ok = riak_cs_manifest:unlink_version(RcPid, Bucket, Key, Manifests),
             UpdatedManifests = orddict:erase(UUID, Manifests),
             case UpdatedManifests of
                 [] ->
@@ -368,7 +369,7 @@ get_and_update(RcPid, WrappedManifests, Bucket, Key, ObjVsn) ->
         {error, notfound} ->
             ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
             ObjectToWrite0 = riakc_obj:new(ManifestBucket,
-                                           riak_cs_manifest:versioned_key(Key, ObjVsn),
+                                           rcs_common_manifest:make_versioned_key(Key, ObjVsn),
                                            riak_cs_utils:encode_term(WrappedManifests)),
             ObjectToWrite = update_md_with_multipart_2i(
                               ObjectToWrite0, WrappedManifests, Bucket),
@@ -402,7 +403,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     true.
 
 update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket) ->
-    NewManiAdded = riak_cs_manifest_resolution:resolve([WrappedManifests, OldManifests]),
+    NewManiAdded = rcs_common_manifest_resolution:resolve([WrappedManifests, OldManifests]),
     %% Update the object here so that if there are any
     %% overwritten UUIDs, then gc_specific_manifests() will
     %% operate on NewManiAdded and save it to Riak when it is
@@ -431,7 +432,7 @@ manifest_pbc(RcPid) ->
     ManifestPbc.
 
 update_from_previous_read(RcPid, RiakObject, Bucket, PreviousManifests, NewManifests) ->
-    Resolved = riak_cs_manifest_resolution:resolve([PreviousManifests, NewManifests]),
+    Resolved = rcs_common_manifest_resolution:resolve([PreviousManifests, NewManifests]),
     NewRiakObject0 = riak_cs_utils:update_obj_value(RiakObject,
                                                     riak_cs_utils:encode_term(Resolved)),
     NewRiakObject = update_md_with_multipart_2i(NewRiakObject0, Resolved, Bucket),

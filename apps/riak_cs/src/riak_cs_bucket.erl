@@ -211,13 +211,12 @@ delete_old_uploads(Bucket, RcPid, Timestamp) when is_binary(Timestamp) ->
     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, 0).
 
 fold_delete_uploads(_Bucket, _RcPid, [], _Timestamp, Count) -> {ok, Count};
-fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
-    Key = D?MULTIPART_DESCR.key,
-
+fold_delete_uploads(Bucket, RcPid, [?MULTIPART_DESCR{key = VKey,
+                                                     upload_id = UploadId} | Ds],
+                    Timestamp, Count) ->
     %% cannot fail here
-    {ok, Obj, Manifests} = riak_cs_manifest:get_manifests(RcPid, Bucket, Key),
-
-    UploadId = D?MULTIPART_DESCR.upload_id,
+    {Key, Vsn} = rcs_common_manifest:decompose_versioned_key(VKey),
+    {ok, Obj, Manifests} = riak_cs_manifest:get_manifests(RcPid, Bucket, Key, Vsn),
 
     %% find_manifest_with_uploadid
     case lists:keyfind(UploadId, 1, Manifests) of
@@ -231,8 +230,8 @@ fold_delete_uploads(Bucket, RcPid, [D|Ds], Timestamp, Count)->
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->
-                    lager:debug("cannot delete multipart manifest: ~p ~p (~p)",
-                                [{Bucket, Key}, M?MANIFEST.uuid, E]),
+                    lager:debug("cannot delete multipart manifest: ~s (~s/~s:~s): ~p",
+                                [M?MANIFEST.uuid, Bucket, Key, Vsn, E]),
                     E
             end;
         _E ->

@@ -55,6 +55,7 @@
                 block_size :: integer(),
                 bucket :: binary(),
                 key :: binary(),
+                obj_vsn :: binary(),
                 caller_pid :: pid()}).
 
 -type state() :: #state{}.
@@ -80,7 +81,7 @@ get_manifest(Pid) ->
 %% ===================================================================
 
 %% @doc Initialize the server.
-init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
+init([CallerPid, Bucket, Key, Vsn, ContentLength, BlockSize]) ->
     process_flag(trap_exit, true),
     %% Get a connection to riak
     rand:seed(exsss, erlang:timestamp()),
@@ -88,6 +89,7 @@ init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
                 remaining = ContentLength,
                 bucket = Bucket,
                 key = Key,
+                obj_vsn = Vsn,
                 block_size = BlockSize,
                 caller_pid = CallerPid}}.
 
@@ -96,6 +98,7 @@ init([CallerPid, Bucket, Key, ContentLength, BlockSize]) ->
                          {reply, ok, state()}.
 handle_call(get_manifest, _From, #state{bucket = Bucket,
                                         key = Key,
+                                        obj_vsn = Vsn,
                                         content_length = ContentLength} = State) ->
     Manifest = riak_cs_lfs_utils:new_manifest(
                  Bucket,

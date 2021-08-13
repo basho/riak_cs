@@ -180,7 +180,7 @@ map_keys_and_manifests({error, notfound}, _, _) ->
     [];
 map_keys_and_manifests(Object, _, _) ->
     Handler = fun(Resolved) ->
-                      case riak_cs_manifest_utils:active_manifest(Resolved) of
+                      case rcs_common_manifest_utils:active_manifest(Resolved) of
                           {ok, Manifest} ->
                               [{riak_object:key(Object), {ok, Manifest}}];
                           _ ->
@@ -194,8 +194,8 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
         AllManifests = [ binary_to_term(V)
                          || {_, V} = Content <- riak_object:get_contents(Object),
                             not has_tombstone(Content) ],
-        Upgraded = riak_cs_manifest_utils:upgrade_wrapped_manifests(AllManifests),
-        Resolved = riak_cs_manifest_resolution:resolve(Upgraded),
+        Upgraded = rcs_common_manifest_utils:upgrade_wrapped_manifests(AllManifests),
+        Resolved = rcs_common_manifest_resolution:resolve(Upgraded),
         ResolvedManifestsHandler(Resolved)
     catch Type:Reason:StackTrace ->
             lager:error("Riak CS object mapreduce failed for ~p:~p with reason ~p:~p at ~p",
@@ -241,7 +241,7 @@ md5_final(Ctx) -> crypto:hash_final(Ctx).
                                     {error, notfound}) ->
                                            {ok, lfs_manifest()} | {error, notfound}.
 active_manifest_from_response({ok, Manifests}) ->
-    handle_active_manifests(riak_cs_manifest_utils:active_manifest(Manifests));
+    handle_active_manifests(rcs_common_manifest_utils:active_manifest(Manifests));
 active_manifest_from_response({error, notfound}=NotFound) ->
     NotFound.
 

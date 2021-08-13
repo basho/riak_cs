@@ -303,8 +303,8 @@ resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
     ObjectToWrite0 = riak_cs_utils:update_obj_value(
                        RiakObject, riak_cs_utils:encode_term(Manifests)),
 
-    {B, K} = Manifest?MANIFEST.bkey,
-    RO = riak_cs_manifest_fsm:update_md_with_multipart_2i(ObjectToWrite0, Manifests, B, K),
+    {B, _K} = Manifest?MANIFEST.bkey,
+    RO = riak_cs_manifest_fsm:update_md_with_multipart_2i(ObjectToWrite0, Manifests, B),
     {ok, RO}.
 
 -spec maybe_cleanup_csbucket(riak_client(),

@@ -92,7 +92,6 @@
                 keep_bytes_final = 0 :: non_neg_integer(),
                 free_readers :: undefined | [pid()],
                 all_reader_pids :: undefined | [pid()]}).
--type state() :: #state{}.
 
 %% ===================================================================
 %% Public API
@@ -401,15 +400,14 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% Internal functions
 %% ===================================================================
 
--spec prepare(#state{}) -> #state{}.
 prepare(#state{bucket = Bucket,
                key = Key,
-               obj_vsn = ObjVsn,
+               obj_vsn = Vsn,
                riak_client = RcPid} = State) ->
     %% start the process that will
     %% fetch the value, be it manifest
     %% or regular object
-    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn, RcPid),
+    {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn, RcPid),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
             lager:debug("Manifest: ~p", [Manifest]),
@@ -424,8 +422,6 @@ prepare(#state{bucket = Bucket,
         {error, notfound} ->
             State#state{mani_fsm_pid = ManiPid}
     end.
-
--spec read_blocks(state()) -> state().
 
 read_blocks(#state{free_readers=[]} = State) ->
     State;

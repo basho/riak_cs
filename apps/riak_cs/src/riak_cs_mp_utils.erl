@@ -562,11 +562,11 @@ make_2i_key2(Bucket, OwnerStr) ->
     iolist_to_binary(["rcs@", OwnerStr, "@", Bucket, "_bin"]).
 
 
-%% TODO: fix wrt object versions
 list_multipart_uploads2(Bucket, RcPid, Names, Opts) ->
     FilterFun =
-        fun(K, Acc) ->
-                filter_uploads_list(Bucket, K, ?LFS_DEFAULT_OBJECT_VERSION, Opts, RcPid, Acc)
+        fun(VK, Acc) ->
+                {Key, Vsn} = rcs_common_manifest:decompose_versioned_key(VK),
+                filter_uploads_list(Bucket, Key, Vsn, Opts, RcPid, Acc)
         end,
     {Manifests, Prefixes} = lists:foldl(FilterFun, {[], ordsets:new()}, Names),
     {lists:sort(Manifests), ordsets:to_list(Prefixes)}.
@@ -646,13 +646,14 @@ handle_get_manifests_result({ok, _Obj, Manifests}) ->
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
 multipart_description(?MANIFEST{bkey = {_, Key},
+                                object_version = Vsn,
                                 uuid = UUID,
                                 props = Props,
                                 created = Created}) ->
     ?MULTIPART_MANIFEST{owner = {OwnerDisplay, _, OwnerKeyId}} =
         proplists:get_value(multipart, Props),
     ?MULTIPART_DESCR{
-       key = Key,
+       key = rcs_common_manifest:make_versioned_key(Key, Vsn),
        upload_id = UUID,
        owner_key_id = OwnerKeyId,
        owner_display = OwnerDisplay,
@@ -735,19 +736,24 @@ comb_parts_fold({PartNum, ETag} = K,
             throw(bad_etag)
     end.
 
-move_dead_parts_to_gc(Bucket, Key, ObjVsn, BagId, PartsToDelete, RcPid) ->
+move_dead_parts_to_gc(Bucket, Key, Vsn, BagId, PartsToDelete, RcPid) ->
     PartDelMs = [{P_UUID,
-                  riak_cs_lfs_utils:new_manifest(
-                    Bucket, Key, ObjVsn, P_UUID,
-                    ContentLength,
-                    <<"x-delete/now">>,
-                    undefined,
-                    [],
-                    P_BlockSize,
-                    no_acl_yet,
-                    [],
-                    undefined,
-                    BagId)} ||
+                  begin
+                      M = riak_cs_lfs_utils:new_manifest(
+                            Bucket, Key, P_UUID,
+                            ContentLength,
+                            <<"x-delete/now">>,
+                            undefined,
+                            [],
+                            P_BlockSize,
+                            no_acl_yet,
+                            [],
+                            undefined,
+                            BagId),
+                      %% this manifest is incomplete, but that's
+                      %% sufficient for GC to do its job, right?
+                      M?MANIFEST{object_version = Vsn}
+                  end} ||
                     ?PART_MANIFEST{part_id=P_UUID,
                                    content_length=ContentLength,
                                    block_size=P_BlockSize} <- PartsToDelete],

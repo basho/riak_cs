@@ -91,17 +91,17 @@ gc_active_manifests(Bucket, Key, ObjVsn, RcPid, UUIDs) ->
 
 -spec get_active_manifests(binary(), binary(), binary(), riak_client()) ->
     {ok, riakc_obj:riakc_obj(), [lfs_manifest()]} | {error, term()}.
-get_active_manifests(Bucket, Key, ObjVsn, RcPid) ->
+get_active_manifests(Bucket, Key, Vsn, RcPid) ->
     active_manifests(
-      riak_cs_manifest:get_manifests(RcPid, Bucket, Key, ObjVsn)).
+      riak_cs_manifest:get_manifests(RcPid, Bucket, Key, Vsn)).
 
 -spec active_manifests({ok, riakc_obj:riakc_obj(), [lfs_manifest()]}) ->
                           {ok, riakc_obj:riakc_obj(), [lfs_manifest()]};
                       ({error, term()}) ->
                           {error, term()}.
 active_manifests({ok, RiakObject, Manifests}) ->
-    {ok, RiakObject, riak_cs_manifest_utils:active_manifests(Manifests)};
-active_manifests({error, _}=Error) ->
+    {ok, RiakObject, rcs_common_manifest_utils:active_manifests(Manifests)};
+active_manifests({error, _} = Error) ->
     Error.
 
 -spec clean_manifests([lfs_manifest()], riak_client()) -> [lfs_manifest()].
@@ -338,14 +338,14 @@ default_batch_end(BatchStart, Leeway) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_deleted(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     mark_manifests(RiakObject, Bucket, UUIDsToMark,
-                   fun riak_cs_manifest_utils:mark_deleted/2,
+                   fun rcs_common_manifest_utils:mark_deleted/2,
                    RcPid).
 
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified.
 mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     mark_manifests(RiakObject, Bucket, UUIDsToMark,
-                   fun riak_cs_manifest_utils:mark_pending_delete/2,
+                   fun rcs_common_manifest_utils:mark_pending_delete/2,
                    RcPid).
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
@@ -354,7 +354,7 @@ mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     mark_manifests(RiakObject, Bucket, UUIDsToMark,
-                   fun riak_cs_manifest_utils:mark_scheduled_delete/2,
+                   fun rcs_common_manifest_utils:mark_scheduled_delete/2,
                          RcPid).
 
 
@@ -413,11 +413,11 @@ try_delete_blocks(BagId, {UUID, _} = UUIDManifest) ->
             [{cleanup_manifests, false}]],
     {ok, Pid} = riak_cs_delete_fsm_sup:start_delete_fsm(node(), Args),
     case riak_cs_delete_fsm:sync_delete(Pid) of
-        {Pid, {ok, {_, _, _, TotalBlocks, TotalBlocks}}} ->
+        {Pid, {ok, {_, _, _, _, TotalBlocks, TotalBlocks}}} ->
             %% all the blocks are successfully deleted
             _ = lager:debug("Active deletion of ~p succeeded", [UUID]),
             ok;
-        {Pid, {ok, {_, _, _, NumDeleted, TotalBlocks}}} ->
+        {Pid, {ok, {_, _, _, _, NumDeleted, TotalBlocks}}} ->
             _ = lager:debug("Only ~p/~p blocks of ~p deleted",
                             [NumDeleted, TotalBlocks, UUID]),
             {error, partially_deleted};
@@ -459,7 +459,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
         end,
 
     %% Create a set from the list of manifests
-    _ = lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
+    lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
     Timeout1 = riak_cs_config:put_gckey_timeout(),
     riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 

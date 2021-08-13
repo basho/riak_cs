@@ -275,7 +275,7 @@ get_actual_manifest_state(Pbc, Bucket, Key, UUID)->
     case riakc_pb_socket:get(Pbc, RiakBucket, RiakKey, []) of
         {ok, RiakObj} ->
             ManifestDict = riak_cs_manifest:manifests_from_riak_object(RiakObj),
-            case riak_cs_manifest_utils:active_manifest(ManifestDict) of
+            case rcs_common_manifest_utils:active_manifest(ManifestDict) of
                 {ok, ?MANIFEST{uuid=UUID}=M} -> {ok, M?MANIFEST.state};
                 {ok, ?MANIFEST{}} -> {ok, notfound};
                 {error, no_active_manifest} -> {ok, notfound}
