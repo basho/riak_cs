@@ -133,7 +133,7 @@ link_version(RcPid, InsertedM = ?MANIFEST{bkey = {Bucket, Key},
                                           object_version = Vsn}) ->
     case get_manifests_of_all_versions(RcPid, Bucket, Key) of
         {ok, VVMM} ->
-            case orddict:find(Vsn, VVMM) of
+            case orddict:find(Vsn, orddict:from_list(VVMM)) of
                 {ok, _M} ->
                     %% found a matching version: don't bother
                     %% changing prev or next links. It will be resolved, later, I suppose?
@@ -142,7 +142,8 @@ link_version(RcPid, InsertedM = ?MANIFEST{bkey = {Bucket, Key},
                     {new, link_at_end(InsertedM, VVMM, RcPid)}
             end;
         {error, notfound} ->
-            {sole, InsertedM?MANIFEST{object_version = Vsn}}
+            lager:info("ignoring user-supplied object version ~p as this is the single version", [Vsn]),
+            {sole, InsertedM?MANIFEST{object_version = ?LFS_DEFAULT_OBJECT_VERSION}}
     end.
 
 link_at_end(M, [], _RcPid) ->
@@ -150,12 +151,11 @@ link_at_end(M, [], _RcPid) ->
 link_at_end(M0 = ?MANIFEST{bkey = {Bucket, Key},
                            object_version = Vsn}, VVMM, RcPid) ->
 
-    {LastV, LastM = ?MANIFEST{uuid = LastUUID}} = lists:last(VVMM),
+    {LastV, LastM} = lists:last(VVMM),
 
     {ok, MPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, LastV, RcPid),
-    riak_cs_manifest_fsm:update_manifests(
-      MPid1,
-      [{LastUUID, LastM?MANIFEST{next_object_version = Vsn}}]),
+    ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
+           MPid1, LastM?MANIFEST{next_object_version = Vsn}),
     riak_cs_manifest_fsm:stop(MPid1),
 
     M0?MANIFEST{prev_object_version = LastV}.

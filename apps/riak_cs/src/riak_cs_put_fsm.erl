@@ -401,7 +401,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 -spec prepare(#state{}) -> #state{}.
 prepare(State=#state{bucket = Bucket,
                      key = Key,
-                     obj_vsn = Vsn,
+                     obj_vsn = Vsn0,
                      block_size = BlockSize,
                      uuid = UUID,
                      content_length = ContentLength,
@@ -412,19 +412,21 @@ prepare(State=#state{bucket = Bucket,
                      make_new_manifest_p = MakeNewManifestP,
                      bag_id = BagId})
   when is_integer(ContentLength), ContentLength >= 0 ->
-    %% 1. start the manifest_fsm proc
-    {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
-                      MakeNewManifestP, Bucket, Key, Vsn, RcPid),
     ClusterID = riak_cs_mb_helper:cluster_id(BagId),
 
+    %% 0. prepare manifest
     Manifest0 = riak_cs_lfs_utils:new_manifest(
            Bucket, Key, UUID,
            ContentLength, ContentType, undefined,  %% we don't know the md5 yet
            Metadata, BlockSize, Acl, [], ClusterID, BagId),
-    {VsnType, Manifest1} =
+    {VsnType, Manifest1 = ?MANIFEST{object_version = Vsn1}} =
         riak_cs_manifest:link_version(
-          RcPid, Manifest0?MANIFEST{object_version = Vsn}),
-    lager:debug("created manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn]),
+          RcPid, Manifest0?MANIFEST{object_version = Vsn0}),
+    lager:debug("created manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn1]),
+
+    %% 1. start the manifest_fsm proc
+    {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
+                      MakeNewManifestP, Bucket, Key, Vsn1, RcPid),
 
     Manifest2 = Manifest1?MANIFEST{write_start_time = os:timestamp()},
 
@@ -451,6 +453,9 @@ prepare(State=#state{bucket = Bucket,
     TRef = erlang:send_after(60000, self(), save_manifest),
     ok = maybe_add_new_manifest(ManiPid, Manifest2),
     State#state{manifest = Manifest2,
+                %% possibly null, ignoring user-supplied Vsn0 unless a
+                %% primary version already exists
+                obj_vsn = Vsn1,
                 timer_ref = TRef,
                 mani_pid = ManiPid,
                 max_buffer_size = MaxBufferSize,
