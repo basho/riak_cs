@@ -332,12 +332,14 @@ handle_normal_put(RD, Ctx) ->
              riak_client=RcPid} = Ctx,
     #key_context{bucket = Bucket,
                  key = Key,
-                 obj_vsn = ObjVsn,
+                 obj_vsn = SuppliedVsn,
                  putctype = ContentType,
                  size = Size,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
 
-    BFile_str = bfile_str(Bucket, Key, ObjVsn),
+    Vsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
+
+    BFile_str = bfile_str(Bucket, Key, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
                                    [], [UserName, BFile_str]),
@@ -345,7 +347,7 @@ handle_normal_put(RD, Ctx) ->
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
-    Args = [{Bucket, Key, ObjVsn, Size, list_to_binary(ContentType),
+    Args = [{Bucket, Key, Vsn, Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     try
@@ -359,6 +361,23 @@ handle_normal_put(RD, Ctx) ->
             Res = riak_cs_put_fsm:force_stop(Pid),
             _ = lager:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
             error({Type, Error})
+    end.
+
+determine_object_version(Vsn0, Bucket, Key, RcPid) ->
+    case {Vsn0, riak_cs_bucket:get_bucket_versioning(Bucket, RcPid)} of
+        {?LFS_DEFAULT_OBJECT_VERSION, {ok, #bucket_versioning{status = enabled}}} ->
+            Vsn1 = list_to_binary(riak_cs_utils:binary_to_hexlist(uuid:get_v4())),
+            lager:info("bucket \"~s\" has object versioning enabled,"
+                       " autogenerating version ~p for key ~p", [Bucket, Vsn1, Key]),
+            Vsn1;
+        {_, {ok, #bucket_versioning{status = enabled}}} ->
+            lager:info("bucket \"~s\" has object versioning enabled"
+                       " but using ~p as supplied in request for key ~p", [Bucket, Vsn0, Key]),
+            Vsn0;
+        {Vsn3, {ok, #bucket_versioning{status = suspended}}} ->
+            lager:warning("ignoring object version ~p in request for key ~p in bucket \"~s\""
+                          " as the bucket has object versioning suspended", [Vsn3, Key, Bucket]),
+            Vsn0
     end.
 
 %% @doc the head is PUT copy path
