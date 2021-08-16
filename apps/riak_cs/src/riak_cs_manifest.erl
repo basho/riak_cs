@@ -25,8 +25,8 @@
          get_manifests/4,
          get_manifests_of_all_versions/3,
          manifests_from_riak_object/1,
-         link_version/5,
-         unlink_version/4,
+         link_version/2,
+         unlink_version/2,
          etag/1,
          etag_no_quotes/1,
          object_acl/1]).
@@ -57,12 +57,13 @@ get_manifests(RcPid, Bucket, Key, ObjVsn) ->
 
 
 -spec get_manifests_of_all_versions(riak_client(), binary(), binary()) ->
-          {ok, orddict:orddict(UUID::binary(), [{ObjVsn::binary(), wrapped_manifest()}])} | {error, term()}.
+          {ok, [{Vsn::binary(), lfs_manifest()}]} | {error, term()}.
 get_manifests_of_all_versions(RcPid, Bucket, Key) ->
     case get_manifests(RcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION) of
-        {ok, _, PrimaryM} ->
+        {ok, _, [{_, PrimaryM}|_]} ->
             try
-                {ok, orddict:map(fun(_, M) -> get_descendants(RcPid, Bucket, Key, M) end, PrimaryM)}
+                DD = get_descendants(RcPid, Bucket, Key, PrimaryM),
+                {ok, [{V, M} || M = ?MANIFEST{object_version = V} <- DD]}
             catch
                 throw:manifest_retrieval_error ->
                     {error, manifest_retrieval_error}
@@ -74,27 +75,22 @@ get_manifests_of_all_versions(RcPid, Bucket, Key) ->
 get_descendants(Rc, B, K, M) ->
     lists:reverse(
       get_descendants(Rc, B, K, M, [])).
-get_descendants(_, _, _, ThisM = ?MANIFEST{object_version = ThisOV,
-                                           next_object_version = eol}, Q) ->
-    [{ThisOV, ThisM} | Q];
-get_descendants(Rc, B, K, ThisM = ?MANIFEST{object_version = ThisOV,
-                                            next_object_version = NextOV}, Q) ->
+get_descendants(_, _, _, ThisM = ?MANIFEST{next_object_version = eol}, Q) ->
+    [ThisM | Q];
+get_descendants(Rc, B, K, ThisM = ?MANIFEST{next_object_version = NextOV}, Q) ->
     case get_manifests(Rc, B, K, NextOV) of
-        {ok, _, NextM} ->
-            get_descendants(Rc, B, K, NextM, [{ThisOV, ThisM} | Q]);
+        {ok, _, [{_, NextM}|_]} ->
+            get_descendants(Rc, B, K, NextM, [ThisM | Q]);
         ER ->
             lager:warning("failed to get manifests for version ~s of ~s/~s (~p)", [NextOV, B, K, ER]),
             throw(manifest_retrieval_error)
     end.
 
 
--spec unlink_version(riak_client(), binary(), binary(), lfs_manifest()) -> ok.
-unlink_version(RcPid, Bucket, Key, ErasedM) ->
-    orddict:map(fun(_UUID, M) -> unlink_version2(RcPid, Bucket, Key, M) end, ErasedM),
-    ok.
-
-unlink_version2(RcPid, Bucket, Key, ?MANIFEST{next_object_version = NextOV,
-                                              prev_object_version = PrevOV}) ->
+-spec unlink_version(riak_client(), lfs_manifest()) -> ok.
+unlink_version(RcPid, ?MANIFEST{bkey = {Bucket, Key},
+                                next_object_version = NextOV,
+                                prev_object_version = PrevOV}) ->
     if PrevOV /= eol ->
             {ok, ManiPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, PrevOV, RcPid),
             {ok, _, PrevM} = get_manifests(RcPid, Bucket, Key, PrevOV),
@@ -117,90 +113,46 @@ unlink_version2(RcPid, Bucket, Key, ?MANIFEST{next_object_version = NextOV,
     end,
     ok.
 
--spec link_version(nopid | riak_client(), binary(), binary(), lfs_manifest(), binary()) ->
+
+-spec link_version(nopid | riak_client(), lfs_manifest()) ->
           {sole | new | existing, lfs_manifest()}.
-link_version(nopid, Bucket, Key, InsertedM, ObjVsn) ->
+link_version(nopid, InsertedM) ->
     {ok, RcPid} = riak_cs_riak_client:checkout(),
-    Res = link_version(RcPid, Bucket, Key, InsertedM, ObjVsn),
+    Res = link_version(RcPid, InsertedM),
     riak_cs_riak_client:checkin(RcPid),
     Res;
 
-link_version(RcPid, Bucket, Key, InsertedM, ObjVsn) ->
+link_version(RcPid, InsertedM = ?MANIFEST{bkey = {Bucket, Key},
+                                          object_version = Vsn}) ->
     case get_manifests_of_all_versions(RcPid, Bucket, Key) of
-        {ok, UUVVMM} ->
-            case find_version(ObjVsn, UUVVMM) of
-                {found, _M} ->
+        {ok, VVMM} ->
+            case orddict:find(Vsn, VVMM) of
+                {ok, _M} ->
                     %% found a matching version: don't bother
                     %% changing prev or next links. It will be resolved, later, I suppose?
                     {existing, InsertedM};
-                not_found ->
-                    %% insert the supplied manifest
-                    {new, link_version2(InsertedM, ObjVsn, UUVVMM, RcPid)}
+                error ->
+                    {new, link_at_end(InsertedM, VVMM, RcPid)}
             end;
         {error, notfound} ->
-            {sole, InsertedM?MANIFEST{object_version = ObjVsn}}
+            {sole, InsertedM?MANIFEST{object_version = Vsn}}
     end.
 
-find_version(V, UUVVMM) ->
-    orddict:fold(
-      fun(_, _, {found, _} = Found) ->
-              Found;
-         (_UUID, VVMM, _) ->
-              case lists:keyfind(V, 1, VVMM) of
-                  false ->
-                      continue_captain;
-                  {_, M} ->
-                      {found, M}
-              end
-      end,
-      not_found,
-      UUVVMM).
+link_at_end(M, [], _RcPid) ->
+    M;
+link_at_end(M0 = ?MANIFEST{bkey = {Bucket, Key},
+                           object_version = Vsn}, VVMM, RcPid) ->
 
-link_version2(M0 = ?MANIFEST{bkey = {Bucket, Key}}, ObjVsn, UUVVMM, RcPid) ->
+    {LastV, LastM = ?MANIFEST{uuid = LastUUID}} = lists:last(VVMM),
 
-    LastBefore = find_adjoining(ObjVsn, UUVVMM, {'<', fun(L) -> L end}),
-    FirstAfter = find_adjoining(ObjVsn, UUVVMM, {'>', fun lists:reverse/1}),
+    {ok, MPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, LastV, RcPid),
+    riak_cs_manifest_fsm:update_manifests(
+      MPid1,
+      [{LastUUID, LastM?MANIFEST{next_object_version = Vsn}}]),
+    riak_cs_manifest_fsm:stop(MPid1),
 
-    M1 =
-        if FirstAfter /= eol ->
-                {ok, MPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, FirstAfter, RcPid),
-                riak_cs_manifest_fsm:update_manifests(
-                  MPid1,
-                  orddict:map(fun(_, M) -> M?MANIFEST{prev_object_version = ObjVsn} end, FirstAfter)),
-                riak_cs_manifest_fsm:stop(MPid1),
-                M0?MANIFEST{next_object_version = FirstAfter?MANIFEST.object_version};
-           el/=se ->
-                M0?MANIFEST{next_object_version = eol}
-        end,
+    M0?MANIFEST{prev_object_version = LastV}.
 
-    M2 =
-        if LastBefore /= eol ->
-                {ok, MPid2} = riak_cs_manifest_fsm:start_link(Bucket, Key, LastBefore, RcPid),
-                riak_cs_manifest_fsm:update_manifests(
-                  MPid2,
-                  orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = ObjVsn} end, LastBefore)),
-                riak_cs_manifest_fsm:stop(MPid2),
-                M1?MANIFEST{prev_object_version = LastBefore?MANIFEST.object_version};
-           el/=se ->
-                M1?MANIFEST{prev_object_version = eol}
-        end,
-
-    M2?MANIFEST{object_version = ObjVsn}.
-
-find_adjoining(V, UUVVMM, {Operand, Fun}) ->
-    orddict:fold(
-      fun(_UUID, VVMM, eol) ->
-              case lists:search(fun({Vi, _}) -> Operand(V, Vi) end, Fun(VVMM)) of
-                  false ->
-                      eol;
-                  {value, {_, M}} ->
-                      M
-              end;
-         (_, _, Found) ->
-              Found
-      end,
-      eol,
-      UUVVMM).
 
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> wrapped_manifest().

@@ -401,7 +401,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 -spec prepare(#state{}) -> #state{}.
 prepare(State=#state{bucket = Bucket,
                      key = Key,
-                     obj_vsn = ObjVsn,
+                     obj_vsn = Vsn,
                      block_size = BlockSize,
                      uuid = UUID,
                      content_length = ContentLength,
@@ -414,20 +414,19 @@ prepare(State=#state{bucket = Bucket,
   when is_integer(ContentLength), ContentLength >= 0 ->
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
-                      MakeNewManifestP, Bucket, Key, ObjVsn, RcPid),
+                      MakeNewManifestP, Bucket, Key, Vsn, RcPid),
     ClusterID = riak_cs_mb_helper:cluster_id(BagId),
 
-    {VsnType, Manifest} =
+    Manifest0 = riak_cs_lfs_utils:new_manifest(
+           Bucket, Key, UUID,
+           ContentLength, ContentType, undefined,  %% we don't know the md5 yet
+           Metadata, BlockSize, Acl, [], ClusterID, BagId),
+    {VsnType, Manifest1} =
         riak_cs_manifest:link_version(
-          RcPid, Bucket, Key,
-          riak_cs_lfs_utils:new_manifest(
-            Bucket, Key, UUID,
-            ContentLength, ContentType, undefined,  %% we don't know the md5 yet
-            Metadata, BlockSize, Acl, [], ClusterID, BagId),
-          ObjVsn),
-    lager:debug("created manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, ObjVsn]),
+          RcPid, Manifest0?MANIFEST{object_version = Vsn}),
+    lager:debug("created manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn]),
 
-    NewManifest = Manifest?MANIFEST{write_start_time = os:timestamp()},
+    Manifest2 = Manifest1?MANIFEST{write_start_time = os:timestamp()},
 
     WriterPids = case ContentLength of
                      0 ->
@@ -437,7 +436,7 @@ prepare(State=#state{bucket = Bucket,
                          [];
                      _ ->
                          riak_cs_block_server:start_block_servers(
-                           NewManifest,
+                           Manifest2,
                            RcPid,
                            riak_cs_lfs_utils:put_concurrency())
                  end,
@@ -450,8 +449,8 @@ prepare(State=#state{bucket = Bucket,
     %% and if it is, what should
     %% it be?
     TRef = erlang:send_after(60000, self(), save_manifest),
-    ok = maybe_add_new_manifest(ManiPid, NewManifest),
-    State#state{manifest = NewManifest,
+    ok = maybe_add_new_manifest(ManiPid, Manifest2),
+    State#state{manifest = Manifest2,
                 timer_ref = TRef,
                 mani_pid = ManiPid,
                 max_buffer_size = MaxBufferSize,

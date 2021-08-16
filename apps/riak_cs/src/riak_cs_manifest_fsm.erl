@@ -326,8 +326,8 @@ handle_get_manifests(State = #state{riak_client = RcPid,
 %% if there are no manifests remaining.
 get_and_delete(RcPid, UUID, Bucket, Key, Vsn) ->
     case riak_cs_manifest:get_manifests(RcPid, Bucket, Key, Vsn) of
-        {ok, RiakObject, Manifests} ->
-            ok = riak_cs_manifest:unlink_version(RcPid, Bucket, Key, Manifests),
+        {ok, RiakObject, [{_, M0}|_] = Manifests} ->
+            ok = riak_cs_manifest:unlink_version(RcPid, M0),
             UpdatedManifests = orddict:erase(UUID, Manifests),
             case UpdatedManifests of
                 [] ->

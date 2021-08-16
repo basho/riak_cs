@@ -315,7 +315,7 @@ write_new_manifest(?MANIFEST{bkey = {Bucket, Key},
             Else
     end.
 
-new_manifest(Bucket, Key, ObjVsn, ContentType, {_, _, _} = Owner, Opts) ->
+new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
     UUID = uuid:get_v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
     MetaData = case proplists:get_value(meta_data, Opts) of
@@ -340,10 +340,9 @@ new_manifest(Bucket, Key, ObjVsn, ContentType, {_, _, _} = Owner, Opts) ->
                               owner = Owner},
     {VsnType, M9} =
         riak_cs_manifest:link_version(
-          nopid, Bucket, Key,
-          M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props)},
-          ObjVsn),
-    lager:debug("created mp manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, ObjVsn]),
+          nopid, M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props),
+                            object_version = Vsn}),
+    lager:debug("created mp manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn]),
 
     M9.
 
