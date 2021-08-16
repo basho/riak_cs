@@ -128,8 +128,6 @@ range_blocks(Start, End, SafeBlockSize, UUID) ->
 
 -spec block_sequences_for_manifest(lfs_manifest()) ->
                                           ordsets:ordset({binary(), integer()}).
-block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest) ->
-    block_sequences_for_manifest(Manifest?MANIFEST{props=[]});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                        content_length=ContentLength}=Manifest)->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
@@ -145,8 +143,6 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
 
 -spec block_sequences_for_manifest(lfs_manifest(), {integer(), integer()}) ->
                                           {[{binary(), integer()}], integer(), integer()}.
-block_sequences_for_manifest(?MANIFEST{props=undefined}=Manifest, {Start, End}) ->
-    block_sequences_for_manifest(Manifest?MANIFEST{props=[]}, {Start, End});
 block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
                              {Start, End})->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
