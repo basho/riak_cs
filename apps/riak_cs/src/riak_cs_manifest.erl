@@ -60,6 +60,8 @@ get_manifests(RcPid, Bucket, Key, ObjVsn) ->
           {ok, [{Vsn::binary(), lfs_manifest()}]} | {error, term()}.
 get_manifests_of_all_versions(RcPid, Bucket, Key) ->
     case get_manifests(RcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION) of
+        {ok, _, []} ->
+            {error, notfound};
         {ok, _, [{_, PrimaryM}|_]} ->
             try
                 DD = get_descendants(RcPid, Bucket, Key, PrimaryM),
@@ -87,7 +89,12 @@ get_descendants(Rc, B, K, ThisM = ?MANIFEST{next_object_version = NextOV}, Q) ->
     end.
 
 
--spec unlink_version(riak_client(), lfs_manifest()) -> ok.
+-spec unlink_version(riak_client(), wrapped_manifest() | lfs_manifest()) -> ok.
+unlink_version(_RcPid, []) ->
+    ok;
+unlink_version(RcPid, [{_, M}|_]) ->
+    unlink_version(RcPid, M);
+
 unlink_version(RcPid, ?MANIFEST{bkey = {Bucket, Key},
                                 next_object_version = NextOV,
                                 prev_object_version = PrevOV}) ->
