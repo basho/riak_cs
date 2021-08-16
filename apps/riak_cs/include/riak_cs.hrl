@@ -63,7 +63,7 @@
                       putctype :: undefined | string(),
                       bucket :: undefined | binary(),
                       bucket_object :: undefined | notfound | riakc_obj:riakc_obj(),
-                      key :: undefined | list(),
+                      key :: undefined | binary(),
                       obj_vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
                       owner :: undefined | string(),
                       size :: undefined | non_neg_integer(),

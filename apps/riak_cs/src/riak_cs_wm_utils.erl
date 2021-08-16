@@ -281,11 +281,11 @@ ensure_doc(KeyCtx, _) ->
 
 setup_manifest(KeyCtx = #key_context{bucket = Bucket,
                                      key = Key,
-                                     obj_vsn = ObjVsn}, RcPid) ->
+                                     obj_vsn = Vsn}, RcPid) ->
     %% start the get_fsm
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, Key, ObjVsn,
+    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, Key, Vsn,
                                                      self(), RcPid,
                                                      FetchConcurrency,
                                                      BufferFactor),
@@ -448,14 +448,14 @@ extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
             undefined ->
                 ?LFS_DEFAULT_OBJECT_VERSION;
             V ->
-                V
+                list_to_binary(V)
         end,
     case size(VsnId) =< riak_cs_config:max_key_length() of
         true ->
             LocalCtx = LocalCtx0#key_context{obj_vsn = VsnId},
             {ok, Ctx#context{local_context = LocalCtx}};
         _ ->
-            {error, {key_too_long, length(VsnId)}}
+            {error, {key_too_long, size(VsnId)}}
     end.
 
 extract_name(User) when is_list(User) ->

@@ -152,8 +152,7 @@ process_post(RD, Ctx = #context{riak_client = RcPid,
     end.
 
 response_location(Bucket, Key) ->
-    lists:append(["http://",
-        binary:bin_to_list(Bucket), ".", riak_cs_config:root_host(), "/", Key]).
+    iolist_to_binary(["http://", Bucket, ".", riak_cs_config:root_host(), "/", Key]).
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx) ->

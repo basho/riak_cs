@@ -61,7 +61,7 @@
 %%%===================================================================
 
 -spec calc_multipart_2i_dict([lfs_manifest()], binary()) ->
-          {string(), [{binary(), binary()}]}.
+          {binary(), [{binary(), binary()}]}.
 calc_multipart_2i_dict(Ms, Bucket) when is_list(Ms) ->
     %% According to API Version 2006-03-01, page 139-140, bucket
     %% owners have some privileges for multipart uploads performed by
@@ -140,7 +140,7 @@ initiate_multipart_upload(Bucket, Key, ObjVsn, ContentType, {_,_,_} = Owner,
 
 
 -spec list_multipart_uploads(binary(), acl_owner3(), proplists:proplist(), nopid | pid()) ->
-          {[lfs_manifest()], [ordsets:ordset()]} | {error, term()}.
+          {ok, {[lfs_manifest()], [ordsets:ordset()]}} | {error, term()}.
 list_multipart_uploads(Bucket, {_Display, _Canon, CallerKeyId} = Caller,
                        Opts, RcPidUnW) ->
     case wrap_riak_client(RcPidUnW) of
@@ -194,7 +194,7 @@ list_parts(Bucket, Key, ObjVsn, UploadId, Caller, Opts, RcPidUnW) ->
 
 -spec upload_part(binary(), binary(), binary(),
                   binary(), non_neg_integer(), non_neg_integer(), acl_owner3(), pid()) ->
-          {upload_part_ready, binary(), pid()} | {error, riak_unavailable}.
+          {upload_part_ready, binary(), pid()} | {error, riak_unavailable | notfound}.
 upload_part(Bucket, Key, ObjVsn, UploadId, PartNumber, Size, Caller, RcPidUnW) ->
     Extra = {Bucket, Key, ObjVsn, UploadId, Caller, PartNumber, Size},
     do_part_common(upload_part, Bucket, Key, ObjVsn, UploadId, Caller,
@@ -220,7 +220,7 @@ upload_part_1blob(PutPid, Blob) ->
 
 -spec upload_part_finished(binary(), binary(), binary(),
                            binary(), non_neg_integer(), binary(), term(), acl_owner3(), pid()) ->
-          {ok, lfs_manifest()} | {error, any()}.
+          ok | {error, any()}.
 upload_part_finished(Bucket, Key, ObjVsn,
                      UploadId, _PartNumber, PartUUID, MD5,
                      Caller, RcPidUnW) ->
