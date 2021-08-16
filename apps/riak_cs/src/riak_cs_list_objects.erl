@@ -101,7 +101,7 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
                                           created = Created,
                                           content_md5 = ContentMd5,
                                           content_length = ContentLength,
-                                          metadata = Metadata,
+                                          object_version = Vsn,
                                           acl = ACL}) ->
 
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
@@ -117,13 +117,7 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
 
     case ReqType of
         versions ->
-            VersionId =
-                case orddict:find(version_id, Metadata) of
-                    {ok, V} ->
-                        V;
-                    error ->
-                        ?LFS_DEFAULT_OBJECT_VERSION
-                end,
+            VersionId = Vsn,
             ?LOVKC{key = Key,
                    last_modified = LastModified,
                    etag = Etag,
