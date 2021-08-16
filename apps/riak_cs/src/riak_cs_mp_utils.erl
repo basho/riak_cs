@@ -124,9 +124,9 @@ clean_multipart_unused_parts(?MANIFEST{bkey = {Bucket, Key},
 -spec complete_multipart_upload(binary(), binary(), binary(),
                                 binary(), binary(), string(), nopid | pid()) ->
           {ok, lfs_manifest()} | {error, atom()}.
-complete_multipart_upload(Bucket, Key, ObjVsn, UploadId, PartETags, Caller, RcPidUnW) ->
+complete_multipart_upload(Bucket, Key, Vsn, UploadId, PartETags, Caller, RcPidUnW) ->
     Extra = {PartETags},
-    do_part_common(complete, Bucket, Key, ObjVsn, UploadId, Caller, [{complete, Extra}],
+    do_part_common(complete, Bucket, Key, Vsn, UploadId, Caller, [{complete, Extra}],
                    RcPidUnW).
 
 

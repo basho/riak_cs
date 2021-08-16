@@ -77,7 +77,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
                 {undefined, undefined}
         end,
 
-    _ = lager:debug("UserKey: ~p / ~p", [UserKey, User]),
+    lager:debug("UserKey: ~p / ~p", [UserKey, User]),
 
     %% Build fake context for checking read access to the src object
     OtherLocalCtx = LocalCtx#key_context{bucket = SrcBucket,
@@ -101,8 +101,8 @@ authorize_on_src(RcPid, SrcManifest, RD,
                                      wrq:app_root(RD), wrq:disp_path(RD), OtherRD0),
 
     %% check the permission on ACL and Policy
-    _ = riak_cs_wm_utils:object_access_authorize_helper(object, false,
-                                                        OtherRD, OtherCtx).
+    riak_cs_wm_utils:object_access_authorize_helper(object, false,
+                                                    OtherRD, OtherCtx).
 
 -spec malformed_request(#wm_reqdata{}) ->
                                false |
