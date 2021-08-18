@@ -444,11 +444,11 @@ extract_key(RD, Ctx = #context{local_context = LocalCtx0}) ->
 
 extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
     VsnId =
-        case wrq:get_qs_value(?QS_VERSION_ID, RD) of
+        case wrq:path_info(versionId, RD) of
             undefined ->
                 ?LFS_DEFAULT_OBJECT_VERSION;
             V ->
-                list_to_binary(V)
+                list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(V)))
         end,
     case size(VsnId) =< riak_cs_config:max_key_length() of
         true ->
