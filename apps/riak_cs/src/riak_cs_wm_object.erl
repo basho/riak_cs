@@ -169,10 +169,13 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                               start_time=StartTime,
                               user=User},
              {Start, End}, RespRange) ->
-    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
-    {Bucket, File} = Mfst?MANIFEST.bkey,
-    ResourceLength = Mfst?MANIFEST.content_length,
-    BFile_str = [Bucket, $,, File],
+    #key_context{get_fsm_pid = GetFsmPid,
+                 manifest = ?MANIFEST{bkey = {Bucket, File},
+                                      created = Created,
+                                      content_length = ResourceLength,
+                                      object_version = ObjVsn,
+                                      metadata = Metadata} = Mfst} = LocalCtx,
+    BFile_str = bfile_str(Bucket, File, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     Method = wrq:method(RD),
     Func = case Method of
@@ -180,13 +183,13 @@ produce_body(RD, Ctx=#context{rc_pool=RcPool,
                _ -> <<"object_get">>
            end,
     riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
-    LastModified = riak_cs_wm_utils:to_rfc_1123(Mfst?MANIFEST.created),
+    LastModified = riak_cs_wm_utils:to_rfc_1123(Created),
     ETag = riak_cs_manifest:etag(Mfst),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
                          [{"ETag",  ETag},
                           {"Last-Modified", LastModified}
-                         ] ++  Mfst?MANIFEST.metadata),
+                         ] ++ Metadata),
     NewRQ2 = wrq:set_resp_range(RespRange, NewRQ1),
     NoBody = Method =:= 'HEAD' orelse ResourceLength =:= 0,
     {NewCtx, StreamBody} =
@@ -233,15 +236,15 @@ parse_range(RD, ResourceLength) ->
 -spec delete_resource(#wm_reqdata{}, #context{}) -> {true, #wm_reqdata{}, #context{}}.
 delete_resource(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     #key_context{bucket=Bucket,
-                 key=Key,
-                 get_fsm_pid=GetFsmPid} = LocalCtx,
-    BFile_str = [Bucket, $,, Key],
+                 key = Key,
+                 obj_vsn = ObjVsn,
+                 get_fsm_pid = GetFsmPid} = LocalCtx,
+    BFile_str = bfile_str(Bucket, Key, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(Ctx#context.user),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>,
                                    [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
-    BinKey = list_to_binary(Key),
-    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, BinKey, RcPid),
+    DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, Key, ObjVsn, RcPid),
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
@@ -295,11 +298,11 @@ accept_body(RD, Ctx=#context{riak_client=RcPid,
                              response_module=ResponseMod})
   when LocalCtx#key_context.update_metadata == true ->
     %% zero-body put copy - just updating metadata
-    #key_context{bucket=Bucket, key=KeyStr, manifest=Mfst} = LocalCtx,
+    #key_context{bucket=Bucket, key=Key, obj_vsn = ObjVsn, manifest=Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = erlang:timestamp()},
     {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
-    case riak_cs_utils:set_object_acl(Bucket, list_to_binary(KeyStr),
+    case riak_cs_utils:set_object_acl(Bucket, Key, ObjVsn,
                                       Mfst?MANIFEST{metadata=Metadata, content_type=ContentType}, NewAcl,
                                       RcPid) of
         ok ->
@@ -315,9 +318,9 @@ accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
             handle_normal_put(RD, Ctx);
         {error, _} = Err ->
             ResponseMod:api_error(Err, RD, Ctx);
-        {SrcBucket, SrcKey} ->
+        {SrcBucket, SrcKey, SrcObjVsn} ->
             handle_copy_put(RD, Ctx#context{stats_key=[object, put_copy]},
-                            SrcBucket, SrcKey)
+                            SrcBucket, SrcKey, SrcObjVsn)
     end.
 
 -spec handle_normal_put(#wm_reqdata{}, #context{}) ->
@@ -327,13 +330,16 @@ handle_normal_put(RD, Ctx) ->
              user=User,
              acl=ACL,
              riak_client=RcPid} = Ctx,
-    #key_context{bucket=Bucket,
-                 key=Key,
-                 putctype=ContentType,
-                 size=Size,
-                 get_fsm_pid=GetFsmPid} = LocalCtx,
+    #key_context{bucket = Bucket,
+                 key = Key,
+                 obj_vsn = SuppliedVsn,
+                 putctype = ContentType,
+                 size = Size,
+                 get_fsm_pid = GetFsmPid} = LocalCtx,
 
-    BFile_str = [Bucket, $,, Key],
+    Vsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
+
+    BFile_str = bfile_str(Bucket, Key, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
                                    [], [UserName, BFile_str]),
@@ -341,7 +347,7 @@ handle_normal_put(RD, Ctx) ->
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
-    Args = [{Bucket, list_to_binary(Key), Size, list_to_binary(ContentType),
+    Args = [{Bucket, Key, Vsn, Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     try
@@ -357,17 +363,34 @@ handle_normal_put(RD, Ctx) ->
             error({Type, Error})
     end.
 
+determine_object_version(Vsn0, Bucket, Key, RcPid) ->
+    case {Vsn0, riak_cs_bucket:get_bucket_versioning(Bucket, RcPid)} of
+        {?LFS_DEFAULT_OBJECT_VERSION, {ok, #bucket_versioning{status = enabled}}} ->
+            Vsn1 = list_to_binary(riak_cs_utils:binary_to_hexlist(uuid:get_v4())),
+            lager:info("bucket \"~s\" has object versioning enabled,"
+                       " autogenerating version ~p for key ~p", [Bucket, Vsn1, Key]),
+            Vsn1;
+        {_, {ok, #bucket_versioning{status = enabled}}} ->
+            lager:info("bucket \"~s\" has object versioning enabled"
+                       " but using ~p as supplied in request for key ~p", [Bucket, Vsn0, Key]),
+            Vsn0;
+        {Vsn3, {ok, #bucket_versioning{status = suspended}}} ->
+            lager:warning("ignoring object version ~p in request for key ~p in bucket \"~s\""
+                          " as the bucket has object versioning suspended", [Vsn3, Key, Bucket]),
+            Vsn0
+    end.
+
 %% @doc the head is PUT copy path
--spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary()) ->
+-spec handle_copy_put(#wm_reqdata{}, #context{}, binary(), binary(), binary()) ->
                                {boolean()|{halt, integer()}, #wm_reqdata{}, #context{}}.
-handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
+handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
     #context{local_context=LocalCtx,
              response_module=ResponseMod,
              acl=Acl,
              riak_client=RcPid} = Ctx,
     %% manifest is always notfound|undefined here
-    #key_context{bucket=Bucket, key=KeyStr, get_fsm_pid=GetFsmPid} = LocalCtx,
-    Key = list_to_binary(KeyStr),
+    #key_context{bucket = Bucket, key = Key, obj_vsn = ObjVsn,
+                 get_fsm_pid = GetFsmPid} = LocalCtx,
 
     {ok, ReadRcPid} = riak_cs_riak_client:checkout(),
     try
@@ -375,7 +398,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
         %% You'll also need permission to access source object, but RD and
         %% Ctx is of target object. Then access permission to source
         %% object has to be checked here. First of all, get manifest.
-        case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey) of
+        case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey, SrcObjVsn) of
             {ok, SrcManifest} ->
 
                 EntityTooLarge = SrcManifest?MANIFEST.content_length > riak_cs_lfs_utils:max_content_len(),
@@ -388,14 +411,14 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey) ->
                     {false, _, _} ->
 
                         %% start copying
-                        _ = lager:debug("copying! > ~s ~s => ~s ~s via ~p",
-                                        [SrcBucket, SrcKey, Bucket, Key, ReadRcPid]),
+                        _ = lager:debug("copying! > ~s/~s/~s => ~s/~s/~s via ~p",
+                                        [SrcBucket, SrcKey, SrcObjVsn, Bucket, Key, ObjVsn, ReadRcPid]),
 
                         {ContentType, Metadata} =
                             riak_cs_copy_object:new_metadata(SrcManifest, RD),
                         NewAcl = Acl?ACL{creation_time=os:timestamp()},
                         {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(
-                                            Bucket, Key, SrcManifest?MANIFEST.content_length,
+                                            Bucket, Key, ObjVsn, SrcManifest?MANIFEST.content_length,
                                             ContentType, Metadata, NewAcl, RcPid),
 
                         %% Prepare for connection loss or client close
@@ -444,9 +467,10 @@ accept_streambody(RD,
                                user=User},
                   Pid,
                   {Data, Next}) ->
-    #key_context{bucket=Bucket,
-                 key=Key} = LocalCtx,
-    BFile_str = [Bucket, $,, Key],
+    #key_context{bucket = Bucket,
+                 key = Key,
+                 obj_vsn = ObjVsn} = LocalCtx,
+    BFile_str = bfile_str(Bucket, Key, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
     riak_cs_put_fsm:augment_data(Pid, Data),
@@ -461,14 +485,16 @@ accept_streambody(RD,
 %% for the user who is doing this PUT
 -spec finalize_request(#wm_reqdata{}, #context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #context{}}.
 finalize_request(RD,
-                 Ctx=#context{local_context=LocalCtx,
-                              response_module=ResponseMod,
-                              user=User},
+                 Ctx=#context{local_context = LocalCtx,
+                              response_module = ResponseMod,
+                              user = User,
+                              riak_client = _RcPid},
                  Pid) ->
-    #key_context{bucket=Bucket,
-                 key=Key,
-                 size=S} = LocalCtx,
-    BFile_str = [Bucket, $,, Key],
+    #key_context{bucket = Bucket,
+                 key = Key,
+                 obj_vsn = ObjVsn,
+                 size = S} = LocalCtx,
+    BFile_str = bfile_str(Bucket, Key, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
@@ -485,6 +511,7 @@ finalize_request(RD,
             {error, Reason} ->
                 ResponseMod:api_error(Reason, RD, Ctx)
         end,
+
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
@@ -519,3 +546,8 @@ zero_length_metadata_update_p(0, RD) ->
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
+
+bfile_str(B, K, ?LFS_DEFAULT_OBJECT_VERSION) ->
+    [B, $,, K];
+bfile_str(B, K, V) ->
+    [B, $,, K, $,, V].

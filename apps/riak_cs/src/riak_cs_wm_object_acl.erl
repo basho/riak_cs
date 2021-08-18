@@ -148,14 +148,15 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               requested_perm='READ_ACP',
                               user=User}) ->
-    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
-    {Bucket, File} = Mfst?MANIFEST.bkey,
-    BFile_str = [Bucket, $,, File],
+    #key_context{get_fsm_pid = GetFsmPid,
+                 manifest = ?MANIFEST{bkey = {Bucket, File},
+                                      object_version = Vsn,
+                                      acl = Acl}} = LocalCtx,
+    BFile_str = bfile_str(Bucket, File, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_acl_get">>,
                                    [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
-    Acl = Mfst?MANIFEST.acl,
     {AclXml, DtraceTag} = case Acl of
                               no_acl_yet -> {riak_cs_acl_utils:empty_acl_xml(), -1};
                               _ -> {riak_cs_xml:to_xml(Acl), -2}
@@ -166,18 +167,19 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
 
 -spec accept_body(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
-                                                        manifest=Mfst,
-                                                        key=KeyStr,
-                                                        bucket=Bucket},
-                             user=User,
-                             acl=AclFromHeadersOrDefault,
-                             requested_perm='WRITE_ACP',
-                             riak_client=RcPid})  when Bucket /= undefined,
-                                                      KeyStr /= undefined,
-                                                      Mfst /= undefined,
-                                                      RcPid /= undefined ->
-    BFile_str = [Bucket, $,, KeyStr],
+accept_body(RD, Ctx = #context{local_context = #key_context{get_fsm_pid = GetFsmPid,
+                                                            manifest = Mfst,
+                                                            key = Key,
+                                                            obj_vsn = Vsn,
+                                                            bucket = Bucket},
+                               user = User,
+                               acl = AclFromHeadersOrDefault,
+                               requested_perm = 'WRITE_ACP',
+                               riak_client = RcPid})  when Bucket /= undefined,
+                                                           Key /= undefined,
+                                                           Mfst /= undefined,
+                                                           RcPid /= undefined ->
+    BFile_str = bfile_str(Bucket, Key, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
                                       [], [UserName, BFile_str]),
@@ -197,8 +199,7 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
     case AclRes of
         {ok, Acl} ->
             %% Write new ACL to active manifest
-            Key = list_to_binary(KeyStr),
-            case riak_cs_utils:set_object_acl(Bucket, Key, Mfst, Acl, RcPid) of
+            case riak_cs_utils:set_object_acl(Bucket, Key, Vsn, Mfst, Acl, RcPid) of
                 ok ->
                     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
                                                     [200], [UserName, BFile_str]),
@@ -215,3 +216,8 @@ accept_body(RD, Ctx=#context{local_context=#key_context{get_fsm_pid=GetFsmPid,
                                             [Code], [UserName, BFile_str]),
             riak_cs_s3_response:api_error(Reason2, RD, Ctx)
     end.
+
+bfile_str(B, K, ?LFS_DEFAULT_OBJECT_VERSION) ->
+    [B, $,, K];
+bfile_str(B, K, V) ->
+    [B, $,, K, $,, V].

@@ -110,8 +110,10 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
-    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+process_post(RD, Ctx = #context{riak_client = RcPid,
+                                local_context = #key_context{bucket = Bucket,
+                                                             key = Key,
+                                                             obj_vsn = ObjVsn}}) ->
     User = riak_cs_user:to_3tuple(Ctx#context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
     Body = binary_to_list(wrq:req_body(RD)),
@@ -125,7 +127,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
             riak_cs_s3_response:api_error(malformed_xml, RD, Ctx);
         {PartETags, UploadId} ->
             case riak_cs_mp_utils:complete_multipart_upload(
-                   Bucket, list_to_binary(Key), UploadId, PartETags, User,
+                   Bucket, Key, ObjVsn, UploadId, PartETags, User,
                    RcPid) of
                 {ok, NewManifest} ->
                     ETag = riak_cs_manifest:etag(NewManifest),
@@ -150,8 +152,7 @@ process_post(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
     end.
 
 response_location(Bucket, Key) ->
-    lists:append(["http://",
-        binary:bin_to_list(Bucket), ".", riak_cs_config:root_host(), "/", Key]).
+    iolist_to_binary(["http://", Bucket, ".", riak_cs_config:root_host(), "/", Key]).
 
 -spec valid_entity_length(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
 valid_entity_length(RD, Ctx) ->
@@ -167,11 +168,13 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx,
         {'EXIT', _Reason} ->
             riak_cs_s3_response:no_such_upload_response({raw, ReqUploadId}, RD, Ctx);
         UploadId ->
-            #key_context{bucket=Bucket, key=KeyStr} = LocalCtx,
-            Key = list_to_binary(KeyStr),
+            #key_context{bucket = Bucket,
+                         key = Key,
+                         obj_vsn = ObjVsn} = LocalCtx,
             User = riak_cs_user:to_3tuple(Ctx#context.user),
-            case riak_cs_mp_utils:abort_multipart_upload(Bucket, Key, UploadId,
-                                                         User, RcPid) of
+            case riak_cs_mp_utils:abort_multipart_upload(
+                   Bucket, Key, ObjVsn, UploadId,
+                   User, RcPid) of
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
@@ -244,10 +247,10 @@ validate_copy_header(RD, #context{response_module=ResponseMod,
         undefined ->
             validate_part_size(RD, Ctx, LocalCtx#key_context.size,
                                undefined, undefined);
-        {SrcBucket, SrcKey} ->
+        {SrcBucket, SrcKey, SrcVsn} ->
             {ok, ReadRcPid} = riak_cs_riak_client:checkout(),
             try
-                case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey) of
+                case riak_cs_manifest:fetch(ReadRcPid, SrcBucket, SrcKey, SrcVsn) of
                     {error, notfound} ->
                         ResponseMod:api_error(no_copy_source_key, RD, Ctx);
                     {ok, SrcManifest} ->
@@ -271,21 +274,21 @@ validate_part_size(RD, #context{response_module=ResponseMod} = Ctx,
             prepare_part_upload(RD, Ctx, ExactSize, SrcManifest, ReadRcPid)
     end.
 
-prepare_part_upload(RD, #context{riak_client=RcPid,
-                                 local_context=LocalCtx0} = Ctx0,
+prepare_part_upload(RD, #context{riak_client = RcPid,
+                                 local_context = LocalCtx0} = Ctx0,
              ExactSize, SrcManifest, ReadRcPid) ->
-    #key_context{bucket=DstBucket, key=Key,
-                upload_id=UploadId, part_number=PartNumber} = LocalCtx0,
+    #key_context{bucket = DstBucket, key = Key, obj_vsn = ObjVsn,
+                 upload_id = UploadId, part_number = PartNumber} = LocalCtx0,
     Caller = riak_cs_user:to_3tuple(Ctx0#context.user),
-    case riak_cs_mp_utils:upload_part(DstBucket, Key, UploadId, PartNumber,
+    case riak_cs_mp_utils:upload_part(DstBucket, Key, ObjVsn, UploadId, PartNumber,
                                       ExactSize, Caller, RcPid) of
         {error, notfound} ->
             riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx0);
         {upload_part_ready, PartUUID, PutPid} ->
-            LocalCtx = LocalCtx0#key_context{part_uuid=PartUUID},
-            Ctx = Ctx0#context{local_context=LocalCtx},
+            LocalCtx = LocalCtx0#key_context{part_uuid = PartUUID},
+            Ctx = Ctx0#context{local_context = LocalCtx},
             case SrcManifest of
                 undefined ->
                     BlockSize = riak_cs_lfs_utils:block_size(),
@@ -322,14 +325,13 @@ accept_streambody(RD,
             finalize_request(RD, Ctx, Pid)
     end.
 
-to_xml(RD, Ctx=#context{local_context=LocalCtx,
-                        riak_client=RcPid}) ->
-    #key_context{bucket=Bucket, key=Key} = LocalCtx,
+to_xml(RD, Ctx = #context{local_context = #key_context{bucket = Bucket, key = Key, obj_vsn = Vsn},
+                          riak_client = RcPid}) ->
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
         riak_cs_user:to_3tuple(Ctx#context.user),
-    case riak_cs_mp_utils:list_parts(Bucket, Key, UploadId, User, [], RcPid) of
+    case riak_cs_mp_utils:list_parts(Bucket, Key, Vsn, UploadId, User, [], RcPid) of
         {ok, Ps} ->
             Us = [{'Part',
                    [
@@ -377,17 +379,18 @@ to_xml(RD, Ctx=#context{local_context=LocalCtx,
 finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                                   response_module=ResponseMod,
                                   riak_client=RcPid}, PutPid) ->
-    #key_context{bucket=Bucket,
-                 key=Key,
-                 upload_id=UploadId,
-                 part_number=PartNumber,
-                 part_uuid=PartUUID} = LocalCtx,
+    #key_context{bucket = Bucket,
+                 key = Key,
+                 obj_vsn = ObjVsn,
+                 upload_id = UploadId,
+                 part_number = PartNumber,
+                 part_uuid = PartUUID} = LocalCtx,
     Caller = riak_cs_user:to_3tuple(Ctx#context.user),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
     case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
         {ok, M} ->
             case riak_cs_mp_utils:upload_part_finished(
-                   Bucket, Key, UploadId, PartNumber, PartUUID,
+                   Bucket, Key, ObjVsn, UploadId, PartNumber, PartUUID,
                    M?MANIFEST.content_md5, Caller, RcPid) of
                 ok ->
                     ETag = riak_cs_manifest:etag(M),
@@ -406,22 +409,24 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                       #wm_reqdata{}, #context{}) ->
                              {{halt, integer()}, #wm_reqdata{}, #context{}}.
 maybe_copy_part(PutPid,
-                ?MANIFEST{bkey={SrcBucket, SrcKey}} = SrcManifest,
+                ?MANIFEST{bkey={SrcBucket, SrcKey},
+                          object_version = SrcVsn} = SrcManifest,
                 ReadRcPid,
                 RD, #context{riak_client=RcPid,
                              local_context=LocalCtx,
                              user=User} = Ctx) ->
-    #key_context{bucket=DstBucket, key=Key,
-                 upload_id=UploadId,
-                 part_number=PartNumber,
-                 part_uuid=PartUUID} = LocalCtx,
-                    DstKey = list_to_binary(Key),
+    #key_context{bucket = DstBucket,
+                 key = DstKey,
+                 obj_vsn = DstVsn,
+                 upload_id = UploadId,
+                 part_number = PartNumber,
+                 part_uuid = PartUUID} = LocalCtx,
     Caller = riak_cs_user:to_3tuple(User),
 
     case riak_cs_copy_object:test_condition_and_permission(ReadRcPid, SrcManifest, RD, Ctx) of
         {false, _, _} ->
-            _ = lager:debug("Start copying! > ~s ~s => ~s ~s via ~p",
-                            [SrcBucket, SrcKey, DstBucket, DstKey, ReadRcPid]),
+            lager:debug("Start copying! > ~s/~s:~s => ~s/~s:~s via ~p",
+                        [SrcBucket, SrcKey, SrcVsn, DstBucket, DstKey, DstVsn, ReadRcPid]),
 
             %% Prepare for connection loss or client close
             FDWatcher = riak_cs_copy_object:connection_checker((RD#wm_reqdata.wm_state)#wm_reqstate.socket),
@@ -432,7 +437,7 @@ maybe_copy_part(PutPid,
             case riak_cs_copy_object:copy(PutPid, SrcManifest, ReadRcPid, FDWatcher, Range) of
                 {ok, DstManifest} ->
                     case riak_cs_mp_utils:upload_part_finished(
-                           DstBucket, DstKey, UploadId, PartNumber, PartUUID,
+                           DstBucket, DstKey, DstVsn, UploadId, PartNumber, PartUUID,
                            DstManifest?MANIFEST.content_md5, Caller, RcPid) of
                         ok ->
                             ETag = riak_cs_manifest:etag(DstManifest),
@@ -449,7 +454,7 @@ maybe_copy_part(PutPid,
         {true, _RD, _OtherCtx} ->
             %% access to source object not authorized
             %% TODO: check the return value
-            _ = lager:debug("access to source object denied (~s, ~s)", [SrcBucket, SrcKey]),
+            _ = lager:debug("access to source object denied (~s/~s:~s)", [SrcBucket, SrcKey, SrcVsn]),
             {{halt, 403}, RD, Ctx};
         Error ->
             _ = lager:debug("unknown error: ~p", [Error]),

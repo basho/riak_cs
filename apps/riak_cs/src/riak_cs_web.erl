@@ -73,14 +73,16 @@ base_resources() ->
      {["buckets", bucket, "delete"], riak_cs_wm_common, props(riak_cs_wm_bucket_delete)},
      {["buckets", bucket, "acl"], riak_cs_wm_common, props(riak_cs_wm_bucket_acl)},
      {["buckets", bucket, "location"], riak_cs_wm_common, props(riak_cs_wm_bucket_location)},
-     %% No dynamic contents, almost stub
      {["buckets", bucket, "versioning"], riak_cs_wm_common, props(riak_cs_wm_bucket_versioning)},
+     {["buckets", bucket, "versions"], riak_cs_wm_common, props(riak_cs_wm_object_versions)},
+     %% No dynamic contents, almost stub
      {["buckets", bucket, "requestPayment"], riak_cs_wm_common, props(riak_cs_wm_bucket_request_payment)},
      %% NYI
-     {["buckets", bucket, "versions"], riak_cs_wm_common, props(riak_cs_wm_object_versions)},
      {["buckets", bucket, "lifecycle"], riak_cs_wm_common, props(riak_cs_wm_not_implemented)},
      %% Object resources
-     {["buckets", bucket, "objects", object], riak_cs_wm_common, props(riak_cs_wm_object)},
+     {["buckets", bucket, "objects", object, "versions", versionId], riak_cs_wm_common, props(riak_cs_wm_object)},
+     {["buckets", bucket, "objects", object, "versions", versionId, "uploads", uploadId], riak_cs_wm_common, props(riak_cs_wm_object_upload_part)},
+     {["buckets", bucket, "objects", object, "versions", versionId, "uploads"], riak_cs_wm_common, props(riak_cs_wm_object_upload)},
      {["buckets", bucket, "objects", object, "acl"], riak_cs_wm_common, props(riak_cs_wm_object_acl)}
     ].
 

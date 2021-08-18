@@ -34,8 +34,8 @@
 
 %% API
 -export([start_link/0,
-         print_manifests/2,
-         print_manifest/3]).
+         print_manifests/3,
+         print_manifest/4]).
 
 -define(INDENT_LEVEL, 4).
 
@@ -49,21 +49,21 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec print_manifests(binary() | string(), binary() | string()) -> ok.
-print_manifests(Bucket, Key) when is_list(Bucket), is_list(Key) ->
-    print_manifests(list_to_binary(Bucket), list_to_binary(Key));
-print_manifests(Bucket, Key) ->
-    Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key}),
+-spec print_manifests(binary() | string(), binary() | string(), binary() | string()) -> ok.
+print_manifests(Bucket, Key, Vsn) when is_list(Bucket) ->
+    print_manifests(list_to_binary(Bucket), list_to_binary(Key), list_to_binary(Vsn));
+print_manifests(Bucket, Key, Vsn) ->
+    Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key, Vsn}),
     Rows = manifest_rows(orddict_values(Manifests)),
     table:print(manifest_table_spec(), Rows).
 
--spec print_manifest(binary() | string(), binary() | string(), binary() | string()) -> ok.
-print_manifest(Bucket, Key, Uuid) when is_list(Bucket), is_list(Key) ->
-    print_manifest(list_to_binary(Bucket), list_to_binary(Key), Uuid);
-print_manifest(Bucket, Key, Uuid) when is_list(Uuid) ->
-    print_manifest(Bucket, Key, mochihex:to_bin(Uuid));
-print_manifest(Bucket, Key, Uuid) ->
-    Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key}),
+-spec print_manifest(binary() | string(), binary() | string(), binary() | string(), binary() | string()) -> ok.
+print_manifest(Bucket, Key, Vsn, Uuid) when is_list(Bucket) ->
+    print_manifest(list_to_binary(Bucket), list_to_binary(Key), list_to_binary(Vsn), Uuid);
+print_manifest(Bucket, Key, Vsn, Uuid) when is_list(Uuid) ->
+    print_manifest(Bucket, Key, Vsn, mochihex:to_bin(Uuid));
+print_manifest(Bucket, Key, Vsn, Uuid) ->
+    Manifests = gen_server:call(?MODULE, {get_manifests, Bucket, Key, Vsn}),
     {ok, Manifest} = orddict:find(Uuid, Manifests),
     io:format("\n~s", [pr(Manifest)]).
 
@@ -95,10 +95,10 @@ print_field({part_id, Value}, Indent) when is_binary(Value) ->
 print_field({acl, Value}, Indent) ->
     io_lib:format("~s~s = ~s\n\n", [spaces(Indent), acl, pr(Value, Indent + 1)]);
 print_field({props, Props}, Indent) ->
-    io_lib:format("~s~s = ~s\n\n", [spaces(Indent), multipart, 
+    io_lib:format("~s~s = ~s\n\n", [spaces(Indent), multipart,
                                     print_multipart_manifest(Props, Indent)]);
 print_field({parts, Parts}, Indent) ->
-    io_lib:format("~s~s = ~s\n\n", [spaces(Indent), parts, 
+    io_lib:format("~s~s = ~s\n\n", [spaces(Indent), parts,
                                   [pr(P, Indent + 1) ||  P <- Parts]]);
 print_field({Key, Value}, Indent) ->
     io_lib:format("~s~s = ~p\n", [spaces(Indent), Key, Value]).
@@ -113,18 +113,18 @@ spaces(Num) ->
 %% Table Specifications and Record to Row conversions
 %% ====================================================================
 manifest_table_spec() ->
-    [{state, 20}, {deleted, 8},  {mp, 6}, {created, 28}, {uuid, 36}, 
+    [{state, 20}, {deleted, 8},  {mp, 6}, {created, 28}, {uuid, 36},
      {write_start_time, 23}, {delete_marked_time, 23}].
 
 manifest_rows(Manifests) ->
     [ [M?MANIFEST.state, deleted(M?MANIFEST.props),
-       riak_cs_mp_utils:is_multipart_manifest(M), 
+       riak_cs_mp_utils:is_multipart_manifest(M),
        M?MANIFEST.created, mochihex:to_hex(M?MANIFEST.uuid),
        M?MANIFEST.write_start_time, M?MANIFEST.delete_marked_time] || M <- Manifests].
 
 print_multipart_manifest(Props, Indent) ->
     case lists:keyfind(multipart, 1, Props) of
-        {multipart, MpManifest} -> 
+        {multipart, MpManifest} ->
             pr(MpManifest, Indent + 1);
         _ ->
             ""
@@ -140,10 +140,10 @@ deleted(Props) ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({get_manifests, Bucket, Key}, _From, State) ->
+handle_call({get_manifests, Bucket, Key, Vsn}, _From, State) ->
     {ok, Pid} = riak_cs_utils:riak_connection(),
     try
-        {ok, _, Manifests} = riak_cs_manifest:get_manifests(Pid, Bucket, Key),
+        {ok, _, Manifests} = riak_cs_manifest:get_manifests(Pid, Bucket, Key, Vsn),
         {reply, Manifests, State}
     catch _:_=E ->
         {reply, {error, E}, State}
@@ -162,4 +162,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-

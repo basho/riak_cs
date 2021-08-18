@@ -178,20 +178,20 @@ handle_info(_Info, StateName, State) ->
 %% @doc TODO: log warnings if this fsm is asked to terminate in the
 %% middle of running a gc batch
 terminate(normal, _StateName, State) ->
-    _ = lager:info("Finished garbage collection: "
-                   "~b seconds, ~p batch_count, ~p batch_skips, "
-                   "~p manif_count, ~p block_count\n",
-                   [elapsed(State?STATE.batch_start), State?STATE.batch_count,
-                    State?STATE.batch_skips, State?STATE.manif_count,
-                    State?STATE.block_count]),
+    lager:info("Finished garbage collection: "
+               "~b seconds, ~p batch_count, ~p batch_skips, "
+               "~p manif_count, ~p block_count",
+               [elapsed(State?STATE.batch_start), State?STATE.batch_count,
+                State?STATE.batch_skips, State?STATE.manif_count,
+                State?STATE.block_count]),
     riak_cs_gc_manager:finished(State);
 terminate(cancel, _StateName, State) ->
-    _ = lager:warning("Garbage collection has been canceled: "
-                      "~b seconds, ~p batch_count, ~p batch_skips, "
-                      "~p manif_count, ~p block_count\n",
-                      [elapsed(State?STATE.batch_start), State?STATE.batch_count,
-                       State?STATE.batch_skips, State?STATE.manif_count,
-                       State?STATE.block_count]),
+    lager:warning("Garbage collection has been canceled: "
+                  "~b seconds, ~p batch_count, ~p batch_skips, "
+                  "~p manif_count, ~p block_count\n",
+                  [elapsed(State?STATE.batch_start), State?STATE.batch_count,
+                   State?STATE.batch_skips, State?STATE.manif_count,
+                   State?STATE.block_count]),
     ok;
 terminate(_Reason, _StateName, _State) ->
     ok.
@@ -306,7 +306,7 @@ maybe_start_workers(?STATE{max_workers=MaxWorkers,
     %% Fetch the next set of manifests for deletion
     {KeyListRes, UpdKeyListState} = riak_cs_gc_key_list:next(KeyListState),
     #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
-    _ = lager:debug("Next batch keys: ~p", [Batch]),
+    lager:debug("Next batch keys: ~p", [Batch]),
     State2 = State?STATE{batch=Batch,
                          key_list_state=UpdKeyListState,
                          bag_id=BagId},
@@ -318,7 +318,7 @@ maybe_start_workers(?STATE{max_workers=MaxWorkers,
                            worker_pids=WorkerPids,
                            batch=Batch} = State)
   when MaxWorkers > length(WorkerPids) ->
-    _ = lager:debug("Batch: ~p", [Batch, WorkerPids]),
+    lager:debug("Batch: ~p, WorkerPids: ~p", [Batch, WorkerPids]),
     State2 = start_worker(State),
     maybe_start_workers(State2).
 

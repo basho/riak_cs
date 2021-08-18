@@ -76,6 +76,7 @@
 
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
+-define(QS_VERSION_ID, "versionId").
 
 -type acl_or_error() ::  {ok, #acl_v2{}} |
                          {error, 'invalid_argument'} |
@@ -278,13 +279,13 @@ ensure_doc(KeyCtx=#key_context{bucket_object=undefined,
 ensure_doc(KeyCtx, _) ->
     KeyCtx.
 
-setup_manifest(KeyCtx=#key_context{bucket=Bucket,
-                                   key=Key}, RcPid) ->
+setup_manifest(KeyCtx = #key_context{bucket = Bucket,
+                                     key = Key,
+                                     obj_vsn = Vsn}, RcPid) ->
     %% start the get_fsm
-    BinKey = list_to_binary(Key),
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
-    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, BinKey,
+    {ok, FsmPid} = riak_cs_get_fsm_sup:start_get_fsm(node(), Bucket, Key, Vsn,
                                                      self(), RcPid,
                                                      FetchConcurrency,
                                                      BufferFactor),
@@ -425,19 +426,36 @@ iso_8601_to_erl_date(Date)  ->
 %% object have been inserted. It also does key length check. TODO: do
 %% we check if the key is valid Unicode string or not?
 -spec extract_key(#wm_reqdata{}, #context{}) ->
-                         {ok, #context{}} | {error, {key_too_long, pos_integer()}}.
-extract_key(RD,Ctx=#context{local_context=LocalCtx0}) ->
+          {ok, #context{}} |
+          {error, {key_too_long, pos_integer()} | {vsn_too_long, pos_integer()}}.
+extract_key(RD, Ctx = #context{local_context = LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
     MaxKeyLen = riak_cs_config:max_key_length(),
     case mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))) of
         Key when length(Key) =< MaxKeyLen ->
-            LocalCtx = LocalCtx0#key_context{bucket=Bucket, key=Key},
-            {ok, Ctx#context{bucket=Bucket,
-                             local_context=LocalCtx}};
+            LocalCtx = LocalCtx0#key_context{bucket = Bucket, key = list_to_binary(Key)},
+            extract_version_id(RD, Ctx#context{bucket = Bucket,
+                                               local_context = LocalCtx});
         Key ->
             {error, {key_too_long, length(Key)}}
+    end.
+
+extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
+    VsnId =
+        case wrq:path_info(versionId, RD) of
+            undefined ->
+                ?LFS_DEFAULT_OBJECT_VERSION;
+            V ->
+                list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(V)))
+        end,
+    case size(VsnId) =< riak_cs_config:max_key_length() of
+        true ->
+            LocalCtx = LocalCtx0#key_context{obj_vsn = VsnId},
+            {ok, Ctx#context{local_context = LocalCtx}};
+        _ ->
+            {error, {key_too_long, size(VsnId)}}
     end.
 
 extract_name(User) when is_list(User) ->

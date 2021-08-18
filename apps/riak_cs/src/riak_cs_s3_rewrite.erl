@@ -213,26 +213,46 @@ format_bucket_qs(_Method, QueryParams, SubResources) ->
 %% rewrite rules.
 -spec format_object_qs({subresources(), query_params()}) -> string().
 format_object_qs({SubResources, QueryParams}) ->
+    HaveAcl = (proplists:get_value("acl", SubResources) /= undefined),
+    HaveUploads = (proplists:get_value("uploads", SubResources) /= undefined),
     UploadId = proplists:get_value("uploadId", SubResources, []),
     PartNum = proplists:get_value("partNumber", SubResources, []),
-    format_object_qs(SubResources, QueryParams, UploadId, PartNum).
+    VersionId = proplists:get_value("versionId", SubResources, binary_to_list(?LFS_DEFAULT_OBJECT_VERSION)),
+    format_object_qs(SubResources, QueryParams, #{have_acl => HaveAcl,
+                                                  have_uploads => HaveUploads,
+                                                  version_id => VersionId,
+                                                  upload_id => UploadId,
+                                                  part_num => PartNum}).
 
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
--spec format_object_qs(subresources(), query_params(), string(), string()) -> string().
-format_object_qs(SubResources, QueryParams, [], []) ->
-    [format_subresources(SubResources), format_query_params(QueryParams)];
-format_object_qs(_SubResources, QueryParams, UploadId, []) ->
-    ["/uploads/", UploadId, format_query_params(QueryParams)];
-format_object_qs(_SubResources, QueryParams, UploadId, PartNum) ->
-    ["/uploads/", UploadId, format_query_params([{"partNumber", PartNum} | QueryParams])].
+format_object_qs(_SubResources, QueryParams, #{have_acl := true})  ->
+    ["/acl", format_query_params(QueryParams)];
+format_object_qs(_SubResources, QueryParams, #{have_uploads := true,
+                                               version_id := VersionId}) ->
+    ["/versions/", VersionId, "/uploads", format_query_params(QueryParams)];
+
+format_object_qs(SubResources, QueryParams, #{version_id := VersionId,
+                                              upload_id := [],
+                                              part_num := []}) ->
+    ["/versions/", VersionId, format_subresources(SubResources), format_query_params(QueryParams)];
+format_object_qs(_SubResources, QueryParams, #{version_id := VersionId,
+                                              upload_id := UploadId,
+                                              part_num := []}) ->
+    ["/versions/", VersionId, "/uploads/", UploadId, format_query_params(QueryParams)];
+format_object_qs(_SubResources, QueryParams, #{version_id := VersionId,
+                                              upload_id := UploadId,
+                                              part_num := PartNum}) ->
+    ["/versions/", VersionId, "/uploads/", UploadId, format_query_params([{"partNumber", PartNum} | QueryParams])].
 
 %% @doc Format a string that expresses the subresource request
 %% that can be appended to the URL.
 -spec format_subresources(subresources()) -> string().
 format_subresources([]) ->
     [];
-format_subresources([{Key, []} | _]) ->
+format_subresources([{"versionId", _}]) ->
+    [];
+format_subresources([{Key, []}]) ->
     ["/", Key].
 
 %% @doc Format a proplist of query parameters into a string

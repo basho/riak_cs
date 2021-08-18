@@ -70,7 +70,6 @@ process_post(RD, Ctx=#context{bucket=Bucket,
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"multiple_delete">>, [], [UserName, Bucket]),
 
-
     handle_with_bucket_obj(riak_cs_bucket:fetch_bucket_object(Bucket, RcPid), RD, Ctx).
 
 handle_with_bucket_obj({error, notfound}, RD,
@@ -91,11 +90,11 @@ handle_with_bucket_obj({ok, BucketObj},
     case parse_body(binary_to_list(wrq:req_body(RD))) of
         {error, _} = Error ->
             ResponseMod:api_error(Error, RD, Ctx);
-        {ok, BinKeys} when length(BinKeys) > 1000 ->
+        {ok, Keys} when length(Keys) > 1000 ->
             %% Delete Multiple Objects accepts a request to delete up to 1000 Objects.
             ResponseMod:api_error(malformed_xml, RD, Ctx);
-        {ok, BinKeys} ->
-            lager:debug("deleting keys at ~p: ~p", [Bucket, BinKeys]),
+        {ok, Keys} ->
+            lager:debug("deleting keys at ~p: ~p", [Bucket, Keys]),
 
             Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
             CanonicalId = riak_cs_wm_utils:extract_canonical_id(User),
@@ -103,12 +102,12 @@ handle_with_bucket_obj({ok, BucketObj},
 
             %% map: keys => delete_results => xmlElements
             Results =
-                lists:map(fun(BinKey) ->
-                                  handle_key(RcPid, Bucket, BinKey,
+                lists:map(fun({Key, Vsn} = VKey) ->
+                                  handle_key(RcPid, Bucket, VKey,
                                              check_permission(
-                                               RcPid, Bucket, BinKey,
+                                               RcPid, Bucket, Key, Vsn,
                                                Access0, CanonicalId, Policy, PolicyMod, BucketObj))
-                          end, BinKeys),
+                          end, Keys),
 
             %% xmlDoc => return body.
             Xml = riak_cs_xml:to_xml([{'DeleteResult', [{'xmlns', ?S3_XMLNS}], Results}]),
@@ -118,12 +117,12 @@ handle_with_bucket_obj({ok, BucketObj},
             {true, RD2, Ctx}
     end.
 
--spec check_permission(riak_client(), binary(), binary(),
+-spec check_permission(riak_client(), binary(), binary(), binary(),
                        access(), string(), policy()|undefined, atom(), riakc_obj:riakc_obj()) ->
                               ok | {error, access_denied|notfound|no_active_manifest}.
-check_permission(RcPid, Bucket, Key,
+check_permission(RcPid, Bucket, Key, Vsn,
                  Access0, CanonicalId, Policy, PolicyMod, BucketObj) ->
-    case riak_cs_manifest:fetch(RcPid, Bucket, Key) of
+    case riak_cs_manifest:fetch(RcPid, Bucket, Key, Vsn) of
         {ok, Manifest} ->
             ObjectAcl = riak_cs_manifest:object_acl(Manifest),
             Access = Access0#access_v1{key=Key, method='DELETE', target=object},
@@ -139,44 +138,55 @@ check_permission(RcPid, Bucket, Key,
     end.
 
 %% bucket/key => delete => xml indicating each result
--spec handle_key(riak_client(), binary(), binary(),
+-spec handle_key(riak_client(), binary(), {binary(), binary()},
                 ok | {error, access_denied|notfound|no_active_manifest}) ->
                         {'Deleted', list(tuple())} | {'Error', list(tuple())}.
-handle_key(_RcPid, _Bucket, Key, {error, notfound}) ->
+handle_key(_RcPid, _Bucket, {Key, Vsn}, {error, notfound}) ->
     %% delete is RESTful, thus this is success
-    {'Deleted', [{'Key', [Key]}]};
-handle_key(_RcPid, _Bucket, Key, {error, no_active_manifest}) ->
-    %% delete is RESTful, thus this is success
-    {'Deleted', [{'Key', [Key]}]};
-handle_key(_RcPid, _Bucket, Key, {error, Error}) ->
+    {'Deleted', [{'Key', [Key]}, {'VersionId', [Vsn]}]};
+handle_key(_RcPid, _Bucket, {Key, Vsn}, {error, no_active_manifest}) ->
+    {'Deleted', [{'Key', [Key]}, {'VersionId', [Vsn]}]};
+handle_key(_RcPid, _Bucket, {Key, Vsn}, {error, Error}) ->
     {'Error',
      [{'Key', [Key]},
+      {'VersionId', [Vsn]},
       {'Code', [riak_cs_s3_response:error_code(Error)]},
       {'Message', [riak_cs_s3_response:error_message(Error)]}]};
-handle_key(RcPid, Bucket, Key, ok) ->
-    case riak_cs_utils:delete_object(Bucket, Key, RcPid) of
+handle_key(RcPid, Bucket, {Key, Vsn}, ok) ->
+    case riak_cs_utils:delete_object(Bucket, Key, Vsn, RcPid) of
         {ok, _UUIDsMarkedforDelete} ->
-            {'Deleted', [{'Key', [Key]}]};
+            {'Deleted', [{'Key', [Key]}, {'VersionId', [Vsn]}]};
         Error ->
-            handle_key(RcPid, Bucket, Key, Error)
+            handle_key(RcPid, Bucket, {Key, Vsn}, Error)
     end.
 
--spec parse_body(string()) -> {ok, [binary()]} | {error, malformed_xml}.
 parse_body(Body) ->
     case riak_cs_xml:scan(Body) of
         {ok, #xmlElement{name='Delete'} = ParsedData} ->
-            Keys = [ unicode:characters_to_binary(
-                       [ T#xmlText.value || T <- xmerl_xpath:string("//Key/text()", Node)]
-                      ) || Node <- xmerl_xpath:string("//Delete/Object/node()", ParsedData),
-                           is_record(Node, xmlElement) ],
-        %% TODO: handle version id
-        %% VersionIds = [riak_cs_utils:hexlist_to_binary(string:strip(T#xmlText.value, both, $")) ||
-        %%                  T <- xmerl_xpath:string("//Delete/Object/VersionId/text()", ParsedData)],
-            {ok, Keys};
+            KKVV = [ key_and_version_from_xml_node(Node)
+                     || Node <- xmerl_xpath:string("//Delete/Object", ParsedData),
+                        is_record(Node, xmlElement) ],
+            case lists:member(malformed_xml, KKVV) of
+                true ->
+                    {error, malformed_xml};
+                false ->
+                    {ok, KKVV}
+            end;
         {ok, _ParsedData} ->
             {error, malformed_xml};
         Error ->
              Error
+    end.
+
+key_and_version_from_xml_node(Node) ->
+    case {xmerl_xpath:string("//Key/text()", Node),
+          xmerl_xpath:string("//VersionId/text()", Node)} of
+        {[#xmlText{value = K}], [#xmlText{value = V}]} ->
+            {unicode:characters_to_binary(K), unicode:characters_to_binary(V)};
+        {[#xmlText{value = K}], _} ->
+            {unicode:characters_to_binary(K), ?LFS_DEFAULT_OBJECT_VERSION};
+        _ ->
+            malformed_xml
     end.
 
 -ifdef(TEST).

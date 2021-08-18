@@ -40,6 +40,7 @@
                   exometer_core,
                   lager,
                   riakc,
+                  rcs_common,
                   riak_repl_pb_api,
                   riak_cs_multibag
                  ]},

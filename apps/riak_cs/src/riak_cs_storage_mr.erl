@@ -94,7 +94,7 @@ object_size_reduce(Sizes, _) ->
 
 -spec sum_objs(erlang:timestamp(), [cs_uuid_and_manifest()]) -> sum().
 sum_objs(LeewayEdge, History) ->
-    case riak_cs_manifest_utils:active_manifest(History) of
+    case rcs_common_manifest_utils:active_manifest(History) of
         {ok, Active} ->
             {_, _, OBB} = objs_bytes_and_blocks(Active),
             Sum0 = add_to(#sum{}, #sum.user, OBB),
@@ -236,7 +236,7 @@ summary_to_list([F|Fields], [{C, By, Bl}|Triples], Acc) ->
 
 object_size(Resolved) ->
     {MPparts, MPbytes} = count_multipart_parts(Resolved),
-    case riak_cs_manifest_utils:active_manifest(Resolved) of
+    case rcs_common_manifest_utils:active_manifest(Resolved) of
         {ok, ?MANIFEST{content_length=Length}} ->
             [{1 + MPparts, Length + MPbytes}];
         _ ->

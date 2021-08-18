@@ -83,9 +83,10 @@ prop_resolution_commutative() ->
 %%====================================================================
 
 raw_manifest() ->
-    ?MANIFEST{uuid=riak_cs_gen:bounded_uuid(),
-                     bkey={<<"bucket">>, <<"key">>},
-                     state=riak_cs_gen:manifest_state()}.
+    ?MANIFEST{uuid = riak_cs_gen:bounded_uuid(),
+              bkey = {<<"bucket">>, <<"key">>},
+              object_version = <<"a">>,
+              state = riak_cs_gen:manifest_state()}.
 
 manifest() ->
     ?LET(Manifest, raw_manifest(), process_manifest(Manifest)).
@@ -93,21 +94,21 @@ manifest() ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=erlang:timestamp(),
-                                     write_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_written_time = erlang:timestamp(),
+                              write_blocks_remaining = blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp()};
+            Manifest?MANIFEST{last_block_deleted_time = erlang:timestamp()};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
-                                     delete_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_deleted_time = erlang:timestamp(),
+                              delete_blocks_remaining = blocks_set()};
         scheduled_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
-                                     delete_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_deleted_time = erlang:timestamp(),
+                              delete_blocks_remaining = blocks_set()};
         deleted ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp()}
+            Manifest?MANIFEST{last_block_deleted_time = erlang:timestamp()}
     end.
 
 manifests() ->
@@ -134,7 +135,7 @@ only_one_active_helper(?MANIFEST{state=active}, {found, List}) ->
     {found, List};
 only_one_active_helper(Manifest, {found, List}) ->
     {found, [Manifest | List]};
-only_one_active_helper(Manifest=?MANIFEST{state=active}, {not_found, List}) ->
+only_one_active_helper(Manifest=?MANIFEST{state = active}, {not_found, List}) ->
     {found, [Manifest | List]};
 only_one_active_helper(Manifest, {not_found, List}) ->
     {not_found, [Manifest | List]}.

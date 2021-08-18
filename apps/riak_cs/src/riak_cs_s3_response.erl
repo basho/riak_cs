@@ -287,8 +287,14 @@ error_response(ErrorTag, StatusCode, Code, Message, RD, Ctx) ->
 error_resource(Tag, RD)
   when Tag =:= no_copy_source_key;
        Tag =:= copy_source_access_denied->
-    {B, K} = riak_cs_copy_object:get_copy_source(RD),
-    <<$/, B/binary, $/, K/binary>>;
+    {B, K, V} = riak_cs_copy_object:get_copy_source(RD),
+    case V of
+        ?LFS_DEFAULT_OBJECT_VERSION ->
+            <<$/, B/binary, $/, K/binary>>;
+        _ ->
+            <<$/, B/binary, $/, K/binary, $/, V/binary>>
+    end;
+
 error_resource(_Tag, RD) ->
     {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
     OrigResource.
