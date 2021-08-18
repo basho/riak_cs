@@ -148,14 +148,15 @@ content_types_accepted(RD, Ctx=#context{local_context=LocalCtx0}) ->
 produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               requested_perm='READ_ACP',
                               user=User}) ->
-    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
-    {Bucket, File} = Mfst?MANIFEST.bkey,
-    BFile_str = [Bucket, $,, File],
+    #key_context{get_fsm_pid = GetFsmPid,
+                 manifest = ?MANIFEST{bkey = {Bucket, File},
+                                      object_version = Vsn,
+                                      acl = Acl}} = LocalCtx,
+    BFile_str = bfile_str(Bucket, File, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_acl_get">>,
                                    [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
-    Acl = Mfst?MANIFEST.acl,
     {AclXml, DtraceTag} = case Acl of
                               no_acl_yet -> {riak_cs_acl_utils:empty_acl_xml(), -1};
                               _ -> {riak_cs_xml:to_xml(Acl), -2}
