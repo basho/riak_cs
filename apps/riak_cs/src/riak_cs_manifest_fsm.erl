@@ -403,7 +403,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     true.
 
 update(RcPid, OldManifests, OldRiakObject, WrappedManifests, Bucket) ->
-    NewManiAdded = rcs_common_manifest_resolution:resolve([WrappedManifests, OldManifests]),
+    NewManiAdded = rcs_common_manifest_resolution:resolve([OldManifests, WrappedManifests]),
     %% Update the object here so that if there are any
     %% overwritten UUIDs, then gc_specific_manifests() will
     %% operate on NewManiAdded and save it to Riak when it is

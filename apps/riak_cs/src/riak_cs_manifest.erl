@@ -96,24 +96,25 @@ unlink_version(RcPid, [{_, M}|_]) ->
     unlink_version(RcPid, M);
 
 unlink_version(RcPid, ?MANIFEST{bkey = {Bucket, Key},
-                                next_object_version = NextOV,
-                                prev_object_version = PrevOV}) ->
-    if PrevOV /= eol ->
-            {ok, ManiPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, PrevOV, RcPid),
-            {ok, _, PrevM} = get_manifests(RcPid, Bucket, Key, PrevOV),
-            riak_cs_manifest_fsm:update_manifests(
-              ManiPid1,
-              orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = NextOV} end, PrevM)),
+                                next_object_version = NextV,
+                                prev_object_version = PrevV}) ->
+    if PrevV /= eol ->
+            {ok, ManiPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, PrevV, RcPid),
+            {ok, _, [{_, PrevM}|_]} = get_manifests(RcPid, Bucket, Key, PrevV),
+            ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
+                   ManiPid1,
+                   PrevM?MANIFEST{next_object_version = NextV}),
             riak_cs_manifest_fsm:stop(ManiPid1);
        el/=se ->
             nop
     end,
-    if NextOV /= eol ->
-            {ok, ManiPid2} = riak_cs_manifest_fsm:start_link(Bucket, Key, NextOV, RcPid),
-            {ok, _, NextM} = get_manifests(RcPid, Bucket, Key, NextOV),
-            riak_cs_manifest_fsm:update_manifests(
-              ManiPid2,
-              orddict:map(fun(_, M) -> M?MANIFEST{next_object_version = PrevOV} end, NextM)),
+
+    if NextV /= eol ->
+            {ok, ManiPid2} = riak_cs_manifest_fsm:start_link(Bucket, Key, NextV, RcPid),
+            {ok, _, [{_, NextM}|_]} = get_manifests(RcPid, Bucket, Key, NextV),
+            ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
+                   ManiPid2,
+                   NextM?MANIFEST{prev_object_version = PrevV}),
             riak_cs_manifest_fsm:stop(ManiPid2);
        el/=se ->
             nop
