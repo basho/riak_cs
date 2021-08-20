@@ -75,7 +75,8 @@ prop_delete_deadlock() ->
                 BlockSize = riak_cs_lfs_utils:block_size(),
                 Manifest = riak_cs_lfs_utils:new_manifest(
                              <<"bucket">>,
-                             "test_file",
+                             <<"test_file">>,
+                             ?LFS_DEFAULT_OBJECT_VERSION,
                              UUID,
                              ?CONTENT_LENGTH,
                              <<"ctype">>,

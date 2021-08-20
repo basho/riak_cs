@@ -37,7 +37,7 @@
   1},
  {<<"rcs_common">>,
   {git,"git://github.com/TI-Tokyo/rcs_common.git",
-       {ref,"28968bb2c843a9283cdcf38b918f4316d992e5fa"}},
+       {ref,"5936595fc05bf13325590c88e7f3c561ff48a210"}},
   0},
  {<<"riak_cs_multibag">>,
   {git,"git://github.com/TI-Tokyo/riak_cs_multibag.git",

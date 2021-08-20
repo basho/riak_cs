@@ -75,6 +75,7 @@ prop_manifest_manipulation() ->
     ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
             {riak_cs_gen:bucket(),
              riak_cs_gen:file_name(),
+             riak_cs_gen:vsn(),
              riak_cs_gen:uuid(),
              riak_cs_gen:content_length(),
              riak_cs_gen:md5(),

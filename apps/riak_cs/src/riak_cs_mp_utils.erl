@@ -91,7 +91,7 @@ abort_multipart_upload(Bucket, Key, ObjVsn, UploadId, Caller, RcPidUnW) ->
 -spec clean_multipart_unused_parts(lfs_manifest(), nopid | pid()) ->
           same | updated.
 clean_multipart_unused_parts(?MANIFEST{bkey = {Bucket, Key},
-                                       object_version = ObjVsn,
+                                       vsn = ObjVsn,
                                        props = Props} = Manifest, RcPid) ->
     case get_mp_manifest(Manifest) of
         undefined ->
@@ -133,9 +133,9 @@ complete_multipart_upload(Bucket, Key, Vsn, UploadId, PartETags, Caller, RcPidUn
 -spec initiate_multipart_upload(binary(), binary(), binary(),
                                 binary(), acl_owner3(), proplists:proplist(), nopid | pid()) ->
           {ok, binary()} | {error, term()}.
-initiate_multipart_upload(Bucket, Key, ObjVsn, ContentType, {_,_,_} = Owner,
+initiate_multipart_upload(Bucket, Key, Vsn, ContentType, {_,_,_} = Owner,
                           Opts, RcPidUnW) ->
-    write_new_manifest(new_manifest(Bucket, Key, ObjVsn, ContentType, Owner, Opts),
+    write_new_manifest(new_manifest(Bucket, Key, Vsn, ContentType, Owner, Opts),
                        Opts, RcPidUnW).
 
 
@@ -281,7 +281,7 @@ make_content_types_accepted(CT, RD, Ctx = #context{local_context = LocalCtx0}, C
 %%%===================================================================
 
 write_new_manifest(?MANIFEST{bkey = {Bucket, Key},
-                             object_version = ObjVsn,
+                             vsn = Vsn,
                              uuid = UUID} = M, Opts, RcPidUnW) ->
     MpM = get_mp_manifest(M),
     Owner = MpM?MULTIPART_MANIFEST.owner,
@@ -300,7 +300,7 @@ write_new_manifest(?MANIFEST{bkey = {Bucket, Key},
                 M3 = M2?MANIFEST{acl = Acl,
                                  cluster_id = ClusterId,
                                  write_start_time = os:timestamp()},
-                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn,
+                {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn,
                                                                 ?PID(RcPid)),
                 try
                     ok = riak_cs_manifest_fsm:add_new_manifest(ManiPid, M3),
@@ -322,8 +322,8 @@ new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
                    undefined -> [];
                    AsIsHdrs  -> AsIsHdrs
                end,
-    M = riak_cs_lfs_utils:new_manifest(
-          Bucket, Key, UUID,
+    M0 = riak_cs_lfs_utils:new_manifest(
+          Bucket, Key, Vsn, UUID,
           0,
           ContentType,
           %% we won't know the md5 of a multipart
@@ -338,11 +338,8 @@ new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
           undefined),
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
-    {VsnType, M9} =
-        riak_cs_manifest:link_version(
-          nopid, M?MANIFEST{props = replace_mp_manifest(MpM, M?MANIFEST.props),
-                            object_version = Vsn}),
-    lager:debug("created mp manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn]),
+    M9 = M0?MANIFEST{props = replace_mp_manifest(MpM, M0?MANIFEST.props)},
+    lager:debug("created mp manifest for ~s/~s:~s", [Bucket, Key, Vsn]),
 
     M9.
 
@@ -395,7 +392,7 @@ do_part_common2(abort, RcPid, ?MANIFEST{uuid = UUID,
 do_part_common2(complete, RcPid,
                 ?MANIFEST{uuid = _UUID,
                           bkey = {Bucket, Key},
-                          object_version = ObjVsn,
+                          vsn = ObjVsn,
                           props = MProps} = Manifest,
                 _Obj, MpM, Props) ->
     %% The content_md5 is used by WM to create the ETags header.
@@ -498,7 +495,7 @@ do_part_common2(upload_part, RcPid, M, _Obj, MpM, Props) ->
         PartUUID = riak_cs_put_fsm:get_uuid(PutPid),
         PM = ?PART_MANIFEST{bucket = Bucket,
                             key = Key,
-                            object_version = ObjVsn,
+                            vsn = ObjVsn,
                             start_time = os:timestamp(),
                             part_number = PartNumber,
                             part_id = PartUUID,
@@ -541,7 +538,7 @@ do_part_common2(upload_part_finished, RcPid, M, _Obj, MpM, Props) ->
 
 
 update_manifest_with_confirmation(RcPid, M = ?MANIFEST{bkey = {Bucket, Key},
-                                                       object_version = ObjVsn}) ->
+                                                       vsn = ObjVsn}) ->
     {ok, ManiPid} =
         riak_cs_manifest_fsm:start_link(Bucket, Key, ObjVsn, RcPid),
     try
@@ -645,7 +642,7 @@ handle_get_manifests_result({ok, _Obj, Manifests}) ->
 
 -spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
 multipart_description(?MANIFEST{bkey = {_, Key},
-                                object_version = Vsn,
+                                vsn = Vsn,
                                 uuid = UUID,
                                 props = Props,
                                 created = Created}) ->
@@ -737,9 +734,8 @@ comb_parts_fold({PartNum, ETag} = K,
 
 move_dead_parts_to_gc(Bucket, Key, Vsn, BagId, PartsToDelete, RcPid) ->
     PartDelMs = [{P_UUID,
-                  begin
-                      M = riak_cs_lfs_utils:new_manifest(
-                            Bucket, Key, P_UUID,
+                  riak_cs_lfs_utils:new_manifest(
+                            Bucket, Key, Vsn, P_UUID,
                             ContentLength,
                             <<"x-delete/now">>,
                             undefined,
@@ -748,11 +744,8 @@ move_dead_parts_to_gc(Bucket, Key, Vsn, BagId, PartsToDelete, RcPid) ->
                             no_acl_yet,
                             [],
                             undefined,
-                            BagId),
-                      %% this manifest is incomplete, but that's
-                      %% sufficient for GC to do its job, right?
-                      M?MANIFEST{object_version = Vsn}
-                  end} ||
+                            BagId)
+                 } ||
                     ?PART_MANIFEST{part_id=P_UUID,
                                    content_length=ContentLength,
                                    block_size=P_BlockSize} <- PartsToDelete],

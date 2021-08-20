@@ -410,7 +410,7 @@ finalize_request(RD, Ctx=#context{local_context=LocalCtx,
                              {{halt, integer()}, #wm_reqdata{}, #context{}}.
 maybe_copy_part(PutPid,
                 ?MANIFEST{bkey={SrcBucket, SrcKey},
-                          object_version = SrcVsn} = SrcManifest,
+                          vsn = SrcVsn} = SrcManifest,
                 ReadRcPid,
                 RD, #context{riak_client=RcPid,
                              local_context=LocalCtx,

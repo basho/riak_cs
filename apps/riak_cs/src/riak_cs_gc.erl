@@ -459,8 +459,7 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
         end,
 
     %% Create a set from the list of manifests
-    lager:debug("Manifests scheduled for deletion: ~p", [ManifestSet]),
-    ok = riak_cs_manifest:unlink_version(RcPid, Manifests),
+    lager:debug("Manifests scheduled for deletion: ~p", [Manifests]),
     Timeout1 = riak_cs_config:put_gckey_timeout(),
     riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 

@@ -38,7 +38,7 @@
          initial_blocks/2,
          block_sequences_for_manifest/1,
          block_sequences_for_manifest/2,
-         new_manifest/12,
+         new_manifest/13,
          set_bag_id/2,
          remove_write_block/2,
          remove_delete_block/2]).
@@ -265,16 +265,17 @@ get_fsm_buffer_size_factor() ->
     end.
 
 %% @doc Initialize a new file manifest
--spec new_manifest(binary(), binary(), cs_uuid(),
+-spec new_manifest(binary(), binary(), binary(), cs_uuid(),
                    non_neg_integer(), binary(), term(),
                    orddict:orddict(), pos_integer(), acl() | no_acl_yet,
                    proplists:proplist(), cluster_id(), bag_id()) -> lfs_manifest().
-new_manifest(Bucket, FileName, UUID,
+new_manifest(Bucket, FileName, Vsn, UUID,
              ContentLength, ContentType, ContentMd5,
              MetaData, BlockSize, Acl,
              Props, ClusterID, BagId) ->
     Blocks = ordsets:from_list(initial_blocks(ContentLength, BlockSize)),
     Manifest = ?MANIFEST{bkey = {Bucket, FileName},
+                         vsn = Vsn,
                          uuid = UUID,
                          created = riak_cs_wm_utils:iso_8601_datetime(),
                          state = writing,
@@ -288,9 +289,6 @@ new_manifest(Bucket, FileName, UUID,
                          props = Props,
                          cluster_id = ClusterID},
     set_bag_id(BagId, Manifest).
-%% it's intentional that new manifests cannot be created for file
-%% versions as that involves updating manifests for its neighbours in
-%% the chain. Use link_version for that.
 
 
 -spec set_bag_id(bag_id(), lfs_manifest()) -> lfs_manifest().
@@ -309,8 +307,8 @@ remove_write_block(Manifest, Chunk) ->
                         writing
                 end,
     Manifest?MANIFEST{write_blocks_remaining = Updated,
-                             state = ManiState,
-                             last_block_written_time = os:timestamp()}.
+                      state = ManiState,
+                      last_block_written_time = os:timestamp()}.
 
 %% @doc Remove a chunk from the `delete_blocks_remaining'
 %% field of `Manifest'

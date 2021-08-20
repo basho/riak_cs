@@ -142,7 +142,7 @@ handle_info(_Info, StateName, State) ->
 
 terminate(Reason, _StateName,
           #state{all_delete_workers = AllDeleteWorkers,
-                 manifest = ?MANIFEST{state = ManifestState, object_version = ObjVsn},
+                 manifest = ?MANIFEST{state = ManifestState, vsn = ObjVsn},
                  bucket = Bucket,
                  key = Key,
                  uuid = UUID,
@@ -204,7 +204,7 @@ handle_receiving_manifest(State = #state{manifest = Manifest,
             start_block_servers(NewState);
         {error, invalid_state} ->
             {Bucket, Key} = Manifest?MANIFEST.bkey,
-            ObjVsn = Manifest?MANIFEST.object_version,
+            ObjVsn = Manifest?MANIFEST.vsn,
             _ = lager:warning("Invalid state manifest in GC bucket at ~p, "
                               "b/k:v \"~s/~s:~s\": ~p",
                               [GCKey, Bucket, Key, ObjVsn, Manifest]),
@@ -252,7 +252,7 @@ maybe_delete_blocks(State = #state{delete_blocks_remaining = []}) ->
     State;
 maybe_delete_blocks(State = #state{bucket = Bucket,
                                    key = Key,
-                                   manifest = ?MANIFEST{object_version = ObjVsn},
+                                   manifest = ?MANIFEST{vsn = ObjVsn},
                                    free_deleters = FreeDeleters = [DeleterPid | _Rest],
                                    unacked_deletes = UnackedDeletes,
                                    delete_blocks_remaining = DeleteBlocksRemaining = [BlockID | _RestBlocks]}) ->
@@ -275,7 +275,7 @@ reply_or_callback(Reason, #state{finished_callback = Callback} = State) ->
           {pid(), {ok, {non_neg_integer(), non_neg_integer()}} | {error, term()}}.
 notification_msg(normal, #state{bucket = Bucket,
                                 key = Key,
-                                manifest = ?MANIFEST{object_version = ObjVsn},
+                                manifest = ?MANIFEST{vsn = ObjVsn},
                                 uuid = UUID,
                                 deleted_blocks = DeletedBlocks,
                                 total_blocks = TotalBlocks}) ->

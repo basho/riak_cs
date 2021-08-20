@@ -401,7 +401,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 -spec prepare(#state{}) -> #state{}.
 prepare(State=#state{bucket = Bucket,
                      key = Key,
-                     obj_vsn = Vsn0,
+                     obj_vsn = Vsn,
                      block_size = BlockSize,
                      uuid = UUID,
                      content_length = ContentLength,
@@ -415,18 +415,14 @@ prepare(State=#state{bucket = Bucket,
     ClusterID = riak_cs_mb_helper:cluster_id(BagId),
 
     %% 0. prepare manifest
-    Manifest0 = riak_cs_lfs_utils:new_manifest(
-           Bucket, Key, UUID,
+    Manifest1 = riak_cs_lfs_utils:new_manifest(
+           Bucket, Key, Vsn, UUID,
            ContentLength, ContentType, undefined,  %% we don't know the md5 yet
            Metadata, BlockSize, Acl, [], ClusterID, BagId),
-    {VsnType, Manifest1 = ?MANIFEST{object_version = Vsn1}} =
-        riak_cs_manifest:link_version(
-          RcPid, Manifest0?MANIFEST{object_version = Vsn0}),
-    lager:debug("created manifest for ~p version of ~s/~s:~s", [VsnType, Bucket, Key, Vsn1]),
 
     %% 1. start the manifest_fsm proc
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
-                      MakeNewManifestP, Bucket, Key, Vsn1, RcPid),
+                      MakeNewManifestP, Bucket, Key, Vsn, RcPid),
 
     Manifest2 = Manifest1?MANIFEST{write_start_time = os:timestamp()},
 
@@ -455,7 +451,7 @@ prepare(State=#state{bucket = Bucket,
     State#state{manifest = Manifest2,
                 %% possibly null, ignoring user-supplied Vsn0 unless a
                 %% primary version already exists
-                obj_vsn = Vsn1,
+                obj_vsn = Vsn,
                 timer_ref = TRef,
                 mani_pid = ManiPid,
                 max_buffer_size = MaxBufferSize,

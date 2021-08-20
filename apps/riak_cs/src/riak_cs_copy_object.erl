@@ -247,7 +247,7 @@ get_and_put(GetPid, PutPid, MD5, ContFun) ->
 
 -spec start_get_fsm(lfs_manifest(), riak_client()) -> {ok, pid()}.
 start_get_fsm(?MANIFEST{bkey = {Bucket, Key},
-                        object_version = Vsn}, ReadRcPid) ->
+                        vsn = Vsn}, ReadRcPid) ->
     FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
     BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
     riak_cs_get_fsm_sup:start_get_fsm(node(),

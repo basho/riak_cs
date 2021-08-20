@@ -23,10 +23,7 @@
 
 -export([fetch/4,
          get_manifests/4,
-         get_manifests_of_all_versions/3,
          manifests_from_riak_object/1,
-         link_version/2,
-         unlink_version/2,
          etag/1,
          etag_no_quotes/1,
          object_acl/1]).
@@ -54,113 +51,6 @@ get_manifests(RcPid, Bucket, Key, ObjVsn) ->
         {error, _Reason} = Error ->
             Error
     end.
-
-
--spec get_manifests_of_all_versions(riak_client(), binary(), binary()) ->
-          {ok, [{Vsn::binary(), lfs_manifest()}]} | {error, term()}.
-get_manifests_of_all_versions(RcPid, Bucket, Key) ->
-    case get_manifests(RcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION) of
-        {ok, _, []} ->
-            {error, notfound};
-        {ok, _, [{_, PrimaryM}|_]} ->
-            try
-                DD = get_descendants(RcPid, Bucket, Key, PrimaryM),
-                {ok, [{V, M} || M = ?MANIFEST{object_version = V} <- DD]}
-            catch
-                throw:manifest_retrieval_error ->
-                    {error, manifest_retrieval_error}
-            end;
-        ER ->
-            ER
-    end.
-
-get_descendants(Rc, B, K, M) ->
-    lists:reverse(
-      get_descendants(Rc, B, K, M, [])).
-get_descendants(_, _, _, ThisM = ?MANIFEST{next_object_version = eol}, Q) ->
-    [ThisM | Q];
-get_descendants(Rc, B, K, ThisM = ?MANIFEST{next_object_version = NextOV}, Q) ->
-    case get_manifests(Rc, B, K, NextOV) of
-        {ok, _, [{_, NextM}|_]} ->
-            get_descendants(Rc, B, K, NextM, [ThisM | Q]);
-        ER ->
-            lager:warning("failed to get manifests for version ~s of ~s/~s (~p)", [NextOV, B, K, ER]),
-            throw(manifest_retrieval_error)
-    end.
-
-
--spec unlink_version(riak_client(), wrapped_manifest() | lfs_manifest()) -> ok.
-unlink_version(_RcPid, []) ->
-    ok;
-unlink_version(RcPid, [{_, M}|_]) ->
-    unlink_version(RcPid, M);
-
-unlink_version(RcPid, ?MANIFEST{bkey = {Bucket, Key},
-                                next_object_version = NextV,
-                                prev_object_version = PrevV}) ->
-    if PrevV /= eol ->
-            {ok, ManiPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, PrevV, RcPid),
-            {ok, _, [{_, PrevM}|_]} = get_manifests(RcPid, Bucket, Key, PrevV),
-            ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-                   ManiPid1,
-                   PrevM?MANIFEST{next_object_version = NextV}),
-            riak_cs_manifest_fsm:stop(ManiPid1);
-       el/=se ->
-            nop
-    end,
-
-    if NextV /= eol ->
-            {ok, ManiPid2} = riak_cs_manifest_fsm:start_link(Bucket, Key, NextV, RcPid),
-            {ok, _, [{_, NextM}|_]} = get_manifests(RcPid, Bucket, Key, NextV),
-            ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-                   ManiPid2,
-                   NextM?MANIFEST{prev_object_version = PrevV}),
-            riak_cs_manifest_fsm:stop(ManiPid2);
-       el/=se ->
-            nop
-    end,
-    ok.
-
-
--spec link_version(nopid | riak_client(), lfs_manifest()) ->
-          {sole | new | existing, lfs_manifest()}.
-link_version(nopid, InsertedM) ->
-    {ok, RcPid} = riak_cs_riak_client:checkout(),
-    Res = link_version(RcPid, InsertedM),
-    riak_cs_riak_client:checkin(RcPid),
-    Res;
-
-link_version(RcPid, InsertedM = ?MANIFEST{bkey = {Bucket, Key},
-                                          object_version = Vsn}) ->
-    case get_manifests_of_all_versions(RcPid, Bucket, Key) of
-        {ok, VVMM} ->
-            case orddict:find(Vsn, orddict:from_list(VVMM)) of
-                {ok, _M} ->
-                    %% found a matching version: don't bother
-                    %% changing prev or next links. It will be resolved, later, I suppose?
-                    {existing, InsertedM};
-                error ->
-                    {new, link_at_end(InsertedM, VVMM, RcPid)}
-            end;
-        {error, notfound} ->
-            lager:info("ignoring user-supplied object version ~p as this is the single version", [Vsn]),
-            {sole, InsertedM?MANIFEST{object_version = ?LFS_DEFAULT_OBJECT_VERSION}}
-    end.
-
-link_at_end(M, [], _RcPid) ->
-    M;
-link_at_end(M0 = ?MANIFEST{bkey = {Bucket, Key},
-                           object_version = Vsn}, VVMM, RcPid) ->
-
-    {LastV, LastM} = lists:last(VVMM),
-
-    {ok, MPid1} = riak_cs_manifest_fsm:start_link(Bucket, Key, LastV, RcPid),
-    ok = riak_cs_manifest_fsm:update_manifest_with_confirmation(
-           MPid1, LastM?MANIFEST{next_object_version = Vsn}),
-    riak_cs_manifest_fsm:stop(MPid1),
-
-    M0?MANIFEST{prev_object_version = LastV}.
-
 
 
 -spec manifests_from_riak_object(riakc_obj:riakc_obj()) -> wrapped_manifest().

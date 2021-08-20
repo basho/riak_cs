@@ -33,6 +33,7 @@
          bucket/0,
          bucket_or_blank/0,
          file_name/0,
+         vsn/0,
          block_size/0,
          content_length/0,
          bounded_content_length/0,
@@ -72,6 +73,9 @@ bucket_or_blank() ->
     maybe_blank_string().
 
 file_name() ->
+    non_blank_string().
+
+vsn() ->
     non_blank_string().
 
 block_size() ->

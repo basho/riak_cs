@@ -101,7 +101,7 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
                                           created = Created,
                                           content_md5 = ContentMd5,
                                           content_length = ContentLength,
-                                          object_version = Vsn,
+                                          vsn = Vsn,
                                           acl = ACL}) ->
 
     LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),

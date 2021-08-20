@@ -150,7 +150,7 @@ produce_body(RD, Ctx=#context{local_context=LocalCtx,
                               user=User}) ->
     #key_context{get_fsm_pid = GetFsmPid,
                  manifest = ?MANIFEST{bkey = {Bucket, File},
-                                      object_version = Vsn,
+                                      vsn = Vsn,
                                       acl = Acl}} = LocalCtx,
     BFile_str = bfile_str(Bucket, File, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),

@@ -92,7 +92,7 @@ handle_call({req, #rpbcsbucketreq{max_results=_MaxResults,
              _Timeout, {ReqId, Caller}=_Ctx}, From,
             #state{bucket_name=BucketName, acl=Acl} = State) ->
     gen_server:reply(From, {ok, ReqId}),
-    RiakcObjs = manifests_to_robjs([new_manifest(BucketName, <<"yessir-key1">>,
+    RiakcObjs = manifests_to_robjs([new_manifest(BucketName, <<"yessir-key1">>, <<"1.0">>,
                                                  3141592, Acl)]),
     Caller ! {ReqId, {ok, RiakcObjs}},
     Caller ! {ReqId, {done, continuation_ignored}},
@@ -143,34 +143,36 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% Internal functions
 
-process_get_req(#rpbgetreq{bucket=RiakBucket, key=Key} = _RpbGetReq,
-                #state{bucket_name=BucketName, acl=Acl} = State) ->
+process_get_req(#rpbgetreq{bucket = RiakBucket, key = VKey} = _RpbGetReq,
+                #state{bucket_name = BucketName, acl = Acl} = State) ->
     case which_bucket(RiakBucket) of
         objects ->
-            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Acl),
+            {Key, Vsn} = rcs_common_maifest:decompose_versioned_key(VKey),
+            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl),
             {{ok, RObj}, State#state{manifest = M}};
         blocks ->
-            UUIDSize = byte_size(Key) - 32 div 8,
-            <<_UUID:UUIDSize/binary, _BlockNumber:32>> = Key,
-            Obj = riakc_obj:new_obj(RiakBucket, Key, <<"vclock">>,
+            UUIDSize = byte_size(VKey) - 32 div 8,
+            <<_UUID:UUIDSize/binary, _BlockNumber:32>> = VKey,
+            Obj = riakc_obj:new_obj(RiakBucket, VKey, <<"vclock">>,
                                     [{dict:new(), binary:copy(<<"a">>, 10)}]),
             {{ok, Obj}, State};
         Other ->
             lager:warning("Unknown #rpbgetreq{} for ~p, bucket=~p, key=~p~n",
-                          [Other, RiakBucket, Key]),
-            error({not_implemented, {rpbgetreq, Other, RiakBucket, Key}})
+                          [Other, RiakBucket, VKey]),
+            error({not_implemented, {rpbgetreq, Other, RiakBucket, VKey}})
     end.
 
-process_put_req(#rpbputreq{bucket=RiakBucket, key=Key, return_body=1} = _RpbPutReq,
-                #state{bucket_name=BucketName, acl=Acl} = State) ->
+process_put_req(#rpbputreq{bucket = RiakBucket, key = VKey, return_body = 1} = _RpbPutReq,
+                #state{bucket_name = BucketName, acl = Acl} = State) ->
     case which_bucket(RiakBucket) of
         objects ->
-            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Acl),
+            {Key, Vsn} = rcs_common_maifest:decompose_versioned_key(VKey),
+            {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl),
             {{ok, RObj}, State#state{manifest = M}};
         Other ->
             lager:warning("Unknown #rpbgetreq{} with return_body for ~p," " bucket=~p, key=~p~n",
-                          [Other, RiakBucket, Key]),
-            error({not_implemented, {rpbgetreq_with_return_body, Other, RiakBucket, Key}})
+                          [Other, RiakBucket, VKey]),
+            error({not_implemented, {rpbgetreq_with_return_body, Other, RiakBucket, VKey}})
     end;
 process_put_req(_RpbPutReq, State) ->
     {ok, State}.
@@ -198,32 +200,32 @@ user_to_robj(#rcs_user_v2{key_id=Key} = User) ->
 default_acl(DisplayName, CannicalId, KeyId) ->
     riak_cs_acl_utils:default_acl(DisplayName, CannicalId, KeyId).
 
-new_manifest_ro(BucketName, RiakBucket, Key, Acl) ->
+new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl) ->
     ContentLength = 10,
-    M = new_manifest(BucketName, Key, ContentLength, Acl),
+    M = new_manifest(BucketName, Key, Vsn, ContentLength, Acl),
     Dict = rcs_common_manifest_utils:new_dict(M?MANIFEST.uuid, M),
     ValueBin = riak_cs_utils:encode_term(Dict),
-    RObj = riakc_obj:new_obj(RiakBucket, Key, <<"vclock">>,
+    RObj = riakc_obj:new_obj(RiakBucket, rcs_common_manifest:make_versioned_key(Key, Vsn), <<"vclock">>,
                             [{dict:new(), ValueBin}]),
     {M, RObj}.
 
-new_manifest(BucketName, Key, ContentLength, Acl) ->
+new_manifest(BucketName, Key, Vsn, ContentLength, Acl) ->
     %% TODO: iteration is needed for large content length
     CMd5 = riak_cs_utils:md5(binary:copy(<<"a">>, ContentLength)),
-    ?MANIFEST{
-       block_size = riak_cs_lfs_utils:block_size(),
-       bkey = {BucketName, Key},
-       metadata = [],
-       created = riak_cs_wm_utils:iso_8601_datetime(),
-       uuid = uuid:get_v4(),
+    ?MANIFEST{block_size = riak_cs_lfs_utils:block_size(),
+              bkey = {BucketName, Key},
+              vsn = Vsn,
+              metadata = [],
+              created = riak_cs_wm_utils:iso_8601_datetime(),
+              uuid = uuid:get_v4(),
 
-       content_length = ContentLength,
-       content_type = <<"application/octet-stream">>,
-       content_md5 = CMd5,
-       acl = Acl,
+              content_length = ContentLength,
+              content_type = <<"application/octet-stream">>,
+              content_md5 = CMd5,
+              acl = Acl,
 
-       state = active,
-       props = []}.
+              state = active,
+              props = []}.
 
 manifests_to_robjs(Manifests) ->
     [manifest_to_robj(M) || M <- Manifests].
