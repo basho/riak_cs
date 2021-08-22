@@ -37,7 +37,7 @@ list_buckets(User=?RCS_USER{buckets=Buckets}) ->
 
 -type options() :: [{atom(), 'undefined' | binary()}].
 -spec list_objects(list_objects_req_type(), [string()], binary(), non_neg_integer(), options(), riak_client()) ->
-                          {ok, ?LORESP{}} | {error, term()}.
+                          {ok, list_objects_response() | list_object_versions_response()} | {error, term()}.
 list_objects(_, [], _, _, _, _) ->
     {error, no_such_bucket};
 list_objects(_, _UserBuckets, _Bucket, {error, _}=Error, _Options, _RcPid) ->

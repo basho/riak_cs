@@ -86,7 +86,7 @@
                 object_list_ranges=[] :: object_list_ranges(),
                 profiling=#profiling{} :: profiling(),
                 response :: undefined |
-                            {ok, list_object_response()} |
+                            {ok, list_objects_response() | list_object_versions_response()} |
                             {error, term()},
                 common_prefixes=ordsets:new() :: list_objects_common_prefixes()}).
 
@@ -522,15 +522,10 @@ next_byte(<<Integer:8/integer>>=Byte) when Integer == 255 ->
 next_byte(<<Integer:8/integer>>) ->
     <<(Integer+1):8/integer>>.
 
--spec try_reply({ok, list_object_response()} | {error, term()},
-                state()) ->
-    fsm_state_return().
 try_reply(Response, State) ->
     NewStateData = State#state{response=Response},
     reply_or_wait(Response, NewStateData).
 
--spec reply_or_wait({ok, list_object_response()} | {error, term()}, state()) ->
-                           fsm_state_return().
 reply_or_wait(_Response, State=#state{reply_ref=undefined}) ->
     {next_state, waiting_req, State};
 reply_or_wait(Response, State=#state{reply_ref=Ref}) ->
@@ -538,8 +533,6 @@ reply_or_wait(Response, State=#state{reply_ref=Ref}) ->
     Reason = make_reason(Response),
     {stop, Reason, State}.
 
--spec make_reason({ok, list_object_response()} | {error, term()}) ->
-                         normal | term().
 make_reason({ok, _Response}) ->
     normal;
 make_reason({error, Reason}) ->
@@ -601,28 +594,27 @@ extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
                       riak_cs_utils:timestamp_to_milliseconds(StartTime),
     {MillisecondDiff, NumKeysReturned}.
 
--spec format_profiling_from_state(state()) -> string().
-format_profiling_from_state(#state{req=Request,
-                                   response={ok, Response},
-                                   profiling=Profiling}) ->
+format_profiling_from_state(#state{req = Request,
+                                   response = {ok, Response},
+                                   profiling = Profiling}) ->
     format_profiling(Request, Response, Profiling, self()).
 
--spec format_profiling(list_object_request(),
-                       list_object_response(),
-                       profiling(),
-                       pid()) -> string().
-format_profiling(?LOREQ{max_keys=MaxKeys},
-                 ?LORESP{contents=Contents, common_prefixes=CommonPrefixes},
-                 #profiling{fold_objects_requests=Requests},
+format_profiling(Request, ?LORESP{contents = Contents, common_prefixes = CommonPrefixes},
+                 Profiling, Pid) ->
+    format_profiling(Request, Contents, CommonPrefixes, Profiling, Pid);
+format_profiling(Request, ?LOVRESP{contents = Contents, common_prefixes = CommonPrefixes},
+                 Profiling, Pid) ->
+    format_profiling(Request, Contents, CommonPrefixes, Profiling, Pid).
+
+format_profiling(?LOREQ{max_keys = MaxKeys},
+                 Contents, CommonPrefixes,
+                 #profiling{fold_objects_requests = Requests},
                  Pid) ->
     string:join([io_lib:format("~p: User requested ~p keys", [Pid, MaxKeys]),
-
                  io_lib:format("~p: We returned ~p objects",
                                [Pid, length(Contents)]),
-
                  io_lib:format("~p: We returned ~p common prefixes",
                                [Pid, ordsets:size(CommonPrefixes)]),
-
                  io_lib:format("~p: With fold objects timings: {Millis, NumObjects}: ~p",
                                %% We reverse the Requests in here because they
                                %% were cons'd as they happened.

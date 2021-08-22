@@ -229,11 +229,13 @@ status_code(ErrorName) ->
 
 -spec respond(term(), #wm_reqdata{}, #context{}) ->
                      {binary(), #wm_reqdata{}, #context{}}.
-respond(?LBRESP{}=Response, RD, Ctx) ->
+respond(?LBRESP{} = Response, RD, Ctx) ->
     {riak_cs_xml:to_xml(Response), RD, Ctx};
-respond({ok, ?LORESP{}=Response}, RD, Ctx) ->
+respond({ok, ?LORESP{} = Response}, RD, Ctx) ->
     {riak_cs_xml:to_xml(Response), RD, Ctx};
-respond({error, _}=Error, RD, Ctx) ->
+respond({ok, ?LOVRESP{} = Response}, RD, Ctx) ->
+    {riak_cs_xml:to_xml(Response), RD, Ctx};
+respond({error, _} = Error, RD, Ctx) ->
     api_error(Error, RD, Ctx).
 
 respond(404 = _StatusCode, Body, ReqData, Ctx) ->

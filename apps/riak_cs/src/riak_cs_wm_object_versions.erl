@@ -53,7 +53,7 @@ allowed_methods() ->
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
--spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LORESP{}} | {error, term()}.
+-spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LOVRESP{}} | {error, term()}.
 api_request(RD, Ctx = #context{bucket = Bucket,
                                riak_client = RcPid,
                                user = User}) ->

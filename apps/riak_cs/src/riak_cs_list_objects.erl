@@ -45,9 +45,9 @@ new_request(Type, Name) ->
 
 -spec new_request(list_objects_req_type(), binary(), pos_integer(), list()) -> list_object_request().
 new_request(Type, Name, MaxKeys, Options) ->
-    process_options(#list_objects_request_v1{req_type = Type,
-                                             name = Name,
-                                             max_keys = MaxKeys},
+    process_options(#list_objects_request{req_type = Type,
+                                          name = Name,
+                                          max_keys = MaxKeys},
                     Options).
 
 %% @private
@@ -59,11 +59,11 @@ process_options(Request, Options) ->
                 Options).
 
 process_options_helper({prefix, Val}, Req) ->
-    Req#list_objects_request_v1{prefix=Val};
+    Req#list_objects_request{prefix = Val};
 process_options_helper({delimiter, Val}, Req) ->
-    Req#list_objects_request_v1{delimiter=Val};
+    Req#list_objects_request{delimiter = Val};
 process_options_helper({marker, Val}, Req) ->
-    Req#list_objects_request_v1{marker=Val}.
+    Req#list_objects_request{marker = Val}.
 
 %% Response
 %%--------------------------------------------------------------------
@@ -73,17 +73,15 @@ process_options_helper({marker, Val}, Req) ->
                    NextMarker :: next_marker(),
                    CommonPrefixes :: list(list_objects_common_prefixes()),
                    ObjectContents :: list(list_objects_key_content())) ->
-    list_object_response().
-new_response(?LOREQ{req_type = ReqType,
+    list_objects_response() | list_object_versions_response().
+new_response(?LOREQ{req_type = objects,
                     name = Name,
                     max_keys = MaxKeys,
                     prefix = Prefix,
                     delimiter = Delimiter,
-                    marker = Marker
-                   },
+                    marker = Marker},
              IsTruncated, NextMarker, CommonPrefixes, ObjectContents) ->
-    ?LORESP{resp_type = ReqType,
-            name = Name,
+    ?LORESP{name = Name,
             max_keys = MaxKeys,
             prefix = Prefix,
             delimiter = Delimiter,
@@ -91,12 +89,37 @@ new_response(?LOREQ{req_type = ReqType,
             next_marker = NextMarker,
             is_truncated = IsTruncated,
             contents = ObjectContents,
-            common_prefixes = CommonPrefixes}.
+            common_prefixes = CommonPrefixes};
+
+new_response(?LOREQ{req_type = versions,
+                    name = Name,
+                    max_keys = MaxKeys,
+                    prefix = Prefix,
+                    delimiter = Delimiter,
+                    marker = Marker},
+             IsTruncated, NextMarker, CommonPrefixes, ObjectContents) ->
+    {KeyMarker, VersionIdMarker} = safe_decompose_key(Marker),
+    {NextKeyMarker, NextVersionIdMarker} = safe_decompose_key(NextMarker),
+    ?LOVRESP{name = Name,
+             max_keys = MaxKeys,
+             prefix = Prefix,
+             delimiter = Delimiter,
+             key_marker = KeyMarker,
+             version_id_marker = VersionIdMarker,
+             next_key_marker = NextKeyMarker,
+             next_version_id_marker = NextVersionIdMarker,
+             is_truncated = IsTruncated,
+             contents = ObjectContents,
+             common_prefixes = CommonPrefixes}.
+
+safe_decompose_key(undefined) -> {undefined, undefined};
+safe_decompose_key(K) -> rcs_common_manifest:decompose_versioned_key(K).
 
 %% Rest
 %%--------------------------------------------------------------------
 
--spec manifest_to_keycontent(list_objects_req_type(), lfs_manifest()) -> list_objects_key_content().
+-spec manifest_to_keycontent(list_objects_req_type(), lfs_manifest()) ->
+          list_objects_key_content() | list_object_versions_key_content().
 manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
                                           created = Created,
                                           content_md5 = ContentMd5,
@@ -117,12 +140,11 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
 
     case ReqType of
         versions ->
-            VersionId = Vsn,
             ?LOVKC{key = Key,
                    last_modified = LastModified,
                    etag = Etag,
                    is_latest = true,
-                   version_id = VersionId,
+                   version_id = Vsn,
                    size = ContentLength,
                    owner = Owner,
                    storage_class = StorageClass};
@@ -144,5 +166,5 @@ acl_to_owner(?ACL{owner=Owner}) ->
     {DisplayName, CanonicalId, _KeyId} = Owner,
     CanonicalIdBinary = list_to_binary(CanonicalId),
     DisplayNameBinary = list_to_binary(DisplayName),
-    #list_objects_owner_v1{id=CanonicalIdBinary,
-                           display_name=DisplayNameBinary}.
+    #list_objects_owner{id = CanonicalIdBinary,
+                        display_name = DisplayNameBinary}.

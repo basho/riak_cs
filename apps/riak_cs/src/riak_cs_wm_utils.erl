@@ -290,8 +290,8 @@ setup_manifest(KeyCtx = #key_context{bucket = Bucket,
                                                      FetchConcurrency,
                                                      BufferFactor),
     Manifest = riak_cs_get_fsm:get_manifest(FsmPid),
-    KeyCtx#key_context{get_fsm_pid=FsmPid,
-                       manifest=Manifest}.
+    KeyCtx#key_context{get_fsm_pid = FsmPid,
+                       manifest = Manifest}.
 
 %% @doc Produce an api error by using response_module.
 respond_api_error(RD, Ctx, ErrorAtom) ->

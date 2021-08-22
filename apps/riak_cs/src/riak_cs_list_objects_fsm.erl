@@ -82,8 +82,8 @@
 
                 %% list keys ----
                 list_keys_req_id :: undefined | non_neg_integer(),
-                key_buffer=[] :: undefined | list(),
-                keys=[] :: undefined | list(),
+                key_buffer = [] :: undefined | list(),
+                keys = [] :: undefined | list(),
                 %% we cache the number of keys because
                 %% `length/1' is linear time
                 num_keys :: undefined | non_neg_integer(),
@@ -113,11 +113,11 @@
                 %% this field will change, it represents
                 %% the current outstanding m/r request
                 map_red_req_id :: undefined | non_neg_integer(),
-                mr_requests=[] :: [{StartIdx :: non_neg_integer(),
-                                    EndIdx :: non_neg_integer()}],
-                object_buffer=[] :: list(),
+                mr_requests = [] :: [{StartIdx :: non_neg_integer(),
+                                      EndIdx :: non_neg_integer()}],
+                object_buffer = [] :: list(),
 
-                response :: undefined | list_object_response(),
+                response :: undefined | list_objects_response(),
 
                 req_profiles=#profiling{} :: profiling(),
 
@@ -125,7 +125,7 @@
                 use_cache :: boolean(),
                 %% Key to use to check for cached results from key listing
                 cache_key :: term(),
-                common_prefixes=ordsets:new() :: list_objects_common_prefixes()}).
+                common_prefixes = ordsets:new() :: list_objects_common_prefixes()}).
 
 %% some useful shared types
 
@@ -413,7 +413,7 @@ prepare_state_for_mapred(State=#state{req=Request,
     State#state{mr_requests=PrevRequests ++ [NewReq]}.
 
 -spec make_response(list_object_request(), list(), list()) ->
-    list_object_response().
+    list_objects_response().
 make_response(Request=?LOREQ{req_type = ReqType,
                              max_keys = NumKeysRequested},
               ObjectBuffer, CommonPrefixes) ->

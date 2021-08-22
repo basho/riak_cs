@@ -94,8 +94,9 @@ to_xml(#acl_v1{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(?LBRESP{}=ListBucketsResp) ->
     list_buckets_response_to_xml(ListBucketsResp);
-to_xml(?LORESP{}=ListObjsResp) ->
-    SimpleForm = list_objects_response_to_simple_form(ListObjsResp),
+to_xml(Resp) when is_record(Resp, list_objects_response);
+                  is_record(Resp, list_object_versions_response) ->
+    SimpleForm = list_objects_response_to_simple_form(Resp),
     to_xml(SimpleForm);
 to_xml(?RCS_USER{}=User) ->
     user_record_to_xml(User);
@@ -151,8 +152,7 @@ owner_content({OwnerName, OwnerId}) ->
     [make_external_node('ID', OwnerId),
      make_external_node('DisplayName', OwnerName)].
 
-list_objects_response_to_simple_form(?LORESP{resp_type = objects,
-                                             contents = Contents,
+list_objects_response_to_simple_form(?LORESP{contents = Contents,
                                              common_prefixes = CommonPrefixes,
                                              name = Name,
                                              prefix = Prefix,
@@ -180,25 +180,31 @@ list_objects_response_to_simple_form(?LORESP{resp_type = objects,
         KeyContents ++ CCPP,
     [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Body}];
 
-list_objects_response_to_simple_form(?LORESP{resp_type = versions,
-                                             contents = Contents,
-                                             common_prefixes = CommonPrefixes,
-                                             name = Name,
-                                             prefix = Prefix,
-                                             marker = Marker,
-                                             next_marker = NextMarker,
-                                             max_keys = MaxKeys,
-                                             delimiter = Delimiter,
-                                             is_truncated = IsTruncated}) ->
+list_objects_response_to_simple_form(?LOVRESP{contents = Contents,
+                                              common_prefixes = CommonPrefixes,
+                                              name = Name,
+                                              prefix = Prefix,
+                                              key_marker = KeyMarker,
+                                              version_id_marker = VersionIdMarker,
+                                              next_key_marker = NextKeyMarker,
+                                              next_version_id_marker = NextVersionIdMarker,
+                                              max_keys = MaxKeys,
+                                              delimiter = Delimiter,
+                                              is_truncated = IsTruncated}) ->
     KeyContents = [{'Version', key_content_to_simple_form(versions, Content)} ||
                       Content <- Contents],
     CommonPrefixes = [{'CommonPrefixes', [{'Prefix', [CommonPrefix]}]} ||
                          CommonPrefix <- CommonPrefixes],
-    Body = [{'Name',       [Name]},
-            {'Prefix',     [Prefix]},
-            {'Marker',     [Marker]}] ++
-        [{'NextMarker',  [M]} ||
-            M <- [NextMarker],
+    Body = [{'Name',             [Name]},
+            {'Prefix',           [Prefix]},
+            {'KeyMarker',        [KeyMarker]},
+            {'VersionIdMarker',  [VersionIdMarker]}] ++
+        [{'NextKeyMarker',  [M]} ||
+            M <- [NextKeyMarker],
+            M =/= undefined,
+            IsTruncated] ++
+        [{'NextVersionIdMarker',  [M]} ||
+            M <- [NextVersionIdMarker],
             M =/= undefined,
             IsTruncated] ++
         [{'MaxKeys',     [MaxKeys]},
@@ -208,7 +214,7 @@ list_objects_response_to_simple_form(?LORESP{resp_type = versions,
     [{'ListBucketResult', [{'xmlns', ?S3_XMLNS}], Body}].
 
 key_content_to_simple_form(objects, KeyContent) ->
-    #list_objects_owner_v1{id=Id, display_name=Name} = KeyContent?LOKC.owner,
+    #list_objects_owner{id=Id, display_name=Name} = KeyContent?LOKC.owner,
     [{'Key',          [KeyContent?LOKC.key]},
      {'LastModified', [KeyContent?LOKC.last_modified]},
      {'ETag',         [KeyContent?LOKC.etag]},
@@ -218,7 +224,7 @@ key_content_to_simple_form(objects, KeyContent) ->
                        {'DisplayName', [Name]}]}];
 
 key_content_to_simple_form(versions, KeyContent) ->
-    #list_objects_owner_v1{id=Id, display_name=Name} = KeyContent?LOVKC.owner,
+    #list_objects_owner{id=Id, display_name=Name} = KeyContent?LOVKC.owner,
     [{'Key',          [KeyContent?LOVKC.key]},
      {'LastModified', [KeyContent?LOVKC.last_modified]},
      {'ETag',         [KeyContent?LOVKC.etag]},
@@ -377,8 +383,8 @@ acl_to_xml_test() ->
 
 list_objects_response_to_xml_test() ->
     Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>testkey1</Key><LastModified>2012-11-29T17:50:30.000Z</LastModified><ETag>\"fba9dede6af29711d7271245a35813428\"</ETag><Size>12345</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner></Contents><Contents><Key>testkey2</Key><LastModified>2012-11-29T17:52:30.000Z</LastModified><ETag>\"43433281b2f27731ccf53597645a3985\"</ETag><Size>54321</Size><StorageClass>STANDARD</StorageClass><Owner><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Owner></Contents></ListBucketResult>">>,
-    Owner1 = #list_objects_owner_v1{id = <<"TESTID1">>, display_name = <<"tester1">>},
-    Owner2 = #list_objects_owner_v1{id = <<"TESTID2">>, display_name = <<"tester2">>},
+    Owner1 = #list_objects_owner{id = <<"TESTID1">>, display_name = <<"tester1">>},
+    Owner2 = #list_objects_owner{id = <<"TESTID2">>, display_name = <<"tester2">>},
     Content1 = ?LOKC{key = <<"testkey1">>,
                      last_modified = riak_cs_wm_utils:to_iso_8601("Thu, 29 Nov 2012 17:50:30 GMT"),
                      etag = <<"\"fba9dede6af29711d7271245a35813428\"">>,

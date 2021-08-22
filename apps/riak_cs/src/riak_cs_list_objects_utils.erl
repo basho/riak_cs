@@ -88,7 +88,7 @@ start_link(RcPid, CallerPid, ListKeysRequest, CacheKey, UseCache) ->
     end.
 
 -spec get_object_list(pid()) ->
-    {ok, list_object_response()} |
+    {ok, list_objects_response() | list_object_versions_response()} |
     {error, term()}.
 get_object_list(FSMPid) ->
     gen_fsm:sync_send_all_state_event(FSMPid, get_object_list, infinity).

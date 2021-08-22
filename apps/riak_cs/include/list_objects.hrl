@@ -25,9 +25,7 @@
 
 -type list_objects_req_type() :: objects | versions.
 
-%% This record actually does not need to be versioned,
-%% as it's never persisted.
--record(list_objects_request_v1,
+-record(list_objects_request,
         {
          req_type :: list_objects_req_type(),
 
@@ -43,17 +41,16 @@
          %% a binary to group keys by
          delimiter :: binary() | undefined,
 
-         %% the key to start with
-         marker :: binary() | undefined
+         %% the key and version_id to start with
+         marker :: binary() | undefined,
+         version_id_marker :: binary() | undefined
         }).
--type list_object_request() :: #list_objects_request_v1{}.
--define(LOREQ, #list_objects_request_v1).
+-type list_object_request() :: #list_objects_request{}.
+-define(LOREQ, #list_objects_request).
 
 -type next_marker() :: 'undefined' | binary().
 
-%% This record actually does not need to be versioned,
-%% as it's never persisted.
--record(list_objects_response_v1,
+-record(list_objects_response,
         {
          %% Params just echoed back from the request --------------------------
 
@@ -72,25 +69,23 @@
 
          %% the marker used in the _request_
          marker :: binary() | undefined,
-
          %% the (optional) marker to use for pagination
          %% in the _next_ request
          next_marker :: next_marker(),
+         %% (marker and next_marker not used in ListObjectsV2)
 
          %% The actual response -----------------------------------------------
          is_truncated :: boolean(),
 
-         contents :: list(list_objects_key_content() | list_object_versions_key_content()),
+         contents :: [list_objects_key_content()],
 
-         common_prefixes :: list_objects_common_prefixes(),
-
-         resp_type :: list_objects_req_type()
+         common_prefixes :: list_objects_common_prefixes()
         }).
 
--type list_object_response() :: #list_objects_response_v1{}.
--define(LORESP, #list_objects_response_v1).
+-type list_objects_response() :: #list_objects_response{}.
+-define(LORESP, #list_objects_response).
 
--record(list_objects_key_content_v1,
+-record(list_objects_key_content,
         {
          key :: binary(),
          last_modified :: term(),
@@ -99,10 +94,48 @@
          owner :: list_objects_owner(),
          storage_class :: binary()
         }).
--type list_objects_key_content() :: #list_objects_key_content_v1{}.
--define(LOKC, #list_objects_key_content_v1).
+-type list_objects_key_content() :: #list_objects_key_content{}.
+-define(LOKC, #list_objects_key_content).
 
--record(list_object_versions_key_content_v1,
+
+-record(list_object_versions_response,
+        {
+         %% Params just echoed back from the request --------------------------
+
+         %% the name of the bucket
+         name :: binary(),
+
+         %% how many keys were requested to be
+         %% returned in the response
+         max_keys :: non_neg_integer(),
+
+         %% a 'starts-with' parameter
+         prefix :: binary() | undefined,
+
+         %% a binary to group keys by
+         delimiter :: binary() | undefined,
+
+         %% the marker used in the _request_
+         key_marker :: binary() | undefined,
+         version_id_marker :: binary() | undefined,
+
+         %% the (optional) marker to use for pagination
+         %% in the _next_ request
+         next_key_marker :: next_marker(),
+         next_version_id_marker :: next_marker(),
+
+         %% The actual response -----------------------------------------------
+         is_truncated :: boolean(),
+
+         contents :: [list_object_versions_key_content()],
+
+         common_prefixes :: list_objects_common_prefixes()
+        }).
+
+-type list_object_versions_response() :: #list_object_versions_response{}.
+-define(LOVRESP, #list_object_versions_response).
+
+-record(list_object_versions_key_content,
         {
          key :: binary(),
          last_modified :: term(),
@@ -113,13 +146,13 @@
          owner :: list_objects_owner(),
          storage_class :: binary()
         }).
--type list_object_versions_key_content() :: #list_object_versions_key_content_v1{}.
--define(LOVKC, #list_object_versions_key_content_v1).
+-type list_object_versions_key_content() :: #list_object_versions_key_content{}.
+-define(LOVKC, #list_object_versions_key_content).
 
--record(list_objects_owner_v1, {
+-record(list_objects_owner, {
         id :: binary(),
         display_name :: binary()}).
--type list_objects_owner() :: #list_objects_owner_v1{}.
+-type list_objects_owner() :: #list_objects_owner{}.
 
 -type list_objects_common_prefixes() :: list(binary()).
 

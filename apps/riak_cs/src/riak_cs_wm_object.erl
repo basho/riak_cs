@@ -325,11 +325,11 @@ accept_body(RD, #context{response_module=ResponseMod} = Ctx) ->
 
 -spec handle_normal_put(#wm_reqdata{}, #context{}) ->
     {{halt, integer()}, #wm_reqdata{}, #context{}}.
-handle_normal_put(RD, Ctx) ->
+handle_normal_put(RD, Ctx0) ->
     #context{local_context=LocalCtx,
              user=User,
              acl=ACL,
-             riak_client=RcPid} = Ctx,
+             riak_client=RcPid} = Ctx0,
     #key_context{bucket = Bucket,
                  key = Key,
                  obj_vsn = SuppliedVsn,
@@ -337,9 +337,10 @@ handle_normal_put(RD, Ctx) ->
                  size = Size,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
 
-    Vsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
+    EventualVsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
+    Ctx1 = Ctx0#context{local_context = LocalCtx#key_context{obj_vsn = EventualVsn}},
 
-    BFile_str = bfile_str(Bucket, Key, Vsn),
+    BFile_str = bfile_str(Bucket, Key, EventualVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
                                    [], [UserName, BFile_str]),
@@ -347,11 +348,11 @@ handle_normal_put(RD, Ctx) ->
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
 
-    Args = [{Bucket, Key, Vsn, Size, list_to_binary(ContentType),
+    Args = [{Bucket, Key, EventualVsn, Size, list_to_binary(ContentType),
              Metadata, BlockSize, ACL, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     try
-        accept_streambody(RD, Ctx, Pid,
+        accept_streambody(RD, Ctx1, Pid,
                           wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()))
     catch
         Type:Error ->
@@ -492,9 +493,9 @@ finalize_request(RD,
                  Pid) ->
     #key_context{bucket = Bucket,
                  key = Key,
-                 obj_vsn = ObjVsn,
+                 obj_vsn = Vsn,
                  size = S} = LocalCtx,
-    BFile_str = bfile_str(Bucket, Key, ObjVsn),
+    BFile_str = bfile_str(Bucket, Key, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
@@ -505,7 +506,8 @@ finalize_request(RD,
                 %% TODO: probably want something that counts actual bytes uploaded
                 %% instead, to record partial/aborted uploads
                 AccessRD = riak_cs_access_log_handler:set_bytes_in(S, RD),
-                {{halt, 200}, wrq:set_resp_header("ETag", ETag, AccessRD), Ctx};
+                {{halt, 200}, wrq:set_resp_headers([{"ETag", ETag},
+                                                    {"x-amz-version-id", Vsn}], AccessRD), Ctx};
             {error, invalid_digest} ->
                 ResponseMod:invalid_digest_response(ContentMD5, RD, Ctx);
             {error, Reason} ->
