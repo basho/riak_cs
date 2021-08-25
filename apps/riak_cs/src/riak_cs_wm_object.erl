@@ -375,6 +375,8 @@ determine_object_version(Vsn0, Bucket, Key, RcPid) ->
             lager:info("bucket \"~s\" has object versioning enabled"
                        " but using ~p as supplied in request for key ~p", [Bucket, Vsn0, Key]),
             Vsn0;
+        {?LFS_DEFAULT_OBJECT_VERSION, {ok, #bucket_versioning{status = suspended}}} ->
+            Vsn0;
         {Vsn3, {ok, #bucket_versioning{status = suspended}}} ->
             lager:warning("ignoring object version ~p in request for key ~p in bucket \"~s\""
                           " as the bucket has object versioning suspended", [Vsn3, Key, Bucket]),
