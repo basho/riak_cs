@@ -226,8 +226,9 @@ format_object_qs({SubResources, QueryParams}) ->
 
 %% @doc Format an object operation query string to conform the the
 %% rewrite rules.
-format_object_qs(_SubResources, QueryParams, #{have_acl := true})  ->
-    ["/acl", format_query_params(QueryParams)];
+format_object_qs(_SubResources, QueryParams, #{version_id := VersionId,
+                                               have_acl := true})  ->
+    ["/versions/", VersionId, "/acl", format_query_params(QueryParams)];
 format_object_qs(_SubResources, QueryParams, #{have_uploads := true,
                                                version_id := VersionId}) ->
     ["/versions/", VersionId, "/uploads", format_query_params(QueryParams)];
