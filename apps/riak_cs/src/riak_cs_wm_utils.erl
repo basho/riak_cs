@@ -76,7 +76,6 @@
 
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
--define(QS_VERSION_ID, "versionId").
 
 -type acl_or_error() ::  {ok, #acl_v2{}} |
                          {error, 'invalid_argument'} |
@@ -444,10 +443,17 @@ extract_key(RD, Ctx = #context{local_context = LocalCtx0}) ->
 
 extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
     VsnId =
-        case wrq:path_info(versionId, RD) of
-            undefined ->
+        case {wrq:path_info(versionId, RD), rcs_version_id_from_headers(RD)} of
+            {undefined, undefined} ->
                 ?LFS_DEFAULT_OBJECT_VERSION;
-            V ->
+            {"null", Defined} when is_list(Defined) ->
+                %% emulating a versionId resource, if given, as a Riak
+                %% CS extension, for PutObject should probably be
+                %% better done in s3_rewrite, but doing so will be too
+                %% disruptive for the tidy rewriting flow
+                lager:debug("are we PutObject on a version? ~p", [Defined]),
+                list_to_binary(Defined);
+            {V, _} ->
                 list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(V)))
         end,
     case size(VsnId) =< riak_cs_config:max_key_length() of
@@ -457,6 +463,9 @@ extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
         _ ->
             {error, {key_too_long, size(VsnId)}}
     end.
+
+rcs_version_id_from_headers(RD) ->
+    wrq:get_req_header("x-rcs-versionid", RD).
 
 extract_name(User) when is_list(User) ->
     User;
