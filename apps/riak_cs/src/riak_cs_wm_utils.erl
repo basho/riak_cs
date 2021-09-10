@@ -104,7 +104,7 @@ service_available(Pool, RD, Ctx) ->
                                                  string() | undefined,
                                                  string() | undefined}.
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
-    {riak_cs_passthru_auth, KeyId, undefined};
+    {riak_cs_s3_passthru_auth, KeyId, undefined};
 parse_auth_header("AWS " ++ Key, _) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
@@ -122,9 +122,9 @@ parse_auth_header(_, _) ->
                                                            string() | undefined,
                                                            string() | undefined}.
 parse_auth_params(KeyId, _, true) when KeyId =/= undefined ->
-    {riak_cs_passthru_auth, KeyId, undefined};
+    {riak_cs_s3_passthru_auth, KeyId, undefined};
 parse_auth_params(undefined, _, true) ->
-    {riak_cs_passthru_auth, undefined, undefined};
+    {riak_cs_s3_passthru_auth, undefined, undefined};
 parse_auth_params(undefined, _, false) ->
     {riak_cs_blockall_auth, undefined, undefined};
 parse_auth_params(_, undefined, _) ->
