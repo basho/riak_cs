@@ -1,5 +1,7 @@
 %% -*- erlang -*-
 
+{rel_vsn, "3.0"}.
+
 {platform_bin_dir,  "/opt/riak-cs/bin"}.
 {platform_data_dir, "/var/lib/riak-cs/data"}.
 {platform_etc_dir,  "/etc/riak-cs"}.

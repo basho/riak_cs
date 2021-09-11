@@ -6,7 +6,7 @@ services:
       net0:
         aliases:
           - riak
-        ipv4_address: 172.18.0.3
+        ipv4_address: 172.18.0.2
     ports:
       - "8087:8087"
       - "8098:8098"
@@ -25,7 +25,7 @@ services:
       net0:
         aliases:
           - stanchion
-        ipv4_address: 172.18.0.2
+        ipv4_address: 172.18.0.3
     ports:
       - "8085:8085"
     build:
@@ -55,6 +55,20 @@ services:
       - type: bind
         source: ${RIAK_CS_DATA:-./data/riak_cs}
         target: /var/lib/riak_cs
+
+  riak_cs_control:
+    depends_on:
+      - riak_cs
+    networks:
+      net0:
+        aliases:
+          - riak_cs_control
+        ipv4_address: 172.18.0.5
+    ports:
+      - "8090:8090"
+    build:
+      dockerfile: riak_cs_control/Dockerfile
+      context: .
 
 networks:
   net0:

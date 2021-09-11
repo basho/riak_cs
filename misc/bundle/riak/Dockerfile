@@ -1,7 +1,7 @@
 FROM debian:buster
 
-ARG RIAK_VSN=3.0.6 \
-    listener_ip=172.18.0.3 \
+ARG RIAK_VSN=3.0.7 \
+    listener_ip=172.18.0.2 \
     listener_pb_port=8087 \
     listener_http_port=8098
 
@@ -34,10 +34,11 @@ RUN sed -i \
      ].|" \
      /etc/riak/advanced.config
 
-EXPOSE ${listener_pb_port} ${listener_http_port}
+EXPOSE $listener_pb_port $listener_http_port
 
-RUN chown riak:riak /var/lib/riak
+RUN chown -R riak:riak /var/lib/riak
 RUN echo "riak soft nofile 65536" >>/etc/security/limits.conf
 RUN echo "riak hard nofile 65536" >>/etc/security/limits.conf
 
+USER riak
 CMD riak foreground

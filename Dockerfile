@@ -9,7 +9,7 @@ ARG stanchion_host=127.0.0.1 \
     admin_host=127.0.0.1 \
     admin_port=8000
 
-EXPOSE $stanchion_port
+EXPOSE $cs_port
 
 WORKDIR /usr/src/riak_cs
 COPY . /usr/src/riak_cs
