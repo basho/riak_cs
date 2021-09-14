@@ -1,8 +1,8 @@
 ARG STANCHION_VSN=3.0.0 \
-    riak_host=172.18.0.2 \
+    riak_host=riak \
     riak_pb_port=8087 \
     riak_http_port=8098 \
-    stanchion_host=172.18.0.3 \
+    stanchion_host=stanchion \
     stanchion_port=8085
 
 FROM erlang:22.3.4.10 AS compile-image

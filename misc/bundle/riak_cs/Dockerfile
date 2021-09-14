@@ -1,11 +1,11 @@
 ARG RIAK_CS_VSN=3.0.0 \
-    cs_host=172.18.0.4 \
+    cs_host=riak_cs \
     cs_port=8080 \
-    admin_host=172.18.0.4 \
+    admin_host=riak_cs \
     admin_port=8000 \
-    stanchion_host=172.18.0.3 \
+    stanchion_host=stanchion \
     stanchion_port=8085 \
-    riak_host=172.18.0.2 \
+    riak_host=riak \
     riak_http_port=8098 \
     riak_pb_port=8087
 

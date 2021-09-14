@@ -1,5 +1,5 @@
 ARG RIAK_CS_CONTROL_VSN=3.0.0 \
-    CS_HOST="172.18.0.4" \
+    CS_HOST=riak_cs \
     CS_PORT=8080 \
     CS_PROTO="http" \
     CS_CONTROL_PORT=8090 \

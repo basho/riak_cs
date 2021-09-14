@@ -1,0 +1,39 @@
+version: "3.8"
+services:
+
+  riak:
+    ports:
+      - "8087:8087"
+      - "8098:8098"
+    build:
+      dockerfile: riak/Dockerfile
+      context: .
+
+  stanchion:
+    depends_on:
+      - riak
+    ports:
+      - "8085:8085"
+    build:
+      dockerfile: stanchion/Dockerfile
+      context: .
+
+  riak_cs:
+    depends_on:
+      - riak
+      - stanchion
+    ports:
+      - "8080:8080"
+      - "8000:8000"
+    build:
+      dockerfile: riak_cs/Dockerfile
+      context: .
+
+  riak_cs_control:
+    depends_on:
+      - riak_cs
+    ports:
+      - "8090:8090"
+    build:
+      dockerfile: riak_cs_control/Dockerfile
+      context: .
