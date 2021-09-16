@@ -11,6 +11,7 @@ STANCHION_DATA ?= $(shell pwd)/data/stanchion
 
 N_RIAK_NODES     ?= 3
 N_RCS_NODES      ?= 2
+RCS_AUTH_V4      ?= on
 
 DOCKER_SERVICE_NAME ?= rcs-tussle-one
 
@@ -42,7 +43,11 @@ up-scalable: build-scalable
 	 N_RIAK_NODES=$(N_RIAK_NODES) \
 	 N_RCS_NODES=$(N_RCS_NODES) \
 	    docker stack deploy -c docker-compose-scalable-run.yml $(DOCKER_SERVICE_NAME) \
-	 && ./make_riak_cluster.py $(DOCKER_SERVICE_NAME) $(N_RIAK_NODES) $(N_RCS_NODES)
+	 && ./make_riak_cluster.py \
+		$(DOCKER_SERVICE_NAME) \
+		$(N_RIAK_NODES) \
+		$(N_RCS_NODES) \
+		$(RCS_AUTH_V4)
 
 down-single:
 	@COMPOSE_FILE=docker-compose-single.yml \

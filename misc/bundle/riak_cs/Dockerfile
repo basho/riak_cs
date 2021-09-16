@@ -9,7 +9,7 @@ RUN tar xzf source.tar.gz
 RUN mv riak_cs-${RIAK_CS_VSN} rcs
 WORKDIR rcs
 
-EXPOSE 8080 8000 8087
+EXPOSE 8080 8000
 
 RUN ./rebar3 as rel release
 

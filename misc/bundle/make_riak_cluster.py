@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import json, sys, time, subprocess
+import json, sys, time, subprocess, httplib2
 
 
 def discover_nodes(tussle_name, pattern, required_nodes):
@@ -85,14 +85,16 @@ def join_riak_nodes(nodes):
         print(p.stdout)
 
 
-def configure_rcs_nodes(rcs_nodes, riak_nodes, stanchion_node):
+def configure_rcs_nodes(rcs_nodes, riak_nodes, stanchion_node, auth_v4):
     n = 0
     m = 0
+    print("Configuring Riak CS nodes")
     for rn in rcs_nodes:
         nodename = "riak_cs@" + rn["ip"]
-        print("Setting riak_cs nodename at node", rn["ip"], "to", nodename)
         p = docker_exec_proc(rn, ["sed", "-i", "-E",
-                                  "-e", "s|nodename = riak@127.0.0.1|nodename = %s|" % nodename,
+                                  "-e", "s|nodename = .+|nodename = %s|" % nodename,
+                                  "-e", "s|listener = .+|listener = 0.0.0.0:8080|",
+                                  "-e", "s|auth_v4 = .+|auth_v4 = %s|" % auth_v4,
                                   "-e", "s|riak_host = .+|riak_host = %s:8087|" % riak_nodes[m]["ip"],
                                   "-e", "s|stanchion_host = .+|stanchion_host = %s:8085|" % stanchion_node["ip"],
                                   "/opt/riak-cs/etc/riak-cs.conf"])
@@ -105,7 +107,7 @@ def configure_rcs_nodes(rcs_nodes, riak_nodes, stanchion_node):
 
 def configure_stanchion_node(stanchion_node, riak_nodes):
     nodename = "stanchion@" + stanchion_node["ip"]
-    print("Setting stanchion nodename at node", stanchion_node["ip"], "to", nodename)
+    print("Configuring Stanchion node")
     p = docker_exec_proc(stanchion_node, ["sed", "-i", "-E",
                                           "-e", "s|listener = 127.0.0.1:8085|listener = 0.0.0.0:8085|",
                                           "-e", "s|nodename = riak@127.0.0.1|nodename = %s|" % nodename,
@@ -113,6 +115,7 @@ def configure_stanchion_node(stanchion_node, riak_nodes):
                                           "/opt/stanchion/etc/stanchion.conf"])
     if p.returncode != 0:
         sys.exit("Failed to modify stanchion.conf node at %s: %s%s" % (stanchion_node["ip"], p.stdout, p.stderr))
+
 
 
 def start_stanchion_node(node):
@@ -129,16 +132,43 @@ def start_rcs_nodes(nodes):
             sys.exit("Failed to start Riak CS at %s: %s%s" % (n["ip"], p.stdout, p.stderr))
 
 
+def find_external_ips(container):
+    p = subprocess.run(args = ["docker", "container", "inspect", container],
+                       capture_output = True,
+                       encoding = 'utf8')
+    cid = json.loads(p.stdout)[0]["Id"]
+    p = subprocess.run(args = ["docker", "network", "inspect", "docker_gwbridge"],
+                       capture_output = True,
+                       encoding = 'utf8')
+    ip = json.loads(p.stdout)[0]["Containers"][cid]["IPv4Address"].split("/")[0]
+    return ip
+
 
 def docker_exec_proc(n, cmd):
     return subprocess.run(args = ["docker", "exec", "-it", n["container"]] + cmd,
                           capture_output = True,
                           encoding = "utf8")
 
+def create_user(host, name, email):
+    url = 'http://%s:%d/riak-cs/user' % (host, 8080)
+    conn = httplib2.Http()
+    retries = 10
+    while retries > 0:
+        try:
+            resp, content = conn.request(url, "POST",
+                                         headers = {"Content-Type": "application/json"},
+                                         body = json.dumps({"email": email, "name": name}))
+            conn.close()
+            return json.loads(content)
+        except ConnectionRefusedError:
+            time.sleep(2)
+
 def main():
     tussle_name = sys.argv[1]
     required_riak_nodes = int(sys.argv[2])
     required_rcs_nodes = int(sys.argv[3])
+    auth_v4 = sys.argv[4]
+
     riak_nodes = discover_nodes(tussle_name, "riak", required_riak_nodes)
     configure_riak_nodes(riak_nodes)
     start_riak_nodes(riak_nodes)
@@ -148,9 +178,21 @@ def main():
     rcs_nodes = discover_nodes(tussle_name, "riak_cs", required_rcs_nodes)
     stanchion_nodes = discover_nodes(tussle_name, "stanchion", 1)
     configure_stanchion_node(stanchion_nodes[0], riak_nodes)
-    configure_rcs_nodes(rcs_nodes, riak_nodes, stanchion_nodes[0])
+    configure_rcs_nodes(rcs_nodes, riak_nodes, stanchion_nodes[0], auth_v4)
     start_stanchion_node(stanchion_nodes[0])
     start_rcs_nodes(rcs_nodes)
+
+    rcs_ext_ips = [find_external_ips(c["container"]) for c in rcs_nodes]
+    print("Riak CS external addresses are:")
+    for ip in rcs_ext_ips:
+        print("  %s" % ip)
+
+    admin_email = "admin@fafa.org"
+    admin_name = "admin"
+    u = create_user(rcs_ext_ips[0], admin_name, admin_email)
+    print("Admin user (%s <%s>) creds:\n  key_id: %s\n  key_secret: %s\n  id: %s\n"
+          % (admin_name, admin_email,
+             u["key_id"], u["key_secret"], u["id"]))
 
 
 if __name__ == "__main__":
