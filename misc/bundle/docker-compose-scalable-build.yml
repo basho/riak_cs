@@ -5,6 +5,7 @@ services:
     ports:
       - "8087:8087"
       - "8098:8098"
+      - "9080:9080"
     build:
       dockerfile: riak/Dockerfile
       context: .

@@ -14,7 +14,7 @@ EXPOSE $cs_port
 WORKDIR /usr/src/riak_cs
 COPY . /usr/src/riak_cs
 
-RUN sed -i \
+RUN sed \
     -e "s/@cs_ip@/$cs_host/" \
     -e "s/@cs_port@/$cs_port/" \
     -e "s/@admin_ip@/$admin_host/" \
@@ -23,7 +23,7 @@ RUN sed -i \
     -e "s/@stanchion_port@/$stanchion_port/" \
     -e "s/@riak_ip@/$riak_host/" \
     -e "s/@riak_pb_port@/$riak_pb_port/" \
-    rel/docker/vars.config
+    rel/docker/vars.config.src >rel/docker/vars.config
 RUN ./rebar3 as docker release
 
 FROM debian:buster AS runtime-image

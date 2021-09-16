@@ -9,9 +9,10 @@ services:
     ports:
       - "8087:8087"
       - "8098:8098"
+      - "9080:9080"
     image: bundle_riak
     deploy:
-      replicas: ${RIAK_NODES:-3}
+      replicas: ${N_RIAK_NODES:-3}
 
   stanchion:
     depends_on:
@@ -39,7 +40,7 @@ services:
       - "8000:8000"
     image: bundle_riak_cs
     deploy:
-      replicas: 3
+      replicas: ${N_RCS_NODES:-2}
 
   riak_cs_control:
     depends_on:

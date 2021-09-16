@@ -2,14 +2,15 @@
 
 RIAK_VSN       	    ?= 3.0.7
 RIAK_CS_VSN    	    ?= 3.0.0pre8
-STANCHION_VSN  	    ?= 3.0.0pre6
+STANCHION_VSN  	    ?= 3.0.0pre8
 RIAK_CS_CONTROL_VSN ?= 3.0.0pre3
 
 RIAK_DATA      ?= $(shell pwd)/data/riak
 RIAK_CS_DATA   ?= $(shell pwd)/data/riak_cs
 STANCHION_DATA ?= $(shell pwd)/data/stanchion
 
-RIAK_NODES     ?= 3
+N_RIAK_NODES     ?= 3
+N_RCS_NODES      ?= 2
 
 DOCKER_SERVICE_NAME ?= rcs-tussle-one
 
@@ -38,9 +39,10 @@ up-single: ensure-dirs build-single
 up-scalable: build-scalable
 	@docker swarm init >/dev/null || :
 	@COMPOSE_FILE=docker-compose-scalable-run.yml \
-	 RIAK_NODES=$(RIAK_NODES) \
+	 N_RIAK_NODES=$(N_RIAK_NODES) \
+	 N_RCS_NODES=$(N_RCS_NODES) \
 	    docker stack deploy -c docker-compose-scalable-run.yml $(DOCKER_SERVICE_NAME) \
-	 && ./make_riak_cluster.py $(DOCKER_SERVICE_NAME)
+	 && ./make_riak_cluster.py $(DOCKER_SERVICE_NAME) $(N_RIAK_NODES) $(N_RCS_NODES)
 
 down-single:
 	@COMPOSE_FILE=docker-compose-single.yml \
@@ -48,7 +50,7 @@ down-single:
 
 down-scalable:
 	@COMPOSE_FILE=docker-compose-scalable-run.yml \
-	    docker stack service rm $(DOCKER_SERVICE_NAME)
+	    docker stack rm $(DOCKER_SERVICE_NAME)
 
 ensure-dirs:
 	@mkdir -p $(RIAK_DATA) $(RIAK_CS_DATA) $(STANCHION_DATA)
