@@ -147,7 +147,7 @@ process_get_req(#rpbgetreq{bucket = RiakBucket, key = VKey} = _RpbGetReq,
                 #state{bucket_name = BucketName, acl = Acl} = State) ->
     case which_bucket(RiakBucket) of
         objects ->
-            {Key, Vsn} = rcs_common_maifest:decompose_versioned_key(VKey),
+            {Key, Vsn} = rcs_common_manifest:decompose_versioned_key(VKey),
             {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl),
             {{ok, RObj}, State#state{manifest = M}};
         blocks ->
@@ -166,7 +166,7 @@ process_put_req(#rpbputreq{bucket = RiakBucket, key = VKey, return_body = 1} = _
                 #state{bucket_name = BucketName, acl = Acl} = State) ->
     case which_bucket(RiakBucket) of
         objects ->
-            {Key, Vsn} = rcs_common_maifest:decompose_versioned_key(VKey),
+            {Key, Vsn} = rcs_common_manifest:decompose_versioned_key(VKey),
             {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl),
             {{ok, RObj}, State#state{manifest = M}};
         Other ->
