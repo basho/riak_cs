@@ -1,13 +1,13 @@
-Source: riak
+Source: riak-cs
 Section: net
-Priority: extra
-Maintainer: packaging <packaging@riak.com>
+Priority: optional
+Maintainer: Andrei Zavada <andriy.zavada@tiot.jp>
 Build-Depends: debhelper (>= 7)
-Standards-Version: 3.9.3
-Homepage: riak.com
+Standards-Version: 4.6.0.1
+Homepage: https://tiot.jp
 
-Package: riak
+Package: riak-cs
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, adduser, logrotate, sudo
-Homepage: riak.com
-Description: Riak KV Database
+Depends: ${misc:Depends}, ${shlibs:Depends}, adduser, logrotate, erlang-base
+Homepage: https://tiot.jp
+Description: Riak CS Database

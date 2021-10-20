@@ -9,9 +9,9 @@ fi
 
 case "$1" in
 	start|console|foreground)
-		su - riak-cs -c "PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches"
+		su - riak -c "PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches"
 		;;
 	*)
-		su - riak-cs -c "PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*}"
+		su - riak -c "PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*}"
 		;;
 esac

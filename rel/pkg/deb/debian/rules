@@ -11,7 +11,7 @@
 # Uncomment this to turn on verbose mode.
 export DH_VERBOSE=1
 
-ROOTDIR := debian/riak
+ROOTDIR := debian/riak-cs
 
 ## Clear variables that may confound our build of sub-projects; also
 ## note that it is necessary to use overlay_vars relative to .. as
@@ -28,7 +28,7 @@ clean:
 
 ## dh_shlibdeps was added to figure out the dependencies on shared libraries
 ##   and will populate the ${shlibs:Depends} callout in the control file
-install: LIBDIR := $(ROOTDIR)/usr/lib/riak
+install: LIBDIR := $(ROOTDIR)/usr/lib/riak-cs
 install: build
 	dh_testdir
 	dh_testroot
@@ -36,11 +36,8 @@ install: build
 	dh_installdirs
 	dh_install
 	dh_installman
-	dh_installinit --name=riak --no-start
+	dh_installinit --name=riak-cs --no-start
 	dh_fixperms
-	chmod 0755 $(ROOTDIR)/etc/riak
-	chmod -R a+rX $(ROOTDIR)/etc/riak
-	chmod -R go+rX debian/riak/usr/lib/riak/lib/
 	dh_shlibdeps
 
 # We have nothing to do by default.

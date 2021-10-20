@@ -1,8 +1,6 @@
-rel/riak/lib usr/lib/riak
-rel/riak/share usr/lib/riak
-rel/riak/erts* usr/lib/riak
-rel/riak/releases usr/lib/riak
-rel/riak/bin usr/lib/riak
-rel/riak/etc/* etc/riak
-rel/riak/data/* var/lib/riak
-rel/riak/usr/bin/* usr/sbin
+rel/riak-cs/lib usr/lib/riak-cs
+rel/riak-cs/share usr/lib/riak-cs
+rel/riak-cs/erts* usr/lib/riak-cs
+rel/riak-cs/releases usr/lib/riak-cs
+rel/riak-cs/bin usr/lib/riak-cs
+rel/riak-cs/etc/* etc/riak-cs

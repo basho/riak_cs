@@ -3,12 +3,8 @@ _build/
 rel/riak-cs
 rel/vars/*_vars.config
 dev/
-log/
-misc/bundle/data
+package/
+distdir/
 *-riak-cs-debug.tar.gz
 current_counterexample.eqc
-.client_test/
 .local_dialyzer_plt
-dialyzer.ignore-warnings
-dialyzer_warnings
-dialyzer_unhandled_warnings

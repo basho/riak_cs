@@ -11,14 +11,14 @@ default:
 
 	cd $(BASE_DIR)/rel/pkg/out/$(PKG_ID)/; \
 	echo $(shell pwd); \
-	dch  --create --package riak -v "$(PKG_VERSION)" \
+	dch  --create --package riak-cs -v "$(PKG_VERSION)" \
              "Build from $(PKG_ID)";\
 	debuild --prepend-path=$(ERLANG_BIN) \
 			-e REVISION=$(PKG_VERSION) \
 			-e RELEASE=$(PKG_BUILD) \
             -e REBAR=$(REBAR) \
 		-i -uc -us -b
-	
+
 	mkdir -p $(BASE_DIR)/rel/pkg/packages
 	cd $(BASE_DIR)/rel/pkg/out && mv *.deb ../packages
 	cd $(BASE_DIR)/rel/pkg/packages && \

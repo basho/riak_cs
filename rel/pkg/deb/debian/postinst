@@ -1,27 +1,25 @@
 #!/bin/sh
-# postinst script for Riak
+# postinst script for riak-cs
 #
 # see: dh_installdeb(1)
 
 set -e
 
 # create group
-if ! getent group riak >/dev/null; then
-        addgroup --system riak
+if ! getent group riak_cs >/dev/null; then
+        addgroup --system riak_cs
 fi
 
 # create user
-if ! getent passwd riak >/dev/null; then
-        adduser --ingroup riak \
-                --home /var/lib/riak \
+if ! getent passwd riak_cs >/dev/null; then
+        adduser --ingroup riak_cs \
+                --home /var/lib/riak-cs \
                 --disabled-password \
                 --system --shell /bin/bash --no-create-home \
-                --gecos "Riak KV Database" riak
+                --gecos "Riak CS Database" riak_cs
 fi
 
-for i in lib log; do
-    chown -R riak:riak /var/$i/riak
-done
+chown riak_cs:riak_cs /var/log/riak-cs
 
 case "$1" in
     configure)

@@ -1,2 +1,3 @@
 etc/logrotate.d
-var/log/riak
+var/lib/riak-cs
+var/log/riak-cs

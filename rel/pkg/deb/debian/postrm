@@ -1,5 +1,5 @@
 #!/bin/sh
-# postrm script for Riak
+# postrm script for riak_cs
 #
 # see: dh_installdeb(1)
 
@@ -21,26 +21,26 @@ set -e
 
 case "$1" in
     purge)
-        rm -f /etc/default/riak
-        if [ -d /var/log/riak ]; then
-                rm -r /var/log/riak
+        rm -f /etc/default/riak-cs
+        if [ -d /var/log/riak-cs ]; then
+                rm -r /var/log/riak-cs
         fi
-        if [ -d /var/run/riak ]; then
-                rm -r /var/run/riak
+        if [ -d /var/run/riak-cs ]; then
+                rm -r /var/run/riak-cs
         fi
-        if [ -d /etc/riak ]; then
-                rm -r /etc/riak
+        if [ -d /etc/riak-cs ]; then
+                rm -r /etc/riak-cs
         fi
-        if [ -e /etc/init.d/riak ]; then
-                rm  /etc/init.d/riak
+        if [ -e /etc/init.d/riak-cs ]; then
+                rm  /etc/init.d/riak-cs
         fi
         # Remove User & Group, killing any process owned by them
-        if getent passwd riak >/dev/null; then
-                pkill -u riak || true
-                deluser --quiet --system riak
+        if getent passwd riak_cs >/dev/null; then
+                pkill -u riak_cs || true
+                deluser --quiet --system riak_cs
         fi
-        if getent group riak >/dev/null; then
-                delgroup --quiet --system --only-if-empty riak || true
+        if getent group riak_cs >/dev/null; then
+                delgroup --quiet --system --only-if-empty riak_cs || true
         fi
     ;;
 

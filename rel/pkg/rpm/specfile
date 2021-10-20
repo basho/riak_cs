@@ -1,6 +1,6 @@
 ## -------------------------------------------------------------------
 ##
-## Copyright (c) 2014 Basho Technologies, Inc.
+## Copyright (c) 2014 Basho Technologies, Inc.; 2021 TI Tokyo
 ##
 ## This file is provided to you under the Apache License,
 ## Version 2.0 (the "License"); you may not use this file
@@ -21,29 +21,28 @@
 Name: riak-cs
 Version: %{_version}
 Release: %{_release}%{?dist}
-License: "Apache 2.0"
+License: "Apacke 2.0"
 Group: Development/Libraries
 Source: %{_tarname}
-URL: "https://riak.com"
+URL: "https://tiot.jp"
 Vendor: "Riak"
-Packager: "Riak Package Maint" <"packaging@riak.com">
+Packager: "Riak Package Maint" <"andriy.zavada@tiot.jp">
 BuildRoot: %{_tmppath}/%{name}-%{_revision}-%{release}-root
-Summary: "Riak is a distributed data store"
+Summary: "Riak CS is a Riak-backed S3 emulator"
+Obsoletes: riak-cs
+BuildRequires: systemd-rpm-macros
 
 %description
-"Riak is a distributed data store"
+"Riak CS is a Riak-backed S3 emulator"
 
-%define init_script %{_sysconfdir}/init.d/riak-cs
 %define debug_package %{nil}
 %define __prelink_undo_cmd /bin/cat prelink library
 
-%define platform_data_dir %{_localstatedir}/lib/riak-cs
 %define platform_etc_dir %{_sysconfdir}/riak-cs
 %define platform_base_dir %{_libdir}/riak-cs
 %define platform_bin_dir %{platform_base_dir}/bin
 %define platform_lib_dir %{platform_base_dir}/lib
 %define platform_log_dir %{_localstatedir}/log/riak-cs
-
 
 %prep
 %setup -q -n %{_tarname_base} -c %{_tarname_base}
@@ -52,7 +51,6 @@ Summary: "Riak is a distributed data store"
 cat > rpm.vars.config <<EOF
 %% Platform-specific installation paths
 {platform_bin_dir,  "%{platform_bin_dir}"}.
-{platform_data_dir, "%{platform_data_dir}"}.
 {platform_etc_dir,  "%{platform_etc_dir}"}.
 {platform_base_dir, "%{platform_base_dir}"}.
 {platform_lib_dir,  "%{platform_lib_dir}"}.
@@ -61,6 +59,8 @@ EOF
 
 %build
 make rel-rpm
+
+%define _build_id_links none
 
 %install
 %define relpath %{_builddir}/%{buildsubdir}/_build/rpm/rel/riak-cs
@@ -71,7 +71,6 @@ make rel-rpm
 mkdir -p %{buildroot_etc}
 mkdir -p %{buildroot_lib}
 mkdir -p %{buildroot_bin}
-mkdir -p %{buildroot}%{_sbindir}
 mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs
 mkdir -p %{buildroot}%{_localstatedir}/log/riak-cs
 
@@ -86,16 +85,10 @@ if [ -d %{relpath}/bin ]; then \
    cd -
 fi
 
-cp %{relpath}/usr/sbin/riak-cs %{buildroot}%{_sbindir}
 cp %{relpath}/etc/riak-cs.conf %{buildroot_etc}
 cp %{relpath}/etc/advanced.config %{buildroot_etc}
 
 mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs
-cp -R %{relpath}/data/* \
-      %{buildroot}%{_localstatedir}/lib/riak-cs
-
-mkdir -p %{buildroot}%{_sysconfdir}/init.d
-install -m755 %{relpath}/etc/init.d/init.script  %{buildroot}%{_sysconfdir}/init.d/riak-cs
 
 # Needed to work around check-rpaths which seems to be hardcoded into recent
 # RPM releases
@@ -103,50 +96,47 @@ export QA_RPATHS=3
 
 
 %pre
-# Pre-install script
-if ! getent group riak-cs >/dev/null 2>&1; then
-   groupadd -r riak-cs
+if ! getent group riak_cs >/dev/null 2>&1; then
+   groupadd -r riak_cs
 fi
 
-if getent passwd riak-cs >/dev/null 2>&1; then
-   usermod -d %{_localstatedir}/lib/riak-cs riak-cs || true
+if getent passwd riak_cs >/dev/null 2>&1; then
+   usermod -d %{_localstatedir}/lib/riak-cs riak_cs || true
 else
-   useradd -r -g riak-cs \
+   useradd -r -g riak_cs \
            --home %{_localstatedir}/lib/riak-cs \
-           --comment "Riak User" \
+           --comment "Riak CS User" \
            --shell /bin/bash \
-           riak-cs
+           riak_cs
 fi
 
 
 %post
-# Post Installation Script
 # For distros with SELinux (RHEL/Fedora)
 if [ `which selinuxenabled > /dev/null 2>&1` ] ; then
    # Fixup perms for SELinux (if it is enabled)
    selinuxenabled && find %{_localstatedir}/lib/riak-cs -name "*.so" -exec chcon -t textrel_shlib_t {} \;
 fi
+%systemd_post riak-cs.service
 
 %preun
-# Pre-uninstall script
+%systemd_preun riak-cs.service
 
 # Only on uninstall, not upgrades
 if [ "$1" = 0 ] ; then
-   /sbin/service riak-cs stop > /dev/null 2>&1
+   systemctl stop riak-cs
 fi
 exit 0
 
 
 # Man pages are optional and might be missing, read from file
 %files
-%defattr(-,riak-cs,riak-cs)
+%defattr(-,riak_cs,riak_cs)
 %{_localstatedir}/lib/riak-cs
 %{_localstatedir}/log/riak-cs
 %{_libdir}/*
 %defattr(-,root,root)
-%{_sysconfdir}/init.d/riak-cs
 %dir %{_sysconfdir}/riak-cs
-/usr/sbin/*
 %config(noreplace) %{_sysconfdir}/riak-cs/*
 
 %clean

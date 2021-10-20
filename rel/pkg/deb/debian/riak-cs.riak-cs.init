@@ -1,16 +1,16 @@
 #! /bin/bash
 ### BEGIN INIT INFO
-# Provides:          riak
+# Provides:          riak-cs
 # Required-Start:    $remote_fs $syslog
 # Required-Stop:     $remote_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Riak KV Database
-# Description:       Riak KV Database
+# Short-Description: Riak CS Database
+# Description:       Riak CS Database
 ### END INIT INFO
 
-NAME=riak
-DAEMON=/usr/sbin/$NAME
+NAME=riak-cs
+DAEMON=/usr/lib/riak-cs/bin/$NAME
 SCRIPTNAME=/etc/init.d/$NAME
 RUNDIR=/var/run/$NAME
 
@@ -25,7 +25,7 @@ RUNDIR=/var/run/$NAME
 # if no HOME was set in /etc/default/$NAME then set one here
 # to the data directory for erlexec's sake
 if [ -z "$HOME" ]; then
-    export HOME="/var/lib/riak"
+    export HOME="/var/lib/riak-cs"
 fi
 
 #
@@ -35,7 +35,7 @@ do_start()
 {
     if [ ! -d $RUNDIR ]; then
         mkdir $RUNDIR
-        chown riak:riak $RUNDIR
+        chown riak_cs:riak_cs $RUNDIR
     fi
     # Return
     #   0 if daemon has been started
@@ -44,8 +44,8 @@ do_start()
 
     # Startup with the appropriate user
     start-stop-daemon --start \
-        --name riak \
-        --user riak \
+        --name riak-cs \
+        --user riak_cs \
         --exec $DAEMON -- start \
         || return 2
 }
