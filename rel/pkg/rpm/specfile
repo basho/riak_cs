@@ -21,7 +21,7 @@
 Name: riak-cs
 Version: %{_version}
 Release: %{_release}%{?dist}
-License: "Apacke 2.0"
+License: "Apache 2.0"
 Group: Development/Libraries
 Source: %{_tarname}
 URL: "https://tiot.jp"
@@ -29,11 +29,14 @@ Vendor: "Riak"
 Packager: "Riak Package Maint" <"andriy.zavada@tiot.jp">
 BuildRoot: %{_tmppath}/%{name}-%{_revision}-%{release}-root
 Summary: "Riak CS is a Riak-backed S3 emulator"
-Obsoletes: riak-cs
-BuildRequires: systemd-rpm-macros
+BuildRequires: systemd systemd-rpm-macros
+Requires: logrotate
+Requires(post): systemd
+Requires(preun): systemd
+Requires(postun): systemd
 
 %description
-"Riak CS is a Riak-backed S3 emulator"
+"Riak CS is a Riak-backed AWS S3 drop-in replacement"
 
 %define debug_package %{nil}
 %define __prelink_undo_cmd /bin/cat prelink library
@@ -57,27 +60,35 @@ cat > rpm.vars.config <<EOF
 {platform_log_dir,  "%{platform_log_dir}"}.
 EOF
 
+%define _build_id_links none
+
 %build
 make rel-rpm
-
-%define _build_id_links none
 
 %install
 %define relpath %{_builddir}/%{buildsubdir}/_build/rpm/rel/riak-cs
 %define buildroot_lib %{buildroot}%{_libdir}/riak-cs
 %define buildroot_etc %{buildroot}%{_sysconfdir}/riak-cs
 %define buildroot_bin %{buildroot_lib}/bin
+%define buildroot_sbin %{buildroot}%{_sbindir}
+%define buildroot_unit %{buildroot}%{_unitdir}
+%define buildroot_run %{buildroot}%{_rundir}
 
-mkdir -p %{buildroot_etc}
-mkdir -p %{buildroot_lib}
-mkdir -p %{buildroot_bin}
-mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs
-mkdir -p %{buildroot}%{_localstatedir}/log/riak-cs
+mkdir -p \
+  %{buildroot_etc} \
+  %{buildroot_lib} \
+  %{buildroot_bin} \
+  %{buildroot_sbin} \
+  %{buildroot_unit} \
+  %{buildroot_run}/riak-cs \
+  %{buildroot}%{_localstatedir}/lib/riak-cs \
+  %{buildroot}%{_localstatedir}/log/riak-cs
 
 cp -R %{relpath}/lib       %{buildroot_lib}
 cp -R %{relpath}/erts-*    %{buildroot_lib}
 cp -R %{relpath}/releases  %{buildroot_lib}
 cp -R %{relpath}/share     %{buildroot_lib}
+cp rel/pkg/rpm/%{name}.service %{buildroot_unit}
 
 if [ -d %{relpath}/bin ]; then \
    cd %{relpath}/bin
@@ -87,6 +98,9 @@ fi
 
 cp %{relpath}/etc/riak-cs.conf %{buildroot_etc}
 cp %{relpath}/etc/advanced.config %{buildroot_etc}
+for f in riak-cs riak-cs-admin riak-cs-supercluster riak-cs-debug; do
+    cp %{relpath}/usr/sbin/$f %{buildroot}%{_sbindir}
+done
 
 mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs
 
@@ -110,33 +124,31 @@ else
            riak_cs
 fi
 
-
 %post
 # For distros with SELinux (RHEL/Fedora)
 if [ `which selinuxenabled > /dev/null 2>&1` ] ; then
    # Fixup perms for SELinux (if it is enabled)
    selinuxenabled && find %{_localstatedir}/lib/riak-cs -name "*.so" -exec chcon -t textrel_shlib_t {} \;
 fi
-%systemd_post riak-cs.service
+
+%systemd_post %{name}.service
 
 %preun
-%systemd_preun riak-cs.service
+%systemd_preun %{name}.service
 
-# Only on uninstall, not upgrades
-if [ "$1" = 0 ] ; then
-   systemctl stop riak-cs
-fi
-exit 0
+%postun
+%systemd_postun %{name}.service
 
-
-# Man pages are optional and might be missing, read from file
 %files
+%defattr(-,root,root)
+%dir %{_sysconfdir}/riak-cs
+%{_libdir}/*
+%{_unitdir}/%{name}.service
+%{_sbindir}/*
+
 %defattr(-,riak_cs,riak_cs)
 %{_localstatedir}/lib/riak-cs
 %{_localstatedir}/log/riak-cs
-%{_libdir}/*
-%defattr(-,root,root)
-%dir %{_sysconfdir}/riak-cs
 %config(noreplace) %{_sysconfdir}/riak-cs/*
 
 %clean

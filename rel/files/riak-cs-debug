@@ -4,7 +4,8 @@
 ##
 ## riak-cs-debug: Gather info from a node for troubleshooting.
 ##
-## Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+## Copyright (c) 2014 Basho Technologies, Inc.,
+##               2021 TI Tokyo.  All Rights Reserved.
 ##
 ## This file is provided to you under the Apache License,
 ## Version 2.0 (the "License"); you may not use this file
@@ -135,7 +136,7 @@ exit
 RUNNER_BASE_DIR=$(cd `dirname $0` && /bin/pwd -P)/..
 cs_base_dir=$RUNNER_BASE_DIR
 cs_bin_dir=$RUNNER_BASE_DIR/bin
-cs_etc_dir=$RUNNER_BASE_DIR/etc
+cs_etc_dir={{platform_etc_dir}}
 cs_log_dir=$RUNNER_BASE_DIR/log
 
 if [ -d {{platform_data_dir}}/generated.configs ]; then
@@ -257,7 +258,7 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     if [ -n "$APP_EPATH" ]; then
         epath_file="$APP_EPATH"
     else
-        epath_file="${cs_base_dir}/lib/app_epath.sh"
+        epath_file="${cs_base_dir}/lib64/app_epath.sh"
     fi
 
     if [ ! -f "$epath_file" ]; then

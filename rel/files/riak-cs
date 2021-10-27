@@ -1,0 +1,68 @@
+#!/bin/sh
+
+## -------------------------------------------------------------------
+##
+## riak-cs: Riak CS launcher
+##
+## Copyright (c) 2014 Basho Technologies, Inc.,
+##               2021 TI Tokyo.  All Rights Reserved.
+##
+## This file is provided to you under the Apache License,
+## Version 2.0 (the "License"); you may not use this file
+## except in compliance with the License.  You may obtain
+## a copy of the License at
+##
+##   http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing,
+## software distributed under the License is distributed on an
+## "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+## KIND, either express or implied.  See the License for the
+## specific language governing permissions and limitations
+## under the License.
+##
+## -------------------------------------------------------------------
+
+RCS_USER=riak_cs
+RUNNER_GEN_DIR="${RUNNER_GEN_DIR:-{{ platform_gen_dir }}}"
+RELEASE_ROOT_DIR="${RELEASE_ROOT_DIR:-{{ runner_base_dir }}}"
+PID_DIR={{pid_dir}}
+COMMAND={{platform_bin_dir}}/riak-cs
+DEBUG_COMMAND={{platform_bin_dir}}/riak-cs-debug
+RUNNER_LOG_DIR={{platform_log_dir}}
+
+# When running as a service, running as riak-cs not as root, and systemd has created PID folder
+if [[ $EUID -ne 0 ]]; then
+    case "$1" in
+        start|console|foreground)
+            RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches
+            ;;
+        *)
+            RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*}
+            ;;
+    esac
+else
+    # In this case we're running sudo riak_cs - so have root access, but cannot rely
+    # systemd having created the PID dir, and need to sudo to the riak_cs user
+    if [ ! -d $PID_DIR ]; then
+        mkdir $PID_DIR
+        chown $RCS_USER:$RCS_USER $PID_DIR
+    fi
+    case "$1" in
+        start|console|foreground)
+            su - $RCS_USER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches"
+            ;;
+        debug)
+            # Drop the "debug" from the args as we're going to directly call riak-cs-debug now
+            shift
+            # Debug may fail if run via relx script due to use of relative start location, and also need for root access
+            NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${DEBUG_COMMAND} ${*}
+            ;;
+        *)
+            ESCAPED_ARGS=`echo "$@" | sed -e 's/\([\\\(\\\){}"\x27]\)/\\\\\1/g'`
+            su - $RCS_USER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${ESCAPED_ARGS}"
+            ;;
+    esac
+fi
+
+
