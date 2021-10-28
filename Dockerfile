@@ -1,4 +1,4 @@
-FROM erlang:22.3.4.10 AS compile-image
+FROM erlang:22 AS compile-image
 
 ARG stanchion_host=127.0.0.1 \
     stanchion_port=8085 \
