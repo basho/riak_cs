@@ -3,9 +3,9 @@ Description=Riak CS Database
 
 [Service]
 User=riak_cs
-ExecStart=/usr/lib/riak-cs/bin/riak-cs start
-ExecStop=/usr/lib/riak-cs/bin/riak-cs stop
-Type=forking
+ExecStart=/usr/sbin/riak-cs start
+ExecStop=/usr/sbin/riak-cs stop
+Type=exec
 PIDFile=/run/riak-cs/riak-cs.pid
 EnvironmentFile=-/etc/default/riak-cs
 RuntimeDirectory=riak-cs
