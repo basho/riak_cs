@@ -2,6 +2,8 @@ export
 
 TAR_VERSION = $(shell git describe --tags | sed -e 's/\([0-9.]*\-[0-9]*\)-.*/\1/')
 
+DEBEMAIL = $(shell git config user.email)
+
 default:
 	mkdir -p $(BASE_DIR)/rel/pkg/out/$(PKG_ID)/debian
 	cp -R $(BASE_DIR)/rel/pkg/deb/debian/* $(BASE_DIR)/rel/pkg/out/$(PKG_ID)/debian
@@ -19,9 +21,9 @@ default:
             -e REBAR=$(REBAR) \
 		-i -uc -us -b
 
-	mkdir -p $(BASE_DIR)/rel/pkg/packages
-	cd $(BASE_DIR)/rel/pkg/out && mv *.deb ../packages
-	cd $(BASE_DIR)/rel/pkg/packages && \
+	mkdir -p $(BASE_DIR)/rel/pkg/out/packages
+	cd $(BASE_DIR)/rel/pkg/out && mv *.deb ../out/packages
+	cd $(BASE_DIR)/rel/pkg/out/packages && \
 		for debfile in *.deb; do \
 			sha256sum $${debfile} > $${debfile}.sha \
 		; done

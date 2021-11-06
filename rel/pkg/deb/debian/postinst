@@ -19,7 +19,7 @@ if ! getent passwd riak_cs >/dev/null; then
                 --gecos "Riak CS Database" riak_cs
 fi
 
-chown riak_cs:riak_cs /var/log/riak-cs
+chown riak_cs:riak_cs /var/log/riak-cs /etc/riak-cs /var/lib/riak-cs
 
 case "$1" in
     configure)

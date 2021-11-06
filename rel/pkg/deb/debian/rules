@@ -28,7 +28,7 @@ clean:
 
 ## dh_shlibdeps was added to figure out the dependencies on shared libraries
 ##   and will populate the ${shlibs:Depends} callout in the control file
-install: LIBDIR := $(ROOTDIR)/usr/lib/riak-cs
+install: LIBDIR := $(ROOTDIR)/usr/lib64/riak-cs
 install: build
 	dh_testdir
 	dh_testroot
@@ -36,9 +36,9 @@ install: build
 	dh_installdirs
 	dh_install
 	dh_installman
-	dh_installinit --name=riak-cs --no-start
 	dh_fixperms
 	dh_shlibdeps
+	dh_systemd_enable
 
 # We have nothing to do by default.
 binary-indep: install build-stamp

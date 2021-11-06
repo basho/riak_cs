@@ -137,13 +137,11 @@ RUNNER_BASE_DIR=$(cd `dirname $0` && /bin/pwd -P)/..
 cs_base_dir=$RUNNER_BASE_DIR
 cs_bin_dir=$RUNNER_BASE_DIR/bin
 cs_etc_dir={{platform_etc_dir}}
-cs_log_dir=$RUNNER_BASE_DIR/log
+cs_log_dir={{platform_log_dir}}
+cs_lib_dir={{platform_lib_dir}}
+cs_gen_dir={{platform_gen_dir}}
 
-if [ -d {{platform_data_dir}}/generated.configs ]; then
-  cuttlefish_conf_dir={{platform_data_dir}}/generated.conf
-else
-  cuttlefish_conf_dir=$RUNNER_BASE_DIR/generated.conf
-fi
+cuttlefish_conf_dir=${cs_gen_dir}/generated.conf
 
 get_cfgs=0
 get_ssl_certs=0
@@ -258,7 +256,7 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
     if [ -n "$APP_EPATH" ]; then
         epath_file="$APP_EPATH"
     else
-        epath_file="${cs_base_dir}/lib64/app_epath.sh"
+        epath_file="${cs_lib_dir}/app_epath.sh"
     fi
 
     if [ ! -f "$epath_file" ]; then
