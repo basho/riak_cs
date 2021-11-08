@@ -50,14 +50,34 @@ EOF
 fi
 
 
+function write_pid_file {
+    c=5
+    while [[ $c -ne 0 ]]; do
+        if [ "`${COMMAND} ping`" = "pong" ]; then
+            ${COMMAND} pid >$PID_DIR/stanchion.pid
+            break
+        fi
+        sleep 1
+        c=$(($c - 1))
+    done
+}
+
+function maybe_delete_pid_file {
+    [ "`${COMMAND} ping`" != "pong" ] && rm -f $PID_DIR/riak-cs.pid
+}
+
 # When running as a service, running as riak-cs not as root, and systemd has created PID folder
 if [[ $EUID -ne 0 ]]; then
     case "$1" in
         start|console|foreground)
             RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches
+            if [ "$1" = "start" ]; then
+                write_pid_file
+            fi
             ;;
         *)
             RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*}
+            maybe_delete_pid_file
             ;;
     esac
 else
@@ -70,6 +90,9 @@ else
     case "$1" in
         start|console|foreground)
             su - $RCS_USER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches"
+            if [ "$1" = "start" ]; then
+                write_pid_file
+            fi
             ;;
         debug)
             # Drop the "debug" from the args as we're going to directly call riak-cs-debug now
