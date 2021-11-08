@@ -44,8 +44,8 @@ EOF
 fi
 if [ ! -L $VMARGS_PATH ]; then
     cat >$VMARGS_PATH <<EOF
--sname riak
--setcookie riak
+-sname riak_cs
+-setcookie riak_cs
 EOF
 fi
 
@@ -54,7 +54,7 @@ function write_pid_file {
     c=5
     while [[ $c -ne 0 ]]; do
         if [ "`${COMMAND} ping`" = "pong" ]; then
-            ${COMMAND} pid >$PID_DIR/stanchion.pid
+            ${COMMAND} pid >$PID_DIR/riak-cs.pid
             break
         fi
         sleep 1
