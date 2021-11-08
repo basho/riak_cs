@@ -93,7 +93,7 @@
 %% Note: this function is unfinished and suffers from issues:
 %% #1058, #1059, #1060. Use at your own risk.
 {mapping, "auth_v4", "riak_cs.auth_v4_enabled", [
-   {default, off},
+   {default, on},
    {datatype, flag}
 ]}.
 
