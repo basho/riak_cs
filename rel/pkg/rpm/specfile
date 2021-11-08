@@ -147,6 +147,7 @@ fi
 %{_sbindir}/*
 
 %defattr(-,riak_cs,riak_cs)
+%{_sysconfdir}/riak-cs
 %{_localstatedir}/lib/riak-cs
 %{_localstatedir}/log/riak-cs
 %config(noreplace) %{_sysconfdir}/riak-cs/*
