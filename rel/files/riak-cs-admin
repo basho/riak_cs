@@ -29,10 +29,8 @@ if [ -z $SCRIPT ]; then
 fi
 
 SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
-RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-REL_NAME="riak-cs"
 
-RPC_HOP=$RELEASE_ROOT_DIR/bin/$REL_NAME
+RPC_HOP=$SCRIPT_DIR/riak-cs
 # nodetool has a 60 sec value hardcoded for RPC timeout, with no easy
 # way to supply an 'infinity' from a script.  Much as I hate to
 # pretend 60 sec is long enough, here's a TODO note to have it fixed
