@@ -1,4 +1,92 @@
-#Riak CS 2.1.2 Release Notes
+# Riak CS 3.0.0 Release Notes
+
+Released November 11, 2021.
+
+## General Information
+
+This release was originally envisaged as an uplift of 2.1.2 to OTP-22
+and rebar3. There were no known critical bugs that needed fixing. We did,
+however, identifiy and implement a new S3 API call
+(`ListObjectVersions` and related), to give more substance to the
+major version bump.
+
+We also provide Dockerfiles, and a [Riak CS Docker Service
+Bundle](https://github.com/TI-Tokyo/riak_cs_service_bundle), as a
+convenient way to set up the full Riak CS suite locally.
+
+All principal repositories are in [TI Tokyo
+org](https://github.com/TI-Tokyo) on Gihub.
+
+## Changes
+
+### User-visible changes
+
+* S3 request signature v4 is now the default. The old (v2) signatures
+  continue to be supported.
+* A change of internal structures needed to support object versions,
+  meaning downgrade to 2.x is no longer possible (even if the objects
+  created with 3.0 have no versions). Upgrade from 2.x is possible.
+* The new rpm and deb packages are built for Centos 8 and Debian 11,
+  which in each case rely on systemd (old-style SysV init scripts are
+  no longer included).
+
+### Other changes
+
+* Riak CS and Stanchion now require OTP-22 and rebar3.
+* Riak CS Test framework:
+  - The framework, along with a suite of tests (also the [multibag
+    additions](https://github.com/TI-Tokyo/riak_cs_multibag)), has been
+    upgraded to OTP-22/rebar3 and moved into a separate project,
+    [riak_cs_test](https://github.com/TI-Tokyo/riak_cs_test).
+  - A new batch of tests is written for `s3cmd` as a client.
+  - The Python client tests have been upgraded to boto3 and python-3.9.
+* A refactoring of code shared between Riak CS and stanchion resulted
+  in that code being collected into a separate dependency,
+  [rcs_common](https://github.com/TI-Tokyo/rcs_common).
+* Riak CS Control application has been upgraded to OTP-22/rebar3, too,
+  however without any new features.
+* All dependencies upgraded to their current versions.
+* All EQC tests have been converted to use PropEr (no shortcuts taken,
+  all coverage is preserved).
+
+## New features
+
+* Support for [object
+ versions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html),
+ including new S3 API calls:
+  - [`GetBucketVersioning`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketVersioning.html)
+     and
+    [`PutBucketVersioning`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketVersioning.html);
+  - [`ListObjectVersions`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html).
+  - For buckets with versioning enabled, `GetObject` will return the
+    specific version if it is given in the request, or the `null`
+    version if it is not.
+  - As a Riak CS extension, rather than generating a random id for the
+    new version, `PutObject` will read a `versionId` from header
+    `x-rcs-versionid`, and use that instead.
+* Riak CS Suite as a [Docker
+  service](https://github.com/TI-Tokyo/riak_cs_service_bundle),
+  allowing the (prospective) users quickly to bring up a fully functional Riak
+  CS cluster running locally, complete with Riak CS Control, and
+  - properly configured and set up with a new user, whose credentials
+    will be shown;
+  - with riak data persisted.
+
+## Upgrading
+
+Existing data in the riak cluster underlying a 2.x instance of Riak CS
+can be used with Riak CS 3.0 without any modification.
+
+*Note:* Once a new object is written into a database by Riak CS 3.0,
+that database cannot be used again with 2.x.
+
+## Compatibility
+
+Riak CS 3.0 has been tested with Riak versions 2.2.6, 2.9.8 through
+.10, and 3.0.7 and .9. It requires Stanchion 3.0.0 (2.x versions not
+supported due to a change in manifest record).
+
+# Riak CS 2.1.2 Release Notes
 
 Released April 7, 2019.
 
