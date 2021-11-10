@@ -1,4 +1,7 @@
-client_tests/
 log/
 misc/
 dev/
+_build/
+.git/
+rel/pkg/
+rel/riak-cs/
