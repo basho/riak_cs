@@ -138,18 +138,21 @@ fi
 
 %postun
 %systemd_postun %{name}.service
+rm -f %{_sysconfdir}/riak-cs/riak-cs.conf.new
+rm -rf %{_localstatedir}/lib/riak-cs
+rm -rf %{_localstatedir}/log/riak-cs
 
 %files
 %defattr(-,root,root)
-%dir %{_sysconfdir}/riak-cs
 %{_libdir}/*
 %{_unitdir}/%{name}.service
 %{_sbindir}/*
 
-%defattr(0750,riak_cs,riak_cs)
+%defattr(-,riak_cs,riak_cs)
 %{_sysconfdir}/riak-cs
 %{_localstatedir}/lib/riak-cs
 %{_localstatedir}/log/riak-cs
+
 %config(noreplace) %{_sysconfdir}/riak-cs/*
 
 %clean
