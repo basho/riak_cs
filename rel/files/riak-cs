@@ -32,7 +32,7 @@ DEBUG_COMMAND=/usr/sbin/riak-cs-debug
 RUNNER_LOG_DIR={{platform_log_dir}}
 RELX_CONFIG_PATH=${RUNNER_GEN_DIR}/sys.config
 VMARGS_PATH=${RUNNER_GEN_DIR}/vm.args
-PIPE_DIR=/tmp/riak_cs_pipes/    # trailing slash makes it a path for relx
+PIPE_DIR={{pipe_dir}}/    # trailing slash makes it a path for relx
 
 # On first running the sys.config and vm.args will not be a link
 # as cfconfig has not yet been run as a pre_start hook.  If there's no
