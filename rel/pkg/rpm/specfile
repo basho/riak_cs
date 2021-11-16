@@ -146,7 +146,7 @@ fi
 %{_unitdir}/%{name}.service
 %{_sbindir}/*
 
-%defattr(-,riak_cs,riak_cs)
+%defattr(0750,riak_cs,riak_cs)
 %{_sysconfdir}/riak-cs
 %{_localstatedir}/lib/riak-cs
 %{_localstatedir}/log/riak-cs
