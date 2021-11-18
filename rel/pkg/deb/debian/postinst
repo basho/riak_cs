@@ -20,6 +20,7 @@ if ! getent passwd riak_cs >/dev/null; then
 fi
 
 chown riak_cs:riak_cs /var/log/riak-cs /etc/riak-cs /var/lib/riak-cs
+chmod 750 /var/log/riak-cs /etc/riak-cs /var/lib/riak-cs
 
 case "$1" in
     configure)
