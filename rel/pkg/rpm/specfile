@@ -29,7 +29,7 @@ Vendor: "TI Tokyo"
 Packager: "Riak CS Package Maintainer" <"andriy.zavada@tiot.jp">
 BuildRoot: %{_tmppath}/%{name}-%{_revision}-%{release}-root
 Summary: "Riak CS is a Riak-backed S3 drop-in replacement"
-BuildRequires: systemd systemd-rpm-macros
+BuildRequires: systemd
 Requires: logrotate
 Requires(post): systemd
 Requires(preun): systemd
