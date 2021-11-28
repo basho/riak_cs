@@ -12,6 +12,7 @@ DEPS_DIR     ?= deps
 ##
 ifeq ($(OS),Linux)
 ARCH          = $(shell uname -m)
+ISAMZ         = $(shell cat /etc/system-release 2> /dev/null)
 ISRPM         = $(shell cat /etc/redhat-release 2> /dev/null)
 ISAMZ         = $(shell cat /etc/system-release 2> /dev/null)
 ISDEB         = $(shell cat /etc/debian_version 2> /dev/null)
