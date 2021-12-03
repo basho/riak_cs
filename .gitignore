@@ -8,3 +8,5 @@ distdir/
 *-riak-cs-debug.tar.gz
 current_counterexample.eqc
 .local_dialyzer_plt
+
+*~

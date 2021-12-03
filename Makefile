@@ -45,6 +45,10 @@ rel-deb: compile
 	$(REBAR) as deb release
 	cp -a _build/deb/rel/riak-cs rel/
 
+rel-fbsdng: compile relclean
+	$(REBAR) as fbsdng release
+	cp -a _build/fbsdng/rel/riak-cs rel/
+
 rel-docker: compile relclean
 	REBAR_CONFIG=rebar.docker.config $(REBAR) release
 	cp -a _build/default/rel/riak-cs rel/
