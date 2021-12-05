@@ -1,12 +1,8 @@
 _build/
 .eunit/
 rel/riak-cs
-rel/vars/*_vars.config
 dev/
-package/
-distdir/
 *-riak-cs-debug.tar.gz
-current_counterexample.eqc
 .local_dialyzer_plt
 
 *~
