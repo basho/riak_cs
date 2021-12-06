@@ -1,17 +1,17 @@
 #!/bin/bash
 
-ETC=${ETC:-"/etc"}
+ETC=${ETC:-"/etc/riak"}
 
 # sed the riak-cs settings into factory riak.conf and advanced.config
 
 sed -i \
     -e "s|storage_backend = bitcask|storage_backend = multi|" \
-    $ETC/riak/riak.conf
+    $ETC/riak.conf
 
 echo "
 buckets.default.allow_mult = true
 buckets.default.merge_strategy = 2" \
-    >>$ETC/riak/riak.conf
+    >>$ETC/riak.conf
 
 sed -i \
     -e "s|]\\.|, \
@@ -26,4 +26,4 @@ sed -i \
       {storage_backend,riak_kv_multi_backend} \
      ]} \
      ].|" \
-     $ETC/riak/advanced.config
+     $ETC/advanced.config
