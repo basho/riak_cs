@@ -29,6 +29,9 @@ org](https://github.com/TI-Tokyo) on Gihub.
 * The new rpm and deb packages are built for Centos 8 and Debian 11,
   which in each case rely on systemd (old-style SysV init scripts are
   no longer included).
+* `riak-cs-admin` has got a new option, `test`, which creates a bucket
+  and performs a basic write-read-delete cycle in it (useful to test
+  that the riak cluster is configured properly for use with Riak CS).
 
 ### Other changes
 

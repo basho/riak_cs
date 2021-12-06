@@ -24,6 +24,7 @@
 -export([
          version/1,
          status/1,
+         test/1,
          cluster_info/1,
          audit_bucket_ownership/1,
          cleanup_orphan_multipart/0,
@@ -49,6 +50,104 @@ status([]) ->
     _ = [io:format("~p : ~p~n", [Name, Value])
          || {Name, Value} <- Stats],
     ok.
+
+test([]) ->
+    UserName = "ADMINTESTUSER",
+    Bucket = list_to_binary(rand_str(10)),
+    try
+        {ok, RcPid} = riak_cs_riak_client:start_link([]),
+        {User, UserObj} = get_test_user(UserName, RcPid),
+
+        BagId = riak_cs_mb_helper:choose_bag_id(manifest, Bucket),
+
+        Acl = riak_cs_acl_utils:default_acl(
+                       User?RCS_USER.display_name,
+                       User?RCS_USER.canonical_id,
+                       User?RCS_USER.key_id),
+
+        io:format("creating bucket\n", []),
+        ok = riak_cs_bucket:create_bucket(
+               User, UserObj, Bucket, BagId, Acl, RcPid),
+
+        Key = <<"testkey">>,
+        Value = <<"testvalue">>,
+        io:format("putting object\n", []),
+        ok = put_object(Bucket, Key, Value, Acl, RcPid),
+        io:format("reading object back\n", []),
+        ok = verify_object(Bucket, Key, Value, RcPid),
+        io:format("deleting object\n", []),
+        ok = delete_object(Bucket, Key, RcPid),
+
+        io:format("deleting bucket\n", []),
+        ok = riak_cs_bucket:delete_bucket(
+               User, UserObj, Bucket, RcPid),
+        ok = riak_cs_riak_client:stop(RcPid),
+        ok
+    catch
+        E:R:T ->
+            lager:error("self-test failed: ~p:~p", [E, R]),
+            io:format("self-test failed: ~p:~p\nStacktrace: ~p\n", [E, R, T])
+    end.
+
+get_test_user(Name, RcPid) ->
+    Email = Name ++ "@testusers.com",
+    case riak_cs_user:create_user(Name, Email) of
+        {ok, ?RCS_USER{key_id = KeyId}} ->
+            {ok, UU} =
+                riak_cs_user:get_user(KeyId, RcPid),
+            UU;
+        {error, unknown} ->
+            %% this is because velvet sees {error,insufficient_vnodes_available}. Just retry.
+            timer:sleep(200),
+            get_test_user(Name, RcPid);
+        {error, user_already_exists} ->
+            {ok, UU} =
+                riak_cs_user:get_user_by_index(?EMAIL_INDEX, list_to_binary(Email), RcPid),
+            UU
+    end.
+
+
+rand_str(N) ->
+    [$a + rand:uniform(22) || _X <- lists:seq(1, N)].
+
+put_object(Bucket, Key, Value, Acl, RcPid) ->
+    Args = [{Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION,
+             size(Value), "application/octet-stream",
+             [], riak_cs_lfs_utils:block_size(), Acl, timer:seconds(60), self(), RcPid}],
+    {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
+    ok = riak_cs_put_fsm:augment_data(Pid, Value),
+    {ok, _Mfst} = riak_cs_put_fsm:finalize(Pid, binary_to_list(base64:encode(crypto:hash(md5, Value)))),
+    ok.
+
+verify_object(Bucket, Key, Value, RcPid) ->
+    FetchConcurrency = riak_cs_lfs_utils:fetch_concurrency(),
+    BufferFactor = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
+    {ok, Pid} =
+        riak_cs_get_fsm_sup:start_get_fsm(
+          node(), Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION, self(), RcPid,
+          FetchConcurrency, BufferFactor),
+
+    _Manifest = riak_cs_get_fsm:get_manifest(Pid),
+    riak_cs_get_fsm:continue(Pid, {0, size(Value) - 1}),
+    Value = read_object(Pid, <<>>),
+
+    ok = riak_cs_get_fsm:stop(Pid),
+    ok.
+
+read_object(Pid, Q) ->
+    case riak_cs_get_fsm:get_next_chunk(Pid) of
+        {done, Chunk} ->
+            <<Q/binary, Chunk/binary>>;
+        {chunk, Chunk} ->
+            read_object(Pid, <<Q/binary, Chunk/binary>>)
+    end.
+
+delete_object(Bucket, Key, RcPid) ->
+    {ok, _UUIDsMarkedforDelete} =
+        riak_cs_utils:delete_object(Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION, RcPid),
+    ok.
+
+
 
 %% in progress.
 cluster_info([OutFile]) ->
