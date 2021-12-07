@@ -32,16 +32,16 @@ These components need to be properly configured, at a minimum:
    buckets.default.allow_mult = true
    buckets.default.merge_strategy = 2
    ```
-   and a special configuration block in advanced.config:
+   and, in `advanced.config`:
    ```
    {riak_kv, [
       {multi_backend,
-          [{be_default,riak_kv_eleveldb_backend,
-               [{max_open_files,20}]},
-           {be_blocks,riak_kv_bitcask_backend,
+          [{be_default, riak_kv_eleveldb_backend,
+               [{max_open_files, 20}]},
+           {be_blocks, riak_kv_bitcask_backend,
                []}]},
       {multi_backend_default, be_default},
-      {multi_backend_prefix_list, [{<<\"0b:\">>,be_blocks}]},
+      {multi_backend_prefix_list, [{<<"0b:">>, be_blocks}]},
       {storage_backend, riak_kv_multi_backend}
      ]}
    ```
@@ -60,7 +60,7 @@ Riak must be started before Riak CS and Stanchion.
 
 ## Users and administrative access
 
-On a fresh install, in order to create your first user, you will need
+On a fresh install, in order to create an admin user, you will need
 to start Riak CS with authorization disabled. This can be done with
 this block in `riak-cs/advanced.config`:
 ```
@@ -77,15 +77,16 @@ curl -X POST 172.17.0.2:8080/riak-cs/user \
 ```
 
 Copy the `key_id` from the returned json and set `admin.key`
-option to its value in riak-cs.conf and stanchion.conf. Then disable
+option to its value in `riak-cs.conf` and `stanchion.conf`. Then disable
 the auth bypass by changing `admin_auth_enabled` setting to `true`,
 and restart Riak CS and Stanchion.  Your Riak CS suite is ready
 for production use; now external incoming requests can be unblocked.
 
 All the configuration steps and procedures are scripted in Riak CS as
 a [Docker service](https://github.com/TI-Tokyo/riak_cs_service_bundle),
-which you can, incidentally, use to acquaint yourself with the
-operations.
+which you can, incidentally, use not only to acquaint yourself with the
+operations, but also as a quick and minimal, yet fully functional,
+local installation of a full Riak CS suite.
 
 # Compatible clients and libraries
 
