@@ -22,25 +22,22 @@
 ##
 ## -------------------------------------------------------------------
 
-XUSER=riak_cs
-RUNNER_GEN_DIR="${RUNNER_GEN_DIR:-{{ platform_gen_dir }}}"
-RELEASE_ROOT_DIR="${RELEASE_ROOT_DIR:-{{ runner_base_dir }}}"
+RUNNER_GEN_DIR="${RUNNER_GEN_DIR:-{{platform_gen_dir}}}"
+RELX_RIAK={{platform_bin_dir}}/riak-cs
 PID_DIR={{pid_dir}}
-COMMAND={{platform_bin_dir}}/riak-cs
-DEBUG_COMMAND=/usr/sbin/riak-cs-debug
-RUNNER_LOG_DIR={{platform_log_dir}}
-RELX_CONFIG_PATH=${RUNNER_GEN_DIR}/sys.config
-VMARGS_PATH=${RUNNER_GEN_DIR}/vm.args
-PIPE_DIR={{pipe_dir}}/    # trailing slash makes it a path for relx
+PIPE_DIR={{pipe_dir}}/   # terminating / (relx treats it as a prefix)
 
-mkdir -p $PIPE_DIR
-chown $XUSER:$XUSER $PIPE_DIR
+mkdir -p $PID_DIR $PIPE_DIR
+chown riak_cs:riak_cs $PID_DIR $PIPE_DIR
+
+CONFIG_PATH=${RUNNER_GEN_DIR}/sys.config
+VMARGS_PATH=${RUNNER_GEN_DIR}/vm.args
 
 # On first running the sys.config and vm.args will not be a link
 # as cfconfig has not yet been run as a pre_start hook.  If there's no
 # link use the default for now
-if [ ! -L $RELX_CONFIG_PATH ]; then
-    cat >$RELX_CONFIG_PATH <<EOF
+if [ ! -L $CONFIG_PATH ]; then
+    cat >$CONFIG_PATH <<EOF
 [].
 EOF
 fi
@@ -51,16 +48,17 @@ if [ ! -L $VMARGS_PATH ]; then
 EOF
 fi
 
-
 function write_pid_file {  # relx doesn't seem to write the pid file, does it?
-    local c=5
+    local c=3
+    sleep 1
     while [[ $c -ne 0 ]]; do
-        if [ "`${COMMAND} ping`" = "pong" ]; then
-            ${COMMAND} pid >$PID_DIR/riak-cs.pid
-            break
-        fi
-        sleep 1
-        c=$(($c - 1))
+	if [ "`maybe_su ${RELX_RIAK} ping`" = "pong" ]; then
+	    maybe_su ${RELX_RIAK} pid >$PID_DIR/riak-cs.pid
+            chown root:root $PID_DIR/riak-cs.pid 2&>1 >/dev/null || true  # systemd wants it to be owned by root
+	    break
+	fi
+	sleep 2
+	c=$(($c - 1))
     done
 }
 
@@ -68,55 +66,51 @@ function delete_pid_file {
     rm -f $PID_DIR/riak-cs.pid
 }
 
-# When running as a service, running as riak-cs not as root, and systemd has created PID folder
-if [[ $EUID -ne 0 ]]; then
-    case "$1" in
-	start)
-	    c=2  # sometimes it doesn't start on first try.
-	    while [[ $c -ne 0 ]]; do
-		RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}} \
-		    && write_pid_file
-		status=$?
-		test -r $PID_DIR/riak-cs.pid && exit 0
-		sleep 1
-		c=$(($c - 1))
-	    done
-	    exit 1
-            ;;
-	stop)
-            RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} \
-		&& delete_pid_file
-            ;;
-    esac
+# prevents centos8 su from contacting pam and print the Last logged in message
+if [ "`cat /etc/redhat-release 2>&1`" = "CentOS Stream release 8" ]; then
+    SU="su --session-command"
 else
-    # In this case we're running sudo riak_cs - so have root access, but cannot rely
-    # systemd having created the PID dir, and need to sudo to the riak_cs user
-    if [ ! -d $PID_DIR ]; then
-        mkdir $PID_DIR
-        chown $XUSER:$XUSER $PID_DIR
-    fi
-    case "$1" in
-        start)
-	    c=2
-	    while [[ $c -ne 0 ]]; do
-		su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}}" \
-		    && write_pid_file
-		status=$?
-		test -r $PID_DIR/riak-cs.pid && exit 0
-		sleep 1
-		c=$(($c - 1))
-	    done
-	    exit $status
-            ;;
-	stop)
-            su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}}" \
-		&& delete_pid_file
-            ;;
-        *)
-            ESCAPED_ARGS=`echo "$@" | sed -e 's/\([\\\(\\\){}"\x27]\)/\\\\\1/g'`
-            su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${ESCAPED_ARGS}"
-            ;;
-    esac
+    SU=su
 fi
 
+function maybe_su {
+    if [[ $EUID -ne 0 ]]; then
+        NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} PIPE_DIR=${PIPE_DIR} $*
+    else
+	# freebsd su is fairly limited, so:
+	f=$RUNNER_GEN_DIR/su_piggy
+	cat >$f <<EOF
+#!/bin/sh --norc
+NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} PIPE_DIR=$PIPE_DIR $*
+EOF
+	chmod +x $f
+	su - riak_cs $f
+    fi
+}
 
+case "$1" in
+    start)
+        maybe_su $RELX_RIAK $* -pa {{runner_patch_dir}} \
+            && write_pid_file
+	test -r $PID_DIR/riak-cs.pid && exit 0
+	;;
+    console|foreground)
+        maybe_su $RELX_RIAK $* -pa {{runner_patch_dir}}
+	;;
+    stop)
+        maybe_su $RELX_RIAK $* \
+	    && delete_pid_file
+	;;
+    admin)
+	shift
+	maybe_su `which riak-cs-admin` $*
+	;;
+    debug)
+	shift
+	maybe_su `which riak-cs-debug` $*
+	;;
+    *)
+        ESCAPED_ARGS=`echo "$@" | sed -e 's/\([\\\(\\\){}"\x27]\)/\\\\\1/g'`
+        maybe_su $RELX_RIAK $ESCAPED_ARGS
+        ;;
+esac
