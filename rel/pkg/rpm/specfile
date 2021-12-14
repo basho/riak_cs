@@ -99,7 +99,7 @@ fi
 cp %{relpath}/etc/riak-cs.conf %{buildroot_etc}
 cp %{relpath}/etc/advanced.config %{buildroot_etc}
 for f in riak-cs riak-cs-admin riak-cs-supercluster riak-cs-debug; do
-    cp %{relpath}/usr/sbin/$f %{buildroot}%{_sbindir}
+    cp %{relpath}/usr/bin/$f %{buildroot}%{_sbindir}
 done
 
 mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs

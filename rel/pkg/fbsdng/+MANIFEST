@@ -13,4 +13,5 @@ categories: ["databases"]
 desc: "Riak CS is a Riak-backed S3 drop-in replacement"
 scripts: {
   pre-install: "if ! pw groupshow riak_cs 2>/dev/null; then pw groupadd riak_cs; fi \n if ! pw usershow riak_cs 2>/dev/null; then pw useradd riak_cs -g riak_cs -h - -d /usr/local/var/lib/riak-cs -s /bin/sh -c \"Riak CS user\"; fi \n if [ ! -d /var/log/riak-cs ]; then mkdir /var/log/riak-cs && chown riak_cs:riak_cs /var/log/riak-cs; fi"
+  post-install: "chown riak_cs:riak_cs /usr/local/etc/riak-cs"
 }

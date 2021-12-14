@@ -22,7 +22,7 @@
 ##
 ## -------------------------------------------------------------------
 
-RCS_USER=riak_cs
+XUSER=riak_cs
 RUNNER_GEN_DIR="${RUNNER_GEN_DIR:-{{ platform_gen_dir }}}"
 RELEASE_ROOT_DIR="${RELEASE_ROOT_DIR:-{{ runner_base_dir }}}"
 PID_DIR={{pid_dir}}
@@ -32,6 +32,9 @@ RUNNER_LOG_DIR={{platform_log_dir}}
 RELX_CONFIG_PATH=${RUNNER_GEN_DIR}/sys.config
 VMARGS_PATH=${RUNNER_GEN_DIR}/vm.args
 PIPE_DIR={{pipe_dir}}/    # trailing slash makes it a path for relx
+
+mkdir -p $PIPE_DIR
+chown $XUSER:$XUSER $PIPE_DIR
 
 # On first running the sys.config and vm.args will not be a link
 # as cfconfig has not yet been run as a pre_start hook.  If there's no
@@ -49,8 +52,8 @@ EOF
 fi
 
 
-function write_pid_file {
-    c=5
+function write_pid_file {  # relx doesn't seem to write the pid file, does it?
+    local c=5
     while [[ $c -ne 0 ]]; do
         if [ "`${COMMAND} ping`" = "pong" ]; then
             ${COMMAND} pid >$PID_DIR/riak-cs.pid
@@ -61,22 +64,28 @@ function write_pid_file {
     done
 }
 
-function maybe_delete_pid_file {
-    [ "`${COMMAND} ping`" != "pong" ] && rm -f $PID_DIR/riak-cs.pid
+function delete_pid_file {
+    rm -f $PID_DIR/riak-cs.pid
 }
 
 # When running as a service, running as riak-cs not as root, and systemd has created PID folder
 if [[ $EUID -ne 0 ]]; then
     case "$1" in
-        start|console|foreground)
-            RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches
-            if [ "$1" = "start" ]; then
-                write_pid_file
-            fi
+	start)
+	    c=2  # sometimes it doesn't start on first try.
+	    while [[ $c -ne 0 ]]; do
+		RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}} \
+		    && write_pid_file
+		status=$?
+		test -r $PID_DIR/riak-cs.pid && exit 0
+		sleep 1
+		c=$(($c - 1))
+	    done
+	    exit 1
             ;;
-        *)
-            RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*}
-            maybe_delete_pid_file
+	stop)
+            RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} \
+		&& delete_pid_file
             ;;
     esac
 else
@@ -84,24 +93,28 @@ else
     # systemd having created the PID dir, and need to sudo to the riak_cs user
     if [ ! -d $PID_DIR ]; then
         mkdir $PID_DIR
-        chown $RCS_USER:$RCS_USER $PID_DIR
+        chown $XUSER:$XUSER $PID_DIR
     fi
     case "$1" in
-        start|console|foreground)
-            su - $RCS_USER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{platform_lib_dir}}/patches"
-            if [ "$1" = "start" ]; then
-                write_pid_file
-            fi
+        start)
+	    c=2
+	    while [[ $c -ne 0 ]]; do
+		su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}}" \
+		    && write_pid_file
+		status=$?
+		test -r $PID_DIR/riak-cs.pid && exit 0
+		sleep 1
+		c=$(($c - 1))
+	    done
+	    exit $status
             ;;
-        debug)
-            # Drop the "debug" from the args as we're going to directly call riak-cs-debug now
-            shift
-            # Debug may fail if run via relx script due to use of relative start location, and also need for root access
-            NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${DEBUG_COMMAND} ${*}
+	stop)
+            su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${*} -pa {{runner_patch_dir}}" \
+		&& delete_pid_file
             ;;
         *)
             ESCAPED_ARGS=`echo "$@" | sed -e 's/\([\\\(\\\){}"\x27]\)/\\\\\1/g'`
-            su - $RCS_USER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${ESCAPED_ARGS}"
+            su - $XUSER -c "NODETOOL_NODE_PREFIX=${NODETOOL_NODE_PREFIX} RELX_CONFIG_PATH=${RELX_CONFIG_PATH} VMARGS_PATH=${VMARGS_PATH} RUNNER_LOG_DIR=${RUNNER_LOG_DIR} PIPE_DIR=${PIPE_DIR} ${COMMAND} ${ESCAPED_ARGS}"
             ;;
     esac
 fi

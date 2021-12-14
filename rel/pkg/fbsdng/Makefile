@@ -9,6 +9,7 @@ PMAN_DIR         = $(BUILD_STAGE_DIR)/usr/local/man
 PBIN_DIR         = $(BUILD_STAGE_DIR)/usr/local/lib/riak-cs/bin
 PETC_DIR         = $(BUILD_STAGE_DIR)/usr/local/etc/riak-cs
 PLIB_DIR         = $(BUILD_STAGE_DIR)/usr/local/lib/riak-cs
+PUSRBIN_DIR      = $(BUILD_STAGE_DIR)/usr/local/bin
 # /var based dirs
 PDATA_DIR        = $(BUILD_STAGE_DIR)/usr/local/var/lib/riak-cs
 PLOG_DIR         = $(BUILD_STAGE_DIR)/var/log/riak-cs
@@ -61,7 +62,7 @@ packing_list_files: $(BUILD_STAGE_DIR)
 	@cd $(BUILD_STAGE_DIR) && \
 		echo "directories: {" >> +MANIFEST && \
 		echo "  /usr/local/lib/riak-cs: \"y\"," >> +MANIFEST && \
-		echo "  /usr/local/var/lib/riak-cs: {uname: \"riak_cs\", gname: \"stanvhion\", perm: \"0700\" }," >> +MANIFEST && \
+		echo "  /usr/local/var/lib/riak-cs: {uname: \"riak_cs\", gname: \"riak_cs\", perm: \"0700\" }," >> +MANIFEST && \
 		echo "  /usr/local/etc/riak-cs: \"y\"" >> +MANIFEST && \
 		echo " }" >> +MANIFEST
 
@@ -72,7 +73,8 @@ packing_list_files: $(BUILD_STAGE_DIR)
 $(BUILD_STAGE_DIR): buildrel
 	@echo "Copying rel directory to staging directory"
 	mkdir -p $@
-	mkdir -p $(PBIN_DIR)
+	mkdir -p $(PBIN_DIR) $(PUSRBIN_DIR)
+	cp -R rel/riak-cs/usr/bin/* $(PUSRBIN_DIR)
 	cp -R rel/riak-cs/bin/* $(PBIN_DIR)
 	mkdir -p $(PETC_DIR)
 	cp -R rel/riak-cs/etc/* $(PETC_DIR)
@@ -82,6 +84,7 @@ $(BUILD_STAGE_DIR): buildrel
 	cp -R rel/riak-cs/erts-* $(PLIB_DIR)
 	cp -R rel/riak-cs/releases $(PLIB_DIR)
 	mkdir -p $(PDATA_DIR)
+# cp -R rel/riak-cs/data/* $(PDATA_DIR) || true  # as of 3.0.0, there is nothing in data
 	mkdir -p ${BUILD_STAGE_DIR}/usr/local/etc/rc.d
 
 # Build the release we need to package
