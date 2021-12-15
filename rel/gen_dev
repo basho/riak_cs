@@ -11,6 +11,9 @@ VARFILE=$3
 
 NODE="rcs-$NAME@127.0.0.1"
 
+SCRIPT_DIR="`dirname $0`/.."
+BUILD_ROOT="`cd "$SCRIPT_DIR" && pwd -P`"
+
 NUMBER=${NAME##dev}
 RIAKBASE=$((10000 + 10 * $NUMBER))
 CSBASE=$((15000 + 10 * $NUMBER))
@@ -18,8 +21,11 @@ RIAKPBPORT=$(($RIAKBASE + 7))
 CSPORT=$(($CSBASE + 8))
 ADMINPORT=$(($CSBASE + 9))
 
+PLATFORM_BASE_DIR="$BUILD_ROOT/dev/$NAME/riak-cs"
+
 echo "Generating $NAME - node='$NODE' riakpbport=$RIAKPBPORT csport=$CSPORT adminport=$ADMINPORT"
-sed -e "s/@NODE@/$NODE/" \
+sed -e "s|@PLATFORM_BASE_DIR@|$PLATFORM_BASE_DIR|" \
+    -e "s/@NODE@/$NODE/" \
     -e "s/@RIAKPBPORT@/$RIAKPBPORT/" \
     -e "s/@CSPORT@/$CSPORT/" \
     -e "s/@ADMINPORT@/$ADMINPORT/" < $TEMPLATE > $VARFILE
