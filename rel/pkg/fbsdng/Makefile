@@ -74,8 +74,11 @@ $(BUILD_STAGE_DIR): buildrel
 	@echo "Copying rel directory to staging directory"
 	mkdir -p $@
 	mkdir -p $(PBIN_DIR) $(PUSRBIN_DIR)
-	cp -R rel/riak-cs/usr/bin/* $(PUSRBIN_DIR)
-	cp -R rel/riak-cs/bin/* $(PBIN_DIR)
+	for f in riak-cs-admin riak-cs-debug riak-cs-supercluster; do \
+	    cp -R rel/riak-cs/bin/$$f $(PUSRBIN_DIR); \
+	done
+	cp -R rel/riak-cs/usr/bin/riak-cs $(PUSRBIN_DIR)
+	cp -R rel/riak-cs/bin $(PLIB_DIR);
 	mkdir -p $(PETC_DIR)
 	cp -R rel/riak-cs/etc/* $(PETC_DIR)
 	mkdir -p $(PLIB_DIR)

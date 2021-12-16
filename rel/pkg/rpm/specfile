@@ -66,7 +66,7 @@ EOF
 make rel-rpm
 
 %install
-%define relpath %{_builddir}/%{buildsubdir}/_build/rpm/rel/riak-cs
+%define relpath %{_builddir}/%{buildsubdir}/rel/riak-cs
 %define buildroot_lib %{buildroot}%{_libdir}/riak-cs
 %define buildroot_etc %{buildroot}%{_sysconfdir}/riak-cs
 %define buildroot_bin %{buildroot_lib}/bin
@@ -98,9 +98,10 @@ fi
 
 cp %{relpath}/etc/riak-cs.conf %{buildroot_etc}
 cp %{relpath}/etc/advanced.config %{buildroot_etc}
-for f in riak-cs riak-cs-admin riak-cs-supercluster riak-cs-debug; do
-    cp %{relpath}/usr/bin/$f %{buildroot}%{_sbindir}
+for f in riak-cs-admin riak-cs-supercluster riak-cs-debug; do
+    cp %{relpath}/bin/$f %{buildroot}/usr/sbin
 done
+cp %{relpath}/usr/bin/riak-cs %{buildroot}/usr/sbin
 
 mkdir -p %{buildroot}%{_localstatedir}/lib/riak-cs
 
