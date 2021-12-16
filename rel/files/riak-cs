@@ -30,24 +30,6 @@ PIPE_DIR={{pipe_dir}}/   # terminating / (relx treats it as a prefix)
 mkdir -p $PID_DIR $PIPE_DIR
 chown riak_cs:riak_cs $PID_DIR $PIPE_DIR
 
-CONFIG_PATH=${RUNNER_GEN_DIR}/sys.config
-VMARGS_PATH=${RUNNER_GEN_DIR}/vm.args
-
-# On first running the sys.config and vm.args will not be a link
-# as cfconfig has not yet been run as a pre_start hook.  If there's no
-# link use the default for now
-if [ ! -L $CONFIG_PATH ]; then
-    cat >$CONFIG_PATH <<EOF
-[].
-EOF
-fi
-if [ ! -L $VMARGS_PATH ]; then
-    cat >$VMARGS_PATH <<EOF
--sname riak_cs
--setcookie riak_cs
-EOF
-fi
-
 function write_pid_file {  # relx doesn't seem to write the pid file, does it?
     local c=3
     sleep 1
