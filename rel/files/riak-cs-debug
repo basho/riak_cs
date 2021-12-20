@@ -300,10 +300,8 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 fi
 
 #prefer vm.args if it exists
-if [ -f "${cs_etc_dir}/vm.args" ]; then
-    vmargs="${cs_etc_dir}/vm.args"
-elif [ -d "${cuttlefish_conf_dir}" ]; then
-    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+if [ -d "${cuttlefish_conf_dir}" ]; then
+    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args 2>/dev/null | head -1`
 fi
 
 
@@ -496,11 +494,8 @@ if [ 1 -eq $get_logs ]; then
     # if not already made, make a flat, searchable version of the app.config
     if [ -z "$riak_epaths" ]; then
         #prefer app.config if it exists
-        if [ -f "${cs_etc_dir}/app.config" ]; then
-            appconfig="${cs_etc_dir}/app.config"
-            riak_epaths=`make_app_epaths "${appconfig}"`
-        elif [  -d "${cuttlefish_conf_dir}" ]; then
-            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+        if [  -d "${cuttlefish_conf_dir}" ]; then
+            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config 2>/dev/null | head -1`
             riak_epaths=`make_app_epaths "${appconfig}"`
         fi
     fi

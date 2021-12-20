@@ -1,7 +1,7 @@
 %% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
 
-{rel_vsn, "3.0"}.
+{rel_vsn, "{{release_version}}"}.
 
 {devrel, true}.
 
@@ -12,6 +12,7 @@
 {platform_etc_dir,  "{{platform_base_dir}}/etc"}.
 {platform_lib_dir,  "{{platform_base_dir}}/lib"}.
 {platform_log_dir,  "{{platform_base_dir}}/log"}.
+{platform_gen_dir,  "{{platform_base_dir}}/releases/{{release_version}}"}.
 
 %%
 %% etc/app.config
