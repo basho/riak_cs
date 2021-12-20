@@ -34,7 +34,7 @@ RPC_HOP="{{platform_bin_dir}}/riak-cs rpc"
 # COOKIE=`egrep '^[ \t]*distributed_cookie[ \t]*=[ \t]*' {{platform_etc_dir}}/riak-cs.conf 2> /dev/null | cut -d = -f 2 | tr -d ' '`
 # NODE={{node}}
 # HOST=${NODE#*@}
-# BOOT_FILE="{{runner_base_dir}}/releases/{{rel_vsn}}/start_clean"
+# BOOT_FILE="{{runner_base_dir}}/releases/{{release_version}}/start_clean"
 #
 # for something like this:
 #
