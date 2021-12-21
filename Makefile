@@ -11,6 +11,7 @@ REBAR           ?= $(BASE_DIR)/rebar3
 REL_DIR         ?= _build/default/rel
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
+RELEASE_INSTALL_PREFIX ?= $(shell pwd -P)/rel/riak-cs
 
 .PHONY: rel stagedevrel deps test depgraph graphviz all compile package pkg-clean
 
@@ -33,7 +34,8 @@ distclean: clean devclean relclean
 ## Release targets
 ##
 rel: compile
-	rm -rf _build/rel/rel/riak-cs
+	@sed -e 's|@RELEASE_INSTALL_PREFIX@|$(RELEASE_INSTALL_PREFIX)|' \
+	    rel/vars.config.src >rel/vars.config
 	$(REBAR) as rel release
 	cp -a _build/rel/rel/riak-cs rel/
 
