@@ -30,7 +30,7 @@ RPC_HOP="{{platform_bin_dir}}/riak-cs rpc"
 # if we ever need to start a separate node to do fancier stuff than we
 # can via rpc, here are the ingredients:
 #
-# ERTS_PATH="{{platform_bin_dir}}/../erts/bin"
+# ERTS_PATH="{{platform_base_dir}}/erts/bin"
 # COOKIE=`egrep '^[ \t]*distributed_cookie[ \t]*=[ \t]*' {{platform_etc_dir}}/riak-cs.conf 2> /dev/null | cut -d = -f 2 | tr -d ' '`
 # NODE={{node}}
 # HOST=${NODE#*@}
