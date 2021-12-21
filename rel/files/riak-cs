@@ -62,6 +62,8 @@ function maybe_su {
         $*
     else
 	# freebsd su is fairly limited, so:
+	mkdir -p $RUNNER_GEN_DIR
+	chown riak_cs:riak_cs $RUNNER_GEN_DIR
 	f=$RUNNER_GEN_DIR/su_piggy
 	cat >$f <<EOF
 #!/bin/sh
