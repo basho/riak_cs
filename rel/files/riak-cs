@@ -61,6 +61,14 @@ function maybe_su {
     if [[ $EUID -ne 0 ]]; then
         $*
     else
+	# if we are executing an admin command that spins up a
+	# (hidden) node to then execute custom erlang code via -eval,
+	# we need to cd to a dir containing the erlang cookie
+	# (previously implicitly done by su -, which option we have
+	# removed in order to allow any env vars to be available for
+	# the ultimate invocation of riak/riak-cs/stanchion)
+	cd {{platform_base_dir}}
+
 	# freebsd su is fairly limited, so:
 	mkdir -p $RUNNER_GEN_DIR
 	chown riak_cs:riak_cs $RUNNER_GEN_DIR
