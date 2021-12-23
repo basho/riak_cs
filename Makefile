@@ -8,7 +8,6 @@ BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl 2>/dev/null) 2>/dev/null)
 OTP_VER          = $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 REBAR           ?= $(BASE_DIR)/rebar3
-REL_DIR         ?= _build/default/rel
 CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
@@ -33,28 +32,27 @@ distclean: clean devclean relclean
 ## Release targets
 ##
 rel: compile
-	$(REBAR) as rel release
-	cp -a _build/rel/rel/riak-cs rel/
+	@$(REBAR) as rel release
+	@cp -a _build/rel/rel/riak-cs rel/
 
 rel-rpm: compile
-	$(REBAR) as rpm release
-	cp -a _build/rpm/rel/riak-cs rel/
+	@$(REBAR) as rpm release
+	@cp -a _build/rpm/rel/riak-cs rel/
 
 rel-deb: compile
-	$(REBAR) as deb release
-	cp -a _build/deb/rel/riak-cs rel/
+	@$(REBAR) as deb release
+	@cp -a _build/deb/rel/riak-cs rel/
 
 rel-fbsdng: compile relclean
-	$(REBAR) as fbsdng release
-	cp -a _build/fbsdng/rel/riak-cs rel/
+	@$(REBAR) as fbsdng release
+	@cp -a _build/fbsdng/rel/riak-cs rel/
 
 rel-docker: compile relclean
-	REBAR_CONFIG=rebar.docker.config $(REBAR) release
-	cp -a _build/default/rel/riak-cs rel/
+	@REBAR_CONFIG=rebar.docker.config $(REBAR) release
+	@cp -a _build/default/rel/riak-cs rel/
 
 relclean:
-	rm -rf $(REL_DIR)
-	rm -rf rel/riak-cs
+	rm -rf _build/default/rel rel/riak-cs
 
 ##
 ## test targets
