@@ -72,13 +72,14 @@ function maybe_su {
 	# freebsd su is fairly limited, so:
 	mkdir -p $RUNNER_GEN_DIR
 	chown riak_cs:riak_cs $RUNNER_GEN_DIR
-	f=$RUNNER_GEN_DIR/su_piggy
+	f=`mktemp $RUNNER_GEN_DIR/su_piggy-XXXXXXX`
 	cat >$f <<EOF
 #!/bin/sh
 $*
 EOF
 	chmod +x $f
 	$SU riak_cs -c "$f"
+        rm -f $f
     fi
 }
 
