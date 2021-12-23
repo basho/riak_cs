@@ -25,7 +25,9 @@
 
 SCRIPT="riak-cs-admin"
 
-RPC_HOP="{{platform_bin_dir}}/riak-cs rpc"
+# if we are called as `riak admin`, PLATFORM_BASE_DIR will have been set
+PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
+RPC_HOP="$PLATFORM_BASE_DIR/bin/riak-cs rpc"
 
 # if we ever need to start a separate node to do fancier stuff than we
 # can via rpc, here are the ingredients:

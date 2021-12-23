@@ -23,16 +23,9 @@
 ##
 ## -------------------------------------------------------------------
 
-SCRIPT=$(readlink $0 || true)
-if [ -z $SCRIPT ]; then
-    SCRIPT=$0
-fi;
-
-SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
-RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-REL_NAME="riak-cs"
-
-RPC_HOP=$RELEASE_ROOT_DIR/bin/$REL_NAME
+SCRIPT="riak-cs-supercluster"
+PLATFORM_BASE_DIR=${RCS_PATH:-$(cd $(dirname "$0")/.. && pwd -P)}
+RPC_HOP="$PLATFORM_BASE_DIR/bin/riak-cs rpc"
 
 # Check the first argument for instructions
 case "$1" in
