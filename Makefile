@@ -47,6 +47,10 @@ rel-fbsdng: compile relclean
 	@$(REBAR) as fbsdng release
 	@cp -a _build/fbsdng/rel/riak-cs rel/
 
+rel-osx: compile relclean
+	$(REBAR) as osx release
+	cp -a _build/osx/rel/riak-cs rel/
+
 rel-docker: compile relclean
 	@REBAR_CONFIG=rebar.docker.config $(REBAR) release
 	@cp -a _build/default/rel/riak-cs rel/
@@ -156,7 +160,7 @@ PKG_ID := "$(REPO_TAG)-OTP$(OTP_VER)"
 PKG_VERSION = $(shell echo $(PKG_ID) | sed -e 's/^$(REPO)-//')
 
 package:
-	mkdir rel/pkg/out/riak_cs-$(PKG_ID)
+	mkdir -p rel/pkg/out/riak_cs-$(PKG_ID)
 	git archive --format=tar HEAD | gzip >rel/pkg/out/$(PKG_ID).tar.gz
 	$(MAKE) -f rel/pkg/Makefile
 
