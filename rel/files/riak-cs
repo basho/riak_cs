@@ -36,7 +36,7 @@ function write_pid_file {  # relx doesn't seem to write the pid file, does it?
     while [[ $c -ne 0 ]]; do
 	if [ "`maybe_su ${RELX_RIAK} ping`" = "pong" ]; then
 	    maybe_su ${RELX_RIAK} pid >$PID_DIR/riak-cs.pid
-            chown root:root $PID_DIR/riak-cs.pid 2&>1 >/dev/null \
+            chown root $PID_DIR/riak-cs.pid 2> /dev/null \
 		|| true  # systemd wants it to be owned by root
 	    break
 	fi
@@ -67,19 +67,20 @@ function maybe_su {
 	# (previously implicitly done by su -, which option we have
 	# removed in order to allow any env vars to be available for
 	# the ultimate invocation of riak/riak-cs/stanchion)
-	cd {{platform_base_dir}}
+	cd "{{platform_base_dir}}"
 
 	# freebsd su is fairly limited, so:
-	mkdir -p $RUNNER_GEN_DIR
-	chown riak_cs:riak_cs $RUNNER_GEN_DIR
-	f=`mktemp $RUNNER_GEN_DIR/su_piggy-XXXXXXX`
-	cat >$f <<EOF
+	mkdir -p "$RUNNER_GEN_DIR"
+	chown riak_cs:riak_cs "$RUNNER_GEN_DIR"
+	f=`mktemp "$RUNNER_GEN_DIR"/su_piggy-XXXXXXX`
+	cat >"$f" <<EOF
 #!/bin/sh
 $*
 EOF
-	chmod +x $f
+	chmod +x "$f"
+	chown riak_cs:riak_cs "$f"
 	$SU riak_cs -c "$f"
-        rm -f $f
+        rm -f "$f"
     fi
 }
 

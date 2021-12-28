@@ -132,13 +132,42 @@ exit
 ### Set up variables
 ###
 
+is_relative() {
+    if [ "${1#/}" = "$1" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 RCS_PATH="${RCS_PATH:-$(cd $(dirname "$0")/.. && pwd -P)}"
-cs_base_dir={{platform_base_dir}}
-cs_bin_dir={{platform_bin_dir}}
-cs_etc_dir={{platform_etc_dir}}
-cs_log_dir={{platform_log_dir}}
-cs_lib_dir={{platform_lib_dir}}
-cs_gen_dir={{platform_gen_dir}}
+PLATFORM_BASE_DIR={{platform_base_dir}}
+cs_base_dir=$PLATFORM_BASE_DIR
+if is_relative "{{platform_bin_dir}}"; then
+    cs_bin_dir="$PLATFORM_BASE_DIR/{{platform_bin_dir}}"
+else
+    cs_bin_dir="{{platform_bin_dir}}"
+fi
+if is_relative "{{platform_etc_dir}}"; then
+    cs_etc_dir="$PLATFORM_BASE_DIR/{{platform_etc_dir}}"
+else
+    cs_etc_dir="{{platform_etc_dir}}"
+fi
+if is_relative "{{platform_log_dir}}"; then
+    cs_log_dir="$PLATFORM_BASE_DIR/{{platform_log_dir}}"
+else
+    cs_log_dir="{{platform_log_dir}}"
+fi
+if is_relative "{{platform_lib_dir}}"; then
+    cs_lib_dir="$PLATFORM_BASE_DIR/{{platform_lib_dir}}"
+else
+    cs_lib_dir="{{platform_lib_dir}}"
+fi
+if is_relative "{{platform_gen_dir}}"; then
+    cs_gen_dir="$PLATFORM_BASE_DIR/{{platform_gen_dir}}"
+else
+    cs_gen_dir="{{platform_gen_dir}}"
+fi
 
 cuttlefish_conf_dir=${cs_gen_dir}/generated.conf
 

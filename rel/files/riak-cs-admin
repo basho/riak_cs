@@ -27,27 +27,17 @@ SCRIPT="riak-cs-admin"
 
 # if we are called as `riak admin`, PLATFORM_BASE_DIR will have been set
 PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
-RPC_HOP="$PLATFORM_BASE_DIR/bin/riak-cs rpc"
+
+PLATFORM_BIN_DIR={{platform_bin_dir}}
+if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
+    PLATFORM_BIN_DIR=$PLATFORM_BASE_DIR/$PLATFORM_BIN_DIR
+fi
+
+RPC_HOP="${PLATFORM_BIN_DIR}/riak-cs rpc"
+RPCt_HOP="${PLATFORM_BIN_DIR}/riak-cs rpcterms"
 
 # if we ever need to start a separate node to do fancier stuff than we
-# can via rpc, here are the ingredients:
-#
-# ERTS_PATH="{{platform_base_dir}}/erts/bin"
-# COOKIE=`egrep '^[ \t]*distributed_cookie[ \t]*=[ \t]*' {{platform_etc_dir}}/riak-cs.conf 2> /dev/null | cut -d = -f 2 | tr -d ' '`
-# NODE={{node}}
-# HOST=${NODE#*@}
-# BOOT_FILE="{{runner_base_dir}}/releases/{{release_version}}/start_clean"
-#
-# for something like this:
-#
-#      $ERTS_PATH/erl -noshell -name riak_test@$HOST -setcookie $COOKIE \
-#                  -pa {{runner_patch_dir}} \
-#                  -boot $BOOT_FILE \
-#                  -eval "case catch(riak:client_test(\"$NODE\")) of \
-#                          ok -> init:stop();                             \
-#                          _  -> init:stop(1)                             \
-#                         end."
-#
+# can via rpc, see how this is done in riak/rel/files/riak-admin
 
 # relx provides a 60 sec value hardcoded for RPC timeout, with no easy
 # way to supply an 'infinity' from the script.  Much as I hate to
