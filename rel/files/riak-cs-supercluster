@@ -24,16 +24,24 @@
 ## -------------------------------------------------------------------
 
 SCRIPT="riak-cs-supercluster"
-PLATFORM_BASE_DIR=${RCS_PATH:-$(cd $(dirname "$0")/.. && pwd -P)}
-RPC_HOP="$PLATFORM_BASE_DIR/bin/riak-cs rpc"
+# if we are called as `riak admin`, PLATFORM_BASE_DIR will have been set
+PLATFORM_BASE_DIR={{platform_base_dir}}
+PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
+
+PLATFORM_BIN_DIR={{platform_bin_dir}}
+if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
+    PLATFORM_BIN_DIR=$PLATFORM_BASE_DIR/$PLATFORM_BIN_DIR
+fi
+
+RPC_HOP="${PLATFORM_BIN_DIR}/riak-cs rpc"
 
 # Check the first argument for instructions
 case "$1" in
     list-members|weight|weight-manifest|weight-block|refresh)
-        $RPC_HOP rpc riak_cs_multibag_console "$@"
+        $RPC_HOP riak_cs_multibag_console "$@"
         ;;
     *)
-        echo "Usage: $SCRIPT { list-members |  weight | weight-manifest | weight-block | refresh }"
+        echo "Usage: $SCRIPT { list-members | weight | weight-manifest | weight-block | refresh }"
         exit 1
         ;;
 esac
