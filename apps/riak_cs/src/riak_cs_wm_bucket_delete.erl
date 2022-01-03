@@ -193,6 +193,6 @@ key_and_version_from_xml_node(Node) ->
 
 parse_body_test() ->
     Body = "<Delete> <Object> <Key>&lt;/Key&gt;</Key> </Object> </Delete>",
-    ?assertEqual({ok, [<<"</Key>">>]}, parse_body(Body)).
+    ?assertEqual({ok, [{<<"</Key>">>, ?LFS_DEFAULT_OBJECT_VERSION}]}, parse_body(Body)).
 
 -endif.

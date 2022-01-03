@@ -330,7 +330,7 @@ dummy_start_delete_fsm(_Node, [_RcPid, {_UUID, ?MANIFEST{bkey={_, K}}=_Manifest}
                      {match, _} -> 0
                  end,
     DummyDeleteFsmPid =
-        spawn(fun() -> FinishFun({self(), {ok, {b, k, uuid, NumDeleted, TotalBlocks}}}) end),
+        spawn(fun() -> FinishFun({self(), {ok, {b, k, vsn, uuid, NumDeleted, TotalBlocks}}}) end),
     {ok, DummyDeleteFsmPid}.
 
 %% ====================================================================

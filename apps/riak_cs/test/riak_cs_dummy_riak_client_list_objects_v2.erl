@@ -167,6 +167,6 @@ manifests_to_robjs(Manifests) ->
 
 %% TODO: Metadatas
 manifest_to_robj(?MANIFEST{bkey={Bucket, Key}, uuid=UUID}=M) ->
-    Dict = riak_cs_manifest_utils:new_dict(UUID, M),
+    Dict = rcs_common_manifest_utils:new_dict(UUID, M),
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     riakc_obj:new(ManifestBucket, Key, riak_cs_utils:encode_term(Dict)).

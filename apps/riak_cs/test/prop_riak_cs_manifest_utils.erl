@@ -72,8 +72,8 @@ prop_active_manifests() ->
         begin
             AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
-            ToGcUUIDs = lists:sort(riak_cs_manifest_utils:deleted_while_writing(AsDict)),
-            Active = riak_cs_manifest_utils:active_manifest(AsDict),
+            ToGcUUIDs = lists:sort(rcs_common_manifest_utils:deleted_while_writing(AsDict)),
+            Active = rcs_common_manifest_utils:active_manifest(AsDict),
             case Active of
                 {error, no_active_manifest} ->
                     %% If no manifest is returned then there should
@@ -94,6 +94,8 @@ prop_active_manifests() ->
             end
         end).
 
+-define(PRUNE_LEEWAY_SECS, 5).
+
 prop_prune_manifests() ->
     ?FORALL({Manifests, MaxCount},
             {resize(50, manifests()), frequency([{9, nat()}, {1, 'unlimited'}])},
@@ -105,19 +107,19 @@ prop_prune_manifests() ->
                 'unlimited' ->
                     %% We should not prune any manifests if the prune
                     %% count is set to `unlimited'.
-                    AsDict =:= riak_cs_manifest_utils:prune(AsDict, NowTime, MaxCount);
+                    AsDict =:= rcs_common_manifest_utils:prune(AsDict, NowTime, MaxCount, ?PRUNE_LEEWAY_SECS);
                 _ ->
                     prune_helper(AsDict, NowTime, MaxCount)
             end
         end).
 
 prune_helper(AsDict, NowTime, MaxCount) ->
-    Pruned = riak_cs_manifest_utils:prune(AsDict, NowTime, MaxCount),
-    RemainingScheduledDelete = riak_cs_manifest_utils:filter_manifests_by_state(Pruned, [scheduled_delete]),
+    Pruned = rcs_common_manifest_utils:prune(AsDict, NowTime, MaxCount, ?PRUNE_LEEWAY_SECS),
+    RemainingScheduledDelete = rcs_common_manifest_utils:filter_manifests_by_state(Pruned, [scheduled_delete]),
     RemainingScheduledDeleteUUIDs = [UUID || {UUID, _Mani} <- RemainingScheduledDelete],
     RemainingScheduledDeleteTimes = [M?MANIFEST.scheduled_delete_time || {_UUID, M} <- RemainingScheduledDelete],
 
-    AllScheduledDelete = riak_cs_manifest_utils:filter_manifests_by_state(AsDict, [scheduled_delete]),
+    AllScheduledDelete = rcs_common_manifest_utils:filter_manifests_by_state(AsDict, [scheduled_delete]),
     DroppedScheduledDelete = orddict:filter(fun (UUID, _) -> not lists:member(UUID, RemainingScheduledDeleteUUIDs) end, AllScheduledDelete),
     DroppedScheduledDeleteTimes = [M?MANIFEST.scheduled_delete_time || {_UUID, M} <- DroppedScheduledDelete],
 

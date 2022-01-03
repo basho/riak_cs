@@ -72,7 +72,7 @@ prop_block_count() ->
 %% all of the blocks calculated by `initial_blocks`
 %% have been removed from the manifest
 prop_manifest_manipulation() ->
-    ?FORALL({Bucket, FileName, UUID, CLength, Md5, MD},
+    ?FORALL({Bucket, FileName, Vsn, UUID, CLength, Md5, MD},
             {riak_cs_gen:bucket(),
              riak_cs_gen:file_name(),
              riak_cs_gen:vsn(),
@@ -86,6 +86,7 @@ prop_manifest_manipulation() ->
                 Manifest = riak_cs_lfs_utils:new_manifest(
                              Bucket,
                              FileName,
+                             Vsn,
                              UUID,
                              CLength,
                              <<"ctype">>,

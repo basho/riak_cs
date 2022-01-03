@@ -250,6 +250,7 @@ raw_manifest(Key, State) ->
     ?MANIFEST{uuid = <<"uuid-1">>,
               bkey={<<"bucket">>, bin_key(Key)},
               state=State,
+              created = "20221111T010101",
               content_md5 = <<"Content-MD5">>,
               content_length=100,
               acl=?ACL{owner={"display-name", "canonical-id", "key-id"}}}.
@@ -300,7 +301,7 @@ active_manifest_keys(KeysAndStates, <<$/>>=_Delimiter, undefined=_Prefix) ->
     {lists:usort(CommonPrefixes), lists:usort(Keys)}.
 
 keys_in_list({CPrefixes, Contents}) ->
-    {CPrefixes, [Key || #list_objects_key_content_v1{key=Key} <- Contents]}.
+    {CPrefixes, [Key || #list_objects_key_content{key=Key} <- Contents]}.
 
 list_manifests(Manifests, Opts, UserPage, BatchSize) ->
     {ok, DummyRc} = riak_cs_dummy_riak_client_list_objects_v2:start_link([Manifests]),
@@ -337,7 +338,7 @@ list_manifests_to_the_end(DummyRc, Opts, UserPage, BatchSize, CPrefixesAcc, Cont
 create_marker(?LORESP{next_marker=undefined,
                       contents=Contents}) ->
     LastEntry = lists:last(Contents),
-    LastEntry#list_objects_key_content_v1.key;
+    LastEntry#list_objects_key_content.key;
 create_marker(?LORESP{next_marker=NextMarker}) ->
     NextMarker.
 

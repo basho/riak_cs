@@ -69,12 +69,12 @@ prop_resolution_commutative() ->
     ?FORALL(Manifests, resize(50, manifests()),
         begin
             MapFun = fun(Mani) ->
-                riak_cs_manifest_utils:new_dict(Mani?MANIFEST.uuid, Mani)
+                rcs_common_manifest_utils:new_dict(Mani?MANIFEST.uuid, Mani)
             end,
             Filtered = only_one_active(Manifests),
             WrappedManifests = lists:map(MapFun, Filtered),
-            Resolved = riak_cs_manifest_resolution:resolve(WrappedManifests),
-            ReversedResolved = riak_cs_manifest_resolution:resolve(lists:reverse(WrappedManifests)),
+            Resolved = rcs_common_manifest_resolution:resolve(WrappedManifests),
+            ReversedResolved = rcs_common_manifest_resolution:resolve(lists:reverse(WrappedManifests)),
             Resolved == ReversedResolved
         end).
 
@@ -85,7 +85,7 @@ prop_resolution_commutative() ->
 raw_manifest() ->
     ?MANIFEST{uuid = riak_cs_gen:bounded_uuid(),
               bkey = {<<"bucket">>, <<"key">>},
-              object_version = <<"a">>,
+              vsn = <<"a">>,
               state = riak_cs_gen:manifest_state()}.
 
 manifest() ->
