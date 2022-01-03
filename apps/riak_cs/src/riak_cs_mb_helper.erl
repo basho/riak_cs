@@ -58,14 +58,10 @@ set_bag_id_to_manifest(BagId, ?MANIFEST{props = Props} = Manifest)
 
 -spec bag_id_from_manifest(lfs_manifest()) -> bag_id().
 bag_id_from_manifest(?MANIFEST{props = Props}) ->
-    case Props of
-        undefined ->
-            undefined;
-        _ ->
-            case lists:keyfind(block_bag, 1, Props) of
-                false -> undefined;
-                {block_bag, BagId} -> BagId
-            end
+    case lists:keyfind(block_bag, 1, Props) of
+        false -> undefined;
+        {block_bag, BagId} -> BagId
+
     end.
 
 -spec cluster_id(bag_id()) -> cluster_id().

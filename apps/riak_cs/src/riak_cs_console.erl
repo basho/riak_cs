@@ -112,7 +112,7 @@ rand_str(N) ->
 
 put_object(Bucket, Key, Value, Acl, RcPid) ->
     Args = [{Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION,
-             size(Value), "application/octet-stream",
+             size(Value), <<"application/octet-stream">>,
              [], riak_cs_lfs_utils:block_size(), Acl, timer:seconds(60), self(), RcPid}],
     {ok, Pid} = riak_cs_put_fsm_sup:start_put_fsm(node(), Args),
     ok = riak_cs_put_fsm:augment_data(Pid, Value),
