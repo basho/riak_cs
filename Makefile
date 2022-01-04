@@ -61,10 +61,10 @@ relclean:
 ##
 ## test targets
 ##
-test: eunit proper
-
-eunit:
+test:
 	$(REBAR) eunit
+	$(REBAR) dialyzer
+
 
 ##
 ## Developer targets
