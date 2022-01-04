@@ -1,8 +1,8 @@
 # Riak CS 3.0.0 Release Notes
 
-Released November 11, 2021.
+Released January 11, 2022.
 
-## General Information
+## General
 
 This release was originally envisaged as an uplift of 2.1.2 to OTP-22
 and rebar3. There were no known critical bugs that needed fixing. We did,
@@ -15,42 +15,7 @@ Bundle](https://github.com/TI-Tokyo/riak_cs_service_bundle), as a
 convenient way to set up the full Riak CS suite locally.
 
 All principal repositories are in [TI Tokyo
-org](https://github.com/TI-Tokyo) on Gihub.
-
-## Changes
-
-### User-visible changes
-
-* S3 request signature v4 is now the default. The old (v2) signatures
-  continue to be supported.
-* A change of internal structures needed to support object versions,
-  meaning downgrade to 2.x is no longer possible (even if the objects
-  created with 3.0 have no versions). Upgrade from 2.x is possible.
-* The new rpm and deb packages are built for Centos 8 and Debian 11,
-  which in each case rely on systemd (old-style SysV init scripts are
-  no longer included).
-* `riak-cs-admin` has got a new option, `test`, which creates a bucket
-  and performs a basic write-read-delete cycle in it (useful to test
-  that the riak cluster is configured properly for use with Riak CS).
-
-### Other changes
-
-* Riak CS and Stanchion now require OTP-22 and rebar3.
-* Riak CS Test framework:
-  - The framework, along with a suite of tests (also the [multibag
-    additions](https://github.com/TI-Tokyo/riak_cs_multibag)), has been
-    upgraded to OTP-22/rebar3 and moved into a separate project,
-    [riak_cs_test](https://github.com/TI-Tokyo/riak_cs_test).
-  - A new batch of tests is written for `s3cmd` as a client.
-  - The Python client tests have been upgraded to boto3 and python-3.9.
-* A refactoring of code shared between Riak CS and stanchion resulted
-  in that code being collected into a separate dependency,
-  [rcs_common](https://github.com/TI-Tokyo/rcs_common).
-* Riak CS Control application has been upgraded to OTP-22/rebar3, too,
-  however without any new features.
-* All dependencies upgraded to their current versions.
-* All EQC tests have been converted to use PropEr (no shortcuts taken,
-  all coverage is preserved).
+org](https://github.com/TI-Tokyo) on Github.
 
 ## New features
 
@@ -74,6 +39,47 @@ org](https://github.com/TI-Tokyo) on Gihub.
   - properly configured and set up with a new user, whose credentials
     will be shown;
   - with riak data persisted.
+* Packaging:
+  - New packages are provided for FreeBSD 13 and OSX 14 (in the latter
+    case, the package is the result of `make rel` tarred; no special
+    user is created).
+  - Packages have been verified for Centos 7 and 8, Debian 8 and 11,
+    FreeBSD 13 and OSX 14.
+* `riak-cs-admin` has got a new option, `test`, which creates a bucket
+  and performs a basic write-read-delete cycle in it (useful to test
+  that the riak cluster is configured properly for use with Riak CS).
+
+## Changes
+
+### User-visible changes
+
+* S3 request signature v4 is now the default. The old (v2) signatures
+  continue to be supported.
+* A change of internal structures needed to support object versions,
+  meaning downgrade to 2.x is no longer possible (even if the objects
+  created with 3.0 have no versions). Upgrade from 2.x is possible.
+* Packaging:
+  - The rpm and deb packages now rely on systemd (old-style SysV init
+    scripts are no longer included).
+
+### Other changes
+
+* Riak CS and Stanchion now require OTP-22 and rebar3.
+* Riak CS Test framework:
+  - The framework, along with a suite of tests (also the [multibag
+    additions](https://github.com/TI-Tokyo/riak_cs_multibag)), has been
+    upgraded to OTP-22/rebar3 and moved into a separate project,
+    [riak_cs_test](https://github.com/TI-Tokyo/riak_cs_test).
+  - A new battery of tests is written for `s3cmd` as a client.
+  - The Python client tests have been upgraded to boto3 and python-3.9.
+* A refactoring of code shared between Riak CS and stanchion resulted
+  in that code being collected into a separate dependency,
+  [rcs_common](https://github.com/TI-Tokyo/rcs_common).
+* Riak CS Control application has been upgraded to OTP-22/rebar3, too,
+  however without any new features.
+* All dependencies upgraded to their current versions.
+* All EQC tests have been converted to use PropEr (no shortcuts taken,
+  all coverage is preserved).
 
 ## Upgrading
 
@@ -87,7 +93,8 @@ that database cannot be used again with 2.x.
 
 Riak CS 3.0 has been tested with Riak versions 2.2.6, 2.9.8 through
 .10, and 3.0.7 and .9. It requires Stanchion 3.0.0 (2.x versions not
-supported due to a change in manifest record).
+supported due to a change in the manifest record).
+
 
 # Riak CS 2.1.2 Release Notes
 

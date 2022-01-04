@@ -13,6 +13,7 @@ using Riak CS. For more information, browse the following files:
 
 - README:  this file
 - LICENSE: the license under which Riak CS is released
+- RELEASE-NOTES: new features and changes for each release.
 
 # Operation
 
@@ -56,7 +57,8 @@ These components need to be properly configured, at a minimum:
 
 ## Starting order
 
-Riak must be started before Riak CS and Stanchion.
+Riak must be started before Riak CS and Stanchion. Also, Stanchion
+must be running before Riak CS can begin to serve user requests.
 
 ## Users and administrative access
 
