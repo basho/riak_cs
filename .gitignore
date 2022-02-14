@@ -1,8 +1,6 @@
 _build/
-.eunit/
+log/
 rel/riak-cs
 dev/
 *-riak-cs-debug.tar.gz
 .local_dialyzer_plt
-
-*~
