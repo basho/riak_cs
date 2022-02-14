@@ -68,7 +68,7 @@ proper_test_() ->
        fun setup/0,
        fun cleanup/1,
        [%% Run the quickcheck tests
-        {timeout, 30,
+        {timeout, 60,
          ?_assertEqual(true, proper:quickcheck(?QC_OUT(prop_get_fsm())))}
        ]
       }
