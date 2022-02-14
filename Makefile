@@ -48,8 +48,13 @@ rel-fbsdng: compile relclean
 	@cp -a _build/fbsdng/rel/riak-cs rel/
 
 rel-osx: compile relclean
-	$(REBAR) as osx release
-	cp -a _build/osx/rel/riak-cs rel/
+	@$(REBAR) as osx release
+	@cp -a _build/osx/rel/riak-cs rel/
+
+rel-alpine: compile relclean
+	@$(REBAR) as alpine release
+	@(cd _build/alpine/rel/riak-cs/usr/bin && mv riak-cs.nosu riak-cs)
+	@cp -a _build/alpine/rel/riak-cs rel/
 
 rel-docker: compile relclean
 	@REBAR_CONFIG=rebar.docker.config $(REBAR) release
