@@ -69,44 +69,42 @@ init([]) ->
 
 -spec process_specs() -> [supervisor:child_spec()].
 process_specs() ->
-    BagProcessSpecs = riak_cs_mb_helper:process_specs(),
-    Archiver = {riak_cs_access_archiver_manager,
-                {riak_cs_access_archiver_manager, start_link, []},
-                permanent, 5000, worker,
-                [riak_cs_access_archiver_manager]},
-    Storage = {riak_cs_storage_d,
-               {riak_cs_storage_d, start_link, []},
-               permanent, 5000, worker, [riak_cs_storage_d]},
-    GC = {riak_cs_gc_manager,
-          {riak_cs_gc_manager, start_link, []},
-          permanent, 5000, worker, [riak_cs_gc_manager]},
-    DeleteFsmSup = {riak_cs_delete_fsm_sup,
-                    {riak_cs_delete_fsm_sup, start_link, []},
-                    permanent, 5000, worker, dynamic},
-    ListObjectsETSCacheSup = {riak_cs_list_objects_ets_cache_sup,
-                              {riak_cs_list_objects_ets_cache_sup, start_link, []},
-                              permanent, 5000, supervisor, dynamic},
-    GetFsmSup = {riak_cs_get_fsm_sup,
-                 {riak_cs_get_fsm_sup, start_link, []},
-                 permanent, 5000, worker, dynamic},
-    PutFsmSup = {riak_cs_put_fsm_sup,
-                 {riak_cs_put_fsm_sup, start_link, []},
-                 permanent, 5000, worker, dynamic},
-    DiagsSup = {riak_cs_diags, {riak_cs_diags, start_link, []},
-                   permanent, 5000, worker, dynamic},
-    QuotaSup = {riak_cs_quota_sup,
-                {riak_cs_quota_sup, start_link, []},
-                permanent, 5000, supervisor, dynamic},
-    BagProcessSpecs ++
-        [Archiver,
-         Storage,
-         GC,
-         ListObjectsETSCacheSup,
-         DeleteFsmSup,
-         GetFsmSup,
-         PutFsmSup,
-         DiagsSup,
-         QuotaSup].
+    [ #{id => riak_cs_access_archiver_manager,
+        start => {riak_cs_access_archiver_manager, start_link, []}},
+
+      #{id => riak_cs_storage_d,
+        start => {riak_cs_storage_d, start_link, []}},
+
+      #{id => riak_cs_gc_manager,
+        start => {riak_cs_gc_manager, start_link, []}},
+
+      #{id => riak_cs_delete_fsm_sup,
+        start => {riak_cs_delete_fsm_sup, start_link, []},
+        modules => dynamic},
+
+      #{id => riak_cs_list_objects_ets_cache_sup,
+        start => {riak_cs_list_objects_ets_cache_sup, start_link, []},
+        type => supervisor,
+        modules => dynamic},
+
+      #{id => riak_cs_get_fsm_sup,
+        start => {riak_cs_get_fsm_sup, start_link, []},
+        modules => dynamic},
+
+      #{id => riak_cs_put_fsm_sup,
+        start => {riak_cs_put_fsm_sup, start_link, []},
+        modules => dynamic},
+
+      #{id => riak_cs_diags,
+        start => {riak_cs_diags, start_link, []},
+        modules => dynamic},
+
+      #{id => riak_cs_quota_sup,
+        start => {riak_cs_quota_sup, start_link, []},
+        modules => dynamic}]
+
+        ++ riak_cs_mb_helper:process_specs().
+
 
 -spec get_option_val({atom(), term()} | atom()) -> {atom(), term()}.
 get_option_val({Option, Default}) ->
@@ -144,15 +142,14 @@ pool_specs(Options) ->
 rc_pool_specs(Options) ->
     WorkerStop = fun(Worker) -> riak_cs_riak_client:stop(Worker) end,
     MasterPools = proplists:get_value(connection_pools, Options),
-    [{Name,
-      {poolboy, start_link, [[{name, {local, Name}},
-                              {worker_module, riak_cs_riak_client},
-                              {size, Workers},
-                              {max_overflow, Overflow},
-                              {stop_fun, WorkerStop}],
-                             []]},
-      permanent, 5000, worker, [poolboy]} ||
-        {Name, {Workers, Overflow}} <- MasterPools].
+    [#{id => Name,
+      start => {poolboy, start_link, [[{name, {local, Name}},
+                                       {worker_module, riak_cs_riak_client},
+                                       {size, Workers},
+                                       {max_overflow, Overflow},
+                                       {stop_fun, WorkerStop}],
+                                      []]}}
+     || {Name, {Workers, Overflow}} <- MasterPools].
 
 pbc_pool_specs(Options) ->
     WorkerStop = fun(Worker) -> riak_cs_riakc_pool_worker:stop(Worker) end,
@@ -172,20 +169,20 @@ pbc_pool_specs(Options) ->
                        supervisor:child_spec().
 pbc_pool_spec(BagId, Fixed, Overflow, Address, Port, WorkerStop) ->
     Name = riak_cs_riak_client:pbc_pool_name(BagId),
-    {Name,
-     {poolboy, start_link, [[{name, {local, Name}},
-                             {worker_module, riak_cs_riakc_pool_worker},
-                             {size, Fixed},
-                             {max_overflow, Overflow},
-                             {stop_fun, WorkerStop}],
-                            [{address, Address}, {port, Port}]]},
-     permanent, 5000, worker, [poolboy]}.
+    #{id => Name,
+      start => {poolboy, start_link, [[{name, {local, Name}},
+                                       {worker_module, riak_cs_riakc_pool_worker},
+                                       {size, Fixed},
+                                       {max_overflow, Overflow},
+                                       {stop_fun, WorkerStop}],
+                                      [{address, Address},
+                                       {port, Port}]]}}.
 
 -spec web_spec(atom(), proplist()) -> supervisor:child_spec().
 web_spec(Name, Config) ->
-    {Name,
-     {webmachine_mochiweb, start, [Config]},
-     permanent, 5000, worker, dynamic}.
+    #{id => Name,
+      start => {webmachine_mochiweb, start, [Config]},
+      modules => dynamic}.
 
 -spec object_web_config(proplist()) -> proplist().
 object_web_config(Options) ->
