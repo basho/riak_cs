@@ -125,6 +125,8 @@ chunk(Pid, ChunkSeq, ChunkValue) ->
 %% gen_fsm callbacks
 %% ====================================================================
 
+-ifndef(TEST).
+
 init([Bucket, Key, ObjVsn, Caller, RcPid, FetchConcurrency, BufferFactor])
   when is_binary(Bucket), is_binary(Key), is_pid(Caller),
        is_pid(RcPid),
@@ -155,7 +157,27 @@ init([Bucket, Key, ObjVsn, Caller, RcPid, FetchConcurrency, BufferFactor])
                    riak_client = RcPid,
                    buffer_factor = BufferFactor,
                    fetch_concurrency = FetchConcurrency},
+    {ok, prepare, State, 0}.
+
+-else.
+
+init([Bucket, Key, ObjVsn, Caller, RcPid, FetchConcurrency, BufferFactor])
+  when is_binary(Bucket), is_binary(Key), is_pid(Caller),
+       is_pid(RcPid),
+       FetchConcurrency > 0, BufferFactor > 0 ->
+
+    CallerRef = erlang:monitor(process, Caller),
+    process_flag(trap_exit, true),
+
+    State = #state{bucket = Bucket,
+                   key = Key,
+                   obj_vsn = ObjVsn,
+                   caller = CallerRef,
+                   riak_client = RcPid,
+                   buffer_factor = BufferFactor,
+                   fetch_concurrency = FetchConcurrency},
     {ok, prepare, State, 0};
+
 init([test, Bucket, Key, Caller, ContentLength,
       BlockSize, FetchConcurrency, BufferFactor]) ->
     {ok, prepare, State1, 0} = init([Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION, Caller, self(),
@@ -179,6 +201,8 @@ init([test, Bucket, Key, Caller, ContentLength,
     {ok, waiting_value, State1#state{free_readers=RPs,
                                      manifest=Manifest,
                                      test=true}}.
+
+-endif.
 
 prepare(timeout, State) ->
     NewState = prepare(State),
