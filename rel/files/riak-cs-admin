@@ -34,7 +34,6 @@ if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
 fi
 
 RPC_HOP="${PLATFORM_BIN_DIR}/riak-cs rpc"
-RPCt_HOP="${PLATFORM_BIN_DIR}/riak-cs rpcterms"
 
 # if we ever need to start a separate node to do fancier stuff than we
 # can via rpc, see how this is done in riak/rel/files/riak-admin
