@@ -30,25 +30,6 @@ export PIPE_DIR={{pipe_dir}}/   # terminating / (relx treats it as a prefix)
 mkdir -p $PID_DIR $PIPE_DIR
 chown riak_cs:riak_cs $PID_DIR $PIPE_DIR
 
-function write_pid_file {  # relx doesn't seem to write the pid file, does it?
-    local c=3
-    sleep 1
-    while [[ $c -ne 0 ]]; do
-	if [ "`maybe_su ${RELX_RIAK} ping`" = "pong" ]; then
-	    maybe_su ${RELX_RIAK} pid >$PID_DIR/riak-cs.pid
-            chown root $PID_DIR/riak-cs.pid 2> /dev/null \
-		|| true  # systemd wants it to be owned by root
-	    break
-	fi
-	sleep 2
-	c=$(($c - 1))
-    done
-}
-
-function delete_pid_file {
-    rm -f $PID_DIR/riak-cs.pid
-}
-
 # centos7-based distros have a su that contacts pam and prints the "Last logged in" message
 if [ "`cat /etc/redhat-release 2>&1`" = "CentOS Stream release 8" ] ||
    [ "`cat /etc/system-release 2>&1`" = "Amazon Linux release 2 (Karoo)" ]; then
@@ -68,7 +49,6 @@ function maybe_su {
 	# removed in order to allow any env vars to be available for
 	# the ultimate invocation of riak/riak-cs/stanchion)
 	cd "{{platform_base_dir}}"
-
 	# freebsd su is fairly limited, so:
 	mkdir -p "$RUNNER_GEN_DIR"
 	chown riak_cs:riak_cs "$RUNNER_GEN_DIR"
@@ -85,28 +65,11 @@ EOF
 }
 
 case "$1" in
-    start)
-        maybe_su $RELX_RIAK $* -pa {{platform_patch_dir}} \
-            && write_pid_file
-	test -r $PID_DIR/riak-cs.pid && exit 0
-	;;
-    console|foreground)
-        maybe_su $RELX_RIAK $* -pa {{platform_patch_dir}}
-	;;
     stop)
         maybe_su $RELX_RIAK $* \
-	    && delete_pid_file
-	;;
-    admin)
-	shift
-	maybe_su `which riak-cs-admin` $*
-	;;
-    debug)
-	shift
-	maybe_su `which riak-cs-debug` $*
+	    && rm -f $PID_DIR/riak-cs.pid
 	;;
     *)
-        ESCAPED_ARGS=`echo "$@" | sed -e 's/\([\\\(\\\){}"\x27]\)/\\\\\1/g'`
-        maybe_su $RELX_RIAK $ESCAPED_ARGS
+        maybe_su $RELX_RIAK $*
         ;;
 esac
