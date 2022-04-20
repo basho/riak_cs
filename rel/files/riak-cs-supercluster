@@ -33,12 +33,16 @@ if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
     PLATFORM_BIN_DIR=$PLATFORM_BASE_DIR/$PLATFORM_BIN_DIR
 fi
 
-RPC_HOP="${PLATFORM_BIN_DIR}/riak-cs rpc"
+PLATFORM_LIB_DIR={{platform_lib_dir}}
+if [ "$PLATFORM_LIB_DIR" = "${PLATFORM_LIB_DIR#/}" ]; then
+    PLATFORM_LIB_DIR=$PLATFORM_BASE_DIR/$PLATFORM_LIB_DIR
+fi
+. $PLATFORM_LIB_DIR/lib.sh
 
 # Check the first argument for instructions
 case "$1" in
     list-members|weight|weight-manifest|weight-block|refresh)
-        $RPC_HOP riak_cs_multibag_console "$@"
+        rpc riak_cs_multibag_console "$@"
         ;;
     *)
         echo "Usage: $SCRIPT { list-members | weight | weight-manifest | weight-block | refresh }"

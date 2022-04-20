@@ -26,6 +26,7 @@
 SCRIPT="riak-cs-admin"
 
 # if we are called as `riak admin`, PLATFORM_BASE_DIR will have been set
+PLATFORM_BASE_DIR={{platform_base_dir}}
 PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
 
 PLATFORM_BIN_DIR={{platform_bin_dir}}
@@ -33,17 +34,11 @@ if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
     PLATFORM_BIN_DIR=$PLATFORM_BASE_DIR/$PLATFORM_BIN_DIR
 fi
 
-RPC_HOP="${PLATFORM_BIN_DIR}/riak-cs rpc"
-
-# if we ever need to start a separate node to do fancier stuff than we
-# can via rpc, see how this is done in riak/rel/files/riak-admin
-
-# relx provides a 60 sec value hardcoded for RPC timeout, with no easy
-# way to supply an 'infinity' from the script.  Much as I hate to
-# pretend 60 sec is long enough, here's a TODO note to have it fixed
-# (best would be to patch relx/nodetool upstream).  The only call
-# affected is `riak-cs-admin cluster-info`.
-RPC_HOP_INF=$RPC_HOP
+PLATFORM_LIB_DIR={{platform_lib_dir}}
+if [ "$PLATFORM_LIB_DIR" = "${PLATFORM_LIB_DIR#/}" ]; then
+    PLATFORM_LIB_DIR=$PLATFORM_BASE_DIR/$PLATFORM_LIB_DIR
+fi
+. $PLATFORM_LIB_DIR/lib.sh
 
 usage() {
     echo "Usage: $SCRIPT { version | status | gc | access | storage |"
@@ -55,17 +50,17 @@ usage() {
 case "$1" in
     version)
         shift
-        $RPC_HOP riak_cs_console version
+        rpc riak_cs_console version
         ;;
     status)
         shift
-        $RPC_HOP riak_cs_console status
+        rpc riak_cs_console status
         ;;
     gc)
         shift
         case "$1" in
             batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
-                $RPC_HOP riak_cs_gc_console "$@"
+                rpc riak_cs_gc_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT gc { batch [<leeway_seconds>|--help] | status | pause | resume | cancel |"
@@ -79,7 +74,7 @@ case "$1" in
         shift
         case "$1" in
             batch|status|pause|resume|cancel)
-                $RPC_HOP riak_cs_storage_console "$@"
+                rpc riak_cs_storage_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT storage $1 { batch | status | pause | resume | cancel }"
@@ -91,7 +86,7 @@ case "$1" in
         shift
         case "$1" in
             flush)
-                $RPC_HOP riak_cs_access_console flush "$@"
+                rpc riak_cs_access_console flush "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT access $1 { flush }"
@@ -103,7 +98,7 @@ case "$1" in
         shift
         case "$1" in
             switch|show)
-                $RPC_HOP riak_cs_stanchion_console "$@"
+                rpc riak_cs_stanchion_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT stanchion $1 { switch HOST PORT | show }"
@@ -113,7 +108,7 @@ case "$1" in
         ;;
     'test')
         shift
-        $RPC_HOP riak_cs_console test
+        rpc riak_cs_console test
         ;;
     cluster[_-]info)
         if [ $# -lt 2 ]; then
@@ -122,16 +117,16 @@ case "$1" in
         fi
         shift
 
-        $RPC_HOP_INF riak_cs_console cluster_info "$@"
+        rpc riak_cs_console cluster_info "$@"
         ;;
     cleanup[_-]orphan[_-]multipart)
         shift
 
-        $RPC_HOP riak_cs_console cleanup_orphan_multipart "$@"
+        rpc riak_cs_console cleanup_orphan_multipart "$@"
         ;;
     audit[_-]bucket[_-]ownership)
         shift
-        $RPC_HOP riak_cs_console audit_bucket_ownership "$@"
+        rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
         usage
