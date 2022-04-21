@@ -31,11 +31,11 @@ mkdir -p $PID_DIR
 chown riak_cs:riak_cs $PID_DIR
 
 # centos7-based distros have a su that contacts pam and prints the "Last logged in" message
-if [ "`cat /etc/redhat-release 2>&1`" = "CentOS Stream release 8" ] ||
+if [ "`cat /etc/redhat-release 2>&1`" = "CentOS Stream release 7" ] ||
    [ "`cat /etc/system-release 2>&1`" = "Amazon Linux release 2 (Karoo)" ]; then
-    SU="su --session-command"
+    COPTION="--session-command"
 else
-    SU=su
+    COPTION="-c"
 fi
 
 function maybe_su {
@@ -59,7 +59,7 @@ $*
 EOF
 	chmod +x "$f"
 	chown riak_cs:riak_cs "$f"
-	$SU riak_cs -c "$f"
+	su riak_cs $COPTION "$f"
         rm -f "$f"
     fi
 }
