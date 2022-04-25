@@ -16,6 +16,9 @@ riak admin ringready
 riak admin test
 #riak admin status
 
+# allow all three apps to coexist
+chmod 777 /tmp/erl_pipes
+
 systemctl start stanchion riak-cs
 
 while [[ x`riak-cs ping` != x"pong" ]]; do

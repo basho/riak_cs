@@ -16,6 +16,9 @@ riak admin ringready
 riak admin test
 #riak admin status
 
+# allow all three apps to coexist
+chmod 777 /tmp/erl_pipes
+
 service stanchion start
 service riak-cs start
 
