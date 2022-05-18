@@ -12,7 +12,7 @@
 {platform_etc_dir,  "{{platform_base_dir}}/etc"}.
 {platform_lib_dir,  "{{platform_base_dir}}/lib"}.
 {platform_log_dir,  "{{platform_base_dir}}/log"}.
-{platform_gen_dir,   "{{platform_data_dir}}"}.
+{platform_gen_dir,   "{{platform_base_dir}}"}.
 {platform_patch_dir, "{{platform_lib_dir}}/patches"}.
 
 %%
