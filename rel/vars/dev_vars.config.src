@@ -33,6 +33,8 @@
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
 
+{console_log_default, file}.
+
 %%
 %% etc/vm.args
 %%
