@@ -11,7 +11,7 @@ COPY . /usr/src/riak_cs
 # rebar.config.  Configuration from environment now becomes possible,
 # via rebar's own method of generating sys.config from
 # /sys.config.src.
-RUN make DEBUG=1 rel-docker
+RUN make rel-docker
 
 FROM debian:11.2 AS runtime-image
 
