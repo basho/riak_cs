@@ -21,7 +21,7 @@
 %% @doc Riak node to which Riak CS accesses
 {mapping, "riak_host", "riak_cs.riak_host", [
   {default, {"{{riak_ip}}", {{riak_pb_port}} }},
-  {datatype, ip},
+  {datatype, [fqdn, ip]},
   {validators, ["valid_host"]}
 ]}.
 
@@ -29,7 +29,7 @@
 %% serialization service
 {mapping, "stanchion_host", "riak_cs.stanchion_host", [
   {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
-  {datatype, ip},
+  {datatype, [fqdn, ip]},
   {validators, ["valid_host"]}
 ]}.
 
