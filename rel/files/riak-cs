@@ -1,0 +1,75 @@
+#!/bin/bash
+
+## -------------------------------------------------------------------
+##
+## riak-cs: Riak CS launcher
+##
+## Copyright (c) 2021 TI Tokyo.  All Rights Reserved.
+##
+## This file is provided to you under the Apache License,
+## Version 2.0 (the "License"); you may not use this file
+## except in compliance with the License.  You may obtain
+## a copy of the License at
+##
+##   http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing,
+## software distributed under the License is distributed on an
+## "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+## KIND, either express or implied.  See the License for the
+## specific language governing permissions and limitations
+## under the License.
+##
+## -------------------------------------------------------------------
+
+RUNNER_GEN_DIR={{platform_gen_dir}}
+RELX_RIAK={{platform_bin_dir}}/riak-cs
+export PID_DIR={{pid_dir}}
+export RUNNER_LOG_DIR={{platform_log_dir}}
+
+mkdir -p $PID_DIR
+chown riak_cs:riak_cs $PID_DIR
+
+# centos7-based distros have a su that contacts pam and prints the "Last logged in" message
+if [ "`cat /etc/redhat-release 2>&1`" = "CentOS Stream release 7" ] ||
+   [ "`cat /etc/system-release 2>&1`" = "Amazon Linux release 2 (Karoo)" ]; then
+    COPTION="--session-command"
+else
+    COPTION="-c"
+fi
+
+function maybe_su {
+    if [[ $EUID -ne 0 ]]; then
+        $*
+    else
+	# if we are executing an admin command that spins up a
+	# (hidden) node to then execute custom erlang code via -eval,
+	# we need to cd to a dir containing the erlang cookie
+	# (previously implicitly done by su -, which option we have
+	# removed in order to allow any env vars to be available for
+	# the ultimate invocation of riak/riak-cs/stanchion)
+	cd "{{platform_base_dir}}"
+	# freebsd su is fairly limited, so:
+	mkdir -p "$RUNNER_GEN_DIR"
+	chown riak_cs:riak_cs "$RUNNER_GEN_DIR"
+	f=`mktemp "$RUNNER_GEN_DIR"/su_piggy-XXXXXXX`
+	cat >"$f" <<EOF
+#!/bin/sh
+$*
+EOF
+	chmod +x "$f"
+	chown riak_cs:riak_cs "$f"
+	su riak_cs $COPTION "$f"
+        rm -f "$f"
+    fi
+}
+
+case "$1" in
+    stop)
+        maybe_su $RELX_RIAK $* \
+	    && rm -f $PID_DIR/riak-cs.pid
+	;;
+    *)
+        maybe_su $RELX_RIAK $*
+        ;;
+esac

@@ -2,7 +2,8 @@
 
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved,.
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -54,7 +55,7 @@
 
 main(Args) ->
     _ = application:load(lager),
-    ok = application:set_env(lager, handlers, [{lager_console_backend, info}]),
+    ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, info}]}]),
     ok = lager:start(),
     {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
     LogLevel = case proplists:get_value(debug, Options) of
@@ -274,7 +275,7 @@ get_actual_manifest_state(Pbc, Bucket, Key, UUID)->
     case riakc_pb_socket:get(Pbc, RiakBucket, RiakKey, []) of
         {ok, RiakObj} ->
             ManifestDict = riak_cs_manifest:manifests_from_riak_object(RiakObj),
-            case riak_cs_manifest_utils:active_manifest(ManifestDict) of
+            case rcs_common_manifest_utils:active_manifest(ManifestDict) of
                 {ok, ?MANIFEST{uuid=UUID}=M} -> {ok, M?MANIFEST.state};
                 {ok, ?MANIFEST{}} -> {ok, notfound};
                 {error, no_active_manifest} -> {ok, notfound}

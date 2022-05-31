@@ -1,0 +1,14 @@
+[Unit]
+Description=Riak CS Database
+
+[Service]
+User=riak_cs
+ExecStart=/usr/sbin/riak-cs foreground
+ExecStop=/usr/sbin/riak-cs stop
+Type=simple
+PIDFile=/run/riak-cs/riak-cs.pid
+EnvironmentFile=-/etc/default/riak-cs
+RuntimeDirectory=riak-cs
+
+[Install]
+WantedBy=multi-user.target

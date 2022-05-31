@@ -4,7 +4,8 @@
 ##
 ## riak-cs-debug: Gather info from a node for troubleshooting.
 ##
-## Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+## Copyright (c) 2014 Basho Technologies, Inc.,
+##               2021 TI Tokyo.  All Rights Reserved.
 ##
 ## This file is provided to you under the Apache License,
 ## Version 2.0 (the "License"); you may not use this file
@@ -21,6 +22,12 @@
 ## under the License.
 ##
 ## -------------------------------------------------------------------
+
+set +e
+# this is to revert the effect of `set -e`, set by relx-generated code
+# when we are invoked via `riak-cs debug` (otherwise, non-zero exits,
+# which occur normally, will silently cause riak-cs-debug to
+# terminate)
 
 # /bin/sh on Solaris is not a POSIX compatible shell, but /usr/bin/ksh is.
 if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
@@ -131,18 +138,46 @@ exit
 ### Set up variables
 ###
 
-# These paths may be overridden with environment variables.
-RUNNER_BASE_DIR={{runner_base_dir}}
-cs_base_dir={{runner_base_dir}}
-cs_bin_dir={{runner_script_dir}}
-cs_etc_dir={{runner_etc_dir}}
-cs_log_dir={{runner_log_dir}}
+is_relative() {
+    if [ "${1#/}" = "$1" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
-if [ -d {{platform_data_dir}}/generated.configs ]; then
-  cuttlefish_conf_dir={{platform_data_dir}}/generated.configs
+PLATFORM_BASE_DIR={{platform_base_dir}}
+PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
+cs_base_dir=$PLATFORM_BASE_DIR
+if is_relative "{{platform_bin_dir}}"; then
+    cs_bin_dir="$PLATFORM_BASE_DIR/{{platform_bin_dir}}"
 else
-  cuttlefish_conf_dir={{runner_base_dir}}/{{platform_data_dir}}/generated.configs
+    cs_bin_dir="{{platform_bin_dir}}"
 fi
+if is_relative "{{platform_etc_dir}}"; then
+    cs_etc_dir="$PLATFORM_BASE_DIR/{{platform_etc_dir}}"
+else
+    cs_etc_dir="{{platform_etc_dir}}"
+fi
+if is_relative "{{platform_log_dir}}"; then
+    cs_log_dir="$PLATFORM_BASE_DIR/{{platform_log_dir}}"
+else
+    cs_log_dir="{{platform_log_dir}}"
+fi
+if is_relative "{{platform_lib_dir}}"; then
+    cs_lib_dir="$PLATFORM_BASE_DIR/{{platform_lib_dir}}"
+else
+    cs_lib_dir="{{platform_lib_dir}}"
+fi
+if is_relative "{{platform_gen_dir}}"; then
+    cs_gen_dir="$PLATFORM_BASE_DIR/{{platform_gen_dir}}"
+else
+    cs_gen_dir="{{platform_gen_dir}}"
+fi
+
+cd $PLATFORM_BASE_DIR
+
+cuttlefish_conf_dir=${cs_gen_dir}/generated.conf
 
 get_cfgs=0
 get_ssl_certs=0
@@ -249,24 +284,8 @@ if [ 0 -eq $get_cfgs  -a  1 -eq $get_ssl_certs ]; then
 fi
 
 if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
-    # Information specific to Riak requested. Need app_epath.sh and must have
-    # valid base and etc paths defined.
 
-    # app_epath.sh provides make_app_epaths and epath functions.
-    # Allow overriding with APP_EPATH
-    if [ -n "$APP_EPATH" ]; then
-        epath_file="$APP_EPATH"
-    else
-        epath_file="${cs_base_dir}/lib/app_epath.sh"
-    fi
-
-    if [ ! -f "$epath_file" ]; then
-        echoerr "Required file app_epath.sh not found. Expected here:"
-        echoerr "$epath_file"
-        echoerr "See 'riak-cs-debug -h' and manpage for help."
-        exit 1
-    fi
-    . "$epath_file"
+    . $cs_lib_dir/lib.sh
 
     # Allow overriding cs_base_dir and cs_etc_dir from the environment
     if [ -n "$cs_base_dir" ]; then
@@ -301,10 +320,8 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 fi
 
 #prefer vm.args if it exists
-if [ -f "${cs_etc_dir}/vm.args" ]; then
-    vmargs="${cs_etc_dir}/vm.args"
-elif [ -d "${cuttlefish_conf_dir}" ]; then
-    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args | head -1`
+if [ -d "${cuttlefish_conf_dir}" ]; then
+    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args 2>/dev/null | head -1`
 fi
 
 
@@ -470,7 +487,7 @@ if [ 1 -eq $get_riakcmds ]; then
     cd "${start_dir}"/"${debug_dir}"/commands
 
     dump riak_cs_ping "$cs_bin_dir"/riak-cs ping
-    dump riak_cs_version "$cs_bin_dir"/riak-cs version
+    dump riak_cs_version "$cs_bin_dir"/riak-cs-admin version
     dump riak_cs_status "$cs_bin_dir"/riak-cs-admin status
     dump riak_cs_gc_status "$cs_bin_dir"/riak-cs-admin gc status
     dump riak_cs_storage_status "$cs_bin_dir"/riak-cs-admin storage status
@@ -497,11 +514,8 @@ if [ 1 -eq $get_logs ]; then
     # if not already made, make a flat, searchable version of the app.config
     if [ -z "$riak_epaths" ]; then
         #prefer app.config if it exists
-        if [ -f "${cs_etc_dir}/app.config" ]; then
-            appconfig="${cs_etc_dir}/app.config"
-            riak_epaths=`make_app_epaths "${appconfig}"`
-        elif [  -d "${cuttlefish_conf_dir}" ]; then
-            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config | head -1`
+        if [  -d "${cuttlefish_conf_dir}" ]; then
+            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config 2>/dev/null | head -1`
             riak_epaths=`make_app_epaths "${appconfig}"`
         fi
     fi
@@ -512,7 +526,7 @@ if [ 1 -eq $get_logs ]; then
     # Get any logs in the platform_log_dir
     if [ -d "${cs_log_dir}" ]; then
         # check to ensure there is at least something to get
-        ls -1 "${cs_log_dir}" | grep -q "log"
+        ls -1 "${cs_log_dir}" 2>/dev/null | grep -q "log"
         if [ 0 -eq $? ]; then
             mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/platform_log_dir
 
@@ -537,7 +551,7 @@ if [ 1 -eq $get_logs ]; then
     elif [ -z "$new_format_lager_files" ]; then
         lager_files="`epath 'lager handlers lager_file_backend' "$riak_epaths" | cut -d' ' -f 1 | sed -e 's/^"//' -e 's/".*$//'`"
     else
-        lager_files=$new_format_lager_files
+        lager_files=`echo "$new_format_lager_files"`  # should it contain any vars (e.g., RCS_PATH)
     fi
     lager_num=0
     for lager_path in $lager_files; do

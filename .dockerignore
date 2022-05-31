@@ -1,0 +1,6 @@
+log/
+misc/
+dev/
+_build/
+rel/pkg/
+rel/riak-cs/

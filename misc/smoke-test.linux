@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# A minimal smoke test for Riak CS Suite, intended for a quick sanity
+# check of Riak CS components.  After installing riak, riak-cs and
+# stanchion from packages, make sure you run ./prepare-riak-for-cs.
+
+set -e
+
+echo "Smoke testing Riak CS Suite"
+
+echo
+echo "1. using systemctl"
+systemctl start riak
+riak admin wait-for-service riak_kv
+riak admin ringready
+riak admin test
+#riak admin status
+
+# allow all three apps to coexist
+chmod 777 /tmp/erl_pipes
+
+systemctl start stanchion riak-cs
+
+while [[ x`riak-cs ping` != x"pong" ]]; do
+    sleep 2
+done
+
+riak-cs admin test
+
+riak-cs admin status
+stanchion status
+
+for s in riak-cs stanchion riak; do
+    echo "Stopping $s"
+    systemctl stop $s
+done
+
+echo "2. using cmd start/stop"
+riak start
+riak pid
+riak-admin wait-for-service riak_kv
+riak-admin test
+
+for s in stanchion riak-cs; do
+    $s start
+    $s pid
+done
+riak-cs-admin test
+
+rm -f /usr/lib{,64}/riak/*.tar.gz
+riak-debug -v
+rm -f /usr/lib{,64}/riak-cs/*.tar.gz
+riak-cs-debug -v
+rm -f /usr/lib{,64}/stanchion/*.tar.gz
+stanchion-debug -v
+
+for s in riak-cs stanchion riak; do
+    echo "Stopping $s"
+    $s stop
+done
+
+echo "All good."

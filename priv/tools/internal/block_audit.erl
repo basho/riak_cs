@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,.
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -35,7 +36,7 @@
 
 main(Args) ->
     _ = application:load(lager),
-    ok = application:set_env(lager, handlers, [{lager_console_backend, info}]),
+    ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, info}]}]),
     ok = lager:start(),
     {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
     LogLevel = case proplists:get_value(debug, Options) of

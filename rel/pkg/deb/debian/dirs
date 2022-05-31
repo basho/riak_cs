@@ -1,0 +1,3 @@
+etc/logrotate.d
+var/lib/riak-cs
+var/log/riak-cs

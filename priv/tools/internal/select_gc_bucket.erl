@@ -2,7 +2,8 @@
 
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved,.
+%%               2021 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,7 +23,8 @@
 
 -module(select_gc_bucket).
 
--compile(export_all).
+-export([main/1]).
+
 -mode(compile).
 
 -include_lib("riak_cs/include/riak_cs.hrl").

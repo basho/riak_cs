@@ -1,0 +1,7 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: riak-cs
+Upstream-Contact: Andrei Zavada <andriy.zavada@tiot.jp>
+
+Files: *
+Copyright: 2012-16 Basho Technologies, Inc; 2021 TI Tokyo
+License: Apache-2.0

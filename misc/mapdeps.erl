@@ -74,8 +74,7 @@ map_dir(BaseDir) ->
 map_rebar(BaseDir, Path, Acc) ->
     case file:consult(Path) of
         {ok, Opts} ->
-            Deps = proplists:get_value(deps, Opts, []) ++
-                   proplists:get_value(deps_ee, Opts, []),
+            Deps = proplists:get_value(deps, Opts, []),
             lists:foldl(
               fun({DepName, _, _}, A) ->
                       From = app_name(Path),

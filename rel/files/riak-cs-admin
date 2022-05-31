@@ -1,38 +1,66 @@
 #!/bin/sh
-# -*- tab-width:4;indent-tabs-mode:nil -*-
-# ex: ts=4 sw=4 et
 
-# Pull environment for this install
-. "{{runner_base_dir}}/lib/env.sh"
+## -------------------------------------------------------------------
+##
+## riak-cs-admin: Administrative tasks on Riak CS
+##
+## Copyright (c) 2014 Basho Technologies, Inc.,
+##               2021 TI Tokyo.  All Rights Reserved.
+##
+## This file is provided to you under the Apache License,
+## Version 2.0 (the "License"); you may not use this file
+## except in compliance with the License.  You may obtain
+## a copy of the License at
+##
+##   http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing,
+## software distributed under the License is distributed on an
+## "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+## KIND, either express or implied.  See the License for the
+## specific language governing permissions and limitations
+## under the License.
+##
+## -------------------------------------------------------------------
 
-# Make sure the user running this script is the owner and/or su to that user
-check_user "$@"
+SCRIPT="riak-cs-admin"
 
-# Make sure CWD is set to runner run dir
-cd $RUNNER_BASE_DIR
+# if we are called as `riak admin`, PLATFORM_BASE_DIR will have been set
+PLATFORM_BASE_DIR={{platform_base_dir}}
+PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
 
-# Identify the script name
-SCRIPT=`basename $0`
+PLATFORM_BIN_DIR={{platform_bin_dir}}
+if [ "$PLATFORM_BIN_DIR" = "${PLATFORM_BIN_DIR#/}" ]; then
+    PLATFORM_BIN_DIR=$PLATFORM_BASE_DIR/$PLATFORM_BIN_DIR
+fi
+
+PLATFORM_LIB_DIR={{platform_lib_dir}}
+if [ "$PLATFORM_LIB_DIR" = "${PLATFORM_LIB_DIR#/}" ]; then
+    PLATFORM_LIB_DIR=$PLATFORM_BASE_DIR/$PLATFORM_LIB_DIR
+fi
+. $PLATFORM_LIB_DIR/lib.sh
 
 usage() {
-    echo "Usage: $SCRIPT { status | gc | access | storage | stanchion | cluster-info | cleanup-orphan-multipart | audit-bucket-ownership}"
+    echo "Usage: $SCRIPT { version | status | gc | access | storage |"
+    echo "                       stanchion | cluster-info | test |"
+    echo "                       cleanup-orphan-multipart | audit-bucket-ownership }"
 }
 
 # Check the first argument for instructions
 case "$1" in
+    version)
+        shift
+        rpc riak_cs_console version
+        ;;
     status)
         shift
-        node_up_check
-        $NODETOOL rpc riak_cs_console status
+        rpc riak_cs_console status
         ;;
     gc)
         shift
         case "$1" in
             batch|status|pause|resume|cancel|set-interval|set-leeway|earliest-keys)
-                # Make sure the local node IS running
-                node_up_check
-
-                $NODETOOL rpc riak_cs_gc_console "$@"
+                rpc riak_cs_gc_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT gc { batch [<leeway_seconds>|--help] | status | pause | resume | cancel |"
@@ -46,10 +74,7 @@ case "$1" in
         shift
         case "$1" in
             batch|status|pause|resume|cancel)
-                # Make sure the local node IS running
-                node_up_check
-
-                $NODETOOL rpc riak_cs_storage_console "$@"
+                rpc riak_cs_storage_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT storage $1 { batch | status | pause | resume | cancel }"
@@ -61,10 +86,7 @@ case "$1" in
         shift
         case "$1" in
             flush)
-                # Make sure the local node IS running
-                node_up_check
-
-                $NODETOOL rpc riak_cs_access_console flush "$@"
+                rpc riak_cs_access_console flush "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT access $1 { flush }"
@@ -76,16 +98,17 @@ case "$1" in
         shift
         case "$1" in
             switch|show)
-                # Make sure the local node IS running
-                node_up_check
-
-                $NODETOOL rpc riak_cs_stanchion_console "$@"
+                rpc riak_cs_stanchion_console "$@"
                 ;;
             *)
                 echo "Usage: $SCRIPT stanchion $1 { switch HOST PORT | show }"
                 exit 1
                 ;;
         esac
+        ;;
+    'test')
+        shift
+        rpc riak_cs_console test
         ;;
     cluster[_-]info)
         if [ $# -lt 2 ]; then
@@ -94,26 +117,22 @@ case "$1" in
         fi
         shift
 
-        # Make sure the local node is running
-        node_up_check
-
-        $NODETOOL rpc_infinity riak_cs_console cluster_info "$@"
+        rpc riak_cs_console cluster_info "$@"
         ;;
     cleanup[_-]orphan[_-]multipart)
         shift
 
-        # Make sure the local node IS running
-        node_up_check
-
-        $NODETOOL rpc riak_cs_console cleanup_orphan_multipart "$@"
+        rpc riak_cs_console cleanup_orphan_multipart "$@"
         ;;
     audit[_-]bucket[_-]ownership)
         shift
-        node_up_check
-        $NODETOOL rpc riak_cs_console audit_bucket_ownership "$@"
+        rpc riak_cs_console audit_bucket_ownership "$@"
         ;;
     *)
         usage
         exit 1
         ;;
 esac
+
+# No explicit exit from within script or nodetool, assumed to have succeeded.
+exit 0
