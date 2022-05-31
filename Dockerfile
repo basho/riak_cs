@@ -13,7 +13,7 @@ COPY . /usr/src/riak_cs
 # /sys.config.src.
 RUN make rel-docker
 
-FROM debian:11.2 AS runtime-image
+FROM debian:11 AS runtime-image
 
 COPY --from=compile-image /usr/src/riak_cs/rel/riak-cs /opt/riak-cs
 
