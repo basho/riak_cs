@@ -1,3 +1,18 @@
+# Riak CS 3.0.1 Release Notes
+
+Released June 10, 2022.
+
+## General
+
+This is a correction release that includes one feature that slipped
+from 3.0.0.
+
+## New features
+
+* Support for fqdn data type for `riak_host` and `stanchion_host`
+  configuration items in riak-cs.conf.
+
+
 # Riak CS 3.0.0 Release Notes
 
 Released May 30, 2022.
