@@ -19,8 +19,8 @@
 %%
 %% ---------------------------------------------------------------------
 
--include_lib("rcs_common/include/rcs_common_manifest.hrl").
--include_lib("rcs_common/include/rcs_common_moss.hrl").
+-include("manifest.hrl").
+-include("moss.hrl").
 
 -type riak_client() :: pid().
 

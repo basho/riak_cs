@@ -24,8 +24,8 @@
 -export([make_versioned_key/2,
          decompose_versioned_key/1]).
 
--include("rcs_common_defs.hrl").
--include("rcs_common_manifest.hrl").
+-include("defs.hrl").
+-include("manifest.hrl").
 
 
 -spec make_versioned_key(binary(), binary()) -> binary().

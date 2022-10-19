@@ -1,0 +1,391 @@
+%%-*- mode: erlang -*-
+
+%% @doc Version number. Intended use is to facilitate selective
+%% support of features in the context of migration, where nodes
+%% running different versions coexist in the same cluster. As
+%% stanchion is not intended to ever run in clusters, this setting is
+%% only used for reporting (via `stanchion admin version`).
+{mapping, "stanchion_version", "stanchion.stanchion_version", [
+  {default, {{stanchion_version}} },
+  {datatype, integer}
+]}.
+
+%% @doc listen port and IP address
+{mapping, "listener", "stanchion.host", [
+  {default, {"{{stanchion_ip}}" , {{stanchion_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+%% @doc Default cert location for https can be overridden
+%% with the ssl config variable, for example:
+{mapping, "ssl.certfile", "stanchion.ssl.certfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/cert.pem"}
+]}.
+
+%% @doc Default key location for https can be overridden with the ssl
+%% config variable, for example:
+{mapping, "ssl.keyfile", "stanchion.ssl.keyfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/key.pem"}
+]}.
+
+%% @doc Riak IP address and port number where Stanchion connects
+{mapping, "riak_host", "stanchion.riak_host", [
+  {default, {"{{riak_ip}}", {{riak_pb_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+%% @doc Admin user credentials. The credentials specified here must
+%% match the admin credentials specified in the riak-cs.conf for the
+%% system to function properly.
+{mapping, "admin.key", "stanchion.admin_key", [
+  {default, "{{admin_key}}"},
+  {datatype, string}
+]}.
+
+%% @doc admin.secret is deprecated and will be removed at next version.
+{mapping, "admin.secret", "stanchion.admin_secret", [
+  {datatype, string},
+  hidden
+]}.
+
+%% @doc {auth_bypass, {{auth_bypass}} } ,
+{mapping, "auth_bypass", "stanchion.auth_bypass", [
+  {datatype, {flag, on, off}},
+  {default, off},
+  hidden
+]}.
+
+%% @doc Platform-specific installation paths
+{mapping, "platform_bin_dir", "stanchion.platform_bin_dir", [
+  {datatype, directory},
+  {default, "{{platform_bin_dir}}"}
+]}.
+
+%% @see platform_bin_dir
+{mapping, "platform_data_dir", "stanchion.platform_data_dir", [
+  {datatype, directory},
+  {default, "{{platform_data_dir}}"}
+]}.
+
+%% @see platform_bin_dir
+{mapping, "platform_etc_dir", "stanchion.platform_etc_dir", [
+  {datatype, directory},
+  {default, "{{platform_etc_dir}}"}
+]}.
+
+%% @see platform_bin_dir
+{mapping, "platform_lib_dir", "stanchion.platform_lib_dir", [
+  {datatype, directory},
+  {default, "{{platform_lib_dir}}"}
+]}.
+
+%% @see platform_bin_dir
+{mapping, "platform_log_dir", "stanchion.platform_log_dir", [
+  {datatype, directory},
+  {default, "{{platform_log_dir}}"}
+]}.
+
+
+%% @doc Where to emit the default log messages (typically at 'info'
+%% severity):
+%%     off: disabled
+%%    file: the file specified by log.console.file
+%% console: to standard output (seen when using `riak attach-direct`)
+%%    both: log.console.file and standard out.
+{mapping, "log.console", "lager.handlers", [
+  {default, {{console_log_default}} },
+  {datatype, {enum, [off, file, console, both]}}
+]}.
+
+%% @doc The severity level of the console log, default is 'info'.
+{mapping, "log.console.level", "lager.handlers", [
+  {default, info},
+  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}}
+]}.
+
+%% @doc When 'log.console' is set to 'file' or 'both', the file where
+%% console messages will be logged.
+{mapping, "log.console.file", "lager.handlers", [
+  {default, "$(platform_log_dir)/console.log"},
+  {datatype, file}
+]}.
+
+%% @doc Maximum size of the console log in bytes, before it is rotated
+{mapping, "log.console.size", "lager.handlers", [
+  {default, "10MB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc The schedule on which to rotate the console log.  For more
+%% information see:
+%% https://github.com/basho/lager/blob/master/README.md#internal-log-rotation
+{mapping, "log.console.rotation", "lager.handlers", [
+  {default, "$D0"}
+]}.
+
+%% @doc The number of rotated console logs to keep. When set to
+%% 'current', only the current open log file is kept.
+{mapping, "log.console.rotation.keep", "lager.handlers", [
+  {default, 5},
+  {datatype, [integer, {atom, current}]},
+  {validators, ["rotation_count"]}
+]}.
+
+%% @doc The file where error messages will be logged.
+{mapping, "log.error.file", "lager.handlers", [
+  {default, "$(platform_log_dir)/error.log"},
+  {datatype, file}
+]}.
+
+%% @doc Maximum size of the error log in bytes, before it is rotated
+{mapping, "log.error.size", "lager.handlers", [
+  {default, "10MB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc The schedule on which to rotate the error log.  For more
+%% information see:
+%% https://github.com/basho/lager/blob/master/README.md#internal-log-rotation
+{mapping, "log.error.rotation", "lager.handlers", [
+  {default, "$D0"}
+]}.
+
+%% @doc The number of rotated error logs to keep. When set to
+%% 'current', only the current open log file is kept.
+{mapping, "log.error.rotation.keep", "lager.handlers", [
+  {default, 5},
+  {datatype, [integer, {atom, current}]},
+  {validators, ["rotation_count"]}
+]}.
+
+%% @doc When set to 'on', enables log output to syslog.
+{mapping, "log.syslog", "lager.handlers", [
+  {default, off},
+  {datatype, flag}
+]}.
+
+%% @doc Syslog default identifier
+{mapping, "log.syslog.ident", "lager.handlers", [
+  {default, "stanchion"},
+  hidden
+]}.
+
+%% @doc Syslog facility to log entries from Stanchion.
+{mapping, "log.syslog.facility", "lager.handlers", [
+  {default, daemon},
+  {datatype, {enum,[kern, user, mail, daemon, auth, syslog,
+                    lpr, news, uucp, clock, authpriv, ftp,
+                    cron, local0, local1, local2, local3,
+                    local4, local5, local6, local7]}},
+  hidden
+]}.
+
+%% @doc The severity level at which to log entries to syslog, default is 'info'.
+{mapping, "log.syslog.level", "lager.handlers", [
+  {default, info},
+  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}},
+  hidden
+]}.
+
+{translation,
+ "lager.handlers",
+ fun(Conf) ->
+    SyslogHandler = case cuttlefish:conf_get("log.syslog", Conf) of
+      true ->
+        Ident = cuttlefish:conf_get("log.syslog.ident", Conf),
+        Facility = cuttlefish:conf_get("log.syslog.facility", Conf),
+        LogLevel = cuttlefish:conf_get("log.syslog.level", Conf),
+        [{lager_syslog_backend, [Ident, Facility, LogLevel]}];
+      _ -> []
+    end,
+
+    TranslateKeep = fun(current) -> 0;
+                       (Int) -> Int
+                    end,
+    ErrorHandler = case cuttlefish:conf_get("log.error.file", Conf) of
+      undefined -> [];
+      ErrorLogFilename ->
+         ErrorLogRotation = cuttlefish:conf_get("log.error.rotation", Conf),
+         ErrorLogRotationKeep = TranslateKeep(cuttlefish:conf_get("log.error.rotation.keep", Conf)),
+
+         ErrorLogSize = cuttlefish:conf_get("log.error.size", Conf),
+         [{lager_file_backend, [{file, ErrorLogFilename},
+                                {level, error},
+                                {size, ErrorLogSize},
+                                {date, ErrorLogRotation},
+                                {count, ErrorLogRotationKeep}]}]
+    end,
+
+    ConsoleLogLevel = cuttlefish:conf_get("log.console.level", Conf),
+    ConsoleLogFile = cuttlefish:conf_get("log.console.file", Conf),
+    ConsoleLogSize = cuttlefish:conf_get("log.console.size", Conf),
+    ConsoleLogRotation = cuttlefish:conf_get("log.console.rotation", Conf),
+    ConsoleLogRotationKeep = TranslateKeep(cuttlefish:conf_get("log.console.rotation.keep", Conf)),
+
+    ConsoleHandler = {lager_console_backend, ConsoleLogLevel},
+    ConsoleFileHandler = {lager_file_backend, [{file, ConsoleLogFile},
+                                               {level, ConsoleLogLevel},
+                                               {size, ConsoleLogSize},
+                                               {date, ConsoleLogRotation},
+                                               {count, ConsoleLogRotationKeep}]},
+
+    ConsoleHandlers = case cuttlefish:conf_get("log.console", Conf) of
+      off -> [];
+      file -> [ConsoleFileHandler];
+      console -> [ConsoleHandler];
+      both -> [ConsoleHandler, ConsoleFileHandler];
+      _ -> []
+    end,
+    SyslogHandler ++ ConsoleHandlers ++ ErrorHandler
+  end
+}.
+
+
+%% @doc Whether to enable Erlang's built-in error logger.
+{mapping, "sasl", "sasl.sasl_error_logger", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Whether to enable the crash log.
+{mapping, "log.crash", "lager.crash_log", [
+  {default, on},
+  {datatype, flag}
+]}.
+
+%% @doc If the crash log is enabled, the file where its messages will
+%% be written.
+{mapping, "log.crash.file", "lager.crash_log", [
+  {default, "$(platform_log_dir)/crash.log"},
+  {datatype, file}
+]}.
+
+{translation,
+ "lager.crash_log",
+ fun(Conf) ->
+     case cuttlefish:conf_get("log.crash", Conf) of
+         false -> undefined;
+         _ ->
+             cuttlefish:conf_get("log.crash.file", Conf, "{{platform_log_dir}}/crash.log")
+     end
+ end}.
+
+%% @doc Maximum size in bytes of individual messages in the crash log
+{mapping, "log.crash.maximum_message_size", "lager.crash_log_msg_size", [
+  {default, "64KB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc Maximum size of the crash log in bytes, before it is rotated
+{mapping, "log.crash.size", "lager.crash_log_size", [
+  {default, "10MB"},
+  {datatype, bytesize}
+]}.
+
+%% @doc The schedule on which to rotate the crash log.  For more
+%% information see:
+%% https://github.com/basho/lager/blob/master/README.md#internal-log-rotation
+{mapping, "log.crash.rotation", "lager.crash_log_date", [
+  {default, "$D0"}
+]}.
+
+%% @doc The number of rotated crash logs to keep. When set to
+%% 'current', only the current open log file is kept.
+{mapping, "log.crash.rotation.keep", "lager.crash_log_count", [
+  {default, 5},
+  {datatype, [integer, {atom, current}]},
+  {validators, ["rotation_count"]}
+]}.
+
+{validator,
+ "rotation_count",
+ "must be 'current' or a positive integer",
+ fun(current) -> true;
+    (Int) when is_integer(Int) andalso Int >= 0 -> true;
+    (_) -> false
+ end}.
+
+{translation,
+ "lager.crash_log_count",
+ fun(Conf) ->
+    case cuttlefish:conf_get("log.crash.rotation.keep", Conf) of
+       current -> 0;
+       Int -> Int
+    end
+ end}.
+
+%% @doc Whether to redirect error_logger messages into lager -
+%% defaults to true
+{mapping, "log.error.redirect", "lager.error_logger_redirect", [
+  {default, on},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Maximum number of error_logger messages to handle in a second
+{mapping, "log.error.messages_per_second", "lager.error_logger_hwm", [
+  {default, 100},
+  {datatype, integer},
+  hidden
+]}.
+
+%% == Supercluster aka Multi-bug Support ==
+
+%% @doc IP and port for supercluster members.  Specify one member for
+%% each line, in which the last token of key is member identifier and
+%% value is a PB address of Riak node to connect.
+{mapping, "supercluster.member.$member_id", "stanchion.supercluster_members", [
+  {datatype, ip},
+  {include_default, "bag-A"},
+  {commented, {"192.168.0.101", 8087}},
+  hidden
+]}.
+
+{translation,
+ "stanchion.supercluster_members",
+ fun(Conf) ->
+   Keys = cuttlefish_variable:fuzzy_matches(["supercluster", "member", "$member_id"], Conf),
+   case Keys of
+       [] -> undefined;
+       [_|_] -> [begin
+                     {Host, Port} = cuttlefish:conf_get(
+                                      "supercluster.member." ++ MemberId, Conf),
+                     {MemberId, Host, Port}
+                 end || {Key, MemberId} <- Keys]
+   end
+ end
+}.
+
+%% @doc Cookie for distributed node communication.  All nodes in the
+%% same cluster should use the same cookie or they will not be able to
+%% communicate.
+{mapping, "distributed_cookie", "vm_args.-setcookie", [
+  {default, "riak"}
+]}.
+
+
+%% VM scheduler collapse, part 1 of 2
+{mapping, "erlang.schedulers.force_wakeup_interval", "vm_args.+sfwi", [
+  {default, 500},
+  {datatype, integer},
+  merge
+]}.
+
+%% VM scheduler collapse, part 2 of 2
+{mapping, "erlang.schedulers.compaction_of_load", "vm_args.+scl", [
+  {default, "false"},
+  merge
+]}.
+
+{{#devrel}}
+%% @doc erlang vm shutdown_time is useful when running a riak_test devrel
+{mapping, "erlang.shutdown_time", "vm_args.-shutdown_time", [
+  {default, "10s"},
+  {datatype, {duration, ms}}
+]}.
+{{/devrel}}

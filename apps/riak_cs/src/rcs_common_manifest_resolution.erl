@@ -23,7 +23,7 @@
 
 -module(rcs_common_manifest_resolution).
 
--include("rcs_common_manifest.hrl").
+-include("manifest.hrl").
 
 %% export Public API
 -export([resolve/1]).

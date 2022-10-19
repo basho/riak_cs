@@ -23,7 +23,7 @@
 
 -module(rcs_common_manifest_utils).
 
--include("rcs_common_manifest.hrl").
+-include("manifest.hrl").
 
 -export([new_dict/2,
          active_manifest/1,
