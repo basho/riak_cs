@@ -249,7 +249,7 @@ delete_resource(RD, Ctx=#context{local_context=LocalCtx, riak_client=RcPid}) ->
 
 %% @private
 handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
-    _ = lager:error("delete object failed with reason: ~p", [Error]),
+    logger:error("delete object failed with reason: ~p", [Error]),
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
 handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
@@ -360,7 +360,7 @@ handle_normal_put(RD, Ctx0) ->
             %% einval} or disconnected stuff, any errors prevents this
             %% manifests from being uploaded anymore
             Res = riak_cs_put_fsm:force_stop(Pid),
-            _ = lager:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
+            logger:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
             error({Type, Error})
     end.
 
@@ -368,18 +368,18 @@ determine_object_version(Vsn0, Bucket, Key, RcPid) ->
     case {Vsn0, riak_cs_bucket:get_bucket_versioning(Bucket, RcPid)} of
         {?LFS_DEFAULT_OBJECT_VERSION, {ok, #bucket_versioning{status = enabled}}} ->
             Vsn1 = list_to_binary(riak_cs_utils:binary_to_hexlist(uuid:get_v4())),
-            lager:info("bucket \"~s\" has object versioning enabled,"
-                       " autogenerating version ~p for key ~p", [Bucket, Vsn1, Key]),
+            logger:info("bucket \"~s\" has object versioning enabled,"
+                        " autogenerating version ~p for key ~p", [Bucket, Vsn1, Key]),
             Vsn1;
         {_, {ok, #bucket_versioning{status = enabled}}} ->
-            lager:info("bucket \"~s\" has object versioning enabled"
-                       " but using ~p as supplied in request for key ~p", [Bucket, Vsn0, Key]),
+            logger:info("bucket \"~s\" has object versioning enabled"
+                        " but using ~p as supplied in request for key ~p", [Bucket, Vsn0, Key]),
             Vsn0;
         {?LFS_DEFAULT_OBJECT_VERSION, {ok, #bucket_versioning{status = suspended}}} ->
             Vsn0;
         {Vsn3, {ok, #bucket_versioning{status = suspended}}} ->
-            lager:warning("ignoring object version ~p in request for key ~p in bucket \"~s\""
-                          " as the bucket has object versioning suspended", [Vsn3, Key, Bucket]),
+            logger:warning("ignoring object version ~p in request for key ~p in bucket \"~s\""
+                           " as the bucket has object versioning suspended", [Vsn3, Key, Bucket]),
             Vsn0
     end.
 
@@ -414,8 +414,8 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
                     {false, _, _} ->
 
                         %% start copying
-                        _ = lager:debug("copying! > ~s/~s/~s => ~s/~s/~s via ~p",
-                                        [SrcBucket, SrcKey, SrcObjVsn, Bucket, Key, ObjVsn, ReadRcPid]),
+                        logger:debug("copying! > ~s/~s/~s => ~s/~s/~s via ~p",
+                                     [SrcBucket, SrcKey, SrcObjVsn, Bucket, Key, ObjVsn, ReadRcPid]),
 
                         {ContentType, Metadata} =
                             riak_cs_copy_object:new_metadata(SrcManifest, RD),
@@ -443,7 +443,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
                         %% in different return value
                         ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
                     {Result, _, _} = Error ->
-                        _ = lager:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
+                        logger:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
                         Error
 
                 end;

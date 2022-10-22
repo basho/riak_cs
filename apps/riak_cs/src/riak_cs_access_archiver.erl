@@ -157,8 +157,8 @@ terminate(Reason, StateName, #state{table=Table,
 terminate(_Reason, _StateName, #state{table=Table,
                                       riak_client=RcPid,
                                       mon=Mon}) ->
-    _ = lager:warning("Access archiver stopping with work left to do;"
-                      " logs will be dropped"),
+    logger:warning("Access archiver stopping with work left to do;"
+                   " logs will be dropped"),
     cleanup(Table, RcPid, Mon),
     ok.
 
@@ -206,8 +206,7 @@ store(User, RcPid, Record, Slice) ->
     Timeout = riak_cs_config:put_access_timeout(),
     case catch riak_cs_pbc:put(MasterPbc, Record, Timeout, [riakc, put_access]) of
         ok ->
-            ok = lager:debug("Archived access stats for ~s ~p",
-                             [User, Slice]);
+            logger:debug("Archived access stats for ~s ~p", [User, Slice]);
         {error, Reason} ->
             riak_cs_pbc:check_connection_status(MasterPbc,
                                                 "riak_cs_access_archiver:store/4"),

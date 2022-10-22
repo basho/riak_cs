@@ -130,7 +130,7 @@ check_version(?POLICY{version = ?AMZ_DEFAULT_VERSION}) ->
 check_version(?POLICY{version = ?AMZ_POLICY_OLD_VERSION}) ->
     true;
 check_version(?POLICY{version = Version}) ->
-    _ = lager:debug("unknown version: ~p", [Version]),
+    logger:info("unknown version: ~p", [Version]),
     false.
 
 % @doc confirm if forbidden action included in policy
@@ -233,8 +233,7 @@ policy_from_json(JSON) ->
         {error, _Reason} = E ->
             E;
         {'EXIT', {{case_clause, B}, _}} when is_binary(B) ->
-            %% mochiweb failed to parse the JSON
-            _ = lager:debug("~p", [B]),
+            logger:debug("mochiweb failed to parse the JSON: ~p", [B]),
             {error, malformed_policy_json}
     end.
 
@@ -259,10 +258,10 @@ supported_bucket_action() -> ?SUPPORTED_BUCKET_ACTION.
 %% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
 -spec log_supported_actions() -> ok.
 log_supported_actions()->
-    _ = lager:info("supported object actions: ~p",
-                   [lists:map(fun atom_to_list/1, supported_object_action())]),
-    _ = lager:info("supported bucket actions: ~p",
-                   [lists:map(fun atom_to_list/1, supported_bucket_action())]),
+    logger:info("supported object actions: ~p",
+                [lists:map(fun atom_to_list/1, supported_object_action())]),
+    logger:info("supported bucket actions: ~p",
+                [lists:map(fun atom_to_list/1, supported_bucket_action())]),
     ok.
 
 %% @doc Fetch the policy for a bucket
@@ -280,9 +279,8 @@ fetch_bucket_policy(Bucket, RcPid) ->
             Contents = riakc_obj:get_contents(Obj),
             bucket_policy_from_contents(Bucket, Contents);
         {error, Reason} ->
-            _ = lager:debug("Failed to fetch policy. Bucket ~p "
-                            " does not exist. Reason: ~p",
-                            [Bucket, Reason]),
+            logger:debug("Failed to fetch policy. Bucket ~p does not exist. Reason: ~p",
+                         [Bucket, Reason]),
             {error, notfound}
     end.
 

@@ -140,7 +140,7 @@ parse_auth_v4_header(String) ->
 parse_auth_v4_header([], UserId, Acc) ->
     {UserId, {v4, lists:reverse(Acc)}};
 parse_auth_v4_header([KV | KVs], UserId, Acc) ->
-    lager:debug("Auth header ~p~n", [KV]),
+    logger:debug("Auth header ~p", [KV]),
     case string:tokens(KV, "=") of
         [Key, Value] ->
             case Key of
@@ -190,7 +190,7 @@ calculate_signature_v2(KeyData, RD) ->
            "\n",
            AmazonHeaders,
            Resource],
-    _ = lager:debug("STS: ~p", [STS]),
+    logger:debug("STS: ~p", [STS]),
 
     base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
@@ -206,14 +206,14 @@ authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) 
 
 authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders) ->
     CanonicalRequest = canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders),
-    _ = lager:debug("CanonicalRequest(v4):~n~s~nEND-OF-CANONICAL-REQUEST", [CanonicalRequest]),
+    logger:debug("CanonicalRequest(v4): ~s", [CanonicalRequest]),
     {StringToSign, Scope} =
         string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest),
-    _ = lager:debug("StringToSign(v4):~n~s~nEND-OF-STRING-TO-SIGN", [StringToSign]),
+    logger:debug("StringToSign(v4): ~s", [StringToSign]),
     CalculatedSignature = calculate_signature_v4(SecretAccessKey, Scope, StringToSign),
-    _ = lager:debug("CalculatedSignature(v4): ~s", [CalculatedSignature]),
+    logger:debug("CalculatedSignature(v4): ~s", [CalculatedSignature]),
     {"Signature", PresentedSignature} = lists:keyfind("Signature", 1, AuthAttrs),
-    _ = lager:debug("PresentedSignature(v4)  : ~s", [PresentedSignature]),
+    logger:debug(" PresentedSignature(v4): ~s", [PresentedSignature]),
     case CalculatedSignature of
         PresentedSignature -> ok;
         _ -> {error, {unmatched_signature, PresentedSignature, CalculatedSignature}}

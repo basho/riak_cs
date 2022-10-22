@@ -236,9 +236,8 @@ fetch_next_fileset(ManifestSetKey, RcPid) ->
         {error, notfound}=Error ->
             Error;
         {error, Reason}=Error ->
-            _ = lager:info("Error occurred trying to read the fileset"
-                           " for ~p for gc. Reason: ~p",
-                           [ManifestSetKey, Reason]),
+            logger:info("Error occurred trying to read the fileset"
+                        " for ~p for gc. Reason: ~p", [ManifestSetKey, Reason]),
             riak_cs_pbc:check_connection_status(ManifestPbc, fetch_next_fileset),
             Error
     end.
@@ -258,7 +257,7 @@ finish_file_delete(0, _, RiakObj, RcPid) ->
                                Timeout, [riakc, delete_gc_manifest_set]),
     ok;
 finish_file_delete(_, FileSet, _RiakObj, _RcPid) ->
-    _ = lager:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
+    logger:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
     %% NOTE: we used to do a PUT here, but now with multidc replication
     %% we run garbage collection seprarately on each cluster, so we don't
     %% want to send this update to another data center. When we delete this

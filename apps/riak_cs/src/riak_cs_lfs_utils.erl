@@ -120,9 +120,9 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
 range_blocks(Start, End, SafeBlockSize, UUID) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
-    _ = lager:debug("InitialBlock: ~p, FinalBlock: ~p~n",
-                [Start div SafeBlockSize, End div SafeBlockSize]),
-    _ = lager:debug("SkipInitial: ~p, KeepFinal: ~p~n", [SkipInitial, KeepFinal]),
+    logger:debug("InitialBlock: ~p, FinalBlock: ~p",
+                 [Start div SafeBlockSize, End div SafeBlockSize]),
+    logger:debug("SkipInitial: ~p, KeepFinal: ~p", [SkipInitial, KeepFinal]),
     {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
      SkipInitial, KeepFinal}.
 
@@ -168,8 +168,8 @@ block_sort_fun(SafeBlockSize) ->
 
 block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
                                         StartOffset, EndOffset) ->
-    _ = lager:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p~n",
-                [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
+    logger:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p",
+                 [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
     case PM?PART_MANIFEST.content_length of
         %% Skipped
         PartLength when PartLength =< StartOffset ->
@@ -192,8 +192,8 @@ block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
 
 block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
                                         EndOffset, ListOfBlocks) ->
-    _ = lager:debug("EndOffset: EndOffset: ~p, PartLength: ~p~n",
-                [EndOffset, PM?PART_MANIFEST.content_length]),
+    logger:debug("EndOffset: EndOffset: ~p, PartLength: ~p",
+                 [EndOffset, PM?PART_MANIFEST.content_length]),
     case PM?PART_MANIFEST.content_length of
         %% More blocks needed
         PartLength when PartLength =< EndOffset ->

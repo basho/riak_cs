@@ -70,7 +70,7 @@ anonymous_bucket_access(Bucket, RequestedAccess, RcPid, undefined) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            _ = lager:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
+            logger:error("Anonymous bucket access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 anonymous_bucket_access(_Bucket, RequestedAccess, RcPid, BucketAcl) ->
@@ -109,7 +109,7 @@ anonymous_object_access(BucketObj, ObjAcl, 'WRITE', RcPid, undefined) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            _ = lager:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
+            logger:error("Anonymous object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 anonymous_object_access(_BucketObj, _ObjAcl, 'WRITE', RcPid, BucketAcl) ->
@@ -151,7 +151,7 @@ bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            _ = lager:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
+            logger:error("Bucket access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 bucket_access(_, RequestedAccess, CanonicalId, RcPid, Acl) ->
@@ -181,9 +181,8 @@ fetch_bucket_acl(Bucket, RcPid) ->
         {ok, Obj} ->
             bucket_acl(Obj);
         {error, Reason} ->
-            _ = lager:debug("Failed to fetch ACL. Bucket ~p "
-                            " does not exist. Reason: ~p",
-                            [Bucket, Reason]),
+            logger:debug("Failed to fetch ACL. Bucket ~p does not exist. Reason: ~p",
+                         [Bucket, Reason]),
             {error, notfound}
     end.
 
@@ -261,7 +260,7 @@ object_access(BucketObj, ObjAcl, 'WRITE', CanonicalId, RcPid, undefined) ->
         {error, Reason} ->
             %% @TODO Think about bubbling this error up and providing
             %% feedback to requester.
-            _ = lager:error("Object access check failed due to error. Reason: ~p", [Reason]),
+            logger:error("Object access check failed due to error. Reason: ~p", [Reason]),
             false
     end;
 object_access(_BucketObj, _ObjAcl, 'WRITE', CanonicalId, RcPid, BucketAcl) ->
@@ -279,13 +278,13 @@ object_access(_BucketObj, _ObjAcl, 'WRITE', CanonicalId, RcPid, BucketAcl) ->
             false
     end;
 object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
-    _ = lager:debug("ObjAcl: ~p~nCanonicalId: ~p", [ObjAcl, CanonicalId]),
+    logger:debug("ObjAcl: ~p; CanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
                                 RequestedAccess,
                                 CanonicalId),
-    _ = lager:debug("IsObjOwner: ~p", [IsObjOwner]),
-    _ = lager:debug("HasObjPerm: ~p", [HasObjPerm]),
+    logger:debug("IsObjOwner: ~p", [IsObjOwner]),
+    logger:debug("HasObjPerm: ~p", [HasObjPerm]),
     if
         (RequestedAccess == 'READ_ACP' orelse
          RequestedAccess == 'WRITE_ACP') andalso
@@ -315,7 +314,7 @@ owner_id(#acl_v1{owner=OwnerData}, RcPid) ->
         {ok, {Owner, _}} ->
             Owner?RCS_USER.key_id;
         {error, _} ->
-            _ = lager:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
+            logger:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
             []
     end.
 

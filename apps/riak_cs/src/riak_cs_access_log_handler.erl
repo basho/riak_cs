@@ -164,7 +164,7 @@ init(_) ->
             end,
             {ok, SchedState};
         {{error, Reason}, _} ->
-            _ = lager:error("Error starting access logger: ~s", [Reason]),
+            logger:error("Error starting access logger: ~s", [Reason]),
             %% can't simply {error, Reason} out here, because
             %% webmachine/mochiweb will just ignore the failed
             %% startup; using init:stop/0 here so that the user isn't
@@ -172,7 +172,7 @@ init(_) ->
             init:stop(),
             {error, doesnt_matter_as_node_is_going_down};
         {_, {error, Reason}} ->
-            _ = lager:error("Error starting access logger: ~s", [Reason]),
+            logger:error("Error starting access logger: ~s", [Reason]),
             init:stop(),
             {error, doesnt_matter_as_node_is_going_down}
     end.
@@ -188,7 +188,7 @@ handle_call(_Request, State) ->
 handle_event({log_access, #wm_log_data{notes=undefined,
                                        method=Method, path=Path, headers=Headers}},
              State) ->
-    lager:debug("No WM route: ~p ~s ~p\n", [Method, Path, Headers]),
+    logger:debug("No WM route: ~p ~s ~p", [Method, Path, Headers]),
     {ok, State};
 handle_event({log_access, LogData},
              #state{table=T, size=S, max_size=MaxS}=State) ->
@@ -232,9 +232,9 @@ handle_info({archive, Ref}, #state{archive=Ref}=State) ->
             %% simple "missed window" is too lossy
             [{message_queue_len, MessageCount}] =
                 process_info(self(), [message_queue_len]),
-            _ = lager:error("Access logger is running ~b seconds behind,"
-                            " skipping ~p log messages to catch up",
-                            [Behind, MessageCount]),
+            logger:error("Access logger is running ~b seconds behind,"
+                         " skipping ~p log messages to catch up",
+                         [Behind, MessageCount]),
             remove_handler
     end;
 handle_info(_Info, State) ->
@@ -268,7 +268,7 @@ schedule_archival(#state{current={_,E}}=State) ->
     TL = calendar:datetime_to_gregorian_seconds(E)-Now,
     case TL < 0 of
         false ->
-            _ = lager:debug("Next access archival in ~b seconds", [TL]),
+            logger:debug("Next access archival in ~b seconds", [TL]),
 
             %% time left is in seconds, we need milliseconds
             erlang:send_after(TL*1000, self(), {archive, Ref}),
@@ -290,7 +290,7 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 %% for storage.  Create a clean table to store the next slice's accesses.
 -spec do_archive(state()) -> state().
 do_archive(#state{period=P, table=T, current=C}=State) ->
-    _ = lager:debug("Rolling access for ~p", [C]),
+    logger:debug("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done
     riak_cs_access_archiver_manager:archive(T, C),
 

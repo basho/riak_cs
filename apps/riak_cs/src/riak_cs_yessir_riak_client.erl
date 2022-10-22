@@ -125,7 +125,7 @@ handle_call(block_pbc, _From, State) ->
     {reply, {ok, self()}, State};
 
 handle_call(Request, _From, State) ->
-    lager:warning("Unknown request: ~p~n", [Request]),
+    logger:warning("Unknown request: ~p", [Request]),
     Reply = {error, {invalid_request, Request}},
     {reply, Reply, State}.
 
@@ -157,8 +157,8 @@ process_get_req(#rpbgetreq{bucket = RiakBucket, key = VKey} = _RpbGetReq,
                                     [{dict:new(), binary:copy(<<"a">>, 10)}]),
             {{ok, Obj}, State};
         Other ->
-            lager:warning("Unknown #rpbgetreq{} for ~p, bucket=~p, key=~p~n",
-                          [Other, RiakBucket, VKey]),
+            logger:warning("Unknown #rpbgetreq{} for ~p, bucket=~p, key=~p",
+                           [Other, RiakBucket, VKey]),
             error({not_implemented, {rpbgetreq, Other, RiakBucket, VKey}})
     end.
 
@@ -170,8 +170,8 @@ process_put_req(#rpbputreq{bucket = RiakBucket, key = VKey, return_body = 1} = _
             {M, RObj} = new_manifest_ro(BucketName, RiakBucket, Key, Vsn, Acl),
             {{ok, RObj}, State#state{manifest = M}};
         Other ->
-            lager:warning("Unknown #rpbgetreq{} with return_body for ~p," " bucket=~p, key=~p~n",
-                          [Other, RiakBucket, VKey]),
+            logger:warning("Unknown #rpbgetreq{} with return_body for ~p, bucket=~p, key=~p",
+                           [Other, RiakBucket, VKey]),
             error({not_implemented, {rpbgetreq_with_return_body, Other, RiakBucket, VKey}})
     end;
 process_put_req(_RpbPutReq, State) ->

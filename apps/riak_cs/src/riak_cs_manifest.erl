@@ -152,6 +152,6 @@ maybe_warn_bloated_manifests(Bucket, Key, Actual, Threshold, Message, Unit) ->
     case Threshold of
         disabled -> ok;
         _ when Actual < Threshold -> ok;
-        _ -> _ = lager:warning("~s (~p ~s) for bucket=~p key=~p",
-                               [Message, Actual, Unit, Bucket, Key])
+        _ -> logger:warning("~s (~p ~s) for bucket=~p key=~p",
+                            [Message, Actual, Unit, Bucket, Key])
     end.

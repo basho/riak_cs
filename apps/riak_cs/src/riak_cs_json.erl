@@ -89,7 +89,7 @@ to_json([]) ->
 
 -spec value_or_default({ok, term()} | {error, term()}, term()) -> term().
 value_or_default({error, Reason}, Default) ->
-    _ = lager:debug("JSON error: ~p", [Reason]),
+    logger:debug("JSON error: ~p", [Reason]),
     Default;
 value_or_default({ok, Value}, _) ->
     Value.

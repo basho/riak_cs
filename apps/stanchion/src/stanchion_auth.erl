@@ -39,8 +39,8 @@ authenticate(RD, [KeyId, Signature]) ->
     case stanchion_utils:get_admin_creds() of
         {ok, {AdminKeyId, AdminSecret}} ->
             CalculatedSignature = signature(AdminSecret, RD),
-            _ = lager:debug("Presented Signature: ~p~nCalculated Signature: ~p~n",
-                            [Signature, CalculatedSignature]),
+            logger:debug(" Presented Signature: ~p", [Signature]),
+            logger:debug("Calculated Signature: ~p", [CalculatedSignature]),
             case KeyId == AdminKeyId andalso
                 check_auth(Signature, CalculatedSignature) of
                 true ->

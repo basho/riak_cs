@@ -59,29 +59,29 @@ check_admin_creds() ->
     case riak_cs_config:admin_creds() of
         {ok, {"admin-key", _}} ->
             %% The default key
-            lager:warning("admin.key is defined as default. Please create"
-                          " admin user and configure it.", []),
+            logger:warning("admin.key is defined as default. Please create"
+                           " admin user and configure it.", []),
             application:set_env(riak_cs, admin_secret, "admin-secret"),
             ok;
         {ok, {undefined, _}} ->
-            _ = lager:warning("The admin user's key id has not been specified."),
+            logger:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {[], _}} ->
-            _ = lager:warning("The admin user's key id has not been specified."),
+            logger:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {Key, undefined}} ->
             fetch_and_cache_admin_creds(Key);
         {ok, {Key, []}} ->
             fetch_and_cache_admin_creds(Key);
         {ok, {Key, _}} ->
-            _ = lager:warning("The admin user's secret is specified. Ignoring."),
+            logger:warning("The admin user's secret is specified. Ignoring."),
             fetch_and_cache_admin_creds(Key)
     end.
 
 fetch_and_cache_admin_creds(Key) ->
     %% Not using as the master pool might not be initialized
     {ok, MasterPbc} = riak_connection(),
-    _ = lager:debug("setting admin as ~s", [Key]),
+    logger:debug("setting admin as ~s", [Key]),
     try
         %% Do we count this into stats?; This is a startup query and
         %% system latency is expected to be low. So get timeout can be
@@ -94,13 +94,11 @@ fetch_and_cache_admin_creds(Key) ->
                 Secret = User?RCS_USER.key_secret,
                 application:set_env(riak_cs, admin_secret, Secret);
             Error ->
-                _ = lager:error("Couldn't get admin user (~s) record: ~p",
-                                [Key, Error]),
+                logger:error("Couldn't get admin user (~s) record: ~p", [Key, Error]),
                 Error
         end
     catch T:E ->
-            _ = lager:error("Couldn't get admin user (~s) record: ~p",
-                            [Key, {T, E}]),
+            logger:error("Couldn't get admin user (~s) record: ~p", [Key, {T, E}]),
             {error, {T, E}}
     after
         riakc_pb_socket:stop(MasterPbc)
@@ -113,22 +111,18 @@ fetch_and_cache_admin_creds(Key) ->
 sanity_check(true, ok, {ok, true}) ->
     riak_cs_sup:start_link();
 sanity_check(false, _, _) ->
-    _ = lager:error("You must update your Riak CS app.config. Please see the"
-                    "release notes for more information on updating you"
-                    "configuration."),
+    logger:error("You must update your Riak CS app.config. Please see the"
+                 "release notes for more information on updating you configuration."),
     {error, bad_config};
 sanity_check(true, _, {ok, false}) ->
-    _ = lager:error("Invalid Riak bucket properties detected. Please "
-                    "verify that allow_mult is set to true for all "
-                    "buckets."),
+    logger:error("Invalid Riak bucket properties detected. Please "
+                 "verify that allow_mult is set to true for all buckets."),
     {error, invalid_bucket_props};
 sanity_check(true, _, {error, Reason}) ->
-    _ = lager:error("Could not verify bucket properties. Error was"
-                    " ~p.", [Reason]),
+    logger:error("Could not verify bucket properties. Error was ~p.", [Reason]),
     {error, error_verifying_props};
 sanity_check(_, {error, Reason}, _) ->
-    _ = lager:error("Admin credentials are not properly set: ~p.",
-                    [Reason]),
+    logger:error("Admin credentials are not properly set: ~p.", [Reason]),
     {error, Reason}.
 
 -spec is_config_valid() -> boolean().
@@ -176,24 +170,18 @@ check_bucket_props(Bucket, MasterPbc) ->
         {ok, Props} ->
             case lists:keyfind(allow_mult, 1, Props) of
                 {allow_mult, true} ->
-                    _ = lager:debug("~s bucket was"
-                                    " already configured correctly.",
-                                    [Bucket]),
                     {ok, true};
                 _ ->
-                    _ = lager:warning("~p is misconfigured", [Bucket]),
+                    logger:warning("~p is misconfigured", [Bucket]),
                     {ok, false}
             end;
         {error, Reason}=E ->
-            _ = lager:warning(
-                  "Unable to verify ~s bucket settings (~p).",
-                  [Bucket, Reason]),
+            logger:warning("Unable to verify ~s bucket settings (~p).", [Bucket, Reason]),
             E
     end.
 
 riak_connection() ->
     {Host, Port} = riak_cs_config:riak_host_port(),
-    lager:debug("connecting to ~p", [{Host, Port}]),
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
                   {ok, ConfigValue} ->
                       ConfigValue;

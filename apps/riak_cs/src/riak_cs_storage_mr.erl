@@ -163,7 +163,7 @@ objs_bytes_and_blocks_non_mp(?MANIFEST{state=State, content_length=CL, block_siz
     BlockCount = riak_cs_lfs_utils:block_count(CL, BS),
     {non_mp, State, {1, CL, BlockCount}};
 objs_bytes_and_blocks_non_mp(?MANIFEST{state=State} = _M) ->
-    lager:debug("Strange manifest: ~p~n", [_M]),
+    logger:info("Strange manifest: ~p", [_M]),
     %% The branch above is for content_length is properly set.  This
     %% is true for non-MP v2 auth case but not always true for v4 of
     %% streaming sha256 check of writing. To avoid error, ignore
@@ -264,9 +264,8 @@ count_multipart_parts({_UUID, ?MANIFEST{props=Props, state=writing} = M},
             Acc;
         Other ->
             %% strange thing happened
-            _ = lager:log(warning, self(),
-                          "strange writing multipart manifest detected at ~p: ~p",
-                          [M?MANIFEST.bkey, Other]),
+            logger:warning("strange writing multipart manifest detected at ~p: ~p",
+                           [M?MANIFEST.bkey, Other]),
             Acc
     end;
 count_multipart_parts(_, Acc) ->

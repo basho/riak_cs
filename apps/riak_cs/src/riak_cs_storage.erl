@@ -79,9 +79,8 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
     case sum_bucket(Name, Detailed, LeewayEdge) of
         {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
-            _ = lager:error("failed to calculate usage of "
-                            "bucket '~s' of user '~s'. Reason: ~p",
-                            [Name, User, E]),
+            logger:error("failed to calculate usage of bucket \"~s\" of user \"~s\". Reason: ~p",
+                         [Name, User, E]),
             {Name, iolist_to_binary(io_lib:format("~p", [E]))}
     end.
 

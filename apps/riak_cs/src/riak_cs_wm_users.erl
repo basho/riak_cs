@@ -156,8 +156,8 @@ user_fold_fun(RcPid, Status) ->
                     %% Status is defined and does not match the account status
                     Users;
                 {error, Reason} ->
-                    _ = lager:warning("Failed to fetch user record. KeyId: ~p"
-                                      " Reason: ~p", [UserId, Reason]),
+                    logger:warning("Failed to fetch user record. KeyId: ~p"
+                                   " Reason: ~p", [UserId, Reason]),
                     Users
             end
     end.

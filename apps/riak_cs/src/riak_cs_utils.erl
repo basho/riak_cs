@@ -198,12 +198,12 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
         Resolved = rcs_common_manifest_resolution:resolve(Upgraded),
         ResolvedManifestsHandler(Resolved)
     catch Type:Reason:StackTrace ->
-            lager:error("Riak CS object mapreduce failed for ~p:~p with reason ~p:~p at ~p",
-                        [riak_object:bucket(Object),
-                         riak_object:key(Object),
-                         Type,
-                         Reason,
-                         StackTrace]),
+            logger:error("Riak CS object mapreduce failed for ~p:~p with reason ~p:~p at ~p",
+                         [riak_object:bucket(Object),
+                          riak_object:key(Object),
+                          Type,
+                          Reason,
+                          StackTrace]),
             ErrorReturn
     end.
 

@@ -181,23 +181,23 @@ handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
     {{halt, 503}, RD, Ctx};
 handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    _ = lager:debug("No user key: ~p", [Reason]),
+    logger:debug("No user key: ~p", [Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    _ = lager:debug("No user key, deny"),
+    logger:debug("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    _ = lager:debug("bad_auth"),
+    logger:debug("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
-    _ = lager:debug("key_id not found"),
+    logger:debug("key_id not found"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    _ = lager:debug("Authentication error: ~p", [Reason]),
+    logger:debug("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 handle_auth_admin(RD, Ctx, undefined, true) ->
@@ -259,8 +259,7 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
             {error, NE};
         {error, Reason} ->
             %% other failures, like Riak fetch timeout, be loud about
-            _ = lager:error("Retrieval of user record for ~p failed. Reason: ~p",
-                            [KeyId, Reason]),
+            logger:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
             {error, Reason}
     end.
 
@@ -451,7 +450,7 @@ extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
                 %% CS extension, for PutObject should probably be
                 %% better done in s3_rewrite, but doing so will be too
                 %% disruptive for the tidy rewriting flow
-                lager:debug("are we PutObject on a version? ~p", [Defined]),
+                logger:debug("are we PutObject on a version? ~p", [Defined]),
                 list_to_binary(Defined);
             {V, _} ->
                 list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(V)))
@@ -501,7 +500,7 @@ maybe_update_context_with_acl_from_headers(RD,
                     {ok, Ctx#context{acl=DefaultAcl}}
             end;
         {error, Reason} ->
-            _ = lager:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
+            logger:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
             {error, {{halt, 500}, RD, Ctx}}
     end.
 
@@ -1047,7 +1046,7 @@ fetch_bucket_owner(Bucket, RcPid) ->
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->
-            _ = lager:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            logger:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
             undefined
     end.
 

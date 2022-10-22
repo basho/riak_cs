@@ -84,8 +84,7 @@ handle_user_data_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, _}}) ->
     %% @TODO Log error
     undefined;
 handle_user_data_response({error, Reason}) ->
-    _ = lager:warning("Error occurred requesting user data from keystone. Reason: ~p",
-                  [Reason]),
+    logger:warning("Error occurred requesting user data from keystone. Reason: ~p", [Reason]),
     undefined.
 
 handle_ec2_creds_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, CredsInfo}}, TenantId)
@@ -96,8 +95,7 @@ handle_ec2_creds_response({ok, {{_HTTPVer, _Status, _StatusLine}, _, _}}, _) ->
     %% @TODO Log error
     {undefined, []};
 handle_ec2_creds_response({error, Reason}, _) ->
-    _ = lager:warning("Error occurred requesting user EC2 credentials from keystone. Reason: ~p",
-                  [Reason]),
+    logger:warning("Error occurred requesting user EC2 credentials from keystone. Reason: ~p", [Reason]),
     {undefined, []}.
 
 ec2_creds_for_tenant({error, decode_failed}, _) ->

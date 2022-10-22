@@ -96,9 +96,9 @@ repl_get(PbcPid, BucketName, Key, ClusterID, Opts, Timeout, StatsKey) ->
 %% TODO: two `put_object' are without stats yet.
 -spec put_object(pid(), binary(), undefined | binary(), binary(), [term()]) -> ok | {error, term()}.
 put_object(_PbcPid, BucketName, undefined, Value, Metadata) ->
-    error_logger:warning_msg("Attempt to put object into ~p with undefined key "
-                             "and value ~P and dict ~p\n",
-                             [BucketName, Value, 30, Metadata]),
+    logger:warning("Attempt to put object into ~p with undefined key "
+                   "and value ~P and dict ~p",
+                   [BucketName, Value, Metadata]),
     {error, bad_key};
 put_object(PbcPid, BucketName, Key, Value, Metadata) ->
     RiakObject = riakc_obj:new(BucketName, Key, Value),
@@ -203,13 +203,11 @@ check_connection_status(Pbc, Where) ->
         case riakc_pb_socket:is_connected(Pbc) of
             true -> ok;
             Other ->
-                _ = lager:warning("Connection status of ~p at ~p: ~p",
-                                  [Pbc, Where, Other])
+                logger:warning("Connection status of ~p at ~p: ~p", [Pbc, Where, Other])
         end
     catch
         Type:Error ->
-            _ = lager:warning("Connection status of ~p at ~p: ~p",
-                              [Pbc, Where, {Type, Error}])
+            logger:warning("Connection status of ~p at ~p: ~p", [Pbc, Where, {Type, Error}])
     end.
 
 %% @doc Pause for a while so that underlying `riaic_pb_socket' can have
@@ -226,7 +224,7 @@ pause_to_reconnect(_Pbc, _Other, _Timeout) ->
     ok.
 
 pause_to_reconnect0(Pbc, Timeout, Start) ->
-    lager:debug("riak_cs_pbc:pause_to_reconnect0"),
+    logger:debug("riak_cs_pbc:pause_to_reconnect0"),
     case riakc_pb_socket:is_connected(Pbc, ?FIRST_RECONNECT_INTERVAL) of
         true -> ok;
         {false, _} ->

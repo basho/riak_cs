@@ -164,7 +164,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
             User = update_user_record(hd(Values)),
 
             KeyId = User?RCS_USER.key_id,
-            _ = lager:warning("User object of '~s' has ~p siblings", [KeyId, N]),
+            logger:warning("User object of '~s' has ~p siblings", [KeyId, N]),
 
             Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
             User?RCS_USER{buckets=Buckets}
@@ -196,9 +196,8 @@ get_user_index(Index, Value, RcPid) ->
         {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->
             {ok, binary_to_list(Key)};
         {error, Reason}=Error ->
-            _ = lager:warning("Error occurred trying to query ~p in user"
-                              "index ~p. Reason: ~p",
-                              [Value, Index, Reason]),
+            logger:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p",
+                           [Value, Index, Reason]),
             Error
     end.
 

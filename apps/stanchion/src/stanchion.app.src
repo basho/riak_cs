@@ -6,24 +6,24 @@
   %% tag), and that plus sign will not go down well with freebsd pkg
   %% ('+' is not allowed in +MANIFEST file).  Hence we produce a
   %% version of vsn that doesn't have it.
-  {vsn, git},
+  {vsn, "3.1.0"},
   {modules, []},
   {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  inets,
-                  crypto,
-                  mochiweb,
-                  webmachine,
-                  exometer_core,
-                  lager,
-                  riakc,
-                  rcs_common
-                 ]},
-  {mod, { stanchion_app, []}},
-  {env, [
-         {listener, {"127.0.0.1", 8085}},
-         {riak_host, {"127.0.0.1", 8087}}
-        ]}
- ]}.
+  {applications,
+   [kernel,
+    stdlib,
+    inets,
+    crypto,
+    mochiweb,
+    webmachine,
+    exometer_core,
+    riakc,
+    rcs_common
+   ]},
+  {mod, {stanchion_app, []}},
+  {env,
+   [{listener, {"127.0.0.1", 8085}},
+    {riak_host, {"127.0.0.1", 8087}}
+   ]}
+ ]
+}.

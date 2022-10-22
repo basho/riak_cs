@@ -471,7 +471,7 @@ canonical_for_email(Email, RcPid) ->
         {ok, {User, _}} ->
             {ok, User?RCS_USER.canonical_id};
         {error, Reason} ->
-            _ = lager:debug("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
+            logger:debug("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
             {error, unresolved_grant_email}
     end.
 
@@ -499,7 +499,7 @@ process_acl_contents([], Acl, _) ->
 process_acl_contents([#xmlElement{content=Content,
                                   name=ElementName}
                       | RestElements], Acl, RcPid) ->
-    _ = lager:debug("Element name: ~p", [ElementName]),
+    logger:debug("Element name: ~p", [ElementName]),
     UpdAclRes =
                 case ElementName of
         'Owner' ->
@@ -507,7 +507,7 @@ process_acl_contents([#xmlElement{content=Content,
         'AccessControlList' ->
             process_grants(Content, Acl, RcPid);
         _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+            logger:debug("Encountered unexpected element: ~p", [ElementName]),
             Acl
     end,
     case UpdAclRes of
@@ -542,15 +542,15 @@ process_owner([#xmlElement{content=[Content],
             UpdOwner =
                 case ElementName of
                     'ID' ->
-                        _ = lager:debug("Owner ID value: ~p", [Value]),
+                        logger:debug("Owner ID value: ~p", [Value]),
                         {OwnerName, _, OwnerKeyId} = Owner,
                         {OwnerName, Value, OwnerKeyId};
                     'DisplayName' ->
-                        _ = lager:debug("Owner Name content: ~p", [Value]),
+                        logger:debug("Owner Name content: ~p", [Value]),
                         {_, OwnerId, OwnerKeyId} = Owner,
                         {Value, OwnerId, OwnerKeyId};
                     _ ->
-                        _ = lager:debug("Encountered unexpected element: ~p", [ElementName]),
+                        logger:debug("Encountered unexpected element: ~p", [ElementName]),
                         Owner
             end,
             process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RcPid);
@@ -582,7 +582,7 @@ process_grants([#xmlElement{content=Content,
                     Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)}
             end;
         _ ->
-            _ = lager:debug("Encountered unexpected grants element: ~p", [ElementName]),
+            logger:debug("Encountered unexpected grants element: ~p", [ElementName]),
             Acl
     end,
     case UpdAcl of
@@ -602,8 +602,8 @@ process_grant([], Grant, _, _) ->
 process_grant([#xmlElement{content=Content,
                            name=ElementName} |
                RestElements], Grant, AclOwner, RcPid) ->
-    _ = lager:debug("ElementName: ~p", [ElementName]),
-    _ = lager:debug("Content: ~p", [Content]),
+    logger:debug("ElementName: ~p", [ElementName]),
+    logger:debug("Content: ~p", [Content]),
     UpdGrant =
                case ElementName of
         'Grantee' ->
@@ -611,7 +611,7 @@ process_grant([#xmlElement{content=Content,
         'Permission' ->
             process_permission(Content, Grant);
         _ ->
-            _ = lager:debug("Encountered unexpected grant element: ~p", [ElementName]),
+            logger:warning("Encountered unexpected grant element: ~p", [ElementName]),
             Grant
     end,
     case UpdGrant of
@@ -650,21 +650,21 @@ process_grantee([#xmlElement{content=[Content],
     Value = Content#xmlText.value,
     case ElementName of
         'ID' ->
-            _ = lager:debug("ID value: ~p", [Value]),
+            logger:debug("ID value: ~p", [Value]),
             {{Name, _}, Perms} = Grant,
             UpdGrant = {{Name, Value}, Perms};
         'EmailAddress' ->
-            _ = lager:debug("Email value: ~p", [Value]),
+            logger:debug("Email value: ~p", [Value]),
             UpdGrant =
-                       case canonical_for_email(Value, RcPid) of
-                {ok, Id} ->
-                    %% Get the canonical id for a given email address
-                    _ = lager:debug("ID value: ~p", [Id]),
-                    {{Name, _}, Perms} = Grant,
-                    {{Name, Id}, Perms};
-                {error, _}=Error ->
-                    Error
-            end;
+                case canonical_for_email(Value, RcPid) of
+                    {ok, Id} ->
+                        %% Get the canonical id for a given email address
+                        logger:debug("ID value: ~p", [Id]),
+                        {{Name, _}, Perms} = Grant,
+                        {{Name, Id}, Perms};
+                    {error, _}=Error ->
+                        Error
+                end;
         'URI' ->
             {_, Perms} = Grant,
             case Value of
@@ -781,7 +781,7 @@ acl_from_json(Json) ->
 process_acl_contents([], Acl) ->
     Acl;
 process_acl_contents([{Name, Value} | RestObjects], Acl) ->
-    _ = lager:debug("Object name: ~p", [Name]),
+    logger:debug("Object name: ~p", [Name]),
     case Name of
         <<"owner">> ->
             {struct, OwnerData} = Value,
@@ -805,19 +805,19 @@ process_owner([{Name, Value} | RestObjects], Acl) ->
     Owner = Acl?ACL.owner,
     case Name of
         <<"key_id">> ->
-            _ = lager:debug("Owner Key ID value: ~p", [Value]),
+            logger:debug("Owner Key ID value: ~p", [Value]),
             {OwnerName, OwnerCID, _} = Owner,
             UpdOwner = {OwnerName, OwnerCID, binary_to_list(Value)};
         <<"canonical_id">> ->
-            _ = lager:debug("Owner ID value: ~p", [Value]),
+            logger:debug("Owner ID value: ~p", [Value]),
             {OwnerName, _, OwnerId} = Owner,
             UpdOwner = {OwnerName, binary_to_list(Value), OwnerId};
         <<"display_name">> ->
-            _ = lager:debug("Owner Name content: ~p", [Value]),
+            logger:debug("Owner Name content: ~p", [Value]),
             {_, OwnerCID, OwnerId} = Owner,
             UpdOwner = {binary_to_list(Value), OwnerCID, OwnerId};
         _ ->
-            _ = lager:debug("Encountered unexpected element: ~p", [Name]),
+            logger:debug("Encountered unexpected element: ~p", [Name]),
             UpdOwner = Owner
     end,
     process_owner(RestObjects, Acl?ACL{owner=UpdOwner}).
@@ -839,22 +839,22 @@ process_grant([], Grant) ->
 process_grant([{Name, Value} | RestObjects], Grant) ->
     case Name of
         <<"canonical_id">> ->
-            _ = lager:debug("ID value: ~p", [Value]),
+            logger:debug("ID value: ~p", [Value]),
             {{DispName, _}, Perms} = Grant,
             UpdGrant = {{DispName, binary_to_list(Value)}, Perms};
         <<"display_name">> ->
-            _ = lager:debug("Name value: ~p", [Value]),
+            logger:debug("Name value: ~p", [Value]),
             {{_, Id}, Perms} = Grant,
             UpdGrant = {{binary_to_list(Value), Id}, Perms};
         <<"group">> ->
-            _ = lager:debug("Group value: ~p", [Value]),
+            logger:debug("Group value: ~p", [Value]),
             {_, Perms} = Grant,
             UpdGrant = {list_to_atom(
                           binary_to_list(Value)), Perms};
         <<"permissions">> ->
             {Grantee, _} = Grant,
             Perms = process_permissions(Value),
-            _ = lager:debug("Perms value: ~p", [Value]),
+            logger:debug("Perms value: ~p", [Value]),
             UpdGrant = {Grantee, Perms};
         _ ->
             UpdGrant = Grant

@@ -167,8 +167,8 @@ extract_bucket_from_host(Host, RootHost) ->
                 if RootHost == M2 ->
                         M1;
                    el/=se ->
-                        lager:warning("accepting request sent to a (legitimate) AWS host"
-                                      " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
+                        logger:warning("accepting request sent to a (legitimate) AWS host"
+                                       " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
                         M1
                 end;
             _ ->

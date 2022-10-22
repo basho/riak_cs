@@ -171,7 +171,7 @@ handle_sync_event(get_internal_state, _From, StateName, State) ->
     Reply = {StateName, State},
     {reply, Reply, StateName, State};
 handle_sync_event(Event, _From, StateName, State) ->
-    _ = lager:warning("got unknown event ~p in state ~p", [Event, StateName]),
+    logger:warning("got unknown event ~p in state ~p", [Event, StateName]),
     Reply = ok,
     {reply, Reply, StateName, State}.
 
@@ -181,12 +181,11 @@ handle_sync_event(Event, _From, StateName, State) ->
 handle_info(Info, waiting_object_list, State) ->
     waiting_object_list(Info, State);
 handle_info(Info, StateName, _State) ->
-    _ = lager:warning("Received unknown info message ~p"
-                      "in state ~p", [Info, StateName]),
+    logger:warning("Received unknown info message ~p in state ~p", [Info, StateName]),
     ok.
 
 terminate(normal, _StateName, State) ->
-    lager:debug(format_profiling_from_state(State));
+    logger:debug(format_profiling_from_state(State));
 terminate(_Reason, _StateName, _State) ->
     ok.
 
@@ -227,7 +226,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    _ = lager:debug("Ranges: ~p", [NewStateData#state.object_list_ranges]),
+    logger:debug("Ranges: ~p", [NewStateData#state.object_list_ranges]),
     respond(NewStateData, NewManis, NewPrefixes).
 
 -spec reached_end_of_keyspace(non_neg_integer(),
