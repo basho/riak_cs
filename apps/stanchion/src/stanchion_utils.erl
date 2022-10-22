@@ -405,7 +405,7 @@ update_user(KeyId, UserFields) ->
 
 
 sha_mac(KeyData, STS) ->
-    crypto:hmac(sha, KeyData, STS).
+    crypto:mac(hmac, sha, KeyData, STS).
 
 md5(Bin) ->
     crypto:hash(md5, Bin).

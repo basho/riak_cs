@@ -42,6 +42,7 @@
 -type external_node() :: {atom(), [string()]}.
 -type internal_node() :: {atom(), [internal_node() | external_node()]} |
                          {atom(), attributes(), [internal_node() | external_node()]}.
+-export_type([attributes/0, external_node/0, internal_node/0]).
 
 %% ===================================================================
 %% Public API
