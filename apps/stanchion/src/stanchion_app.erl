@@ -56,7 +56,7 @@ start(_Type, _StartArgs) ->
                 stanchion_utils:close_riak_connection(Pid)
             end;
         {error, Reason} ->
-            lager:error("Couldn't connect to Riak: ~p", [Reason]),
+            logger:error("Couldn't connect to Riak: ~p", [Reason]),
             {error, Reason}
     end.
 
@@ -68,13 +68,13 @@ stop(_State) ->
 check_admin_creds(Pid) ->
     case application:get_env(stanchion, admin_key) of
         {ok, "admin-key"} ->
-            lager:warning("admin.key is defined as default. Please create"
-                          " admin user and configure it.", []),
+            logger:warning("admin.key is defined as default. Please create"
+                           " admin user and configure it.", []),
             application:set_env(stanchion, admin_secret, "admin-secret");
         {ok, KeyId} ->
             case application:get_env(stanchion, admin_secret) of
                 {ok, _} ->
-                    lager:warning("admin.secret is ignored.");
+                    logger:warning("admin.secret is ignored.");
                 _ ->
                     ok
             end,
@@ -89,12 +89,11 @@ check_admin_creds(Pid) ->
                             Error
                     end;
                 {error, notfound} ->
-                    lager:error("admin.key defined in stanchion.conf was not found."
-                                "Please create it."),
+                    logger:error("admin.key defined in stanchion.conf was not found."
+                                 "Please create it."),
                     {error, admin_not_configured};
                 Error ->
-                    lager:error("Error loading administrator configuration: ~p",
-                                [Error]),
+                    logger:error("Error loading administrator configuration: ~p", [Error]),
                     Error
             end;
         Error ->

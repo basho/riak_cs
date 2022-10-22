@@ -106,7 +106,7 @@ accept_body(RD, Ctx) ->
 delete_resource(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     RequesterId = list_to_binary(wrq:get_qs_value("requester", "", RD)),
-    _ = lager:debug("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
+    logger:debug("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
 
     case stanchion_server:delete_bucket_policy(Bucket, RequesterId) of
         ok ->

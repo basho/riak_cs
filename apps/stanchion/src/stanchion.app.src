@@ -17,8 +17,7 @@
     mochiweb,
     webmachine,
     exometer_core,
-    riakc,
-    rcs_common
+    riakc
    ]},
   {mod, {stanchion_app, []}},
   {env,
