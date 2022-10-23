@@ -44,14 +44,14 @@
 %% with the ssl config variable, for example:
 {mapping, "ssl.certfile", "riak_cs.ssl.certfile", [
   {datatype, file},
-  {commented, "$(platform_etc_dir)/cert.pem"}
+  {commented, "{{platform_etc_dir}}/cert.pem"}
 ]}.
 
 %% @doc Default key location for https can be overridden with the ssl
 %% config variable, for example:
 {mapping, "ssl.keyfile", "riak_cs.ssl.keyfile", [
   {datatype, file},
-  {commented, "$(platform_etc_dir)/key.pem"}
+  {commented, "{{platform_etc_dir}}/key.pem"}
 ]}.
 
 %% @doc Enable this to allow the creation of an admin user when
@@ -344,7 +344,7 @@
 
 %% @doc Access log directory.
 {mapping, "log.access.dir", "webmachine.log_handlers", [
-  {default, "$(platform_log_dir)" },
+  {default, "{{platform_log_dir}}" },
   {datatype, string}
 ]}.
 
@@ -451,7 +451,7 @@
 
 %% @doc Filename to use for log files.
 {mapping, "logger.file", "kernel.logger", [
-  {default, "$(platform_log_dir)/console.log"},
+  {default, "{{platform_log_dir}}/console.log"},
   {datatype, file}
 ]}.
 
@@ -504,7 +504,7 @@
 
 %% @doc Filename to use for SASL reports.
 {mapping, "logger.sasl.file", "kernel.logger", [
-  {default, "$(platform_log_dir)/reports.log"},
+  {default, "{{platform_log_dir}}/reports.log"},
   {datatype, file}
 ]}.
 
