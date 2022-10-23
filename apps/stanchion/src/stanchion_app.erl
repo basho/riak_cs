@@ -66,13 +66,13 @@ stop(_State) ->
     ok.
 
 check_admin_creds(Pid) ->
-    case application:get_env(stanchion, admin_key) of
+    case application:get_env(riak_cs, admin_key) of
         {ok, "admin-key"} ->
             logger:warning("admin.key is defined as default. Please create"
                            " admin user and configure it.", []),
             application:set_env(stanchion, admin_secret, "admin-secret");
         {ok, KeyId} ->
-            case application:get_env(stanchion, admin_secret) of
+            case application:get_env(riak_cs, admin_secret) of
                 {ok, _} ->
                     logger:warning("admin.secret is ignored.");
                 _ ->

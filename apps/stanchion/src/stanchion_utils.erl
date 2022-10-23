@@ -165,9 +165,9 @@ from_bucket_name(BucketNameWithPrefix) ->
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
 get_admin_creds() ->
-    case application:get_env(stanchion, admin_key) of
+    case application:get_env(riak_cs, admin_key) of
         {ok, KeyId} ->
-            case application:get_env(stanchion, admin_secret) of
+            case application:get_env(riak_cs, admin_secret) of
                 {ok, Secret} ->
                     {ok, {KeyId, Secret}};
                 undefined ->
@@ -297,7 +297,7 @@ replace_meta(Key, NewValue, MetaVals) ->
 -type riak_connect_failed() :: {riak_connect_failed, tuple()}.
 -spec riak_connection() -> {ok, pid()} | {error, riak_connect_failed()}.
 riak_connection() ->
-    {Host, Port} = case application:get_env(stanchion, riak_host) of
+    {Host, Port} = case application:get_env(riak_cs, riak_host) of
                        {ok, {_, _} = HostPort} -> HostPort;
                        undefined -> {"127.0.0.1",  8087}
                    end,

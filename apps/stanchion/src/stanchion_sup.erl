@@ -46,7 +46,7 @@ start_link() ->
 -spec init([]) -> {ok, {supervisor:sup_flags(),
                         [supervisor:child_spec()]}} | ignore.
 init([]) ->
-    {Ip, Port} = case application:get_env(stanchion, host) of
+    {Ip, Port} = case application:get_env(stanchion, listener) of
         {ok, {_, _} = HostPort} -> HostPort;
         undefined -> {"0.0.0.0", 80}
     end,

@@ -11,7 +11,7 @@
 ]}.
 
 %% @doc listen port and IP address
-{mapping, "stanchion_listener", "stanchion.host", [
+{mapping, "stanchion_listener", "stanchion.listener", [
   {default, {"{{stanchion_ip}}" , {{stanchion_port}} }},
   {datatype, ip},
   {validators, ["valid_host"]}
