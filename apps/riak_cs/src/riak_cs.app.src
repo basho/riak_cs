@@ -40,8 +40,7 @@
     exometer_core,
     riakc,
     riak_repl_pb_api,
-    riak_cs_multibag,
-    stanchion
+    riak_cs_multibag
    ]},
   {mod, {riak_cs_app, []}},
   {env,

@@ -6,12 +6,12 @@
 {devrel, true}.
 
 %% Platform-specific installation paths
-{platform_base_dir, "@PLATFORM_BASE_DIR@"}.
-{platform_bin_dir,  "{{platform_base_dir}}/bin"}.
-{platform_data_dir, "{{platform_base_dir}}/data"}.
-{platform_etc_dir,  "{{platform_base_dir}}/etc"}.
-{platform_lib_dir,  "{{platform_base_dir}}/lib"}.
-{platform_log_dir,  "{{platform_base_dir}}/log"}.
+{platform_base_dir,  "@PLATFORM_BASE_DIR@"}.
+{platform_bin_dir,   "{{platform_base_dir}}/bin"}.
+{platform_data_dir,  "{{platform_base_dir}}/data"}.
+{platform_etc_dir,   "{{platform_base_dir}}/etc"}.
+{platform_lib_dir,   "{{platform_base_dir}}/lib"}.
+{platform_log_dir,   "{{platform_base_dir}}/log"}.
 {platform_gen_dir,   "{{platform_base_dir}}"}.
 {platform_patch_dir, "{{platform_lib_dir}}/patches"}.
 
@@ -29,11 +29,12 @@
 {stanchion_ip,      "127.0.0.1"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
-{cs_version,        030000}.
+{cs_version,        030100}.
+{operation_mode,    auto}.
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
 
-{console_log_default, file}.
+{log_level, info}.
 
 %%
 %% etc/vm.args

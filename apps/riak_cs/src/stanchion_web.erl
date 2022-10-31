@@ -27,7 +27,7 @@
 
 dispatch_table() ->
     AuthBypass =
-        case application:get_env(stanchion, auth_bypass) of
+        case application:get_env(riak_cs, auth_bypass) of
             {ok, AuthBypass0} -> AuthBypass0;
             undefined ->         false
         end,

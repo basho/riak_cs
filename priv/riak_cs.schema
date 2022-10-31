@@ -5,6 +5,23 @@
 
 %% == Basic Configuration ==
 
+%% @doc Whether to run stanchion on this node (auto means we will
+%% check if stanchion is already started on any connected nodes, and
+%% only start it here if it is not).
+{mapping, "operation_mode", "riak_cs.operation_mode", [
+  {default, {{ operation_mode }} },
+  {datatype, {enum, [auto, riak_cs_with_stanchion,
+                     riak_cs_only, stanchion_only]}},
+  {validators, ["valid_operation_mode"]}
+]}.
+
+{validator,
+ "valid_operation_mode",
+ "should be one of: auto, riak_cs_with_stanchion, riak_cs_only, stanchion_only",
+ fun(A) -> lists:member(A, [auto, riak_cs_with_stanchion,
+                            riak_cs_only, stanchion_only]) end
+}.
+
 %% @doc Riak CS http/https port and IP address to listen at for object
 %% storage activity
 {mapping, "listener", "riak_cs.listener", [
@@ -33,13 +50,6 @@
   {validators, ["valid_host"]}
 ]}.
 
-%% @doc SSL configuration for access to request serialization
-%% service. With `on`, Riak CS connects to Stanchion with SSL.
-{mapping, "stanchion.ssl", "riak_cs.stanchion_ssl", [
-  {default, {{stanchion_ssl}} },
-  {datatype, flag}
-]}.
-
 %% @doc Default cert location for https can be overridden
 %% with the ssl config variable, for example:
 {mapping, "ssl.certfile", "riak_cs.ssl.certfile", [
@@ -53,6 +63,38 @@
   {datatype, file},
   {commented, "{{platform_etc_dir}}/key.pem"}
 ]}.
+
+
+
+%% @doc Stanchion http/https port and IP address to listen at
+{mapping, "stanchion.listener", "riak_cs.stanchion_listener", [
+  {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
+  {datatype, ip},
+  {validators, ["valid_host"]}
+]}.
+
+%% @doc SSL configuration for access to request serialization
+%% service. With `on`, Riak CS connects to Stanchion with SSL.
+{mapping, "stanchion.ssl", "riak_cs.stanchion_ssl", [
+  {default, {{stanchion_ssl}} },
+  {datatype, flag}
+]}.
+
+%% @doc Default cert location for https can be overridden
+%% with the ssl config variable, for example:
+{mapping, "stanchion.ssl_certfile", "riak_cs.stanchion_ssl_certfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/stanchion_cert.pem"}
+]}.
+
+%% @doc Default key location for https can be overridden with the ssl
+%% config variable, for example:
+{mapping, "stanchion.ssl_keyfile", "riak_cs.stanchion_ssl_keyfile", [
+  {datatype, file},
+  {commented, "$(platform_etc_dir)/stanchion_key.pem"}
+]}.
+
+
 
 %% @doc Enable this to allow the creation of an admin user when
 %% setting up a system. It is recommended to only enable this
@@ -83,6 +125,13 @@
 %% @doc admin.secret is deprecated.
 {mapping, "admin.secret", "riak_cs.admin_secret", [
   {datatype, string},
+  hidden
+]}.
+
+%% @doc {auth_bypass, {{auth_bypass}} } ,
+{mapping, "auth_bypass", "riak_cs.auth_bypass", [
+  {datatype, {flag, on, off}},
+  {default, off},
   hidden
 ]}.
 
