@@ -162,7 +162,7 @@ stanchion_process_specs() ->
             {ok, false} ->
                 WebConfig1
         end,
-    Web = #{id => webmachine_mochiweb,
+    Web = #{id => stanchion_webmachine,
             start => {webmachine_mochiweb, start, [WebConfig]},
             restart => permanent,
             shutdown => 5000,
