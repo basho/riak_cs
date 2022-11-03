@@ -73,17 +73,6 @@ default_config_test() ->
                                                {riak_cs_access_log_handler, []}]),
     cuttlefish_unit:assert_config(Config, "webmachine.server_name", "Riak CS"),
 
-    %% {ok, [ConsoleLog, ErrorLog]} = cuttlefish_unit:path(cuttlefish_variable:tokenize("lager.handlers"), Config),
-    %% cuttlefish_unit:assert_config([ConsoleLog], "lager_file_backend", [{file, "./log/console.log"},
-    %%                                                                  {level, info},
-    %%                                                                  {size, 10485760},
-    %%                                                                  {date, "$D0"},
-    %%                                                                  {count, 5}]),
-    %% cuttlefish_unit:assert_config([ErrorLog], "lager_file_backend", [{file, "./log/error.log"},
-    %%                                                                {level, error},
-    %%                                                                {size, 10485760},
-    %%                                                                {date, "$D0"},
-    %%                                                                {count, 5}]),
    cuttlefish_unit:assert_not_configured(Config, "riak_cs.supercluster_members"),
    cuttlefish_unit:assert_config(Config, "riak_cs.supercluster_weight_refresh_interval", 900),
 %%    cuttlefish_unit:assert_config(Config, "vm_args.+scl", false),
@@ -182,7 +171,7 @@ wm_log_config_test_() ->
      end,
      fun(AssertAlog) ->
              [{"Default access log directory",
-               ?_test(AssertAlog([{["log", "access", "dir"], "$(platform_log_dir)"}],
+               ?_test(AssertAlog([{["log", "access", "dir"], "./log"}],
                                  ["./log"]))},
               {"Customized access log directory",
                ?_test(AssertAlog([{["log", "access", "dir"], "/path/to/custom/dir/"}],
@@ -191,7 +180,7 @@ wm_log_config_test_() ->
                ?_test(AssertAlog([],
                                  ["./log"]))},
               {"Disable access log",
-               ?_test(AssertAlog([{["log", "access", "dir"], "$(platform_log_dir)"},
+               ?_test(AssertAlog([{["log", "access", "dir"], "./log"},
                                   {["log", "access"], "off"}],
                                  no_alog))}
              ]
@@ -242,7 +231,7 @@ supercluster_weight_refresh_interval_test_() ->
     ].
 
 schema_files() ->
-    ["priv/riak_cs.schema"].
+    ["apps/riak_cs/priv/riak_cs.schema"].
 
 context() ->
     {ok, Context} = file:consult("rel/vars.config"),
