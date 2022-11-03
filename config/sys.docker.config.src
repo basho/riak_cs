@@ -6,7 +6,7 @@
       {platform_bin_dir, ${PLATFORM_BIN_DIR}},
       {dtrace_support, false},
       {proxy_get, ${PROXY_GET}},
-      {cs_version,30000},
+      {cs_version,30100},  %% to match values in include/riak_cs.hrl and rel/vars.config and others in rel/pkg/
       {fold_objects_for_list_keys, ${FOLD_OBJECTS_FOR_LIST_KEYS}},
       {usage_request_limit, ${USAGE_REQUEST_LIMIT}},
       {storage_archive_period, ${STORAGE_ARCHIVE_PERIOD}},

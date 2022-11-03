@@ -23,6 +23,7 @@
 -compile(export_all).
 -compile(nowarn_export_all).
 
+-include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 default_config_test() ->
@@ -38,7 +39,7 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", 030000),
+    cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", ?RCS_VERSION),
     cuttlefish_unit:assert_config(Config, "riak_cs.proxy_get", false),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.rewrite_module"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),

@@ -22,6 +22,8 @@
 -include("manifest.hrl").
 -include("moss.hrl").
 
+-define(RCS_VERSION, 030100).
+
 -type riak_client() :: pid().
 
 -record(context, {start_time :: undefined | erlang:timestamp(),
