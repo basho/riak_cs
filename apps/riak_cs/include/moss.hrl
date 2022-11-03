@@ -89,6 +89,7 @@
 -define(ACCESS_BUCKET, <<"moss.access">>).
 -define(STORAGE_BUCKET, <<"moss.storage">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
+-define(SERVICE_BUCKET, <<"moss.service">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
 
@@ -96,5 +97,7 @@
 -define(MD_ACL, <<"X-Moss-Acl">>).
 -define(MD_POLICY, <<"X-Rcs-Policy">>).
 -define(MD_VERSIONING, <<"X-Rcs-Versioning">>).
+
+-define(STANCHION_DETAILS_KEY, <<"stanchion">>).
 
 -endif.

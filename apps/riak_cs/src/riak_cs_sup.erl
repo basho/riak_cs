@@ -67,7 +67,8 @@ init2(Options) ->
     RCSChildren =
         case Mode of
             M when M == auto;
-                   M == riak_cs_only ->
+                   M == riak_cs_only;
+                   M == riak_cs_with_stanchion ->
                 riak_cs_stats:init(),
                 application:set_env(webmachine, rewrite_module,
                                     proplists:get_value(rewrite_module, Options)),
@@ -76,18 +77,17 @@ init2(Options) ->
                 []
         end,
     StanchionChildren =
-        case Mode of
-            stanchion_only ->
+        case do_we_get_to_run_stanchion(Mode) of
+            {use_this, HostPort} ->
+                ok = apply_cluster_stanchion_details(HostPort),
                 stanchion_stats:init(),
                 stanchion_process_specs();
-            auto ->
-                case do_we_get_to_run_stanchion() of
-                    true ->
-                        stanchion_stats:init(),
-                        stanchion_process_specs();
-                    false ->
-                        []
-                end
+            use_ours ->
+                Host = this_host_addr(),
+                {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
+                ok = save_cluster_stanchion_details({Host, Port}),
+                stanchion_stats:init(),
+                stanchion_process_specs()
         end,
     {ok, {#{strategy => one_for_one,
             intensity => 10,
@@ -175,9 +175,84 @@ stanchion_process_specs() ->
     [ServerSup, Web].
 
 
-do_we_get_to_run_stanchion() ->
-    logger:info("Do we get to run stanchion? yes"),
-    true.
+
+do_we_get_to_run_stanchion(Mode) ->
+    case read_cluster_stanchion_data() of
+        {ok, {Host, Port}} when Mode == auto ->
+            logger:info("found stanchion details, and will use ~s:~b", [Host, Port]),
+            {use_saved, {Host, Port}};
+        {ok, {SavedHost, SavedPort}}
+          when Mode == riak_cs_with_stanchion;
+               Mode == stanchion_only ->
+            {ok, {ConfiguredHost, ConfiguredPort}} = application:get_env(riak_cs, stanchion_listener),
+            case this_host_addr() of
+                ConfiguredHost when ConfiguredPort == SavedPort ->
+                    %% we read what we must have saved before
+                    {use_saved, {SavedHost, SavedPort}};
+                _ ->
+                    logger:error("this node is configured to run stanchion but"
+                                 " stanchion has already been started at ~s:~b", [SavedHost, SavedPort]),
+                    conflicting_stanchion_configuration
+            end;
+        {error, notfound} ->
+            logger:info("no stanchion_host saved; going to start stanchion on this node"),
+            use_ours
+    end.
+
+apply_cluster_stanchion_details({Host, Port}) ->
+    application:set_env(riak_cs, stanchion_host, Host),
+    application:set_env(riak_cs, stanchion_port, Port),
+    ok.
+
+read_cluster_stanchion_data() ->
+    {ok, Pbc} = riak_connection(),
+    case riak_cs_pbc:get_sans_stats(Pbc, ?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
+                                    [{notfound_ok, false}],
+                                    riak_cs_config:get_user_timeout() div 10) of
+        {ok, Obj} ->
+            case riakc_obj:value_count(Obj) of
+                1 ->
+                    StanchionDetails = binary_to_term(riakc_obj:get_value(Obj)),
+                    {ok, StanchionDetails};
+                0 ->
+                    {error, notfound};
+                N ->
+                    Values = [binary_to_term(Value) ||
+                                 Value <- riakc_obj:get_values(Obj),
+                                 Value /= <<>>  % tombstone
+                             ],
+                    logger:warning("Read stanchion details riak object has ~b siblings."
+                                   " Please select a riak_cs node, reconfigure it with operation_mode = riak_cs_with_stanchion (or stanchion_only),"
+                                   " configure rest with operation_mode = riak_cs_only, and restart all nodes", [N]),
+                    {ok, hd(Values)}
+            end;
+        _ ->
+            {error, notfound}
+    end.
+
+save_cluster_stanchion_details(HostPort) ->
+    logger:info("pretend we saved stanchion details: ~p", [HostPort]),
+    ok.
+
+this_host_addr() ->
+    {ok, Ifs} = inet:getifaddr(),
+    case lists:filtermap(
+           fun({_If, PL}) ->
+                   case proplists:get_value(addr, PL) of
+                       Defined when Defined /= {127,0,0,1},
+                                    Defined /= {0,0,0,0} ->
+                           Defined;
+                       _ ->
+                           false
+                   end
+           end, Ifs) of
+        [IP] ->
+            IP;
+        [IP|_] ->
+            logger:warning("This host has multiple network interfaces configured."
+                           " Selecting ~p to advrtise as stanchion_host to other cluster nodes", [IP]),
+            IP
+    end.
 
 get_option_val({Option, Default}) ->
     handle_get_env_result(Option, get_env(Option), Default);
@@ -298,3 +373,16 @@ add_admin_dispatch_table(Config) ->
     UpdDispatchTable = proplists:get_value(dispatch, Config) ++
         riak_cs_web:admin_api_dispatch_table(),
     [{dispatch, UpdDispatchTable} | proplists:delete(dispatch, Config)].
+
+
+riak_connection() ->
+    {Host, Port} = riak_cs_config:riak_host_port(),
+    Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
+                  {ok, ConfigValue} ->
+                      ConfigValue;
+                  undefined ->
+                      10000
+              end,
+    StartOptions = [{connect_timeout, Timeout},
+                    {auto_reconnect, true}],
+    riakc_pb_socket:start_link(Host, Port, StartOptions).
