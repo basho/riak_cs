@@ -53,9 +53,9 @@
 
 -include("rts.hrl").
 -ifdef(TEST).
--ifdef(EQC).
+-ifdef(PROPER).
 -compile([export_all]).
--include_lib("eqc/include/eqc.hrl").
+-include_lib("proper/include/proper.hrl").
 -endif.
 -include_lib("eunit/include/eunit.hrl").
 -endif.
