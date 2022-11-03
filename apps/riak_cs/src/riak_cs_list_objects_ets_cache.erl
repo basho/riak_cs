@@ -53,11 +53,9 @@
 
 -define(DICTMODULE, dict).
 
--type dictionary() :: dict:dict().
-
 -record(state, {tid :: ets:tid(),
-                monitor_to_timer = ?DICTMODULE:new() :: dictionary(),
-                key_to_monitor = ?DICTMODULE:new() :: dictionary()}).
+                monitor_to_timer = dict:new() :: dict:dict(),
+                key_to_monitor = dict:new() :: dict:dict()}).
 
 -type state() :: #state{}.
 -type cache_lookup_result() :: {true, [binary()]} | false.
@@ -244,8 +242,8 @@ update_state_with_refs(CacheKey, MonitorPid, State) ->
 update_state_with_refs_helper(MonitorRef, TimerRef, CacheKey,
                               State=#state{monitor_to_timer=MonToTimer,
                                            key_to_monitor=KeyToMon}) ->
-    NewMonToTimer = ?DICTMODULE:store(MonitorRef, {TimerRef, CacheKey}, MonToTimer),
-    NewKeyToMon = ?DICTMODULE:store(TimerRef, MonitorRef, KeyToMon),
+    NewMonToTimer = dict:store(MonitorRef, {TimerRef, CacheKey}, MonToTimer),
+    NewKeyToMon = dict:store(TimerRef, MonitorRef, KeyToMon),
     State#state{monitor_to_timer=NewMonToTimer,
                 key_to_monitor=NewKeyToMon}.
 
@@ -260,7 +258,7 @@ handle_down(MonitorRef, State=#state{monitor_to_timer=MonToTimer}) ->
     NewMonToTimer = remove_timer(MonitorRef, MonToTimer),
     State#state{monitor_to_timer=NewMonToTimer}.
 
--spec remove_monitor(binary(), dictionary()) -> dictionary().
+-spec remove_monitor(binary(), dict:dict()) -> dict:dict().
 remove_monitor(ExpiredKey, KeyToMon) ->
     RefResult = safe_fetch(ExpiredKey, KeyToMon),
     case RefResult of
@@ -269,9 +267,9 @@ remove_monitor(ExpiredKey, KeyToMon) ->
         {error, _Reason} ->
             true
     end,
-    ?DICTMODULE:erase(ExpiredKey, KeyToMon).
+    dict:erase(ExpiredKey, KeyToMon).
 
--spec remove_timer(reference(), dictionary()) -> dictionary().
+-spec remove_timer(reference(), dict:dict()) -> dict:dict().
 remove_timer(MonitorRef, MonToTimer) ->
     RefResult = safe_fetch(MonitorRef, MonToTimer),
     _ = case RefResult of
@@ -282,13 +280,13 @@ remove_timer(MonitorRef, MonToTimer) ->
         {error, _Reason} ->
             true
     end,
-    ?DICTMODULE:erase(MonitorRef, MonToTimer).
+    dict:erase(MonitorRef, MonToTimer).
 
--spec safe_fetch(Key :: term(), Dict :: dictionary()) ->
+-spec safe_fetch(Key :: term(), Dict :: dict:dict()) ->
     {ok, term()} | {error, term()}.
 safe_fetch(Key, Dict) ->
     try
-        {ok, ?DICTMODULE:fetch(Key, Dict)}
+        {ok, dict:fetch(Key, Dict)}
     catch error:Reason ->
             {error, Reason}
     end.
