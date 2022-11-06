@@ -23,6 +23,10 @@
        {ref,"098efad8f85dfe556d64e2cf6ce31f2075808f67"}},
   1},
  {<<"quickrand">>,{pkg,<<"quickrand">>,<<"2.0.5">>},1},
+ {<<"riak_cs_multibag">>,
+  {git,"https://github.com/TI-Tokyo/riak_cs_multibag.git",
+       {ref,"0dcb8ef180d745ae7d8a57e21d4b2f97565271af"}},
+  0},
  {<<"riak_pb">>,
   {git,"https://github.com/basho/riak_pb.git",
        {ref,"b7abca90e4c708073021d2c4e18c896f1a10b838"}},
@@ -37,7 +41,6 @@
   0},
  {<<"setup">>,{pkg,<<"setup">>,<<"2.1.0">>},1},
  {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.5">>},0},
- {<<"uuid_erl">>,{pkg,<<"uuid_erl">>,<<"2.0.5">>},0},
  {<<"webmachine">>,{pkg,<<"webmachine">>,<<"1.11.1">>},0}]}.
 [
 {pkg_hash,[
@@ -51,7 +54,6 @@
  {<<"quickrand">>, <<"06FCAD85CB47D5C85C51D6BC9C84A082501BA098A89D64AD0A2F69599E034C04">>},
  {<<"setup">>, <<"05F69185A5EB71474C9BC6BA892565651EC7507791F85632B7B914DBFE130510">>},
  {<<"uuid">>, <<"60FAEEB7EDFD40847ED13CB0DD1044BAABE4E79A00C0CA9C4D13A073914B1016">>},
- {<<"uuid_erl">>, <<"60FAEEB7EDFD40847ED13CB0DD1044BAABE4E79A00C0CA9C4D13A073914B1016">>},
  {<<"webmachine">>, <<"422BEAD629F3D6C10FB0F24BE4CEE9648338F90099072AE091FADF86BA70C53F">>}]},
 {pkg_hash_ext,[
  {<<"bear">>, <<"157B67901ADF84FF0DA6EAE035CA1292A0AC18AA55148154D8C582B2C68959DB">>},
@@ -64,6 +66,5 @@
  {<<"quickrand">>, <<"252CF0493570EBF1A58985CB71990982CDDCD4396B6427F1E10CF58924C1C052">>},
  {<<"setup">>, <<"EFD072578F0CF85BEA96CAAFFC7ADB0992398272522660A136E10567377071C5">>},
  {<<"uuid">>, <<"E54373262CA88401689277947C54B95E9ECBC977BD5C57C9DD44AD9DA278E360">>},
- {<<"uuid_erl">>, <<"E54373262CA88401689277947C54B95E9ECBC977BD5C57C9DD44AD9DA278E360">>},
  {<<"webmachine">>, <<"4914961217736701CADA1345D7C79C6DB50A636CF7BC6C757DE923B7C7D70B21">>}]}
 ].
