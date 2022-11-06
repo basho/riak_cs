@@ -34,7 +34,7 @@
 -include("riak_cs.hrl").
 
 -define(OPTIONS, [connection_pools,
-                  {listener, {"0.0.0.0", 80}},
+                  listener,
                   admin_listener,
                   ssl,
                   admin_ssl,
@@ -132,10 +132,7 @@ rcs_process_specs() ->
         ++ riak_cs_mb_helper:process_specs().
 
 stanchion_process_specs() ->
-    {Ip, Port} = case application:get_env(riak_cs, stanchion_listener) of
-        {ok, {_, _} = HostPort} -> HostPort;
-        undefined -> {"0.0.0.0", 80}
-    end,
+    {ok, {Ip, Port}} = application:get_env(riak_cs, stanchion_listener),
 
     %% Hide any bags from user-facing parts.
     case application:get_env(riak_cs, supercluster_members) of
