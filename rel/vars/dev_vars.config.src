@@ -23,7 +23,7 @@
 {admin_ip,          "0.0.0.0"}.
 {admin_port,        @ADMINPORT@}.
 {riak_ip,           "127.0.0.1"}.
-{riak_pb_port,      @RIAKPBPORT@}.
+{riak_pb_port,      8087}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
 {stanchion_ip,      "0.0.0.0"}.
