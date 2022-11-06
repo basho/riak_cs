@@ -279,7 +279,7 @@ calculate_signature_v4(SecretAccessKey,
     mochihex:to_hex(hmac_sha256(SigningKey, StringToSign)).
 
 hmac_sha256(Key, Data) ->
-    crypto:hmac(sha256, Key, Data).
+    crypto:mac(hmac, sha256, Key, Data).
 
 hex_sha256hash(Data) ->
     mochihex:to_hex(crypto:hash(sha256, Data)).

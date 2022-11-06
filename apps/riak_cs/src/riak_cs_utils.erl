@@ -215,7 +215,7 @@ reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
-sha_mac(Key,STS) -> crypto:hmac(sha, Key,STS).
+sha_mac(Key,STS) -> crypto:mac(hmac, sha, Key,STS).
 
 -spec sha(binary()) -> binary().
 sha(Bin) -> crypto:hash(sha, Bin).
