@@ -41,6 +41,8 @@
                   {operation_mode, auto},
                   {rewrite_module, ?S3_API_MOD}]).
 
+-define(REASONABLY_SMALL_TIMEOUT, 1000).
+
 -type startlink_err() :: {'already_started', pid()} | 'shutdown' | term().
 -type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
 -type proplist() :: proplists:proplist().
@@ -78,7 +80,7 @@ init2(Options) ->
         end,
     StanchionChildren =
         case do_we_get_to_run_stanchion(Mode) of
-            {use_this, HostPort} ->
+            {use_saved, HostPort} ->
                 ok = apply_cluster_stanchion_details(HostPort),
                 stanchion_stats:init(),
                 stanchion_process_specs();
@@ -208,7 +210,7 @@ read_cluster_stanchion_data() ->
     {ok, Pbc} = riak_connection(),
     case riak_cs_pbc:get_sans_stats(Pbc, ?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
                                     [{notfound_ok, false}],
-                                    riak_cs_config:get_user_timeout() div 10) of
+                                    ?REASONABLY_SMALL_TIMEOUT) of
         {ok, Obj} ->
             case riakc_obj:value_count(Obj) of
                 1 ->
@@ -231,26 +233,33 @@ read_cluster_stanchion_data() ->
     end.
 
 save_cluster_stanchion_details(HostPort) ->
-    logger:info("pretend we saved stanchion details: ~p", [HostPort]),
+    {ok, Pbc} = riak_connection(),
+    ok = riak_cs_pbc:put_sans_stats(
+           Pbc, riakc_obj:new(?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY, term_to_binary(HostPort)),
+           ?REASONABLY_SMALL_TIMEOUT),
+    logger:info("saved stanchion details: ~p", [HostPort]),
     ok.
 
 this_host_addr() ->
-    {ok, Ifs} = inet:getifaddr(),
+    {ok, Ifs} = inet:getifaddrs(),
     case lists:filtermap(
            fun({_If, PL}) ->
                    case proplists:get_value(addr, PL) of
-                       Defined when Defined /= {127,0,0,1},
+                       Defined when Defined /= undefined,
+                                    Defined /= {127,0,0,1},
                                     Defined /= {0,0,0,0} ->
-                           Defined;
+                           {A1, A2, A3, A4} = Defined,
+                           {true, {_If, io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4])}};
                        _ ->
                            false
                    end
            end, Ifs) of
-        [IP] ->
+        [{If, IP}] ->
+            logger:info("This host address is ~p on iface ~s", [IP, If]),
             IP;
-        [IP|_] ->
+        [{If, IP}|_] ->
             logger:warning("This host has multiple network interfaces configured."
-                           " Selecting ~p to advrtise as stanchion_host to other cluster nodes", [IP]),
+                           " Selecting ~p on ~s", [IP, If]),
             IP
     end.
 
