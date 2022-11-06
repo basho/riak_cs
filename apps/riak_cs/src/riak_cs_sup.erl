@@ -72,8 +72,6 @@ init2(Options) ->
                    M == riak_cs_only;
                    M == riak_cs_with_stanchion ->
                 riak_cs_stats:init(),
-                application:set_env(webmachine, rewrite_module,
-                                    proplists:get_value(rewrite_module, Options)),
                 pool_specs(Options) ++ rcs_process_specs() ++ web_specs(Options);
             _ ->
                 []
