@@ -18,15 +18,15 @@
 %%
 %% etc/app.config
 %%
-{cs_ip,             "127.0.0.1"}.
+{cs_ip,             "0.0.0.0"}.
 {cs_port,           @CSPORT@}.
-{admin_ip,          "127.0.0.1"}.
+{admin_ip,          "0.0.0.0"}.
 {admin_port,        @ADMINPORT@}.
 {riak_ip,           "127.0.0.1"}.
 {riak_pb_port,      @RIAKPBPORT@}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
-{stanchion_ip,      "127.0.0.1"}.
+{stanchion_ip,      "0.0.0.0"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
 {cs_version,        030100}.
