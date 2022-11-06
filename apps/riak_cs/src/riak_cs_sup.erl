@@ -66,6 +66,9 @@ init([]) ->
 
 init2(Options) ->
     Mode = proplists:get_value(operation_mode, Options),
+    ThisHostAddr = this_host_addr(),
+    {ok, Pbc} = riak_connection(),
+    ok = ensure_service_bucket_props(Pbc),
     RCSChildren =
         case Mode of
             M when M == auto;
@@ -77,15 +80,13 @@ init2(Options) ->
                 []
         end,
     StanchionChildren =
-        case do_we_get_to_run_stanchion(Mode) of
+        case do_we_get_to_run_stanchion(Mode, ThisHostAddr, Pbc) of
             {use_saved, HostPort} ->
-                ok = apply_cluster_stanchion_details(HostPort),
-                stanchion_stats:init(),
-                stanchion_process_specs();
+                ok = apply_stanchion_details(HostPort),
+                [];
             use_ours ->
-                Host = this_host_addr(),
                 {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
-                ok = save_cluster_stanchion_details({Host, Port}),
+                ok = save_stanchion_data(Pbc, {ThisHostAddr, Port}),
                 stanchion_stats:init(),
                 stanchion_process_specs()
         end,
@@ -93,6 +94,9 @@ init2(Options) ->
             intensity => 10,
             period => 10}, RCSChildren ++ StanchionChildren
           }}.
+
+ensure_service_bucket_props(Pbc) ->
+    riakc_pb_socket:set_bucket(Pbc, ?SERVICE_BUCKET, [{allow_mult, false}]).
 
 rcs_process_specs() ->
     [ #{id => riak_cs_access_archiver_manager,
@@ -140,8 +144,7 @@ stanchion_process_specs() ->
         {ok, Bags} -> application:set_env(riak_cs, bags, Bags)
     end,
 
-    WebConfig1 = [
-                  {dispatch, stanchion_web:dispatch_table()},
+    WebConfig1 = [{dispatch, stanchion_web:dispatch_table()},
                   {ip, Ip},
                   {port, Port},
                   {nodelay, true},
@@ -173,36 +176,53 @@ stanchion_process_specs() ->
 
 
 
-do_we_get_to_run_stanchion(Mode) ->
-    case read_cluster_stanchion_data() of
-        {ok, {Host, Port}} when Mode == auto ->
-            logger:info("found stanchion details, and will use ~s:~b", [Host, Port]),
-            {use_saved, {Host, Port}};
-        {ok, {SavedHost, SavedPort}}
-          when Mode == riak_cs_with_stanchion;
-               Mode == stanchion_only ->
-            {ok, {ConfiguredHost, ConfiguredPort}} = application:get_env(riak_cs, stanchion_listener),
-            case this_host_addr() of
-                ConfiguredHost when ConfiguredPort == SavedPort ->
+do_we_get_to_run_stanchion(Mode, ThisHostAddr, Pbc) ->
+    {ok, {ConfiguredIP, ConfiguredPort}} = application:get_env(riak_cs, stanchion_listener),
+    case read_stanchion_data(Pbc) of
+
+        {ok, {{Host, Port}, Node}} when Mode == auto,
+                                        Host == ThisHostAddr,
+                                        Node == node() ->
+            logger:info("read stanchion details previously saved by this host;"
+                        " will start stanchion again at ~s:~b", [Host, Port]),
+            use_ours;
+
+        {ok, {{Host, Port}, Node}} when Mode == auto ->
+            case check_stanchion_reachable(Host, Port) of
+                ok ->
+                    logger:info("read stanchion details, and will use ~s:~b (on node ~s)",
+                                [Host, Port, Node]),
+                    {use_saved, {Host, Port}};
+                Error ->
+                    logger:warning("stanchion at ~s:~b not reachable (~p); will set it up here", [Host, Port, Error]),
+                    use_ours
+            end;
+
+        {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
+                                                  Mode == stanchion_only ->
+            case ThisHostAddr of
+                ConfiguredIP when ConfiguredPort == SavedPort,
+                                  Node == node() ->
                     %% we read what we must have saved before
                     {use_saved, {SavedHost, SavedPort}};
                 _ ->
                     logger:error("this node is configured to run stanchion but"
-                                 " stanchion has already been started at ~s:~b", [SavedHost, SavedPort]),
+                                 " stanchion has already been started at ~s:~b",
+                                 [SavedHost, SavedPort]),
                     conflicting_stanchion_configuration
             end;
-        {error, notfound} ->
-            logger:info("no stanchion_host saved; going to start stanchion on this node"),
+
+        _ ->
+            logger:info("no previously saved stanchion details; going to start stanchion on this node"),
             use_ours
     end.
 
-apply_cluster_stanchion_details({Host, Port}) ->
+apply_stanchion_details({Host, Port}) ->
     application:set_env(riak_cs, stanchion_host, Host),
     application:set_env(riak_cs, stanchion_port, Port),
     ok.
 
-read_cluster_stanchion_data() ->
-    {ok, Pbc} = riak_connection(),
+read_stanchion_data(Pbc) ->
     case riak_cs_pbc:get_sans_stats(Pbc, ?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
                                     [{notfound_ok, false}],
                                     ?REASONABLY_SMALL_TIMEOUT) of
@@ -227,12 +247,12 @@ read_cluster_stanchion_data() ->
             {error, notfound}
     end.
 
-save_cluster_stanchion_details(HostPort) ->
-    {ok, Pbc} = riak_connection(),
+save_stanchion_data(Pbc, HostPort) ->
     ok = riak_cs_pbc:put_sans_stats(
-           Pbc, riakc_obj:new(?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY, term_to_binary(HostPort)),
+           Pbc, riakc_obj:new(?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
+                              term_to_binary({HostPort, node()})),
            ?REASONABLY_SMALL_TIMEOUT),
-    logger:info("saved stanchion details: ~p", [HostPort]),
+    logger:info("saved stanchion details: ~p", [{HostPort, node()}]),
     ok.
 
 this_host_addr() ->
@@ -257,6 +277,12 @@ this_host_addr() ->
                            " Selecting ~p on ~s", [IP, If]),
             IP
     end.
+
+check_stanchion_reachable(Host, Port) ->
+    {ok, UseSSL} = application:get_env(riak_cs, stanchion_ssl),
+    velvet:ping(Host, Port, UseSSL).
+
+
 
 get_option_val({Option, Default}) ->
     handle_get_env_result(Option, get_env(Option), Default);
