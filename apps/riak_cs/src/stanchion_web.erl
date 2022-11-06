@@ -32,6 +32,7 @@ dispatch_table() ->
             undefined ->         false
         end,
     [
+     {["ping"], stanchion_wm_ping, [{auth_bypass, true}]},
      {["buckets"], stanchion_wm_buckets, [{auth_bypass, AuthBypass}]},
      {["buckets", bucket, "acl"], stanchion_wm_acl, [{auth_bypass, AuthBypass}]},
      {["buckets", bucket, "policy"], stanchion_wm_policy, [{auth_bypass, AuthBypass}]},

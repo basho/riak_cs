@@ -303,7 +303,7 @@ root_url(Ip, Port, false) ->
 %% @doc Assemble the URL for the ping resource
 -spec ping_url(string(), pos_integer(), boolean()) -> string().
 ping_url(Ip, Port, Ssl) ->
-    lists:flatten([root_url(Ip, Port, Ssl), "ping/"]).
+    lists:flatten([root_url(Ip, Port, Ssl), "/ping"]).
 
 %% @doc Assemble the path for a bucket request
 -spec buckets_path(binary()) -> string().
