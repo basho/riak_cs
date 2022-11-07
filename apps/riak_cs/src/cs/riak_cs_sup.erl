@@ -90,6 +90,7 @@ init2(Options) ->
                 stanchion_stats:init(),
                 stanchion_process_specs()
         end,
+    ok = riakc_pb_socket:stop(Pbc),
     {ok, {#{strategy => one_for_one,
             intensity => 10,
             period => 10}, RCSChildren ++ StanchionChildren
