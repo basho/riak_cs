@@ -24,7 +24,7 @@
 -export([check_no_multipart_uploads/2]).
 
 -include("stanchion.hrl").
--include_lib("riak_cs/include/manifest.hrl").
+-include("manifest.hrl").
 
 
 check_no_multipart_uploads(Bucket, RiakPid) ->

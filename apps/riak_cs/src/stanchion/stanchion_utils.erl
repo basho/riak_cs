@@ -52,8 +52,8 @@
         ]).
 
 -include("stanchion.hrl").
--include_lib("riak_cs/include/manifest.hrl").
--include_lib("riak_cs/include/moss.hrl").
+-include("manifest.hrl").
+-include("moss.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
