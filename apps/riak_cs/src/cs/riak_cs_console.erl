@@ -46,7 +46,7 @@ version([]) ->
     ok.
 
 status([]) ->
-    Stats = riak_cs_stats:get_stats(),
+    Stats = riak_cs_stats:get_stats() ++ stanchion_stats:get_stats(),
     _ = [io:format("~p : ~p~n", [Name, Value])
          || {Name, Value} <- Stats],
     ok.
