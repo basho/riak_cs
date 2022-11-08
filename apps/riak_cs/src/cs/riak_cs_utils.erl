@@ -540,13 +540,13 @@ this_host_addr() ->
                                     Defined /= {127,0,0,1},
                                     Defined /= {0,0,0,0} ->
                            {A1, A2, A3, A4} = Defined,
-                           {true, {_If, io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4])}};
+                           {true, {_If, lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]))}};
                        _ ->
                            false
                    end
            end, Ifs) of
         [{If, IP}] ->
-            logger:info("this host address is ~s on iface ~s", [IP, If]),
+            logger:debug("this host address is ~s on iface ~s", [IP, If]),
             IP;
         [{If, IP}|_] ->
             logger:warning("This host has multiple network interfaces configured."

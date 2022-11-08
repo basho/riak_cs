@@ -23,17 +23,19 @@
 
 -module(velvet).
 
--export([create_bucket/5,
-         create_user/5,
-         delete_bucket/5,
-         ping/3,
-         set_bucket_acl/6,
-         set_bucket_policy/6,
-         set_bucket_versioning/6,
-         delete_bucket_policy/5,
-         update_user/6
+-export([create_bucket/3,
+         create_user/3,
+         delete_bucket/3,
+         ping/0,
+         set_bucket_acl/4,
+         set_bucket_policy/4,
+         set_bucket_versioning/4,
+         delete_bucket_policy/3,
+         update_user/4
          % @TODO: update_bucket/3
         ]).
+
+-define(MAX_REQUEST_RETRIES, 3).
 
 %% ===================================================================
 %% Public API
@@ -41,15 +43,11 @@
 
 %% @doc Create a bucket for a requesting party.
 -spec create_bucket(string(),
-                    pos_integer(),
-                    string(),
                     string(),
                     [{atom(), term()}]) -> ok | {error, term()}.
-create_bucket(Ip, Port, ContentType, BucketDoc, Options) ->
-    Ssl = proplists:get_value(ssl, Options, true),
+create_bucket(ContentType, BucketDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = buckets_path(<<>>),
-    Url = url(Ip, Port, Ssl, Path),
     Headers0 = [{"Content-Md5", content_md5(BucketDoc)},
                 {"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
@@ -64,7 +62,7 @@ create_bucket(Ip, Port, ContentType, BucketDoc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(post, Url, [201], ContentType, Headers, BucketDoc) of
+    case request(post, Path, [201], ContentType, Headers, BucketDoc) of
         {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -75,15 +73,11 @@ create_bucket(Ip, Port, ContentType, BucketDoc, Options) ->
 
 %% @doc Create a bucket for a requesting party.
 -spec create_user(string(),
-                  pos_integer(),
-                  string(),
                   string(),
                   [{atom(), term()}]) -> ok | {error, term()}.
-create_user(Ip, Port, ContentType, UserDoc, Options) ->
-    Ssl = proplists:get_value(ssl, Options, true),
+create_user(ContentType, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path([]),
-    Url = url(Ip, Port, Ssl, Path),
     Headers0 = [{"Content-Md5", content_md5(UserDoc)},
                 {"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
@@ -98,7 +92,7 @@ create_user(Ip, Port, ContentType, UserDoc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(post, Url, [201], ContentType, Headers, UserDoc) of
+    case request(post, Path, [201], ContentType, Headers, UserDoc) of
         {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -109,17 +103,13 @@ create_user(Ip, Port, ContentType, UserDoc, Options) ->
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket(string(),
-                    pos_integer(),
-                    binary(),
+-spec delete_bucket(binary(),
                     string(),
                     [{atom(), term()}]) -> ok | {error, term()}.
-delete_bucket(Ip, Port, Bucket, Requester, Options) ->
-    Ssl = proplists:get_value(ssl, Options, true),
+delete_bucket(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
-    Path = buckets_path(Bucket),
-    Url = url(Ip, Port, Ssl, stringy(Path ++ QS)),
+    Path = buckets_path(Bucket) ++ QS,
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->
@@ -133,7 +123,7 @@ delete_bucket(Ip, Port, Bucket, Requester, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(delete, Url, [204], Headers) of
+    case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -143,10 +133,9 @@ delete_bucket(Ip, Port, Bucket, Requester, Options) ->
     end.
 
 %% @doc Ping the server by requesting the "/ping" resource.
--spec ping(string(), pos_integer(), boolean()) -> ok | {error, term()}.
-ping(Ip, Port, Ssl) ->
-    Url = ping_url(Ip, Port, Ssl),
-    case request(get, Url, [200, 204]) of
+-spec ping() -> ok | {error, term()}.
+ping() ->
+    case request(get, "/ping", [200, 204]) of
         {ok, {{_, _Status, _}, _Headers, _Body}} ->
             ok;
         {error, Error} ->
@@ -154,51 +143,41 @@ ping(Ip, Port, Ssl) ->
     end.
 
 %% @doc Create a bucket for a requesting party.
--spec set_bucket_acl(string(),
-                     inet:port_number(),
-                     binary(),
+-spec set_bucket_acl(binary(),
                      string(),
                      string(),
                      [{atom(), term()}]) -> ok | {error, term()}.
-set_bucket_acl(Ip, Port, Bucket, ContentType, AclDoc, Options) ->
+set_bucket_acl(Bucket, ContentType, AclDoc, Options) ->
     Path = buckets_path(Bucket, acl),
-    update_bucket(Ip, Port, Path, ContentType, AclDoc, Options, 204).
+    update_bucket(Path, ContentType, AclDoc, Options, 204).
 
 %% @doc Set bucket policy
--spec set_bucket_policy(string(),
-                        inet:port_number(),
-                        binary(),
+-spec set_bucket_policy(binary(),
                         string(),
                         string(),
                         proplists:proplist()) -> ok | {error, term()}.
-set_bucket_policy(Ip, Port, Bucket, ContentType, PolicyDoc, Options) ->
+set_bucket_policy(Bucket, ContentType, PolicyDoc, Options) ->
     Path = buckets_path(Bucket, policy),
-    update_bucket(Ip, Port, Path, ContentType, PolicyDoc, Options, 204).
+    update_bucket(Path, ContentType, PolicyDoc, Options, 204).
 
 %% @doc Set bucket versioning
--spec set_bucket_versioning(string(),
-                            inet:port_number(),
-                            binary(),
+-spec set_bucket_versioning(binary(),
                             string(),
                             string(),
                             proplists:proplist()) -> ok | {error, term()}.
-set_bucket_versioning(Ip, Port, Bucket, ContentType, Doc, Options) ->
+set_bucket_versioning(Bucket, ContentType, Doc, Options) ->
     Path = buckets_path(Bucket, versioning),
-    update_bucket(Ip, Port, Path, ContentType, Doc, Options, 204).
+    update_bucket(Path, ContentType, Doc, Options, 204).
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket_policy(string(),
-                           pos_integer(),
-                           binary(),
+-spec delete_bucket_policy(binary(),
                            string(),
                            [{atom(), term()}]) -> ok | {error, term()}.
-delete_bucket_policy(Ip, Port, Bucket, Requester, Options) ->
-    Ssl = proplists:get_value(ssl, Options, true),
+delete_bucket_policy(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
-    Path = buckets_path(Bucket, policy),
-    Url = url(Ip, Port, Ssl, stringy(Path ++ QS)),
+    Path = buckets_path(Bucket, policy) ++ QS,
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->
@@ -212,7 +191,7 @@ delete_bucket_policy(Ip, Port, Bucket, Requester, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(delete, Url, [204], Headers) of
+    case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -223,16 +202,12 @@ delete_bucket_policy(Ip, Port, Bucket, Requester, Options) ->
 
 %% @doc Update a user record
 -spec update_user(string(),
-                  pos_integer(),
-                  string(),
                   string(),
                   string(),
                   [{atom(), term()}]) -> ok | {error, term()}.
-update_user(Ip, Port, ContentType, KeyId, UserDoc, Options) ->
-    Ssl = proplists:get_value(ssl, Options, true),
+update_user(ContentType, KeyId, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path(KeyId),
-    Url = url(Ip, Port, Ssl, Path),
     Headers0 = [{"Content-Md5", content_md5(UserDoc)},
                 {"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
@@ -247,7 +222,7 @@ update_user(Ip, Port, ContentType, KeyId, UserDoc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(put, Url, [204], ContentType, Headers, UserDoc) of
+    case request(put, Path, [204], ContentType, Headers, UserDoc) of
         {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -262,14 +237,12 @@ update_user(Ip, Port, ContentType, KeyId, UserDoc, Options) ->
 
 % @doc send request to stanchion server
 % @TODO merge with create_bucket, create_user, delete_bucket
--spec update_bucket(string(), inet:port_number(), string(),
+-spec update_bucket(string(),
                     string(), string(), proplists:proplist(),
                     pos_integer()) ->
                            ok | {error, term()}.
-update_bucket(Ip, Port, Path, ContentType, Doc, Options, Expect) ->
+update_bucket(Path, ContentType, Doc, Options, Expect) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
-    Ssl = proplists:get_value(ssl, Options, true),
-    Url = url(Ip, Port, Ssl, Path),
     Headers0 = [{"Content-Md5", content_md5(Doc)},
                 {"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
@@ -284,7 +257,7 @@ update_bucket(Ip, Port, Path, ContentType, Doc, Options, Expect) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(put, Url, [Expect], ContentType, Headers, Doc) of
+    case request(put, Path, [Expect], ContentType, Headers, Doc) of
         {ok, {{_, Expect, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
@@ -292,18 +265,6 @@ update_bucket(Ip, Port, Path, ContentType, Doc, Options, Expect) ->
         {error, Error} ->
             {error, Error}
     end.
-
-%% @doc Assemble the root URL for the given client
--spec root_url(string(), pos_integer(), boolean()) -> [string()].
-root_url(Ip, Port, true) ->
-    ["https://", Ip, ":", integer_to_list(Port)];
-root_url(Ip, Port, false) ->
-    ["http://", Ip, ":", integer_to_list(Port)].
-
-%% @doc Assemble the URL for the ping resource
--spec ping_url(string(), pos_integer(), boolean()) -> string().
-ping_url(Ip, Port, Ssl) ->
-    lists:flatten([root_url(Ip, Port, Ssl), "/ping"]).
 
 %% @doc Assemble the path for a bucket request
 -spec buckets_path(binary()) -> string().
@@ -323,12 +284,6 @@ buckets_path(Bucket, versioning) ->
 %% @doc Assemble the URL for a buckets request
 -spec url(string(), pos_integer(), boolean(), [string()]) ->
                          string().
-url(Ip, Port, Ssl, Path) ->
-    lists:flatten(
-      [root_url(Ip, Port, Ssl),
-       Path
-      ]).
-
 %% @doc send an HTTP request where `Expect' is a list
 %% of expected HTTP status codes.
 -spec request(atom(), string(), [pos_integer()]) ->
@@ -351,7 +306,19 @@ request(Method, Url, Expect, Headers) ->
               string(),
               [{string(), string()}],
               string()) -> {ok, {term(), term(), term()}} | {error, term()}.
-request(Method, Url, Expect, ContentType, Headers, Body) ->
+request(Method, Path, Expect, ContentType, Headers, Body) ->
+    request(Method, Path, Expect, ContentType, Headers, Body, ?MAX_REQUEST_RETRIES).
+
+request(Method, Path, _Expect, _ContentType, _Headers, _Body, 0) ->
+    {Ip, Port, Ssl} = riak_cs_utils:stanchion_data(),
+    logger:error("Giving up trying to send a ~s request to stanchion (~s)",
+                 [Method, url(Ip, Port, Ssl, Path)]),
+    {error, stanchion_recovery_failure};
+request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
+    stanchion_migration:validate_stanchion(),
+    {Ip, Port, Ssl} = riak_cs_utils:stanchion_data(),
+    Url = url(Ip, Port, Ssl, Path),
+
     case Method == put orelse
         Method == post of
         true ->
@@ -366,8 +333,23 @@ request(Method, Url, Expect, ContentType, Headers, Body) ->
                 false -> {error, Resp}
             end;
         Error ->
-            Error
+            logger:warning("Error contacting stanchion at ~s: ~p; retrying...", [Url, Error]),
+            ok = stanchion_migration:adopt_stanchion(),
+            request(Method, Path, Expect, ContentType, Headers, Body, Attempt - 1)
     end.
+
+%% @doc Assemble the root URL for the given client
+-spec root_url(string(), pos_integer(), boolean()) -> [string()].
+root_url(Ip, Port, true) ->
+    ["https://", Ip, ":", integer_to_list(Port)];
+root_url(Ip, Port, false) ->
+    ["http://", Ip, ":", integer_to_list(Port)].
+
+url(Ip, Port, Ssl, Path) ->
+    lists:flatten(
+      [root_url(Ip, Port, Ssl),
+       Path
+      ]).
 
 %% @doc Calculate an MD5 hash of a request body.
 -spec content_md5(string()) -> string().

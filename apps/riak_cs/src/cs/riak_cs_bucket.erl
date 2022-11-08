@@ -538,83 +538,52 @@ bucket_exists(Buckets, CheckBucket) ->
 %% @doc Return a closure over a specific function
 %% call to the stanchion client module for either
 %% bucket creation or deletion.
--spec bucket_fun(bucket_operation(),
-                 binary(),
-                 bag_id(),
-                 [] | policy() | acl() | bucket_versioning(),
-                 string(),
-                 {string(), string()},
-                 {string(), pos_integer(), boolean()}) -> function().
-bucket_fun(create, Bucket, BagId, ACL, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(create, Bucket, BagId, ACL, KeyId, AdminCreds) ->
     %% Generate the bucket JSON document
     BucketDoc = bucket_json(Bucket, BagId, ACL, KeyId),
     fun() ->
-            velvet:create_bucket(StanchionIp,
-                                 StanchionPort,
-                                 "application/json",
+            velvet:create_bucket("application/json",
                                  BucketDoc,
-                                 [{ssl, StanchionSSL},
-                                  {auth_creds, AdminCreds}])
+                                 [{auth_creds, AdminCreds}])
     end;
-bucket_fun(update_acl, Bucket, _BagId, ACL, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(update_acl, Bucket, _BagId, ACL, KeyId, AdminCreds) ->
     %% Generate the bucket JSON document for the ACL request
     AclDoc = bucket_acl_json(ACL, KeyId),
     fun() ->
-            velvet:set_bucket_acl(StanchionIp,
-                                  StanchionPort,
-                                  Bucket,
+            velvet:set_bucket_acl(Bucket,
                                   "application/json",
                                   AclDoc,
-                                  [{ssl, StanchionSSL},
-                                   {auth_creds, AdminCreds}])
+                                  [{auth_creds, AdminCreds}])
     end;
-bucket_fun(update_policy, Bucket, _BagId, PolicyJson, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(update_policy, Bucket, _BagId, PolicyJson, KeyId, AdminCreds) ->
     %% Generate the bucket JSON document for the ACL request
     PolicyDoc = bucket_policy_json(PolicyJson, KeyId),
     fun() ->
-            velvet:set_bucket_policy(StanchionIp,
-                                     StanchionPort,
-                                     Bucket,
+            velvet:set_bucket_policy(Bucket,
                                      "application/json",
                                      PolicyDoc,
-                                     [{ssl, StanchionSSL},
-                                      {auth_creds, AdminCreds}])
+                                     [{auth_creds, AdminCreds}])
     end;
-bucket_fun(update_versioning, Bucket, _BagId, VsnOption, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(update_versioning, Bucket, _BagId, VsnOption, KeyId, AdminCreds) ->
     Doc = bucket_versioning_json(VsnOption, KeyId),
     fun() ->
-            velvet:set_bucket_versioning(StanchionIp,
-                                         StanchionPort,
-                                         Bucket,
+            velvet:set_bucket_versioning(Bucket,
                                          "application/json",
                                          Doc,
-                                         [{ssl, StanchionSSL},
-                                          {auth_creds, AdminCreds}])
+                                         [{auth_creds, AdminCreds}])
     end;
-bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(delete_policy, Bucket, _BagId, _, KeyId, AdminCreds) ->
     %% Generate the bucket JSON document for the ACL request
     fun() ->
-            velvet:delete_bucket_policy(StanchionIp,
-                                        StanchionPort,
-                                        Bucket,
+            velvet:delete_bucket_policy(Bucket,
                                         KeyId,
-                                        [{ssl, StanchionSSL},
-                                         {auth_creds, AdminCreds}])
+                                        [{auth_creds, AdminCreds}])
     end;
-bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds, StanchionData) ->
-    {StanchionIp, StanchionPort, StanchionSSL} = StanchionData,
+bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds) ->
     fun() ->
-            velvet:delete_bucket(StanchionIp,
-                                 StanchionPort,
-                                 Bucket,
+            velvet:delete_bucket(Bucket,
                                  KeyId,
-                                 [{ssl, StanchionSSL},
-                                  {auth_creds, AdminCreds}])
+                                 [{auth_creds, AdminCreds}])
     end.
 
 %% @doc Generate a JSON document to use for a bucket
@@ -747,8 +716,7 @@ serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPi
                            BagId,
                            Arg,
                            User?RCS_USER.key_id,
-                           AdminCreds,
-                           riak_cs_utils:stanchion_data()),
+                           AdminCreds),
     %% Make a call to the request serialization service.
     OpResult = BucketFun(),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),

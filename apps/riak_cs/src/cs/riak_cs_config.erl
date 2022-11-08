@@ -63,12 +63,14 @@
          read_before_last_manifest_write/0,
          region/0,
          stanchion/0,
+         set_stanchion/2, set_stanchion/3,
          use_2i_for_storage_calc/0,
          detailed_storage_calc/0,
          quota_modules/0,
          active_delete_threshold/0,
          fast_user_get/0,
-         root_host/0
+         root_host/0,
+         operation_mode/0
         ]).
 
 %% Timeouts hitting Riak
@@ -374,18 +376,21 @@ max_key_length() ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion() -> {string(), pos_integer(), boolean()}.
 stanchion() ->
-    {Host, Port} = case application:get_env(riak_cs, stanchion_host) of
-                       {ok, HostPort} -> HostPort;
-                       undefined ->
-                           {?DEFAULT_STANCHION_IP, ?DEFAULT_STANCHION_PORT}
-                   end,
-    SSL = case application:get_env(riak_cs, stanchion_ssl) of
-              {ok, SSL0} -> SSL0;
-              undefined ->
-                  logger:warning("No ssl flag for stanchion access defined. Using default."),
-                  ?DEFAULT_STANCHION_SSL
-          end,
+    {ok, {Host, Port}} = application:get_env(riak_cs, stanchion_host),
+    {ok, SSL}  = application:get_env(riak_cs, stanchion_ssl),
     {Host, Port, SSL}.
+
+-spec set_stanchion(string(), inet:port()) -> ok.
+set_stanchion(Host, Port) ->
+    application:set_env(riak_cs, stanchion_host, {Host, Port}),
+    ok.
+
+-spec set_stanchion(string(), inet:port(), boolean()) -> ok.
+set_stanchion(Host, Port, Ssl) ->
+    application:set_env(riak_cs, stanchion_host, {Host, Port}),
+    application:set_env(riak_cs, stanchion_ssl, Ssl),
+    ok.
+
 
 %% @doc This options is useful for use case involving high churn and
 %% concurrency on a fixed set of keys and when not using a Riak
@@ -433,6 +438,12 @@ fast_user_get() ->
 -spec root_host() -> string().
 root_host() ->
     get_env(riak_cs, cs_root_host, ?ROOT_HOST).
+
+-spec operation_mode() -> auto | riak_cs_only | stanchion_only | riak_cs_with_stanchion.
+operation_mode() ->
+    {ok, A} = application:get_env(riak_cs, operation_mode),
+    true = (A == auto orelse A == riak_cs_only orelse A == stanchion_only orelse A == riak_cs_with_stanchion),
+    A.
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak
