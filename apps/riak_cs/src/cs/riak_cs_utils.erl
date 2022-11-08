@@ -67,6 +67,7 @@
          stanchion_data/0,
          camel_case/1,
          capitalize/1,
+         this_host_addr/0
         ]).
 
 -include("riak_cs.hrl").
@@ -530,6 +531,27 @@ capitalize([H|T]) -> string:to_upper([H]) ++ T.
 
 
 
+this_host_addr() ->
+    {ok, Ifs} = inet:getifaddrs(),
+    case lists:filtermap(
+           fun({_If, PL}) ->
+                   case proplists:get_value(addr, PL) of
+                       Defined when Defined /= undefined,
+                                    Defined /= {127,0,0,1},
+                                    Defined /= {0,0,0,0} ->
+                           {A1, A2, A3, A4} = Defined,
+                           {true, {_If, io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4])}};
+                       _ ->
+                           false
+                   end
+           end, Ifs) of
+        [{If, IP}] ->
+            logger:info("this host address is ~s on iface ~s", [IP, If]),
+            IP;
+        [{If, IP}|_] ->
+            logger:warning("This host has multiple network interfaces configured."
+                           " Selecting ~p on ~s", [IP, If]),
+            IP
     end.
 
 -ifdef(TEST).
