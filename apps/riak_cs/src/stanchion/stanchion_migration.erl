@@ -98,18 +98,17 @@ do_we_get_to_run_stanchion(Mode, ThisHostAddr, Pbc) ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
     case read_stanchion_data(Pbc) of
 
-        {ok, {{Host, Port}, Node}} when Mode == auto,
-                                        Host == ThisHostAddr,
-                                        Host == ConfiguredIP,
-                                        Port == ConfiguredPort,
-                                        Node == node() ->
-            logger:info("read stanchion details previously saved by us;"
-                        " will start stanchion again at ~s:~b", [Host, Port]),
-            use_ours;
-
         {ok, {{Host, Port}, Node}} when Mode == auto ->
             logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-            {use_saved, {Host, Port}};
+            if Host == ThisHostAddr andalso
+               Port == ConfiguredPort andalso
+               Node == node() ->
+                    logger:info("read stanchion details previously saved by us;"
+                                " will start stanchion again at ~s:~b", [Host, Port]),
+                    use_ours;
+               el/=se ->
+                    {use_saved, {Host, Port}}
+            end;
 
         {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
                                                   Mode == stanchion_only ->

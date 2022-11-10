@@ -26,6 +26,7 @@
 {riak_pb_port,      8087}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
+{stanchion_host,    "127.0.0.1"}.  %% access stanchion when it runs on some other node
 {stanchion_ip,      "0.0.0.0"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
