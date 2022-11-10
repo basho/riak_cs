@@ -50,8 +50,10 @@ validate_stanchion() ->
                     stop_stanchion_here(),
                     ok
             end;
-        _ ->
-            adopt_stanchion()
+        {ok, {{Host, Port}, Node}} ->
+            logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),
+            stop_stanchion_here(),
+            apply_stanchion_details({Host, Port})
     end,
     ok = riakc_pb_socket:stop(Pbc).
 
