@@ -40,19 +40,20 @@ validate_stanchion() ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
     {ok, Pbc} = riak_connection(),
     case read_stanchion_data(Pbc) of
-        {ok, {{Host, Port}, _Node}}
+        {ok, {{Host, Port}, Node}}
           when Host == ConfiguredIP,
-               Port == ConfiguredPort ->
-            case riak_cs_utils:this_host_addr() of
-                Host ->
-                    ok;
-                _ ->
-                    stop_stanchion_here(),
-                    ok
-            end;
+               Port == ConfiguredPort,
+               Node == node() ->
+            ok;
         {ok, {{Host, Port}, Node}} ->
             logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),
-            stop_stanchion_here(),
+            case riak_cs_utils:this_host_addr() of
+                ConfiguredIP when node() == Node ->
+                    stop_stanchion_here(),
+                    ok;
+                _ ->
+                    ok
+            end,
             apply_stanchion_details({Host, Port})
     end,
     ok = riakc_pb_socket:stop(Pbc).
