@@ -601,19 +601,6 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
                                     riak_cs_acl_utils:acl_to_json_term(ACL)] ++
                                BagElement}))).
 
-%% @doc Return a bucket record for the specified bucket name.
--spec bucket_record(binary(), bucket_operation()) -> cs_bucket().
-bucket_record(Name, Operation) ->
-    Action = case Operation of
-                 create -> created;
-                 delete -> deleted;
-                 _ -> undefined
-             end,
-    ?RCS_BUCKET{name=binary_to_list(Name),
-                last_action=Action,
-                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
-                modification_time=os:timestamp()}.
-
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
 %% a list of resolved bucket records.
@@ -720,20 +707,7 @@ serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPi
     %% Make a call to the request serialization service.
     OpResult = BucketFun(),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
-    case OpResult of
-        ok ->
-            BucketRecord = bucket_record(Bucket, BucketOp),
-            case update_user_buckets(User, BucketRecord) of
-                {ok, ignore} ->
-                    OpResult;
-                {ok, UpdUser} ->
-                    riak_cs_user:save_user(UpdUser, UserObj, RcPid)
-            end;
-        {error, {error_status, Status, _, ErrorDoc}} ->
-            handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
-        {error, _} ->
-            OpResult
-    end.
+    OpResult.
 
 %% @doc needs retry for delete op.  409 assumes
 %% MultipartUploadRemaining for now if a new feature that needs retry
@@ -772,34 +746,6 @@ update_bucket_record(Bucket=?RCS_BUCKET{name=Name}) when is_binary(Name) ->
     Bucket?RCS_BUCKET{name=binary_to_list(Name)};
 update_bucket_record(Bucket) ->
     Bucket.
-
-%% @doc Check if a user already has an ownership of
-%% a bucket and update the bucket list if needed.
--spec update_user_buckets(rcs_user(), cs_bucket()) ->
-                                 {ok, ignore} | {ok, rcs_user()}.
-update_user_buckets(User, Bucket) ->
-    Buckets = User?RCS_USER.buckets,
-    %% At this point any siblings from the read of the
-    %% user record have been resolved so the user bucket
-    %% list should have 0 or 1 buckets that share a name
-    %% with `Bucket'.
-    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
-        [] ->
-            {ok, User?RCS_USER{buckets=[Bucket | Buckets]}};
-        [ExistingBucket] ->
-            case
-                (Bucket?RCS_BUCKET.last_action == deleted andalso
-                 ExistingBucket?RCS_BUCKET.last_action == created)
-                orelse
-                (Bucket?RCS_BUCKET.last_action == created andalso
-                 ExistingBucket?RCS_BUCKET.last_action == deleted) of
-                true ->
-                    UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
-                    {ok, User?RCS_USER{buckets=UpdBuckets}};
-                false ->
-                    {ok, ignore}
-            end
-    end.
 
 %% @doc Grab the whole list of Riak CS bucket keys.
 -spec fetch_bucket_keys(riak_client()) -> {ok, [binary()]} | {error, term()}.

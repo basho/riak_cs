@@ -98,18 +98,60 @@ close_riak_connection(Pid) ->
 %% an error if it already exists.
 -spec create_bucket([{term(), term()}]) -> ok | {error, term()}.
 create_bucket(BucketFields) ->
-    %% @TODO Check for missing fields
     Bucket = proplists:get_value(<<"bucket">>, BucketFields, <<>>),
     BagId = proplists:get_value(<<"bag">>, BucketFields, undefined),
     OwnerId = proplists:get_value(<<"requester">>, BucketFields, <<>>),
     AclJson = proplists:get_value(<<"acl">>, BucketFields, []),
     Acl = stanchion_acl_utils:acl_from_json(AclJson),
-    do_bucket_op(Bucket, OwnerId, [{acl, Acl}, {bag, BagId}], create).
+    case riak_connection() of
+        {ok, Pbc} ->
+            OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, Acl}, {bag, BagId}], create, Pbc),
+            OpResult2 =
+                case OpResult1 of
+                    ok ->
+                        BucketRecord = bucket_record(Bucket, create),
+                        {ok, User, UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        UpdUser = update_user_buckets(User, BucketRecord),
+                        riak_cs_user:save_user(UpdUser, UserObj, Pbc);
+                    {error, _} ->
+                        OpResult1
+                end,
+            _ = close_riak_connection(Pbc),
+            OpResult2;
+        Error ->
+            Error
+    end.
+
+bucket_record(Name, Operation) ->
+    Action = case Operation of
+                 create -> created;
+                 delete -> deleted;
+                 _ -> undefined
+             end,
+    ?RCS_BUCKET{name=binary_to_list(Name),
+                last_action=Action,
+                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
+                modification_time=os:timestamp()}.
+
+update_user_buckets(User, Bucket) ->
+    Buckets = User?RCS_USER.buckets,
+    %% At this point any siblings from the read of the
+    %% user record have been resolved so the user bucket
+    %% list should have 0 or 1 buckets that share a name
+    %% with `Bucket'.
+    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
+        [] ->
+            User?RCS_USER{buckets=[Bucket | Buckets]};
+        [ExistingBucket] ->
+            UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
+            User?RCS_USER{buckets=UpdBuckets}
+    end.
+
+
 
 %% @doc Attmpt to create a new user
 -spec create_user([{term(), term()}]) -> ok | {error, riak_connect_failed() | term()}.
 create_user(UserFields) ->
-    %% @TODO Check for missing fields
     UserName = binary_to_list(proplists:get_value(<<"name">>, UserFields, <<>>)),
     DisplayName = binary_to_list(proplists:get_value(<<"display_name">>, UserFields, <<>>)),
     Email = proplists:get_value(<<"email">>, UserFields, <<>>),
@@ -297,10 +339,7 @@ replace_meta(Key, NewValue, MetaVals) ->
 -type riak_connect_failed() :: {riak_connect_failed, tuple()}.
 -spec riak_connection() -> {ok, pid()} | {error, riak_connect_failed()}.
 riak_connection() ->
-    {Host, Port} = case application:get_env(riak_cs, riak_host) of
-                       {ok, {_, _} = HostPort} -> HostPort;
-                       undefined -> {"127.0.0.1",  8087}
-                   end,
+    {ok, {Host, Port}} = application:get_env(riak_cs, riak_host),
     riak_connection(Host, Port).
 
 %% @doc Get a protobufs connection to the riak cluster.
@@ -424,10 +463,6 @@ bucket_empty(Bucket, RiakcPid) ->
                                   Bucket,
                                   ListKeysResult).
 
--spec bucket_empty_handle_list_keys(pid(), binary(),
-                                    {ok, list()} |
-                                    {error, term()}) ->
-    boolean().
 bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
     AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
     %% `lists:any/2' will break out early as soon
@@ -436,56 +471,36 @@ bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
 bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
     false.
 
--spec bucket_empty_any_pred(RiakcPid :: pid(), Bucket :: binary()) ->
-    fun((Key :: binary()) -> boolean()).
 bucket_empty_any_pred(RiakcPid, Bucket) ->
     fun (Key) ->
             key_exists(RiakcPid, Bucket, Key)
     end.
 
-%% @private
-%% `Bucket' should be the raw bucket name,
-%% we'll take care of calling `to_bucket_name'
--spec key_exists(pid(), binary(), binary()) -> boolean().
 key_exists(RiakcPid, Bucket, Key) ->
     key_exists_handle_get_manifests(
       get_manifests(RiakcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION)).
 
-%% @private
--spec key_exists_handle_get_manifests({ok, riakc_obj:riakc_obj(), list()} |
-                                      {error, term()}) ->
-    boolean().
 key_exists_handle_get_manifests({ok, _Object, Manifests}) ->
     active_to_bool(active_manifest_from_response({ok, Manifests}));
 key_exists_handle_get_manifests(Error) ->
     active_to_bool(active_manifest_from_response(Error)).
 
-%% @private
--spec active_to_bool({ok, term()} | {error, notfound}) -> boolean().
 active_to_bool({ok, _Active}) ->
     true;
 active_to_bool({error, notfound}) ->
     false.
 
--spec active_manifest_from_response({ok, orddict:orddict()} |
-                                    {error, notfound}) ->
-    {ok, term()} | {error, notfound}.
 active_manifest_from_response({ok, Manifests}) ->
-    handle_active_manifests(rcs_common_manifest_utils:active_manifest(Manifests));
+    handle_active_manifests(
+      rcs_common_manifest_utils:active_manifest(Manifests));
 active_manifest_from_response({error, notfound}=NotFound) ->
     NotFound.
 
-%% @private
--spec handle_active_manifests({ok, term()} |
-                              {error, no_active_manifest}) ->
-    {ok, term()} | {error, notfound}.
 handle_active_manifests({ok, _Active}=ActiveReply) ->
     ActiveReply;
 handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
-%% @doc Determine if a bucket is exists and is available
-%% for creation or deletion by the inquiring user.
 -spec bucket_available(binary(), fun(), bucket_op(), pid()) -> {true, term()} | {false, atom()}.
 bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
     GetOptions = [{pr, all}],
@@ -530,41 +545,53 @@ bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
             {false, Reason}
     end.
 
-%% @doc Perform an operation on a bucket.
--spec do_bucket_op(binary(), binary(), bucket_op_options(), bucket_op()) ->
-                          ok | {error, term()}.
-do_bucket_op(<<"riak-cs">>, _OwnerId, _Opts, _BucketOp) ->
-    {error, access_denied};
+
 do_bucket_op(Bucket, OwnerId, Opts, BucketOp) ->
+    do_bucket_op(Bucket, OwnerId, Opts, BucketOp, undefined).
+do_bucket_op(<<"riak-cs">>, _OwnerId, _Opts, _BucketOp, _) ->
+    {error, access_denied};
+do_bucket_op(Bucket, OwnerId, Opts, BucketOp, undefined) ->
     case riak_connection() of
-        {ok, RiakPid} ->
+        {ok, Pbc} ->
             %% Buckets operations can only be completed if the bucket exists
             %% and the requesting party owns the bucket.
             try
-                case bucket_available(Bucket, OwnerId, BucketOp, RiakPid) of
-                    {true, BucketObj} ->
-                        Value = case BucketOp of
-                                    create ->            OwnerId;
-                                    update_acl ->        OwnerId;
-                                    update_policy ->     OwnerId;
-                                    delete_policy ->     OwnerId;
-                                    update_versioning -> OwnerId;
-                                    delete ->            ?FREE_BUCKET_MARKER
-                                end,
-                        put_bucket(BucketObj, Value, Opts, RiakPid);
-                    {false, Reason1} ->
-                        {error, Reason1}
-                end
+                do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc)
             catch T:E:ST ->
                     logger:error("Error on updating bucket ~s: ~p. Stacktrace: ~p",
                                  [Bucket, {T, E}, ST]),
                     {error, {T, E}}
             after
-                close_riak_connection(RiakPid)
+                close_riak_connection(Pbc)
             end;
         {error, _} = Else ->
             Else
+    end;
+do_bucket_op(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
+    try
+        do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc)
+    catch T:E:ST ->
+            logger:error("Error on updating bucket ~s: ~p. Stacktrace: ~p",
+                         [Bucket, {T, E}, ST]),
+            {error, {T, E}}
     end.
+
+do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
+    case bucket_available(Bucket, OwnerId, BucketOp, Pbc) of
+        {true, BucketObj} ->
+            Value = case BucketOp of
+                        create ->            OwnerId;
+                        update_acl ->        OwnerId;
+                        update_policy ->     OwnerId;
+                        delete_policy ->     OwnerId;
+                        update_versioning -> OwnerId;
+                        delete ->            ?FREE_BUCKET_MARKER
+                    end,
+            put_bucket(BucketObj, Value, Opts, Pbc);
+        {false, Reason1} ->
+            {error, Reason1}
+    end.
+
 
 %% @doc bucket is ok to delete when bucket is empty. Ongoing multipart
 %% uploads are all supposed to be automatically aborted by Riak CS.
