@@ -24,6 +24,7 @@
 -export([
          version/1,
          status/1,
+         supps/1,
          test/1,
          cluster_info/1,
          audit_bucket_ownership/1,
@@ -50,6 +51,13 @@ status([]) ->
     _ = [io:format("~p : ~p~n", [Name, Value])
          || {Name, Value} <- Stats],
     ok.
+
+supps(Opts) ->
+    io:put_chars(supps:q(validate_supps_options(Opts))).
+
+validate_supps_options(Opts) ->
+    io:format("Opts ~p\n", [Opts]),
+    catch mochijson2:decode(Opts).
 
 test([]) ->
     UserName = "ADMINTESTUSER",

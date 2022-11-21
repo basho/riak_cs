@@ -43,7 +43,8 @@ fi
 usage() {
     echo "Usage: $SCRIPT { version | status | gc | access | storage |"
     echo "                       stanchion | cluster-info | test |"
-    echo "                       cleanup-orphan-multipart | audit-bucket-ownership }"
+    echo "                       cleanup-orphan-multipart | audit-bucket-ownership |}"
+    echo "                       supps }"
 }
 
 # Check the first argument for instructions
@@ -55,6 +56,10 @@ case "$1" in
     status)
         shift
         rpc riak_cs_console status
+        ;;
+    supps)
+        shift
+        rpc riak_cs_console supps "$@"
         ;;
     gc)
         shift

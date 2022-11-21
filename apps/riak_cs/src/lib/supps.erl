@@ -37,23 +37,24 @@ sups() ->
     [riak_cs_sup].
 
 
--spec q(proplists:proplist()) -> ok.
+-spec q(proplists:proplist()) -> string().
 q(Options0) ->
     Nodes = [node() | nodes()],
     Options = extract_options(Options0),
 
+    erlang:put(supps_output, []),
     lists:foreach(
       fun(Node) ->
-              io:format("============ Node: ~s ===========================\n", [Node]),
-              io:format("~11s\t~5s\t~8s\t~.14s~s\n"
-                        "-------------------------------------------------------------\n",
-                        [mem, mq, ths, pid, process]),
+              acc(io_lib:format("============ Node: ~s ===========================\n", [Node])),
+              acc(io_lib:format("~11s\t~5s\t~8s\t~.14s~s\n"
+                                "-------------------------------------------------------------\n",
+                                [mem, mq, ths, pid, process])),
               print(
                 reformat([get_info(Node, P) || P <- sups()], Options),
                 Options, 0)
       end, Nodes
      ),
-    ok.
+    lists:flatten(lists:reverse(erlang:get(supps_output))).
 
 extract_options(PL) ->
     Depth =
@@ -110,7 +111,7 @@ print(#p{name = Name, info = Info, type = worker, pid = Pid},
             Mem = integer_or_blank(memory, Info),
             THS = integer_or_blank(total_heap_size, Info),
             MQ = integer_or_blank(message_queue_len, Info),
-            io:format("~11s\t~5s\t~8s\t~.14s~s~s\n", [Mem, MQ, THS, pid_to_list(Pid), pad(Depth * 2), printable(Name)])
+            acc(io_lib:format("~11s\t~5s\t~8s\t~.14s~s~s\n", [Mem, MQ, THS, pid_to_list(Pid), pad(Depth * 2), printable(Name)]))
     end;
 print(#p{name = Name, children = FF, total_mem = Mem} = P,
       Options = #{filter := Filter}, Depth) ->
@@ -118,8 +119,8 @@ print(#p{name = Name, children = FF, total_mem = Mem} = P,
         no ->
             skip;
         Yes ->
-            io:format("~11b\t~5s\t~8s\t~14s~s~s (~b)\n",
-                      [Mem, "", "", "", pad(Depth * 2), printable(Name), length(FF)]),
+            acc(io_lib:format("~11b\t~5s\t~8s\t~14s~s~s (~b)\n",
+                              [Mem, "", "", "", pad(Depth * 2), printable(Name), length(FF)])),
             lists:foreach(
               fun(F) -> print(F, Options#{filter => maybe_drop_filter(Yes, Filter)}, Depth + 1) end,
               FF
@@ -200,3 +201,6 @@ reformat(PP, #{format := flat, order_by := OrderBy} = Options) ->
                        end, PP1)
     end.
 
+acc(L) ->
+    Q = erlang:get(supps_output),
+    erlang:put(supps_output, [L|Q]).
