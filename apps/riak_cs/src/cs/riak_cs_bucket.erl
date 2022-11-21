@@ -61,10 +61,9 @@
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(rcs_user(), term(), binary(), bag_id(), acl(), riak_client()) ->
-                           ok |
-                           {error, term()}.
-create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
+-spec create_bucket(rcs_user(), riakc_object:riakc_object(), binary(), bag_id(), acl(), riak_client()) ->
+          ok | {error, term()}.
+create_bucket(User, _UserObj, Bucket, BagId, ACL, _RcPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
@@ -81,10 +80,8 @@ create_bucket(User, UserObj, Bucket, BagId, ACL, RcPid) ->
                                          BagId,
                                          ACL,
                                          User,
-                                         UserObj,
                                          create,
-                                         [velvet, create_bucket],
-                                         RcPid);
+                                         [velvet, create_bucket]);
                 false ->
                     {error, invalid_bucket_name}
             end;
@@ -158,9 +155,8 @@ dash_char(Char) ->
 
 %% @doc Delete a bucket
 -spec delete_bucket(rcs_user(), riakc_obj:riakc_obj(), binary(), riak_client()) ->
-                           ok |
-                           {error, remaining_multipart_upload}.
-delete_bucket(User, UserObj, Bucket, RcPid) ->
+          ok | {error, remaining_multipart_upload}.
+delete_bucket(User, _UserObj, Bucket, RcPid) ->
     CurrentBuckets = get_buckets(User),
 
     %% Buckets can only be deleted if they exist
@@ -186,10 +182,8 @@ delete_bucket(User, UserObj, Bucket, RcPid) ->
             serialized_bucket_op(Bucket,
                                  ?ACL{},
                                  User,
-                                 UserObj,
                                  delete,
-                                 [velvet, delete_bucket],
-                                 RcPid);
+                                 [velvet, delete_bucket]);
         false ->
             LocalError
     end.
@@ -292,38 +286,32 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 %% replaced, they cannot be updated.
 -spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl(), riak_client()) ->
                             ok | {error, term()}.
-set_bucket_acl(User, UserObj, Bucket, ACL, RcPid) ->
+set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
-                         UserObj,
                          update_acl,
-                         [velvet, set_bucket_acl],
-                         RcPid).
+                         [velvet, set_bucket_acl]).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), riak_client()) ->
                                ok | {error, term()}.
-set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) ->
+set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
     serialized_bucket_op(Bucket,
                          PolicyJson,
                          User,
-                         UserObj,
                          update_policy,
-                         [velvet, set_bucket_policy],
-                         RcPid).
+                         [velvet, set_bucket_policy]).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), riak_client()) ->
                                   ok | {error, term()}.
-delete_bucket_policy(User, UserObj, Bucket, RcPid) ->
+delete_bucket_policy(User, _UserObj, Bucket, _RcPid) ->
     serialized_bucket_op(Bucket,
                          [],
                          User,
-                         UserObj,
                          delete_policy,
-                         [velvet, delete_bucket_policy],
-                         RcPid).
+                         [velvet, delete_bucket_policy]).
 
 %% @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
@@ -360,14 +348,12 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
 -spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
                             binary(), bucket_versioning(), riak_client()) ->
           ok | {error, term()}.
-set_bucket_versioning(User, UserObj, Bucket, Option, RcPid) ->
+set_bucket_versioning(User, _UserObj, Bucket, Option, _RcPid) ->
     serialized_bucket_op(Bucket,
                          Option,
                          User,
-                         UserObj,
                          update_versioning,
-                         [velvet, set_bucket_versioning],
-                         RcPid).
+                         [velvet, set_bucket_versioning]).
 
 -spec get_bucket_versioning(binary(), riak_client()) ->
           {ok, bucket_versioning()} | {error, term()}.
@@ -689,11 +675,10 @@ resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
     resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
 
 %% @doc Shared code used when doing a bucket creation or deletion.
-serialized_bucket_op(Bucket, Arg, User, UserObj, BucketOp, StatKey, RcPid) ->
-    serialized_bucket_op(Bucket, undefined, Arg, User, UserObj,
-                         BucketOp, StatKey, RcPid).
+serialized_bucket_op(Bucket, Arg, User, BucketOp, StatKey) ->
+    serialized_bucket_op(Bucket, undefined, Arg, User, BucketOp, StatKey).
 
-serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPid) ->
+serialized_bucket_op(Bucket, BagId, Arg, User, BucketOp, StatsKey) ->
     StartTime = os:timestamp(),
     _ = riak_cs_stats:inflow(StatsKey),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -707,7 +692,12 @@ serialized_bucket_op(Bucket, BagId, Arg, User, UserObj, BucketOp, StatsKey, RcPi
     %% Make a call to the request serialization service.
     OpResult = BucketFun(),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
-    OpResult.
+    case OpResult of
+        {error, {error_status, Status, _, ErrorDoc}} ->
+            handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
+        Other ->
+            Other
+    end.
 
 %% @doc needs retry for delete op.  409 assumes
 %% MultipartUploadRemaining for now if a new feature that needs retry

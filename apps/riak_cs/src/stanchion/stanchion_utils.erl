@@ -111,7 +111,7 @@ create_bucket(BucketFields) ->
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
                         {ok, User, UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
-                        UpdUser = update_user_buckets(User, BucketRecord),
+                        UpdUser = update_user_buckets(add, User, BucketRecord),
                         riak_cs_user:save_user(UpdUser, UserObj, Pbc);
                     {error, _} ->
                         OpResult1
@@ -132,21 +132,6 @@ bucket_record(Name, Operation) ->
                 last_action=Action,
                 creation_date=riak_cs_wm_utils:iso_8601_datetime(),
                 modification_time=os:timestamp()}.
-
-update_user_buckets(User, Bucket) ->
-    Buckets = User?RCS_USER.buckets,
-    %% At this point any siblings from the read of the
-    %% user record have been resolved so the user bucket
-    %% list should have 0 or 1 buckets that share a name
-    %% with `Bucket'.
-    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
-        [] ->
-            User?RCS_USER{buckets=[Bucket | Buckets]};
-        [ExistingBucket] ->
-            UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
-            User?RCS_USER{buckets=UpdBuckets}
-    end.
-
 
 
 %% @doc Attmpt to create a new user
@@ -186,7 +171,24 @@ create_user(UserFields) ->
 %% @doc Delete a bucket
 -spec delete_bucket(binary(), binary()) -> ok | {error, term()}.
 delete_bucket(Bucket, OwnerId) ->
-    do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete).
+    case riak_connection() of
+        {ok, Pbc} ->
+            OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete, Pbc),
+            OpResult2 =
+                case OpResult1 of
+                    ok ->
+                        BucketRecord = bucket_record(Bucket, create),
+                        {ok, User, UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        UpdUser = update_user_buckets(delete, User, BucketRecord),
+                        riak_cs_user:save_user(UpdUser, UserObj, Pbc);
+                    {error, _} ->
+                        OpResult1
+                end,
+            _ = close_riak_connection(Pbc),
+            OpResult2;
+        Error ->
+            Error
+    end.
 
 %% Get the root bucket name for either a MOSS object
 %% bucket or the data block bucket name.
@@ -987,3 +989,29 @@ update_user_record([{<<"status">>, Status} | RestUserFields], User, EmailUpdated
 update_user_record([_ | RestUserFields], User, EmailUpdated) ->
 
     update_user_record(RestUserFields, User, EmailUpdated).
+
+
+update_user_buckets(add, User, Bucket) ->
+    Buckets = User?RCS_USER.buckets,
+    %% At this point any siblings from the read of the
+    %% user record have been resolved so the user bucket
+    %% list should have 0 or 1 buckets that share a name
+    %% with `Bucket'.
+    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
+        [] ->
+            User?RCS_USER{buckets=[Bucket | Buckets]};
+        [ExistingBucket] ->
+            UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
+            User?RCS_USER{buckets=UpdBuckets}
+    end;
+update_user_buckets(delete, User, Bucket) ->
+    Buckets = User?RCS_USER.buckets,
+    case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
+        [] ->
+            logger:error("attempt to remove bucket ~s from user ~s who does not own it",
+                         [Bucket?RCS_BUCKET.name, User?RCS_USER.name]),
+            User;
+        [ExistingBucket] ->
+            UpdBuckets = lists:delete(ExistingBucket, Buckets),
+            User?RCS_USER{buckets=UpdBuckets}
+    end.
