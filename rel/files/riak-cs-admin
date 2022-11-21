@@ -102,11 +102,11 @@ case "$1" in
     stanchion)
         shift
         case "$1" in
-            switch|show)
+            show)
                 rpc riak_cs_stanchion_console "$@"
                 ;;
             *)
-                echo "Usage: $SCRIPT stanchion $1 { switch HOST PORT | show }"
+                echo "Usage: $SCRIPT stanchion $1 show"
                 exit 1
                 ;;
         esac

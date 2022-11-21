@@ -24,7 +24,6 @@
 -module(riak_cs_stanchion_console).
 
 -export([
-         switch/1,
          show/1
         ]).
 
@@ -44,29 +43,6 @@
 %%%===================================================================
 %%% Public API
 %%%===================================================================
-
-%% @doc Switch Stanchion to a new one. Can be used for disabling.
-switch([Host, Port]) ->
-    Msg = io_lib:format("Switching stanchion to ~s:~s", [Host, Port]),
-    ?SAFELY(begin
-                NewPort = list_to_integer(Port),
-                true = (0 < NewPort andalso NewPort < 65536),
-                %% {_, _, SSL} = riak_cs_utils:stanchion_data(),
-                %% currently this does not work due to bad path generation of velvet:ping/3
-                %% ok = velvet:ping(Host, NewPort, SSL),
-
-                %% Or, set this configuration to dummy host/port
-                %% to block bucket/user creation/deletion
-                %% in case of multiple stanchion working.
-                ok = application:set_env(riak_cs, stanchion_host, {Host, NewPort}),
-                Msg2 = io_lib:format("Succesfully switched stanchion to ~s:~s: This change is only effective until restart.",
-                                    [Host, Port]),
-                logger:info(Msg2),
-                io:format("~s~nTo make permanent change, be sure to edit configuration file.~n", [Msg2])
-            end, Msg);
-switch(_) ->
-    io:format("Usage: riak-cs-admin stanchion switch IP Port~n"),
-    error.
 
 show([]) ->
     ?SAFELY(begin
