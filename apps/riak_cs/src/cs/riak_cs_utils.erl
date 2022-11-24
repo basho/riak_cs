@@ -536,10 +536,11 @@ this_host_addr() ->
     case lists:filtermap(
            fun({_If, PL}) ->
                    case proplists:get_value(addr, PL) of
-                       Defined when Defined /= undefined,
-                                    Defined /= {127,0,0,1},
-                                    Defined /= {0,0,0,0} ->
-                           {A1, A2, A3, A4} = Defined,
+                       AA when AA /= undefined,
+                               AA /= {127,0,0,1},
+                               AA /= {0,0,0,0},
+                               size(AA) == 4 ->
+                           {A1, A2, A3, A4} = AA,
                            {true, {_If, lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]))}};
                        _ ->
                            false
