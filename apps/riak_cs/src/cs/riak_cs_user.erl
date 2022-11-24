@@ -73,16 +73,13 @@ create_user(Name, Email, KeyId, Secret) ->
 -spec create_credentialed_user({ok, {term(), term()}}, rcs_user()) ->
                                       {ok, rcs_user()} | {error, term()}.
 create_credentialed_user({ok, AdminCreds}, User) ->
-    {StIp, StPort, StSSL} = riak_cs_utils:stanchion_data(),
     %% Make a call to the user request serialization service.
     StatsKey = [velvet, create_user],
     _ = riak_cs_stats:inflow(StatsKey),
     StartTime = os:timestamp(),
-    Result = velvet:create_user(StIp,
-                                StPort,
-                                "application/json",
+    Result = velvet:create_user("application/json",
                                 binary_to_list(riak_cs_json:to_json(User)),
-                                [{ssl, StSSL}, {auth_creds, AdminCreds}]),
+                                [{auth_creds, AdminCreds}]),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
     handle_create_user(Result, User).
 
@@ -115,16 +112,13 @@ handle_update_user({error, _}=Error, _User, _, _) ->
 -spec update_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) ->
                          {ok, rcs_user()} | {error, term()}.
 update_user(User, UserObj, RcPid) ->
-    {StIp, StPort, StSSL} = riak_cs_utils:stanchion_data(),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Options = [{ssl, StSSL}, {auth_creds, AdminCreds}],
+    Options = [{auth_creds, AdminCreds}],
     StatsKey = [velvet, update_user],
     _ = riak_cs_stats:inflow(StatsKey),
     StartTime = os:timestamp(),
     %% Make a call to the user request serialization service.
-    Result = velvet:update_user(StIp,
-                                StPort,
-                                "application/json",
+    Result = velvet:update_user("application/json",
                                 User?RCS_USER.key_id,
                                 binary_to_list(riak_cs_json:to_json(User)),
                                 Options),
