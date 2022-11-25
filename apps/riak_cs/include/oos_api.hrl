@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_OOS_API_HRL).
+-define(RIAK_CS_OOS_API_HRL, included).
+
 -define(DEFAULT_OS_AUTH_URL, "http://localhost:35357/v2.0/").
 -define(DEFAULT_TOKENS_RESOURCE, "tokens/").
 -define(DEFAULT_S3_TOKENS_RESOURCE, "s3tokens/").
@@ -32,3 +35,5 @@
           token :: binary()}).
 -type keystone_s3_auth_req() :: #keystone_s3_auth_req_v1{}.
 -define(KEYSTONE_S3_AUTH_REQ, #keystone_s3_auth_req_v1).
+
+-endif.

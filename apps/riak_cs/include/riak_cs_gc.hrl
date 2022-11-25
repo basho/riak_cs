@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_GC_HRL).
+-define(RIAK_CS_GC_HRL, included).
+
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
@@ -109,3 +112,5 @@
           initial_delay :: undefined | non_neg_integer(),
           timer_ref :: undefined | reference()
          }).
+
+-endif.

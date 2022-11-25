@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_HRL).
+-define(RIAK_CS_HRL, included).
+
 -include("manifest.hrl").
 -include("moss.hrl").
 
@@ -194,3 +197,5 @@
 -define(MAX_S3_KEY_LENGTH, 1024).
 
 -type mochiweb_headers() :: gb_trees:tree().
+
+-endif.

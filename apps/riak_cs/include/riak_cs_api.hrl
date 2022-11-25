@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_API_HRL).
+-define(RIAK_CS_API_HRL, included).
+
 -record(list_buckets_response_v1, {
           %% the user record
           user :: rcs_user(),
@@ -28,3 +31,5 @@
          }).
 -type list_buckets_response() :: #list_buckets_response_v1{}.
 -define(LBRESP, #list_buckets_response_v1).
+
+-endif.

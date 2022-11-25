@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_S3_API_HRL).
+-define(RIAK_CS_S3_API_HRL, included).
+
 -define(ROOT_HOST, "s3.amazonaws.com").
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
                        "policy", "requestPayment", "torrent", "uploadId", "uploads",
@@ -149,3 +152,5 @@
 -define(ARN,    #arn_v1).
 
 -define(DEFAULT_REGION, "us-east-1").
+
+-endif.

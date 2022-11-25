@@ -19,6 +19,9 @@
 %%
 %% ---------------------------------------------------------------------
 
+-ifndef(RIAK_CS_RTS_HRL).
+-define(RIAK_CS_RTS_HRL, included).
+
 %% JSON keys used by rts module
 -define(START_TIME, <<"StartTime">>).
 -define(END_TIME, <<"EndTime">>).
@@ -60,3 +63,5 @@
          <<"PendingDeleteOldObjects">>,<<"PendingDeleteOldBytes">>, <<"PendingDeleteOldBlocks">>,
          <<"PendingDeleteNewObjects">>,<<"PendingDeleteNewBytes">>, <<"PendingDeleteNewBlocks">>,
          <<"ActiveInvisibleObjects">>,<<"ActiveInvisibleBytes">>, <<"ActiveInvisibleBlocks">>]).
+
+-endif.
