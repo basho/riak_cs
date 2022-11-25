@@ -26,6 +26,7 @@
 -behaviour(gen_fsm).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -259,7 +260,7 @@ maybe_delete_blocks(State = #state{bucket = Bucket,
     NewUnackedDeletes = ordsets:add_element(BlockID, UnackedDeletes),
     NewDeleteBlocksRemaining = ordsets:del_element(BlockID, DeleteBlocksRemaining),
     {UUID, Seq} = BlockID,
-    logger:debug("Deleting block #~b (~p) of \"~s/~s:~s\"", [Seq, UUID, Bucket, Key, ObjVsn]),
+    ?LOG_DEBUG("Deleting block #~b (~p) of \"~s/~s:~s\"", [Seq, UUID, Bucket, Key, ObjVsn]),
     riak_cs_block_server:delete_block(DeleterPid, Bucket, Key, UUID, Seq),
     NewFreeDeleters = ordsets:del_element(DeleterPid, FreeDeleters),
     maybe_delete_blocks(State#state{unacked_deletes = NewUnackedDeletes,

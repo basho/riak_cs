@@ -65,6 +65,7 @@
 -include("riak_cs.hrl").
 -include("oos_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% ===================================================================
 %% Webmachine callbacks
@@ -479,31 +480,31 @@ post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
                               user_object=UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
     %% no keyid was given, proceed anonymously
-    logger:debug("No user key"),
+    ?LOG_DEBUG("No user key"),
     Authorize(RD, Ctx);
 post_authentication({error, no_user_key}, RD, Ctx, _, false) ->
     %% no keyid was given, deny access
-    logger:debug("No user key, deny"),
+    ?LOG_DEBUG("No user key, deny"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     %% given keyid was found, but signature didn't match
-    logger:debug("bad_auth"),
+    ?LOG_DEBUG("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, reqtime_tooskewed} = Error, RD,
                     #context{response_module = ResponseMod} = Ctx, _, _) ->
-    logger:debug("reqtime_tooskewed"),
+    ?LOG_DEBUG("reqtime_tooskewed"),
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
-    logger:debug("auth_not_supported: ~s", [AuthType]),
+    ?LOG_DEBUG("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
-    logger:debug("User does not exist"),
+    ?LOG_DEBUG("User does not exist"),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx);
 post_authentication({error, Reason}, RD,
                     #context{response_module=ResponseMod} = Ctx, _, _) ->
     %% Lookup failed, basically due to disconnected stuff
-    logger:debug("Authentication error: ~p", [Reason]),
+    ?LOG_DEBUG("Authentication error: ~p", [Reason]),
     ResponseMod:api_error(Reason, RD, Ctx).
 
 update_stats_inflow(_RD, undefined = _StatsPrefix) ->

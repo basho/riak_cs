@@ -21,8 +21,6 @@
 
 -module(riak_cs_lfs_utils).
 
--include("riak_cs.hrl").
-
 -export([block_count/2,
          block_keynames/3,
          block_name/3,
@@ -42,6 +40,9 @@
          set_bag_id/2,
          remove_write_block/2,
          remove_delete_block/2]).
+
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% -------------------------------------------------------------------
 %% Public API
@@ -120,9 +121,9 @@ initial_blocks(ContentLength, SafeBlockSize, UUID) ->
 range_blocks(Start, End, SafeBlockSize, UUID) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
-    logger:debug("InitialBlock: ~p, FinalBlock: ~p",
+    ?LOG_DEBUG("InitialBlock: ~p, FinalBlock: ~p",
                  [Start div SafeBlockSize, End div SafeBlockSize]),
-    logger:debug("SkipInitial: ~p, KeepFinal: ~p", [SkipInitial, KeepFinal]),
+    ?LOG_DEBUG("SkipInitial: ~p, KeepFinal: ~p", [SkipInitial, KeepFinal]),
     {[{UUID, B} || B <- lists:seq(Start div SafeBlockSize, End div SafeBlockSize)],
      SkipInitial, KeepFinal}.
 
@@ -168,8 +169,8 @@ block_sort_fun(SafeBlockSize) ->
 
 block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
                                         StartOffset, EndOffset) ->
-    logger:debug("StartOffset: ~p, EndOffset: ~p, PartLength: ~p",
-                 [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
+    ?LOG_DEBUG("StartOffset: ~p, EndOffset: ~p, PartLength: ~p",
+               [StartOffset, EndOffset, PM?PART_MANIFEST.content_length]),
     case PM?PART_MANIFEST.content_length of
         %% Skipped
         PartLength when PartLength =< StartOffset ->
@@ -192,8 +193,8 @@ block_sequences_for_part_manifests_skip(SafeBlockSize, [PM | Rest],
 
 block_sequences_for_part_manifests_keep(SafeBlockSize, SkipInitial, [PM | Rest],
                                         EndOffset, ListOfBlocks) ->
-    logger:debug("EndOffset: EndOffset: ~p, PartLength: ~p",
-                 [EndOffset, PM?PART_MANIFEST.content_length]),
+    ?LOG_DEBUG("EndOffset: EndOffset: ~p, PartLength: ~p",
+               [EndOffset, PM?PART_MANIFEST.content_length]),
     case PM?PART_MANIFEST.content_length of
         %% More blocks needed
         PartLength when PartLength =< EndOffset ->

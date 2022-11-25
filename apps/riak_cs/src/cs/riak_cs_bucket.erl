@@ -48,6 +48,7 @@
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -174,7 +175,7 @@ delete_bucket(User, _UserObj, Bucket, RcPid) ->
             %% TODO: output log if failed in cleaning up existing uploads.
             %% The number of retry is hardcoded.
             {ok, Count} = delete_all_uploads(Bucket, RcPid),
-            logger:debug("deleted ~p multiparts before bucket deletion.", [Count]),
+            ?LOG_DEBUG("deleted ~p multiparts before bucket deletion.", [Count]),
             %% This call still may return {error, remaining_multipart_upload}
             %% even if all uploads cleaned up above, because concurrent
             %% multiple deletion may happen. Then Riak CS returns 409 confliction
@@ -224,13 +225,13 @@ fold_delete_uploads(Bucket, RcPid, [?MULTIPART_DESCR{key = VKey,
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->
-                    logger:debug("cannot delete multipart manifest: ~s (~s/~s:~s): ~p",
-                                 [M?MANIFEST.uuid, Bucket, Key, Vsn, E]),
+                    ?LOG_DEBUG("cannot delete multipart manifest: ~s (~s/~s:~s): ~p",
+                               [M?MANIFEST.uuid, Bucket, Key, Vsn, E]),
                     E
             end;
         _E ->
-            logger:debug("skipping multipart manifest: ~p ~p (~p)",
-                         [{Bucket, Key}, UploadId, _E]),
+            ?LOG_DEBUG("skipping multipart manifest: ~p ~p (~p)",
+                       [{Bucket, Key}, UploadId, _E]),
             fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count)
     end.
 
@@ -722,7 +723,7 @@ handle_stanchion_response(409, ErrorDoc, Op, Bucket)
             %% Broken, returns 500
             throw({remaining_multipart_upload_on_deleted_bucket, Bucket});
         Other ->
-            logger:debug("errordoc: ~p => ~s", [Other, ErrorDoc]),
+            ?LOG_DEBUG("errordoc: ~p => ~s", [Other, ErrorDoc]),
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
 handle_stanchion_response(_C, ErrorDoc, _M, _) ->

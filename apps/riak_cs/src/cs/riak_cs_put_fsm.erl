@@ -25,8 +25,6 @@
 
 -behaviour(gen_fsm).
 
--include("riak_cs.hrl").
-
 %% API
 -export([start_link/1, start_link/3,
          get_uuid/1,
@@ -50,6 +48,9 @@
          handle_info/3,
          terminate/3,
          code_change/4]).
+
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(SERVER, ?MODULE).
 -define(EMPTYORDSET, ordsets:new()).
@@ -334,11 +335,11 @@ done(finalize, true, From, State=#state{manifest=Manifest,
 -spec is_digest_valid(binary(), undefined | string()) -> boolean().
 is_digest_valid(D1, undefined) ->
     %% reported MD5 is not in request header
-    logger:debug("Calculated = ~p, Reported = undefined", [D1]),
+    ?LOG_DEBUG("Calculated = ~p, Reported = undefined", [D1]),
     true;
 is_digest_valid(CalculatedMD5, ReportedMD5) ->
     StringCalculatedMD5 = base64:encode(CalculatedMD5),
-    logger:debug("Calculated = ~p, Reported = ~p", [StringCalculatedMD5, ReportedMD5]),
+    ?LOG_DEBUG("Calculated = ~p, Reported = ~p", [StringCalculatedMD5, ReportedMD5]),
     StringCalculatedMD5 =:= list_to_binary(ReportedMD5).
 
 %%--------------------------------------------------------------------
@@ -356,7 +357,7 @@ handle_sync_event(current_state, _From, StateName, State) ->
 handle_sync_event(force_stop, _From, _StateName, State = #state{mani_pid = ManiPid,
                                                                 uuid = UUID}) ->
     Res = riak_cs_manifest_fsm:gc_specific_manifest(ManiPid, UUID),
-    logger:debug("Manifest collection on upload failure: ~p", [Res]),
+    ?LOG_DEBUG("Manifest collection on upload failure: ~p", [Res]),
     {stop, normal, Res, State};
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,

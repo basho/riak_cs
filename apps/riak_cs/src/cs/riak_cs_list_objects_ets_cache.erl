@@ -24,8 +24,6 @@
 -module(riak_cs_list_objects_ets_cache).
 
 -behaviour(gen_server).
--include("riak_cs.hrl").
--include("list_objects.hrl").
 
 %% API
 -export([start_link/0,
@@ -51,6 +49,10 @@
          min_keys_to_cache/0,
          max_cache_size/0]).
 
+-include("riak_cs.hrl").
+-include("list_objects.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 -define(DICTMODULE, dict).
 
 -record(state, {tid :: ets:tid(),
@@ -71,7 +73,7 @@ start_link() ->
 -spec lookup(binary()) -> cache_lookup_result().
 lookup(Key) ->
     try
-        logger:debug("Reading info for ~p from cache", [Key]),
+        ?LOG_DEBUG("Reading info for ~p from cache", [Key]),
         format_lookup_result(ets:lookup(default_ets_table(), Key))
     catch
         _:Reason ->
@@ -226,7 +228,7 @@ num_keys_to_bytes(NumKeys) ->
 
 unsafe_write(Key, Value) ->
     TS = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
-    logger:debug("Writing entry for ~p to LO Cache", [Key]),
+    ?LOG_DEBUG("Writing entry for ~p to LO Cache", [Key]),
     ets:insert(default_ets_table(), {Key, Value, TS}),
     ok.
 

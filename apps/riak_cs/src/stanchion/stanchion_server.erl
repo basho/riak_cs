@@ -25,16 +25,6 @@
 
 -behaviour(gen_server).
 
--include("stanchion.hrl").
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-%% Test API
--export([test_link/0]).
-
--endif.
-
 %% API
 -export([start_link/0,
          create_bucket/1,
@@ -56,6 +46,17 @@
          terminate/2,
          code_change/3]).
 
+-include("stanchion.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test API
+-export([test_link/0]).
+
+-endif.
+
 -record(state, {riak_ip :: undefined | string(),
                 riak_port :: undefined | pos_integer()}).
 -type state() :: #state{}.
@@ -67,7 +68,7 @@
             {{Result_____, ServiceTime____},
              TATus_____} = ?TURNAROUND_TIME(Call),
             WaitingTime____ = TATus_____ - ServiceTime____,
-            logger:debug("~p ~p ~p", [Name, Result_____, ServiceTime____]),
+            ?LOG_DEBUG("~p ~p ~p", [Name, Result_____, ServiceTime____]),
             stanchion_stats:update(Name, ServiceTime____, WaitingTime____),
             Result_____
         end).

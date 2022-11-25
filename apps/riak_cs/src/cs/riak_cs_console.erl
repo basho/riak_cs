@@ -36,6 +36,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %%%===================================================================
 %%% Public API
@@ -200,9 +201,9 @@ audit_bucket_ownership() ->
 audit_bucket_ownership0(RcPid) ->
     FromUsers = ownership_from_users(RcPid),
     {FromBuckets, OwnedBy} = ownership_from_buckets(RcPid),
-    logger:debug("FromUsers: ~p", [lists:usort(gb_sets:to_list(FromUsers))]),
-    logger:debug("FromBuckets: ~p", [lists:usort(gb_sets:to_list(FromBuckets))]),
-    logger:debug("OwnedBy: ~p", [lists:usort(gb_trees:to_list(OwnedBy))]),
+    ?LOG_DEBUG("FromUsers: ~p", [lists:usort(gb_sets:to_list(FromUsers))]),
+    ?LOG_DEBUG("FromBuckets: ~p", [lists:usort(gb_sets:to_list(FromBuckets))]),
+    ?LOG_DEBUG("OwnedBy: ~p", [lists:usort(gb_trees:to_list(OwnedBy))]),
     Inconsistencies0 =
         gb_sets:fold(
           fun ({U, B}, Acc) ->

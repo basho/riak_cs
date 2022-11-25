@@ -38,6 +38,7 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("webmachine/include/wm_reqstate.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -spec init(#context{}) -> {ok, #context{}}.
 init(Ctx) ->
@@ -360,7 +361,7 @@ handle_normal_put(RD, Ctx0) ->
             %% einval} or disconnected stuff, any errors prevents this
             %% manifests from being uploaded anymore
             Res = riak_cs_put_fsm:force_stop(Pid),
-            logger:debug("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
+            ?LOG_DEBUG("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
             error({Type, Error})
     end.
 
@@ -414,8 +415,8 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
                     {false, _, _} ->
 
                         %% start copying
-                        logger:debug("copying! > ~s/~s/~s => ~s/~s/~s via ~p",
-                                     [SrcBucket, SrcKey, SrcObjVsn, Bucket, Key, ObjVsn, ReadRcPid]),
+                        ?LOG_DEBUG("copying! > ~s/~s/~s => ~s/~s/~s via ~p",
+                                   [SrcBucket, SrcKey, SrcObjVsn, Bucket, Key, ObjVsn, ReadRcPid]),
 
                         {ContentType, Metadata} =
                             riak_cs_copy_object:new_metadata(SrcManifest, RD),
@@ -443,7 +444,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
                         %% in different return value
                         ResponseMod:api_error(copy_source_access_denied, RD, Ctx);
                     {Result, _, _} = Error ->
-                        logger:debug("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
+                        ?LOG_DEBUG("~p on ~s ~s", [Result, SrcBucket, SrcKey]),
                         Error
 
                 end;

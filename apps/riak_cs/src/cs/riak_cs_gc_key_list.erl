@@ -29,6 +29,7 @@
 -export([find_oldest_entries/1]).
 
 -include("riak_cs_gc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -58,7 +59,7 @@ next(#gc_key_list_state{current_riak_client=RcPid,
                         continuation=Continuation} = State) ->
     {Batch, UpdContinuation} =
         fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, Continuation),
-    logger:debug("next Batch: ~p", [Batch]),
+    ?LOG_DEBUG("next Batch: ~p", [Batch]),
     {#gc_key_list_result{bag_id=BagId, batch=Batch},
      State#gc_key_list_state{continuation=UpdContinuation}}.
 
@@ -82,7 +83,7 @@ next_pool(#gc_key_list_state{
             ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
             {Batch, Continuation} =
                 fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, undefined),
-            logger:debug("next_bag ~s Batch: ~p", [BagId, Batch]),
+            ?LOG_DEBUG("next_bag ~s Batch: ~p", [BagId, Batch]),
             {#gc_key_list_result{bag_id=BagId, batch=Batch},
              State#gc_key_list_state{remaining_bags=Rest,
                                      current_riak_client=RcPid,

@@ -51,6 +51,7 @@
          code_change/4]).
 
 -include("riak_cs_gc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -228,7 +229,7 @@ fetch_first_keys(?STATE{batch_start=_BatchStart,
     {KeyListRes, KeyListState} =
         riak_cs_gc_key_list:new(StartKey, EndKey, BatchSize),
     #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
-    logger:debug("Initial batch keys: ~p", [Batch]),
+    ?LOG_DEBUG("Initial batch keys: ~p", [Batch]),
     State?STATE{batch=Batch,
                 key_list_state=KeyListState,
                 bag_id=BagId}.
@@ -246,7 +247,7 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
                      batch_skips=WorkerBatchSkips,
                      manif_count=WorkerManifestCount,
                      block_count=WorkerBlockCount} = WorkerState,
-    logger:debug("~p completed (~p)", [WorkerPid, WorkerState]),
+    ?LOG_DEBUG("~p completed (~p)", [WorkerPid, WorkerState]),
     UpdWorkerPids = lists:delete(WorkerPid, WorkerPids),
     %% @TODO Workout the terminiology for these stats. i.e. Is batch
     %% count just an increment or represenative of something else.
@@ -265,7 +266,7 @@ start_worker(?STATE{batch=[NextBatch|RestBatches],
                     worker_pids=WorkerPids} = State) ->
     case ?GC_WORKER:start_link(BagId, NextBatch) of
         {ok, Pid} ->
-            logger:debug("GC worker ~p for bag ~p has started", [Pid, BagId]),
+            ?LOG_DEBUG("GC worker ~p for bag ~p has started", [Pid, BagId]),
             State?STATE{batch=RestBatches,
                         worker_pids=[Pid | WorkerPids]};
         {error, _Reason} ->
@@ -303,7 +304,7 @@ maybe_start_workers(?STATE{max_workers=MaxWorkers,
     %% Fetch the next set of manifests for deletion
     {KeyListRes, UpdKeyListState} = riak_cs_gc_key_list:next(KeyListState),
     #gc_key_list_result{bag_id=BagId, batch=Batch} = KeyListRes,
-    logger:debug("Next batch keys: ~p", [Batch]),
+    ?LOG_DEBUG("Next batch keys: ~p", [Batch]),
     State2 = State?STATE{batch=Batch,
                          key_list_state=UpdKeyListState,
                          bag_id=BagId},
@@ -315,7 +316,7 @@ maybe_start_workers(?STATE{max_workers=MaxWorkers,
                            worker_pids=WorkerPids,
                            batch=Batch} = State)
   when MaxWorkers > length(WorkerPids) ->
-    logger:debug("Batch: ~p, WorkerPids: ~p", [Batch, WorkerPids]),
+    ?LOG_DEBUG("Batch: ~p, WorkerPids: ~p", [Batch, WorkerPids]),
     State2 = start_worker(State),
     maybe_start_workers(State2).
 

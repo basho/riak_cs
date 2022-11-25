@@ -45,13 +45,13 @@
 
 -behaviour(riak_cs_quota).
 
+-export([state/0, reset/0, set_limits/3]).
+-export([start_link/0, allow/3, update/2, error_response/3]).
+
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine_logger.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
-
--export([state/0, reset/0, set_limits/3]).
-
--export([start_link/0, allow/3, update/2, error_response/3]).
+-include_lib("kernel/include/logger.hrl").
 
 -record(user_state, {
           user :: binary(),
@@ -114,12 +114,12 @@ refresher() ->
                   end,
     receive
         reset ->
-            logger:debug("reset received: ~p", [?MODULE]),
+            ?LOG_DEBUG("reset received: ~p", [?MODULE]),
             refresher();
         _ ->
             ets:delete(?MODULE)
     after IntervalSec * 1000 ->
-            logger:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
+            ?LOG_DEBUG("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
             refresher()
     end.
@@ -128,7 +128,7 @@ refresher() ->
 allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 
     OwnerKey = list_to_binary(riak_cs_user:key_id(Owner)),
-    logger:debug("access => ~p", [OwnerKey]),
+    ?LOG_DEBUG("access => ~p", [OwnerKey]),
     UserState = case ets:lookup(?MODULE, OwnerKey) of
                     [UserState0] -> UserState0;
                     [] -> new_user_state(OwnerKey)
@@ -157,7 +157,7 @@ allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 -spec new_user_state(binary()) -> #user_state{}.
 new_user_state(User) ->
     UserState = #user_state{user = User},
-    logger:debug("quota init: ~p => ~p", [User, UserState]),
+    ?LOG_DEBUG("quota init: ~p => ~p", [User, UserState]),
     %% Here's a race condition where if so many concurrent access
     %% come, each access can yield a new fresh state and then
     %% receives not access limitation.
@@ -216,7 +216,7 @@ update(User,
         end
     catch
         error:badarg -> %% record not just found here
-            logger:debug("Cache of ~p (maybe not found)", [User]),
+            ?LOG_DEBUG("Cache of ~p (maybe not found)", [User]),
             ok;
         Type:Error ->
             %% TODO: show out stacktrace heah

@@ -34,6 +34,7 @@
 
 -include("stanchion.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 
 init(Config) ->
@@ -119,7 +120,7 @@ to_xml(RD, Ctx) ->
 delete_resource(ReqData, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, ReqData)),
     RequesterId = list_to_binary(wrq:get_qs_value("requester", "", ReqData)),
-    logger:debug("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
+    ?LOG_DEBUG("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
     case stanchion_server:delete_bucket(Bucket, RequesterId) of
         ok ->
             {true, ReqData, Ctx};

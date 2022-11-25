@@ -26,6 +26,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -181,8 +182,8 @@ fetch_bucket_acl(Bucket, RcPid) ->
         {ok, Obj} ->
             bucket_acl(Obj);
         {error, Reason} ->
-            logger:debug("Failed to fetch ACL. Bucket ~p does not exist. Reason: ~p",
-                         [Bucket, Reason]),
+            ?LOG_DEBUG("Failed to fetch ACL. Bucket ~p does not exist. Reason: ~p",
+                       [Bucket, Reason]),
             {error, notfound}
     end.
 
@@ -278,13 +279,13 @@ object_access(_BucketObj, _ObjAcl, 'WRITE', CanonicalId, RcPid, BucketAcl) ->
             false
     end;
 object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
-    logger:debug("ObjAcl: ~p; CanonicalId: ~p", [ObjAcl, CanonicalId]),
+    ?LOG_DEBUG("ObjAcl: ~p; CanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
                                 RequestedAccess,
                                 CanonicalId),
-    logger:debug("IsObjOwner: ~p", [IsObjOwner]),
-    logger:debug("HasObjPerm: ~p", [HasObjPerm]),
+    ?LOG_DEBUG("IsObjOwner: ~p", [IsObjOwner]),
+    ?LOG_DEBUG("HasObjPerm: ~p", [HasObjPerm]),
     if
         (RequestedAccess == 'READ_ACP' orelse
          RequestedAccess == 'WRITE_ACP') andalso

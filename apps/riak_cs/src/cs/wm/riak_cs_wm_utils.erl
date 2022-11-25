@@ -73,6 +73,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
@@ -181,23 +182,23 @@ handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
     {{halt, 503}, RD, Ctx};
 handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    logger:debug("No user key: ~p", [Reason]),
+    ?LOG_DEBUG("No user key: ~p", [Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    logger:debug("No user key, deny"),
+    ?LOG_DEBUG("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% given keyid was found, but signature didn't match
-    logger:debug("bad_auth"),
+    ?LOG_DEBUG("bad_auth"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
-    logger:debug("key_id not found"),
+    ?LOG_DEBUG("key_id not found"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    logger:debug("Authentication error: ~p", [Reason]),
+    ?LOG_DEBUG("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 handle_auth_admin(RD, Ctx, undefined, true) ->
@@ -450,7 +451,7 @@ extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
                 %% CS extension, for PutObject should probably be
                 %% better done in s3_rewrite, but doing so will be too
                 %% disruptive for the tidy rewriting flow
-                logger:debug("are we PutObject on a version? ~p", [Defined]),
+                ?LOG_DEBUG("are we PutObject on a version? ~p", [Defined]),
                 list_to_binary(Defined);
             {V, _} ->
                 list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(V)))
@@ -1046,7 +1047,7 @@ fetch_bucket_owner(Bucket, RcPid) ->
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->
-            logger:debug("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            ?LOG_DEBUG("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
             undefined
     end.
 

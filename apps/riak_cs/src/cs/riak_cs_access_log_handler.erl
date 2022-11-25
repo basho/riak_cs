@@ -74,6 +74,7 @@
          code_change/3]).
 
 -include_lib("webmachine/include/webmachine_logger.hrl").
+-include_lib("kernel/include/logger.hrl").
 -include("riak_cs.hrl").
 
 -ifdef(TEST).
@@ -188,7 +189,7 @@ handle_call(_Request, State) ->
 handle_event({log_access, #wm_log_data{notes=undefined,
                                        method=Method, path=Path, headers=Headers}},
              State) ->
-    logger:debug("No WM route: ~p ~s ~p", [Method, Path, Headers]),
+    ?LOG_DEBUG("No WM route: ~p ~s ~p", [Method, Path, Headers]),
     {ok, State};
 handle_event({log_access, LogData},
              #state{table=T, size=S, max_size=MaxS}=State) ->
@@ -268,7 +269,7 @@ schedule_archival(#state{current={_,E}}=State) ->
     TL = calendar:datetime_to_gregorian_seconds(E)-Now,
     case TL < 0 of
         false ->
-            logger:debug("Next access archival in ~b seconds", [TL]),
+            ?LOG_DEBUG("Next access archival in ~b seconds", [TL]),
 
             %% time left is in seconds, we need milliseconds
             erlang:send_after(TL*1000, self(), {archive, Ref}),
@@ -290,7 +291,7 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 %% for storage.  Create a clean table to store the next slice's accesses.
 -spec do_archive(state()) -> state().
 do_archive(#state{period=P, table=T, current=C}=State) ->
-    logger:debug("Rolling access for ~p", [C]),
+    ?LOG_DEBUG("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done
     riak_cs_access_archiver_manager:archive(T, C),
 

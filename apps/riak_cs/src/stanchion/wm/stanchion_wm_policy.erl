@@ -34,6 +34,7 @@
 
 -include("stanchion.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 init(Config) ->
     %% Check if authentication is disabled and
@@ -106,7 +107,7 @@ accept_body(RD, Ctx) ->
 delete_resource(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     RequesterId = list_to_binary(wrq:get_qs_value("requester", "", RD)),
-    logger:debug("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
+    ?LOG_DEBUG("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
 
     case stanchion_server:delete_bucket_policy(Bucket, RequesterId) of
         ok ->

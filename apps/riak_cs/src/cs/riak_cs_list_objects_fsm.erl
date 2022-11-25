@@ -38,9 +38,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include("riak_cs.hrl").
--include("list_objects.hrl").
-
 %% API
 -export([start_link/3,
          start_link/5]).
@@ -55,6 +52,11 @@
          handle_info/3,
          terminate/3,
          code_change/4]).
+
+-include("riak_cs.hrl").
+-include("list_objects.hrl").
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -record(profiling, {
         %% floating point secs
@@ -277,10 +279,10 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
                                                   CallerPid,
                                                   ListOfListOfKeysLength) of
         true ->
-            logger:debug("writing to cache"),
+            ?LOG_DEBUG("writing to cache"),
             riak_cs_list_objects_ets_cache:write(CacheKey, ListofListofKeys);
         false ->
-            logger:debug("not writing to cache"),
+            ?LOG_DEBUG("not writing to cache"),
             ok
     end.
 
@@ -290,12 +292,12 @@ maybe_write_to_cache(#state{cache_key=CacheKey,
 -spec fetch_key_list(riak_client(), list_object_request(), state(),
                      cache_lookup_result()) -> fsm_state_return().
 fetch_key_list(_, _, State, {true, Value}) ->
-    logger:debug("Using cached key list"),
+    ?LOG_DEBUG("Using cached key list"),
     NewState = prepare_state_for_first_mapred(Value,
                                               State#state{key_buffer=Value}),
     maybe_map_reduce(NewState);
 fetch_key_list(RcPid, Request, State, false) ->
-    logger:debug("Requesting fresh key list"),
+    ?LOG_DEBUG("Requesting fresh key list"),
     handle_streaming_list_keys_call(
       make_list_keys_request(RcPid, Request),
       State).
@@ -671,8 +673,8 @@ update_state_with_mr_end_profiling(State=#state{req_profiles=Profiling}) ->
     State#state{req_profiles=Profiling2}.
 
 print_profiling(Profiling) ->
-    logger:debug(format_list_keys_profile(Profiling)),
-    logger:debug(format_map_reduce_profile(Profiling)).
+    ?LOG_DEBUG(format_list_keys_profile(Profiling)),
+    ?LOG_DEBUG(format_map_reduce_profile(Profiling)).
 
 format_list_keys_profile(#profiling{list_keys_start_time=undefined,
                                     list_keys_num_results=NumResults}) ->

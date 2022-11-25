@@ -26,6 +26,7 @@
 -module(riak_cs_copy_object).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([test_condition_and_permission/4,
          malformed_request/1,
@@ -77,7 +78,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
                 {undefined, undefined}
         end,
 
-    logger:debug("UserKey: ~p / ~p", [UserKey, User]),
+    ?LOG_DEBUG("UserKey: ~p / ~p", [UserKey, User]),
 
     %% Build fake context for checking read access to the src object
     OtherLocalCtx = LocalCtx#key_context{bucket = SrcBucket,
@@ -92,8 +93,8 @@ authorize_on_src(RcPid, SrcManifest, RD,
     %% TODO: use unicode module for for key? or is this encoded?
     Path = string:join(["/buckets", binary_to_list(SrcBucket),
                         "objects", binary_to_list(SrcKey)], "/"),
-    logger:debug("raw path: ~p => ~p", [wrq:raw_path(RD), Path]),
-    logger:debug("src bucket obj: ~p", [SrcBucketObj]),
+    ?LOG_DEBUG("raw path: ~p => ~p", [wrq:raw_path(RD), Path]),
+    ?LOG_DEBUG("src bucket obj: ~p", [SrcBucketObj]),
     OtherRD0 = wrq:create('GET', wrq:version(RD), Path, wrq:req_headers(RD)),
     OtherRD = wrq:load_dispatch_data([{bucket, binary_to_list(SrcBucket)},
                                       {object, binary_to_list(SrcKey)}],

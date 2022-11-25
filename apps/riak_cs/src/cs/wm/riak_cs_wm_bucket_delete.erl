@@ -35,6 +35,7 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -78,7 +79,7 @@ handle_with_bucket_obj({error, notfound}, RD,
 
 handle_with_bucket_obj({error, _} = Error, RD,
                        #context{response_module=ResponseMod} = Ctx) ->
-    logger:debug("bucket error: ~p", [Error]),
+    ?LOG_DEBUG("bucket error: ~p", [Error]),
     ResponseMod:api_error(Error, RD, Ctx);
 
 handle_with_bucket_obj({ok, BucketObj},
@@ -94,7 +95,7 @@ handle_with_bucket_obj({ok, BucketObj},
             %% Delete Multiple Objects accepts a request to delete up to 1000 Objects.
             ResponseMod:api_error(malformed_xml, RD, Ctx);
         {ok, Keys} ->
-            logger:debug("deleting keys at ~p: ~p", [Bucket, Keys]),
+            ?LOG_DEBUG("deleting keys at ~p: ~p", [Bucket, Keys]),
 
             Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
             CanonicalId = riak_cs_wm_utils:extract_canonical_id(User),

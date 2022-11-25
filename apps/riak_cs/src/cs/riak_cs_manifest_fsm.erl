@@ -21,18 +21,6 @@
 
 -module(riak_cs_manifest_fsm).
 
--include("riak_cs.hrl").
-
--behaviour(gen_fsm).
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-%% Test API
--export([test_link/2]).
-
--endif.
-
 %% API
 -export([start_link/4,
          get_all_manifests/1,
@@ -66,6 +54,19 @@
          handle_info/3,
          terminate/3,
          code_change/4]).
+
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+-behaviour(gen_fsm).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test API
+-export([test_link/2]).
+
+-endif.
 
 -define(SERVER, ?MODULE).
 
@@ -396,7 +397,7 @@ maybe_backpressure_sleep(Siblings, _BackpressureThreshold) ->
     MeanSleepMS = min(Coefficient * Siblings, MaxSleep),
     Delta = MeanSleepMS div 2,
     SleepMS = MeanSleepMS - Delta + rand:uniform(MeanSleepMS + Delta),
-    logger:debug("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p", [Siblings, SleepMS]),
+    ?LOG_DEBUG("maybe_backpressure_sleep: Siblings=~p, SleepMS=~p", [Siblings, SleepMS]),
     ok = riak_cs_stats:countup([manifest, siblings_bp_sleep]),
     ok = timer:sleep(SleepMS),
     true.

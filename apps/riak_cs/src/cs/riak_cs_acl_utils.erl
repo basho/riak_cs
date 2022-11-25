@@ -25,6 +25,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -471,7 +472,7 @@ canonical_for_email(Email, RcPid) ->
         {ok, {User, _}} ->
             {ok, User?RCS_USER.canonical_id};
         {error, Reason} ->
-            logger:debug("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
+            ?LOG_DEBUG("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
             {error, unresolved_grant_email}
     end.
 
@@ -499,7 +500,7 @@ process_acl_contents([], Acl, _) ->
 process_acl_contents([#xmlElement{content=Content,
                                   name=ElementName}
                       | RestElements], Acl, RcPid) ->
-    logger:debug("Element name: ~p", [ElementName]),
+    ?LOG_DEBUG("Element name: ~p", [ElementName]),
     UpdAclRes =
                 case ElementName of
         'Owner' ->
@@ -507,7 +508,7 @@ process_acl_contents([#xmlElement{content=Content,
         'AccessControlList' ->
             process_grants(Content, Acl, RcPid);
         _ ->
-            logger:debug("Encountered unexpected element: ~p", [ElementName]),
+            ?LOG_DEBUG("Encountered unexpected element: ~p", [ElementName]),
             Acl
     end,
     case UpdAclRes of
@@ -542,15 +543,15 @@ process_owner([#xmlElement{content=[Content],
             UpdOwner =
                 case ElementName of
                     'ID' ->
-                        logger:debug("Owner ID value: ~p", [Value]),
+                        ?LOG_DEBUG("Owner ID value: ~p", [Value]),
                         {OwnerName, _, OwnerKeyId} = Owner,
                         {OwnerName, Value, OwnerKeyId};
                     'DisplayName' ->
-                        logger:debug("Owner Name content: ~p", [Value]),
+                        ?LOG_DEBUG("Owner Name content: ~p", [Value]),
                         {_, OwnerId, OwnerKeyId} = Owner,
                         {Value, OwnerId, OwnerKeyId};
                     _ ->
-                        logger:debug("Encountered unexpected element: ~p", [ElementName]),
+                        ?LOG_DEBUG("Encountered unexpected element: ~p", [ElementName]),
                         Owner
             end,
             process_owner(RestElements, Acl?ACL{owner=UpdOwner}, RcPid);
@@ -582,7 +583,7 @@ process_grants([#xmlElement{content=Content,
                     Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)}
             end;
         _ ->
-            logger:debug("Encountered unexpected grants element: ~p", [ElementName]),
+            ?LOG_DEBUG("Encountered unexpected grants element: ~p", [ElementName]),
             Acl
     end,
     case UpdAcl of
@@ -602,8 +603,8 @@ process_grant([], Grant, _, _) ->
 process_grant([#xmlElement{content=Content,
                            name=ElementName} |
                RestElements], Grant, AclOwner, RcPid) ->
-    logger:debug("ElementName: ~p", [ElementName]),
-    logger:debug("Content: ~p", [Content]),
+    ?LOG_DEBUG("ElementName: ~p", [ElementName]),
+    ?LOG_DEBUG("Content: ~p", [Content]),
     UpdGrant =
                case ElementName of
         'Grantee' ->
@@ -650,16 +651,16 @@ process_grantee([#xmlElement{content=[Content],
     Value = Content#xmlText.value,
     case ElementName of
         'ID' ->
-            logger:debug("ID value: ~p", [Value]),
+            ?LOG_DEBUG("ID value: ~p", [Value]),
             {{Name, _}, Perms} = Grant,
             UpdGrant = {{Name, Value}, Perms};
         'EmailAddress' ->
-            logger:debug("Email value: ~p", [Value]),
+            ?LOG_DEBUG("Email value: ~p", [Value]),
             UpdGrant =
                 case canonical_for_email(Value, RcPid) of
                     {ok, Id} ->
                         %% Get the canonical id for a given email address
-                        logger:debug("ID value: ~p", [Id]),
+                        ?LOG_DEBUG("ID value: ~p", [Id]),
                         {{Name, _}, Perms} = Grant,
                         {{Name, Id}, Perms};
                     {error, _}=Error ->
@@ -781,7 +782,7 @@ acl_from_json(Json) ->
 process_acl_contents([], Acl) ->
     Acl;
 process_acl_contents([{Name, Value} | RestObjects], Acl) ->
-    logger:debug("Object name: ~p", [Name]),
+    ?LOG_DEBUG("Object name: ~p", [Name]),
     case Name of
         <<"owner">> ->
             {struct, OwnerData} = Value,
@@ -805,19 +806,19 @@ process_owner([{Name, Value} | RestObjects], Acl) ->
     Owner = Acl?ACL.owner,
     case Name of
         <<"key_id">> ->
-            logger:debug("Owner Key ID value: ~p", [Value]),
+            ?LOG_DEBUG("Owner Key ID value: ~p", [Value]),
             {OwnerName, OwnerCID, _} = Owner,
             UpdOwner = {OwnerName, OwnerCID, binary_to_list(Value)};
         <<"canonical_id">> ->
-            logger:debug("Owner ID value: ~p", [Value]),
+            ?LOG_DEBUG("Owner ID value: ~p", [Value]),
             {OwnerName, _, OwnerId} = Owner,
             UpdOwner = {OwnerName, binary_to_list(Value), OwnerId};
         <<"display_name">> ->
-            logger:debug("Owner Name content: ~p", [Value]),
+            ?LOG_DEBUG("Owner Name content: ~p", [Value]),
             {_, OwnerCID, OwnerId} = Owner,
             UpdOwner = {binary_to_list(Value), OwnerCID, OwnerId};
         _ ->
-            logger:debug("Encountered unexpected element: ~p", [Name]),
+            ?LOG_DEBUG("Encountered unexpected element: ~p", [Name]),
             UpdOwner = Owner
     end,
     process_owner(RestObjects, Acl?ACL{owner=UpdOwner}).
@@ -839,22 +840,22 @@ process_grant([], Grant) ->
 process_grant([{Name, Value} | RestObjects], Grant) ->
     case Name of
         <<"canonical_id">> ->
-            logger:debug("ID value: ~p", [Value]),
+            ?LOG_DEBUG("ID value: ~p", [Value]),
             {{DispName, _}, Perms} = Grant,
             UpdGrant = {{DispName, binary_to_list(Value)}, Perms};
         <<"display_name">> ->
-            logger:debug("Name value: ~p", [Value]),
+            ?LOG_DEBUG("Name value: ~p", [Value]),
             {{_, Id}, Perms} = Grant,
             UpdGrant = {{binary_to_list(Value), Id}, Perms};
         <<"group">> ->
-            logger:debug("Group value: ~p", [Value]),
+            ?LOG_DEBUG("Group value: ~p", [Value]),
             {_, Perms} = Grant,
             UpdGrant = {list_to_atom(
                           binary_to_list(Value)), Perms};
         <<"permissions">> ->
             {Grantee, _} = Grant,
             Perms = process_permissions(Value),
-            logger:debug("Perms value: ~p", [Value]),
+            ?LOG_DEBUG("Perms value: ~p", [Value]),
             UpdGrant = {Grantee, Perms};
         _ ->
             UpdGrant = Grant

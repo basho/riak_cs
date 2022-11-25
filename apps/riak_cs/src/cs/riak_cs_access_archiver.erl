@@ -46,6 +46,7 @@
          code_change/4]).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -record(state,
         {
@@ -206,7 +207,7 @@ store(User, RcPid, Record, Slice) ->
     Timeout = riak_cs_config:put_access_timeout(),
     case catch riak_cs_pbc:put(MasterPbc, Record, Timeout, [riakc, put_access]) of
         ok ->
-            logger:debug("Archived access stats for ~s ~p", [User, Slice]);
+            ?LOG_DEBUG("Archived access stats for ~s ~p", [User, Slice]);
         {error, Reason} ->
             riak_cs_pbc:check_connection_status(MasterPbc,
                                                 "riak_cs_access_archiver:store/4"),

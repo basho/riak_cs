@@ -73,6 +73,7 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine_logger.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% Callbacks as a behaviour
 
@@ -129,7 +130,7 @@ invoke_all_callbacks(Owner, Access, Ctx0) ->
 update_all_states(User, LogData) ->
     Modules = riak_cs_config:quota_modules(),
     [begin
-         logger:debug("quota update at ~p: ~p", [Module, User]),
+         ?LOG_DEBUG("quota update at ~p: ~p", [Module, User]),
          (catch Module:update(list_to_binary(User), LogData))
      end || Module <- Modules].
 

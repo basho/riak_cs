@@ -23,21 +23,6 @@
 
 -module(riak_cs_mp_utils).
 
--include("riak_cs.hrl").
--include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
--include_lib("riakc/include/riakc.hrl").
-
--ifdef(TEST).
--compile(export_all).
--compile(nowarn_export_all).
--include_lib("proper/include/proper.hrl").
--include_lib("eunit/include/eunit.hrl").
--endif.
-
--define(MIN_MP_PART_SIZE, (5*1024*1024)).
-
--define(PID(WrappedRcPid), get_riak_client_pid(WrappedRcPid)).
-
 %% export Public API
 -export([
          abort_multipart_upload/6,
@@ -55,6 +40,22 @@
          upload_part/8,
          upload_part_1blob/2,
          upload_part_finished/9]).
+
+-include("riak_cs.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+-ifdef(TEST).
+-compile(export_all).
+-compile(nowarn_export_all).
+-include_lib("proper/include/proper.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+-define(MIN_MP_PART_SIZE, (5*1024*1024)).
+
+-define(PID(WrappedRcPid), get_riak_client_pid(WrappedRcPid)).
 
 %%%===================================================================
 %%% API
@@ -109,9 +110,9 @@ clean_multipart_unused_parts(?MANIFEST{bkey = {Bucket, Key},
                         UpdManifest = Manifest?MANIFEST{props = [multipart_clean|Props]},
                         ok = update_manifest_with_confirmation(RcPid, UpdManifest)
                     catch X:Y:ST ->
-                            logger:debug("clean_multipart_unused_parts: "
-                                         "b/key:vsn ~s/~s:~s : ~p ~p @ ~p",
-                                         [Bucket, Key, ObjVsn, X, Y, ST])
+                            ?LOG_DEBUG("clean_multipart_unused_parts: "
+                                       "b/key:vsn ~s/~s:~s : ~p ~p @ ~p",
+                                       [Bucket, Key, ObjVsn, X, Y, ST])
                     end,
                     %% Return same value to caller, regardless of ok/catch
                     updated;
@@ -339,7 +340,7 @@ new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
     MpM = ?MULTIPART_MANIFEST{upload_id = UUID,
                               owner = Owner},
     M9 = M0?MANIFEST{props = replace_mp_manifest(MpM, M0?MANIFEST.props)},
-    logger:debug("created mp manifest for ~s/~s:~s", [Bucket, Key, Vsn]),
+    ?LOG_DEBUG("created mp manifest for ~s/~s:~s", [Bucket, Key, Vsn]),
 
     M9.
 
@@ -711,7 +712,7 @@ comb_parts(MpM, PartETags) ->
     KeepPartIDs = [PM?PART_MANIFEST.part_id || PM <- KeepPMs],
     ToDelete = [PM || PM <- Parts,
                       not lists:member(PM?PART_MANIFEST.part_id, KeepPartIDs)],
-    logger:debug("Part count to be deleted at completion = ~p", [length(ToDelete)]),
+    ?LOG_DEBUG("Part count to be deleted at completion = ~p", [length(ToDelete)]),
     {KeepBytes, riak_cs_utils:md5_final(MD5Context), lists:reverse(KeepPMs), ToDelete}.
 
 comb_parts_fold({LastPartNum, LastPartETag} = _K,

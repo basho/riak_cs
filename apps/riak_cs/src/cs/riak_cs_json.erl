@@ -27,6 +27,7 @@
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
 -include("oos_api.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -90,7 +91,7 @@ to_json([]) ->
 
 -spec value_or_default({ok, term()} | {error, term()}, term()) -> term().
 value_or_default({error, Reason}, Default) ->
-    logger:debug("JSON error: ~p", [Reason]),
+    ?LOG_DEBUG("JSON error: ~p", [Reason]),
     Default;
 value_or_default({ok, Value}, _) ->
     Value.

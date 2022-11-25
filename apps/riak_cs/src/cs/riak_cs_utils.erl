@@ -73,6 +73,7 @@
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -547,7 +548,7 @@ this_host_addr() ->
                    end
            end, Ifs) of
         [{If, IP}] ->
-            logger:debug("this host address is ~s on iface ~s", [IP, If]),
+            ?LOG_DEBUG("this host address is ~s on iface ~s", [IP, If]),
             IP;
         [{If, IP}|_] ->
             logger:warning("This host has multiple network interfaces configured."

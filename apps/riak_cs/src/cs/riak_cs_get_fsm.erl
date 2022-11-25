@@ -36,10 +36,10 @@
 
 %% Test API
 -export([test_link/6]).
-
 -endif.
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([start_link/7,
@@ -257,7 +257,7 @@ waiting_continue_or_stop({continue, Range}, #state{manifest = Manifest,
                     FreeReaders =
                     riak_cs_block_server:start_block_servers(Manifest, RcPid,
                         FetchConcurrency),
-                    logger:debug("Block Servers: ~p", [FreeReaders]);
+                    ?LOG_DEBUG("Block Servers: ~p", [FreeReaders]);
                 _ ->
                     FreeReaders = Readers
             end,
@@ -307,7 +307,7 @@ perhaps_send_to_user(From, #state{got_blocks = Got,
         {{value, NextBlock}, UpdIntransit} ->
             case orddict:find(NextBlock, Got) of
                 {ok, Block} ->
-                    logger:debug("Returning block ~p to client", [NextBlock]),
+                    ?LOG_DEBUG("Returning block ~p to client", [NextBlock]),
                     %% Must use gen_fsm:reply/2 here!  We are shared
                     %% with an async event func and must return next_state.
                     gen_fsm:reply(From, {chunk, Block}),
@@ -323,7 +323,7 @@ waiting_chunks(stop, State) ->
     {stop, normal, State};
 waiting_chunks(timeout, State = #state{got_blocks = Got}) ->
     GotSize = orddict:size(Got),
-    logger:debug("starting fetch again with ~p left in queue", [GotSize]),
+    ?LOG_DEBUG("starting fetch again with ~p left in queue", [GotSize]),
     UpdState = read_blocks(State),
     {next_state, waiting_chunks, UpdState};
 
@@ -336,7 +336,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                       skip_bytes_initial = SkipInitial,
                       keep_bytes_final = KeepFinal
                      } = State) ->
-    logger:debug("Retrieved block ~p", [NextBlock]),
+    ?LOG_DEBUG("Retrieved block ~p", [NextBlock]),
     case BlockReturnValue of
         {error, _} = ErrorRes ->
             #state{bucket = Bucket, key = Key, obj_vsn = ObjVsn} = State,
@@ -354,7 +354,7 @@ waiting_chunks({chunk, Pid, {NextBlock, BlockReturnValue}},
                                   {InitialBlock, FinalBlock},
                                   {SkipInitial, KeepFinal}),
     UpdGot = orddict:store(NextBlock, BlockValue, Got),
-    %% TODO: logger:debug("BlocksLeft: ~p", [BlocksLeft]),
+    %% TODO: ?LOG_DEBUG("BlocksLeft: ~p", [BlocksLeft]),
     GotSize = orddict:size(UpdGot),
     UpdState0 = State#state{got_blocks = UpdGot, free_readers = [Pid|FreeReaders]},
     MaxGotSize = riak_cs_lfs_utils:get_fsm_buffer_size_factor(),
@@ -434,7 +434,7 @@ prepare(#state{bucket = Bucket,
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn, RcPid),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
-            logger:debug("Manifest: ~p", [Manifest]),
+            ?LOG_DEBUG("Manifest: ~p", [Manifest]),
             case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest, RcPid) of
                 same ->
                     State#state{manifest = Manifest,

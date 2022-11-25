@@ -21,14 +21,15 @@
 
 -module(stanchion_auth).
 
+-export([authenticate/2,
+         request_signature/4]).
+
 -include("stanchion.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
--export([authenticate/2,
-         request_signature/4]).
 
 %% ===================================================================
 %% Public API
@@ -39,8 +40,8 @@ authenticate(RD, [KeyId, Signature]) ->
     case stanchion_utils:get_admin_creds() of
         {ok, {AdminKeyId, AdminSecret}} ->
             CalculatedSignature = signature(AdminSecret, RD),
-            logger:debug(" Presented Signature: ~p", [Signature]),
-            logger:debug("Calculated Signature: ~p", [CalculatedSignature]),
+            ?LOG_DEBUG(" Presented Signature: ~p", [Signature]),
+            ?LOG_DEBUG("Calculated Signature: ~p", [CalculatedSignature]),
             case KeyId == AdminKeyId andalso
                 check_auth(Signature, CalculatedSignature) of
                 true ->

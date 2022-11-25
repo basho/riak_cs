@@ -46,6 +46,7 @@
          code_change/4]).
 
 -include("riak_cs_gc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -257,7 +258,7 @@ finish_file_delete(0, _, RiakObj, RcPid) ->
                                Timeout, [riakc, delete_gc_manifest_set]),
     ok;
 finish_file_delete(_, FileSet, _RiakObj, _RcPid) ->
-    logger:debug("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
+    ?LOG_DEBUG("Remaining file keys: ~p", [twop_set:to_list(FileSet)]),
     %% NOTE: we used to do a PUT here, but now with multidc replication
     %% we run garbage collection seprarately on each cluster, so we don't
     %% want to send this update to another data center. When we delete this

@@ -67,6 +67,7 @@
 -export_type([statename/0]).
 
 -include("riak_cs_gc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(SERVER, ?MODULE).
 
@@ -328,7 +329,7 @@ schedule_next(#gc_manager_state{timer_ref=Ref}=State)
         false ->
             schedule_next(State#gc_manager_state{timer_ref=undefined});
         _ ->
-            logger:debug("Timer is already scheduled, maybe manually triggered?"),
+            ?LOG_DEBUG("Timer is already scheduled, maybe manually triggered?"),
             %% Timer is already scheduled, do nothing
             State
     end;

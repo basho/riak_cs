@@ -50,13 +50,13 @@
 
 -behaviour(riak_cs_quota).
 
+-export([state/0, reset/0, set_params/2]).
+-export([start_link/0, allow/3, update/2, error_response/3]).
+
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine_logger.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
-
--export([state/0, reset/0, set_params/2]).
-
--export([start_link/0, allow/3, update/2, error_response/3]).
+-include_lib("kernel/include/logger.hrl").
 
 %% Quota not set
 -define(DEFAULT_SIMPLE_QUOTA, -1).
@@ -102,12 +102,12 @@ refresher() ->
                   end,
     receive
         reset ->
-            logger:debug("reset received: ~p", [?MODULE]),
+            ?LOG_DEBUG("reset received: ~p", [?MODULE]),
             refresher();
         _ ->
             ets:delete(?MODULE)
     after IntervalSec * 1000 ->
-            logger:debug("~p refresh in ~p secs", [?MODULE, IntervalSec]),
+            ?LOG_DEBUG("~p refresh in ~p secs", [?MODULE, IntervalSec]),
             ets:delete_all_objects(?MODULE),
             refresher()
     end.
@@ -119,7 +119,7 @@ refresher() ->
                    {error, {disk_quota, non_neg_integer(), non_neg_integer()}}.
 allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
     OwnerKey = iolist_to_binary(riak_cs_user:key_id(Owner)),
-    logger:debug("access => ~p", [OwnerKey]),
+    ?LOG_DEBUG("access => ~p", [OwnerKey]),
 
     {_, Usage} = case ets:lookup(?MODULE, OwnerKey) of
                      [{OwnerKey, _Usage} = UserState0] -> UserState0;

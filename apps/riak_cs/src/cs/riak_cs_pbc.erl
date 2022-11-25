@@ -49,6 +49,7 @@
          ]).
 
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(WITH_STATS(StatsKey, Statement),
         begin
@@ -224,7 +225,7 @@ pause_to_reconnect(_Pbc, _Other, _Timeout) ->
     ok.
 
 pause_to_reconnect0(Pbc, Timeout, Start) ->
-    logger:debug("riak_cs_pbc:pause_to_reconnect0"),
+    ?LOG_DEBUG("riak_cs_pbc:pause_to_reconnect0"),
     case riakc_pb_socket:is_connected(Pbc, ?FIRST_RECONNECT_INTERVAL) of
         true -> ok;
         {false, _} ->

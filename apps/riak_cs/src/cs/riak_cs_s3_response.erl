@@ -39,6 +39,7 @@
 -include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -type xmlElement() :: #xmlElement{}.
 
@@ -415,7 +416,7 @@ process_xml_error([]) ->
 process_xml_error([#xmlText{value=" "}|Rest]) ->
     process_xml_error(Rest);
 process_xml_error([HeadElement | RestElements]) ->
-    logger:debug("Element name: ~p", [HeadElement#xmlElement.name]),
+    ?LOG_DEBUG("Element name: ~p", [HeadElement#xmlElement.name]),
     ElementName = HeadElement#xmlElement.name,
     case ElementName of
         'Code' ->

@@ -26,12 +26,6 @@
 
 -behaviour(riak_cs_policy).
 
--include("riak_cs.hrl").
--include("s3_api.hrl").
--include_lib("webmachine/include/wm_reqdata.hrl").
--include_lib("webmachine/include/wm_reqstate.hrl").
--include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
-
 %% Public API
 -export([
          fetch_bucket_policy/2,
@@ -47,8 +41,14 @@
          log_supported_actions/0
         ]).
 
--ifdef(TEST).
+-include("riak_cs.hrl").
+-include("s3_api.hrl").
+-include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("kernel/include/logger.hrl").
 
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -export([eval_all_ip_addr/2,
          eval_ip_address/2,
@@ -59,10 +59,8 @@
          print_arns/1,
          parse_ip/1,
          print_ip/1,
-
          statement_eq/2  %% for test use
         ]).
-
 -endif.
 
 -type policy1() :: ?POLICY{}.
@@ -233,7 +231,7 @@ policy_from_json(JSON) ->
         {error, _Reason} = E ->
             E;
         {'EXIT', {{case_clause, B}, _}} when is_binary(B) ->
-            logger:debug("mochiweb failed to parse the JSON: ~p", [B]),
+            ?LOG_DEBUG("mochiweb failed to parse the JSON: ~p", [B]),
             {error, malformed_policy_json}
     end.
 
@@ -279,8 +277,8 @@ fetch_bucket_policy(Bucket, RcPid) ->
             Contents = riakc_obj:get_contents(Obj),
             bucket_policy_from_contents(Bucket, Contents);
         {error, Reason} ->
-            logger:debug("Failed to fetch policy. Bucket ~p does not exist. Reason: ~p",
-                         [Bucket, Reason]),
+            ?LOG_DEBUG("Failed to fetch policy. Bucket ~p does not exist. Reason: ~p",
+                       [Bucket, Reason]),
             {error, notfound}
     end.
 

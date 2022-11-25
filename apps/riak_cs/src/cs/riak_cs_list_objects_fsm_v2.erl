@@ -28,6 +28,7 @@
 
 -include("riak_cs.hrl").
 -include("list_objects.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %%%===================================================================
 %%% Exports
@@ -185,7 +186,7 @@ handle_info(Info, StateName, _State) ->
     ok.
 
 terminate(normal, _StateName, State) ->
-    logger:debug(format_profiling_from_state(State));
+    ?LOG_DEBUG(format_profiling_from_state(State));
 terminate(_Reason, _StateName, _State) ->
     ok.
 
@@ -226,7 +227,7 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    logger:debug("Ranges: ~p", [NewStateData#state.object_list_ranges]),
+    ?LOG_DEBUG("Ranges: ~p", [NewStateData#state.object_list_ranges]),
     respond(NewStateData, NewManis, NewPrefixes).
 
 -spec reached_end_of_keyspace(non_neg_integer(),
