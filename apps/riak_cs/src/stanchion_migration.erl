@@ -67,7 +67,6 @@ adopt_stanchion() ->
             ThisHostAddr = riak_cs_utils:this_host_addr(),
             {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
             start_stanchion_here(),
-            stanchion_stats:init(),
             ok = save_stanchion_data(Pbc, {ThisHostAddr, Port}),
             apply_stanchion_details({ThisHostAddr, Port}),
             ok = riakc_pb_socket:stop(Pbc),

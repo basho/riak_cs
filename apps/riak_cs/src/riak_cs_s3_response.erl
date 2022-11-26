@@ -299,6 +299,7 @@ error_resource(Tag, RD)
     end;
 
 error_resource(_Tag, RD) ->
+    logger:info("DDDD ~p", [RD]),
     {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
     OrigResource.
 

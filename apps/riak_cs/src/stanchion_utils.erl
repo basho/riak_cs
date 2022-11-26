@@ -56,6 +56,7 @@
 -include("moss.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(EMAIL_INDEX, <<"email_bin">>).
 -define(ID_INDEX, <<"c_id_bin">>).
@@ -134,7 +135,7 @@ bucket_record(Name, Operation) ->
                 modification_time=os:timestamp()}.
 
 
-%% @doc Attmpt to create a new user
+%% @doc Attempt to create a new user
 -spec create_user([{term(), term()}]) -> ok | {error, riak_connect_failed() | term()}.
 create_user(UserFields) ->
     UserName = binary_to_list(proplists:get_value(<<"name">>, UserFields, <<>>)),
@@ -155,11 +156,12 @@ create_user(UserFields) ->
                                           key_secret=KeySecret,
                                           canonical_id=CanonicalId},
                         save_user(User, RiakPid);
-                    {false, Reason1} ->
-                        {error, Reason1}
+                    {false, _} ->
+                        logger:info("Refusing to create an existing user with email ~s", [Email]),
+                        {error, user_already_exists}
                 end
-            catch T:E ->
-                    logger:error("Error on creating user ~s: ~p", [KeyId, {T, E}]),
+            catch T:E:ST ->
+                    logger:error("Error on creating user ~s: ~p. Stacktrace: ~p", [KeyId, {T, E}, ST]),
                     {error, {T, E}}
             after
                 close_riak_connection(RiakPid)
@@ -716,7 +718,7 @@ email_available(Email_, RiakPid) ->
     Email = iolist_to_binary([Email_]),
 
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get_index_eq(RiakPid, ?USER_BUCKET, ?EMAIL_INDEX, Email)),
-    stanchion_stats:update([riakc, get_user_by_index], TAT),
+    riak_cs_stats:update([riakc, get_user_by_index], TAT),
     case Res of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             true;
@@ -778,23 +780,21 @@ get_value(BucketName, Key, RiakPid) ->
             <<"unknown">>
     end.
 
-%% @doc Save information about a user
--spec save_user(moss_user(), pid()) -> ok.
 save_user(User, RiakPid) ->
     Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
                {?ID_INDEX, User?MOSS_USER.canonical_id}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:new(?USER_BUCKET, iolist_to_binary(User?MOSS_USER.key_id), term_to_binary(User)),
     UserObj = riakc_obj:update_metadata(Obj, Meta),
-    %% @TODO Error handling
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UserObj)),
-    stanchion_stats:update([riakc, put_cs_user], TAT),
-    Res.
+    case Res of
+        ok ->
+            stanchion_stats:update([riakc, put_cs_user], TAT);
+        {error, Reason} ->
+            logger:error("Failed to save user: Reason", [Reason]),
+            Res
+    end.
 
-%% @doc Save information about a Riak CS user
--spec save_user(boolean(), rcs_user(), riakc_obj:riakc_obj(), pid()) ->
-
-                       ok | {error, term()}.
 save_user(true, User=?RCS_USER{email=Email}, UserObj, RiakPid) ->
     case email_available(Email, RiakPid) of
         true ->
@@ -875,7 +875,7 @@ fetch_user(Key, RiakPid) ->
 weak_fetch_user(Key, RiakPid) ->
     WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions)),
-    stanchion_stats:update([riakc, get_user], TAT),
+    stanchion_stats:update([riakc, get_cs_user], TAT),
     case Res of
         {ok, Obj} ->
             {ok, {Obj, false}};

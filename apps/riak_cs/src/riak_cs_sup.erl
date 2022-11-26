@@ -46,6 +46,8 @@ start_link() ->
                         [supervisor:child_spec()]}}.
 init([]) ->
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
+    riak_cs_stats:init(),
+    stanchion_stats:init(),
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     init2(Options).
 
@@ -58,7 +60,6 @@ init2(Options) ->
             M when M == auto;
                    M == riak_cs_only;
                    M == riak_cs_with_stanchion ->
-                riak_cs_stats:init(),
                 pool_specs(Options) ++ rcs_process_specs() ++ web_specs(Options);
             _ ->
                 []
