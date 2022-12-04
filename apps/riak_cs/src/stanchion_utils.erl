@@ -111,9 +111,9 @@ create_bucket(BucketFields) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, User, UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        {ok, User, _UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(add, User, BucketRecord),
-                        riak_cs_user:save_user(UpdUser, UserObj, Pbc);
+                        save_user(UpdUser, Pbc);
                     {error, _} ->
                         OpResult1
                 end,
@@ -180,9 +180,9 @@ delete_bucket(Bucket, OwnerId) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, User, UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        {ok, User, _UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(delete, User, BucketRecord),
-                        riak_cs_user:save_user(UpdUser, UserObj, Pbc);
+                        save_user(UpdUser, Pbc);
                     {error, _} ->
                         OpResult1
                 end,
