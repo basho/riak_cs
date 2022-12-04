@@ -39,24 +39,29 @@
 
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
+    catch dyntrace:p(),                    % NIF load trigger (R15B01+)
+
+    riak_cs_stats:init(),
+    stanchion_stats:init(),
+
+    {ok, Pbc} = riak_connection(),
+    ok = ensure_service_bucket_props(Pbc),
+    ok = riakc_pb_socket:stop(Pbc),
 
     RewriteMod = application:get_env(riak_cs, rewrite_module, ?S3_API_MOD),
     ok = application:set_env(webmachine_mochiweb, rewrite_modules, [{object_web, RewriteMod}]),
+
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
 
 -spec init([]) -> {ok, {supervisor:sup_flags(),
                         [supervisor:child_spec()]}}.
 init([]) ->
-    catch dyntrace:p(),                    % NIF load trigger (R15B01+)
-    riak_cs_stats:init(),
-    stanchion_stats:init(),
     Options = [get_option_val(Option) || Option <- ?OPTIONS],
     init2(Options).
 
 init2(Options) ->
     Mode = proplists:get_value(operation_mode, Options),
-    {ok, Pbc} = riak_connection(),
-    ok = ensure_service_bucket_props(Pbc),
     RCSChildren =
         case Mode of
             M when M == auto;
@@ -66,7 +71,6 @@ init2(Options) ->
             _ ->
                 []
         end,
-    ok = riakc_pb_socket:stop(Pbc),
     {ok, {#{strategy => one_for_one,
             intensity => 10,
             period => 10}, RCSChildren
