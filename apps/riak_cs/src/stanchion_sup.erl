@@ -70,7 +70,6 @@ stanchion_process_specs() ->
                   {port, Port},
                   {nodelay, true},
                   {log_dir, "log"},
-                  %% {rewrite_module, stanchion_wm_rewrite},
                   {error_handler, stanchion_wm_error_handler}
                  ],
     WebConfig =

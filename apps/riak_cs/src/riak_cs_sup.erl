@@ -35,11 +35,13 @@
                   admin_listener,
                   ssl,
                   admin_ssl,
-                  {operation_mode, auto},
-                  {rewrite_module, ?S3_API_MOD}]).
+                  {operation_mode, auto}]).
 
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
+
+    RewriteMod = application:get_env(riak_cs, rewrite_module, ?S3_API_MOD),
+    ok = application:set_env(webmachine_mochiweb, rewrite_modules, [{object_web, RewriteMod}]),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 -spec init([]) -> {ok, {supervisor:sup_flags(),
@@ -195,7 +197,6 @@ object_web_config(Options) ->
      {ip, IP},
      {port, Port},
      {nodelay, true},
-     {rewrite_module, proplists:get_value(rewrite_module, Options)},
      {error_handler, riak_cs_wm_error_handler},
      {resource_module_option, submodule}] ++
         maybe_add_ssl_opts(proplists:get_value(ssl, Options)).
