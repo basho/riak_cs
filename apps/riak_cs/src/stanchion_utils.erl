@@ -51,17 +51,13 @@
          md5/1
         ]).
 
+-include("riak_cs.hrl").
 -include("stanchion.hrl").
 -include("manifest.hrl").
 -include("moss.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
-
--define(EMAIL_INDEX, <<"email_bin">>).
--define(ID_INDEX, <<"c_id_bin">>).
--define(OBJECT_BUCKET_PREFIX, <<"0o:">>).       % Version # = 0
--define(BLOCK_BUCKET_PREFIX, <<"0b:">>).        % Version # = 0
 
 -type bucket_op() :: create | update_acl | delete | update_policy | delete_policy | update_versioning.
 -type bucket_op_option() :: {acl, acl()}
