@@ -43,9 +43,9 @@ init(Config) ->
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     Api = riak_cs_config:api(),
     RespModule = riak_cs_config:response_module(Api),
-    {ok, #context{auth_bypass=AuthBypass,
-                  api=Api,
-                  response_module=RespModule}}.
+    {ok, #rcs_context{auth_bypass=AuthBypass,
+                      api=Api,
+                      response_module=RespModule}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -55,14 +55,14 @@ service_available(RD, Ctx) ->
 allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD'], RD, Ctx}.
 
-forbidden(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+forbidden(RD, Ctx=#rcs_context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
-produce_json(RD, Ctx=#context{riak_client=RcPid}) ->
+produce_json(RD, Ctx=#rcs_context{riak_client=RcPid}) ->
     Boundary = unique_id(),
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
@@ -78,7 +78,7 @@ produce_json(RD, Ctx=#context{riak_client=RcPid}) ->
     end,
     {{stream, {<<>>, fun() -> stream_users(json, RcPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
-produce_xml(RD, Ctx=#context{riak_client=RcPid}) ->
+produce_xml(RD, Ctx=#rcs_context{riak_client=RcPid}) ->
     Boundary = unique_id(),
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "multipart/mixed; boundary="++Boundary,
@@ -94,10 +94,10 @@ produce_xml(RD, Ctx=#context{riak_client=RcPid}) ->
     end,
     {{stream, {<<>>, fun() -> stream_users(xml, RcPid, Boundary, Status) end}}, UpdRD, Ctx}.
 
-finish_request(RD, Ctx=#context{}) ->
+finish_request(RD, Ctx=#rcs_context{}) ->
     %% riak_client is still used for streaming response.
     %% So do not close it here.
-    {true, RD, Ctx#context{riak_client=undefined}}.
+    {true, RD, Ctx#rcs_context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions

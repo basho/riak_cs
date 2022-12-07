@@ -22,9 +22,9 @@
 -ifndef(STANCHION_HRL).
 -define(STANCHION_HRL, included).
 
--record(context, {auth_bypass :: boolean(),
-                  bucket :: undefined | binary(),
-                  owner_id :: undefined | all | string()}).
+-record(stanchion_context, {auth_bypass :: boolean(),
+                            bucket :: undefined | binary(),
+                            owner_id :: undefined | all | string()}).
 
 -define(TURNAROUND_TIME(Call),
         begin

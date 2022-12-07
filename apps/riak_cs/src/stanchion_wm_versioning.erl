@@ -37,7 +37,7 @@ init(Config) ->
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     % eval every atoms to make binary_to_existing_atom/2 work.
-    {ok, #context{auth_bypass=AuthBypass}}.
+    {ok, #stanchion_context{auth_bypass=AuthBypass}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -48,7 +48,7 @@ malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
 %% @doc Check that the request is from the admin user
-is_authorized(RD, Ctx=#context{auth_bypass=AuthBypass}) ->
+is_authorized(RD, Ctx=#stanchion_context{auth_bypass=AuthBypass}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case stanchion_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->

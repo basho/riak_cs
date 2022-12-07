@@ -52,10 +52,10 @@
 %% Public API
 %% ===================================================================
 
--spec identify(RD::term(), #context{}) ->
-                      {string() | undefined,
-                       string() | {v4, v4_attrs()} | undefined} |
-                      {failed, Reason::atom()}.
+-spec identify(RD::term(), #rcs_context{}) ->
+          {string() | undefined,
+           string() | {v4, v4_attrs()} | undefined} |
+          {failed, Reason::atom()}.
 identify(RD,_Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -64,8 +64,8 @@ identify(RD,_Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
-                          ok | {error, atom()}.
+-spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_context{}) ->
+          ok | {error, atom()}.
 authenticate(User, Signature, RD, Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
@@ -80,8 +80,8 @@ authenticate(User, Signature, RD, Ctx) ->
             end
     end.
 
--spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #context{}) ->
-                          ok | {error, atom()}.
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_context{}) ->
+          ok | {error, atom()}.
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
 authenticate_1(User, Signature, RD, _Ctx) ->

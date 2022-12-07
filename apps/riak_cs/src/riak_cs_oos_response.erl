@@ -32,8 +32,8 @@
 -include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--spec respond(term(), #wm_reqdata{}, #context{}) ->
-                     {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #context{}}.
+-spec respond(term(), #wm_reqdata{}, #rcs_context{}) ->
+          {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_context{}}.
 respond(?LBRESP{}=Response, RD, Ctx) ->
     BucketsDoc =
         [begin

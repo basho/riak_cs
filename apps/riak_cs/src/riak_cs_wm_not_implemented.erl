@@ -33,7 +33,7 @@
 allowed_methods() ->
     ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE', 'CONNECT', 'OPTIONS'].
 
--spec malformed_request(#wm_reqdata{}, #context{}) ->
-                               {false | {halt, _}, #wm_reqdata{}, #context{}}.
+-spec malformed_request(#wm_reqdata{}, #rcs_context{}) ->
+          {false | {halt, _}, #wm_reqdata{}, #rcs_context{}}.
 malformed_request(RD, Ctx) ->
     riak_cs_s3_response:api_error(not_implemented, RD, Ctx).

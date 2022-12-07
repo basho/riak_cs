@@ -124,7 +124,7 @@ refresher() ->
             refresher()
     end.
 
--spec allow(rcs_user(), access(), #context{}) -> {ok, #wm_reqdata{}, #context{}}.
+-spec allow(rcs_user(), access(), #rcs_context{}) -> {ok, #wm_reqdata{}, #rcs_context{}}.
 allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 
     OwnerKey = list_to_binary(riak_cs_user:key_id(Owner)),

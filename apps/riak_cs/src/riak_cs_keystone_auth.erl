@@ -41,15 +41,15 @@
 %% Public API
 %% ===================================================================
 
--spec identify(#wm_reqdata{}, #context{}) -> failed | {string() | undefined , string()}.
-identify(RD, #context{api=s3}) ->
+-spec identify(#wm_reqdata{}, #rcs_context{}) -> failed | {string() | undefined , string()}.
+identify(RD, #rcs_context{api=s3}) ->
     validate_token(s3, RD);
-identify(RD, #context{api=oos}) ->
+identify(RD, #rcs_context{api=oos}) ->
     validate_token(oos, wrq:get_req_header("x-auth-token", RD)).
 
 -spec authenticate(rcs_user(),
                    {string(), term()}|tuple(),
-                   #wm_reqdata{}, #context{}) ->
+                   #wm_reqdata{}, #rcs_context{}) ->
                           ok | {error, invalid_authentication}.
 authenticate(_User, {_, TokenItems}, _RD, _Ctx) ->
     %% @TODO Expand authentication check for non-operators who may

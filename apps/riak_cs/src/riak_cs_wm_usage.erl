@@ -239,8 +239,8 @@ generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
     {Etag, RD, Ctx}.
 
 forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
-    BogusContext = #context{auth_bypass=AuthBypass, riak_client=RcPid},
-    Next = fun(NewRD, #context{user=User}) ->
+    BogusContext = #rcs_context{auth_bypass=AuthBypass, riak_client=RcPid},
+    Next = fun(NewRD, #rcs_context{user=User}) ->
                    forbidden(NewRD, Ctx, User, AuthBypass)
            end,
     Conv2Ctx = fun(_) -> Ctx end,

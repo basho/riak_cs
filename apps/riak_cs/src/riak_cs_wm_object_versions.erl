@@ -38,9 +38,9 @@
 
 -define(RIAKCPOOL, bucket_list_pool).
 
--spec init(#context{}) -> {ok, #context{}}.
+-spec init(#rcs_context{}) -> {ok, #rcs_context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{rc_pool = ?RIAKCPOOL}}.
+    {ok, Ctx#rcs_context{rc_pool = ?RIAKCPOOL}}.
 
 -spec stats_prefix() -> list_object_versions.
 stats_prefix() -> list_object_versions.
@@ -49,12 +49,12 @@ stats_prefix() -> list_object_versions.
 allowed_methods() ->
     ['GET'].
 
--spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
--spec api_request(#wm_reqdata{}, #context{}) -> {ok, ?LOVRESP{}} | {error, term()}.
-api_request(RD, Ctx = #context{bucket = Bucket,
+-spec api_request(#wm_reqdata{}, #rcs_context{}) -> {ok, ?LOVRESP{}} | {error, term()}.
+api_request(RD, Ctx = #rcs_context{bucket = Bucket,
                                riak_client = RcPid,
                                user = User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
@@ -63,7 +63,7 @@ api_request(RD, Ctx = #context{bucket = Bucket,
             versions,
             [B || B <- riak_cs_bucket:get_buckets(User),
                   B?RCS_BUCKET.name =:= binary_to_list(Bucket)],
-            Ctx#context.bucket,
+            Ctx#rcs_context.bucket,
             get_max_keys(RD),
             get_options(RD),
             RcPid),

@@ -92,7 +92,7 @@ service_available(RD, Ctx) ->
 service_available(Pool, RD, Ctx) ->
     case riak_cs_utils:riak_connection(Pool) of
         {ok, RcPid} ->
-            {true, RD, Ctx#context{riak_client=RcPid}};
+            {true, RD, Ctx#rcs_context{riak_client=RcPid}};
         {error, _Reason} ->
             {false, RD, Ctx}
     end.
@@ -137,7 +137,7 @@ parse_auth_params(KeyId, Signature, _) ->
 %% `Next(RD, NewCtx)' if there is no auth error.
 %%
 %% If a user was successfully authed, the `user' and `user_object'
-%% fields in the `#context' record passed to `Next' will be filled.
+%% fields in the `#rcs_context' record passed to `Next' will be filled.
 %% If the access is instead anonymous, those fields will be left as
 %% they were passed to this function.
 %%
@@ -152,8 +152,8 @@ find_and_auth_user(RD, ICtx, Next, AnonymousOk) ->
     find_and_auth_user(RD, ICtx, Next, fun(X) -> X end, AnonymousOk).
 
 find_and_auth_user(RD,
-                   #context{auth_bypass=AuthBypass,
-                            riak_client=RcPid}=ICtx,
+                   #rcs_context{auth_bypass=AuthBypass,
+                                riak_client=RcPid}=ICtx,
                    Next,
                    Conv2KeyCtx,
                    AnonymousOk) ->
@@ -166,7 +166,7 @@ find_and_auth_user(RD,
       AnonymousOk).
 
 find_and_auth_admin(RD, Ctx, AuthBypass) ->
-    Next = fun(NewRD, NewCtx=#context{user=User}) ->
+    Next = fun(NewRD, NewCtx=#rcs_context{user=User}) ->
                    handle_auth_admin(NewRD,
                                      NewCtx,
                                      User,
@@ -176,8 +176,8 @@ find_and_auth_admin(RD, Ctx, AuthBypass) ->
 
 handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
-    Next(RD, Ctx#context{user=User,
-                         user_object=UserObj});
+    Next(RD, Ctx#rcs_context{user=User,
+                             user_object=UserObj});
 handle_validation_response({error, disconnected}, RD, Ctx, _Next, _, _Bool) ->
     {{halt, 503}, RD, Ctx};
 handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
@@ -224,7 +224,7 @@ handle_auth_admin(RD, Ctx, User, false) ->
 %% @doc Look for an Authorization header in the request, and validate
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
--spec validate_auth_header(#wm_reqdata{}, term(), riak_client(), #context{}|undefined) ->
+-spec validate_auth_header(#wm_reqdata{}, term(), riak_client(), #rcs_context{}|undefined) ->
                                   {ok, rcs_user(), riakc_obj:riakc_obj()} |
                                   {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
@@ -294,14 +294,14 @@ setup_manifest(KeyCtx = #key_context{bucket = Bucket,
 
 %% @doc Produce an api error by using response_module.
 respond_api_error(RD, Ctx, ErrorAtom) ->
-    ResponseMod = Ctx#context.response_module,
+    ResponseMod = Ctx#rcs_context.response_module,
     NewRD = maybe_log_user(RD, Ctx),
     ResponseMod:api_error(ErrorAtom, NewRD, Ctx).
 
 %% @doc Only set the user for the access logger to catch if there is a
 %% user to catch.
 maybe_log_user(RD, Context) ->
-    case Context#context.user of
+    case Context#rcs_context.user of
         undefined ->
             RD;
         User ->
@@ -310,7 +310,7 @@ maybe_log_user(RD, Context) ->
 
 %% @doc Produce an access-denied error message from a webmachine
 %% resource's `forbidden/2' function.
-deny_access(RD, Ctx=#context{response_module=ResponseMod}) ->
+deny_access(RD, Ctx=#rcs_context{response_module=ResponseMod}) ->
     ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
     riak_cs_s3_response:api_error(access_denied, RD, Ctx).
@@ -319,21 +319,21 @@ deny_access(RD, Ctx) ->
 
 %% @doc Produce an invalid-access-keyid error message from a
 %% webmachine resource's `forbidden/2' function.
-deny_invalid_key(RD, Ctx=#context{response_module=ResponseMod}) ->
+deny_invalid_key(RD, Ctx=#rcs_context{response_module=ResponseMod}) ->
     ResponseMod:api_error(invalid_access_key_id, RD, Ctx).
 
 %% @doc In the case is a user is authorized to perform an operation on
 %% a bucket but is not the owner of that bucket this function can be used
 %% to switch to the owner's record if it can be retrieved
--spec shift_to_owner(#wm_reqdata{}, #context{}, string(), riak_client()) ->
-                            {boolean(), #wm_reqdata{}, #context{}}.
-shift_to_owner(RD, Ctx=#context{response_module=ResponseMod}, OwnerId, RcPid)
+-spec shift_to_owner(#wm_reqdata{}, #rcs_context{}, string(), riak_client()) ->
+          {boolean(), #wm_reqdata{}, #rcs_context{}}.
+shift_to_owner(RD, Ctx=#rcs_context{response_module=ResponseMod}, OwnerId, RcPid)
   when RcPid /= undefined ->
     case riak_cs_user:get_user(OwnerId, RcPid) of
         {ok, {Owner, OwnerObject}} when Owner?RCS_USER.status =:= enabled ->
             AccessRD = riak_cs_access_log_handler:set_user(Owner, RD),
-            {false, AccessRD, Ctx#context{user=Owner,
-                                          user_object=OwnerObject}};
+            {false, AccessRD, Ctx#rcs_context{user=Owner,
+                                              user_object=OwnerObject}};
         {ok, _} ->
             riak_cs_wm_utils:deny_access(RD, Ctx);
         {error, _} ->
@@ -424,10 +424,10 @@ iso_8601_to_erl_date(Date)  ->
 %% @doc Return a new context where the bucket and key for the s3
 %% object have been inserted. It also does key length check. TODO: do
 %% we check if the key is valid Unicode string or not?
--spec extract_key(#wm_reqdata{}, #context{}) ->
-          {ok, #context{}} |
+-spec extract_key(#wm_reqdata{}, #rcs_context{}) ->
+          {ok, #rcs_context{}} |
           {error, {key_too_long, pos_integer()} | {vsn_too_long, pos_integer()}}.
-extract_key(RD, Ctx = #context{local_context = LocalCtx0}) ->
+extract_key(RD, Ctx = #rcs_context{local_context = LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     %% need to unquote twice since we re-urlencode the string during rewrite in
     %% order to trick webmachine dispatching
@@ -435,13 +435,13 @@ extract_key(RD, Ctx = #context{local_context = LocalCtx0}) ->
     case mochiweb_util:unquote(mochiweb_util:unquote(wrq:path_info(object, RD))) of
         Key when length(Key) =< MaxKeyLen ->
             LocalCtx = LocalCtx0#key_context{bucket = Bucket, key = list_to_binary(Key)},
-            extract_version_id(RD, Ctx#context{bucket = Bucket,
-                                               local_context = LocalCtx});
+            extract_version_id(RD, Ctx#rcs_context{bucket = Bucket,
+                                                   local_context = LocalCtx});
         Key ->
             {error, {key_too_long, length(Key)}}
     end.
 
-extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
+extract_version_id(RD, Ctx = #rcs_context{local_context = LocalCtx0}) ->
     VsnId =
         case {wrq:path_info(versionId, RD), rcs_version_id_from_headers(RD)} of
             {undefined, undefined} ->
@@ -459,7 +459,7 @@ extract_version_id(RD, Ctx = #context{local_context = LocalCtx0}) ->
     case size(VsnId) =< riak_cs_config:max_key_length() of
         true ->
             LocalCtx = LocalCtx0#key_context{obj_vsn = VsnId},
-            {ok, Ctx#context{local_context = LocalCtx}};
+            {ok, Ctx#rcs_context{local_context = LocalCtx}};
         _ ->
             {error, {key_too_long, size(VsnId)}}
     end.
@@ -477,14 +477,14 @@ extract_name(_) ->
 %% @doc Add an ACL to the context, from parsing the headers. If there is
 %% an error parsing the header, halt the request. If there is no ACL
 %% information in the headers, use the default ACL.
--spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #context{}) ->
-                                                        {error, {{halt, term()}, #wm_reqdata{}, #context{}}} |
-                                                        {ok, #context{}}.
+-spec maybe_update_context_with_acl_from_headers(#wm_reqdata{}, #rcs_context{}) ->
+          {error, {{halt, term()}, #wm_reqdata{}, #rcs_context{}}} |
+          {ok, #rcs_context{}}.
 maybe_update_context_with_acl_from_headers(RD,
-                                           Ctx=#context{user=User,
-                                                        bucket=BucketName,
-                                                        local_context=LocalCtx,
-                                                        riak_client=RcPid}) ->
+                                           Ctx=#rcs_context{user=User,
+                                                            bucket=BucketName,
+                                                            local_context=LocalCtx,
+                                                            riak_client=RcPid}) ->
     case bucket_obj_from_local_context(LocalCtx, BucketName, RcPid) of
         {ok, BucketObject} ->
             case maybe_acl_from_context_and_request(RD, Ctx, BucketObject) of
@@ -493,12 +493,12 @@ maybe_update_context_with_acl_from_headers(RD,
                 %% pattern match on the ACL record type for a data-type
                 %% sanity-check
                 {ok, {ok, Acl=?ACL{}}} ->
-                    {ok, Ctx#context{acl=Acl}};
+                    {ok, Ctx#rcs_context{acl=Acl}};
                 error ->
                     DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
                                                                User?RCS_USER.canonical_id,
                                                                User?RCS_USER.key_id),
-                    {ok, Ctx#context{acl=DefaultAcl}}
+                    {ok, Ctx#rcs_context{acl=DefaultAcl}}
             end;
         {error, Reason} ->
             logger:error("Failed to retrieve bucket objects for reason ~p", [Reason]),
@@ -524,11 +524,11 @@ bucket_obj_from_local_context(undefined, BucketName, RcPid) ->
 %% are no ACL headers, return `error'. In this case, it's not unexpected
 %% to get the `error' value back, but it's name is used for convention.
 %% It could also reasonable be called `nothing'.
--spec maybe_acl_from_context_and_request(#wm_reqdata{}, #context{},
+-spec maybe_acl_from_context_and_request(#wm_reqdata{}, #rcs_context{},
                                          riakc_obj:riakc_obj()) ->
-                                                {ok, acl_or_error()} | error.
-maybe_acl_from_context_and_request(RD, #context{user=User,
-                                                riak_client=RcPid},
+          {ok, acl_or_error()} | error.
+maybe_acl_from_context_and_request(RD, #rcs_context{user=User,
+                                                    riak_client=RcPid},
                                    BucketObj) ->
     case has_acl_header(RD) of
         true ->
@@ -693,16 +693,16 @@ extract_user_metadata([_ | Headers], Acc) ->
     extract_user_metadata(Headers, Acc).
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::#context{}) -> term().
+                                     RD::term(), Ctx::#rcs_context{}) -> term().
 bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
-    #context{riak_client=RcPid,
-             policy_module=PolicyMod} = Ctx,
+    #rcs_context{riak_client=RcPid,
+                 policy_module=PolicyMod} = Ctx,
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    PermCtx = Ctx#context{bucket=Bucket,
-                          requested_perm=RequestedAccess},
+    PermCtx = Ctx#rcs_context{bucket=Bucket,
+                              requested_perm=RequestedAccess},
     handle_bucket_acl_policy_response(
       riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid),
       AccessType,
@@ -711,16 +711,16 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
       PermCtx).
 
 handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
-    ResponseMod = Ctx#context.response_module,
+    ResponseMod = Ctx#rcs_context.response_module,
     ResponseMod:api_error(no_such_bucket, RD, Ctx);
 handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
-    ResponseMod = Ctx#context.response_module,
+    ResponseMod = Ctx#rcs_context.response_module,
     ResponseMod:api_error(Reason, RD, Ctx);
 handle_bucket_acl_policy_response({Acl, Policy}, AccessType, DeleteEligible, RD, Ctx) ->
-    #context{bucket=Bucket,
-             riak_client=RcPid,
-             user=User,
-             requested_perm=RequestedAccess} = Ctx,
+    #rcs_context{bucket=Bucket,
+                 riak_client=RcPid,
+                 user=User,
+                 requested_perm=RequestedAccess} = Ctx,
     AclCheckRes = riak_cs_acl_utils:check_grants(User,
                                                  Bucket,
                                                  RequestedAccess,
@@ -733,14 +733,14 @@ handle_acl_check_result(true, _, undefined, _, _, RD, Ctx) ->
     %% because users are not allowed to create/destroy
     %% buckets, we can assume that User is not
     %% undefined here
-    AccessRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_context.user, RD),
     {false, AccessRD, Ctx};
 handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
     %% because users are not allowed to create/destroy
     %% buckets, we can assume that User is not
     %% undefined here
-    User = Ctx#context.user,
-    PolicyMod = Ctx#context.policy_module,
+    User = Ctx#rcs_context.user,
+    PolicyMod = Ctx#rcs_context.policy_module,
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     Access = PolicyMod:reqdata_to_access(RD, AccessType,
                                          User?RCS_USER.canonical_id),
@@ -752,19 +752,19 @@ handle_acl_check_result({true, _OwnerId}, _, _, _, true, RD, Ctx) ->
     %% grants lied: this is a delete, and only the owner is allowed to
     %% do that; setting user for the request anyway, so the error
     %% tally is logged for them
-    AccessRD = riak_cs_access_log_handler:set_user(Ctx#context.user, RD),
+    AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_context.user, RD),
     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
 handle_acl_check_result({true, OwnerId}, _, _, _, _, RD, Ctx) ->
     %% this operation is allowed, but we need to get the owner's
     %% record, and log the access against them instead of the actor
-    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
+    riak_cs_wm_utils:shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_context.riak_client);
 handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     %% No policy so emulate a policy eval failure to avoid code duplication
-    handle_policy_eval_result(Ctx#context.user, false, undefined, RD, Ctx);
+    handle_policy_eval_result(Ctx#rcs_context.user, false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
-    #context{riak_client=RcPid,
-             user=User0} = Ctx,
-    PolicyMod = Ctx#context.policy_module,
+    #rcs_context{riak_client=RcPid,
+                 user=User0} = Ctx,
+    PolicyMod = Ctx#rcs_context.policy_module,
     User = case User0 of
                undefined -> undefined;
                _ ->         User0?RCS_USER.canonical_id
@@ -776,13 +776,13 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
 
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
-    shift_to_owner(RD, Ctx, OwnerId, Ctx#context.riak_client);
+    shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_context.riak_client);
 handle_policy_eval_result(User, _, _, RD, Ctx) ->
     %% Policy says no
-    #context{riak_client=RcPid,
-             response_module=ResponseMod,
-             user=User,
-             bucket=Bucket} = Ctx,
+    #rcs_context{riak_client=RcPid,
+                 response_module=ResponseMod,
+                 user=User,
+                 bucket=Bucket} = Ctx,
     %% log bad requests against the actors that make them
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     %% Check if the bucket actually exists so we can
@@ -802,23 +802,23 @@ is_acl_request(_) ->
     false.
 
 -type halt_or_bool() :: {halt, pos_integer()} | boolean().
--type authorized_response() :: {halt_or_bool(), RD :: #wm_reqdata{}, Ctx :: #context{}}.
+-type authorized_response() :: {halt_or_bool(), RD :: #wm_reqdata{}, Ctx :: #rcs_context{}}.
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD:: #wm_reqdata{}, Ctx:: #context{}) ->
-                                            authorized_response().
+                                     #wm_reqdata{}, #rcs_context{}) ->
+          authorized_response().
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
 -spec object_access_authorize_helper(AccessType::atom(), boolean(), boolean(),
-                                     RD:: #wm_reqdata{}, Ctx:: #context{}) ->
-                                            authorized_response().
+                                     RD:: #wm_reqdata{}, Ctx:: #rcs_context{}) ->
+          authorized_response().
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
-                               RD, #context{policy_module=PolicyMod,
-                                            local_context=LocalCtx,
-                                            user=User,
-                                            riak_client=RcPid,
-                                            response_module=ResponseMod}=Ctx)
+                               RD, #rcs_context{policy_module=PolicyMod,
+                                                local_context=LocalCtx,
+                                                user=User,
+                                                riak_client=RcPid,
+                                                response_module=ResponseMod}=Ctx)
   when ( AccessType =:= object_acl orelse
          AccessType =:= object_part orelse
          AccessType =:= object )
@@ -996,7 +996,7 @@ actor_is_owner_and_allowed_policy(undefined, RD, Ctx, _LocalCtx) ->
 actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=User?RCS_USER.key_id},
-    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+    {false, AccessRD, Ctx#rcs_context{local_context=UpdLocalCtx}}.
 
 -spec actor_is_not_owner_and_denied_policy(OwnerId :: string(),
                                            RD :: term(),
@@ -1024,11 +1024,11 @@ actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
-    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#context.riak_client);
+    UpdCtx = Ctx#rcs_context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#rcs_context.riak_client);
 actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-    UpdCtx = Ctx#context{local_context=LocalCtx#key_context{owner=OwnerId}},
+    UpdCtx = Ctx#rcs_context{local_context=LocalCtx#key_context{owner=OwnerId}},
     {false, AccessRD, UpdCtx}.
 
 -spec just_allowed_by_policy(OwnerId :: string(),
@@ -1039,7 +1039,7 @@ actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
 just_allowed_by_policy(OwnerId, RD, Ctx, LocalCtx) ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner=OwnerId},
-    {false, AccessRD, Ctx#context{local_context=UpdLocalCtx}}.
+    {false, AccessRD, Ctx#rcs_context{local_context=UpdLocalCtx}}.
 
 -spec fetch_bucket_owner(binary(), riak_client()) -> undefined | acl_owner().
 fetch_bucket_owner(Bucket, RcPid) ->
@@ -1104,8 +1104,8 @@ content_length(RD) ->
 %% single request entity size.
 %% On the other hand, for PUT Copy, Content-Length is not mandatory.
 %% If it exists, however, it should be ZERO.
-valid_entity_length(MaxLen, RD, #context{response_module=ResponseMod,
-                                         local_context=LocalCtx} = Ctx) ->
+valid_entity_length(MaxLen, RD, #rcs_context{response_module=ResponseMod,
+                                             local_context=LocalCtx} = Ctx) ->
     case {wrq:method(RD), wrq:get_req_header("x-amz-copy-source", RD)} of
         {'PUT', undefined} ->
             MaxLen = riak_cs_lfs_utils:max_content_len(),
@@ -1113,7 +1113,7 @@ valid_entity_length(MaxLen, RD, #context{response_module=ResponseMod,
                 Length when is_integer(Length) andalso
                             Length =< MaxLen ->
                     UpdLocalCtx = LocalCtx#key_context{size=Length},
-                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                    {true, RD, Ctx#rcs_context{local_context=UpdLocalCtx}};
                 Length when is_integer(Length) ->
                     ResponseMod:api_error(entity_too_large, RD, Ctx);
                 _ -> {false, RD, Ctx}
@@ -1122,7 +1122,7 @@ valid_entity_length(MaxLen, RD, #context{response_module=ResponseMod,
             case riak_cs_wm_utils:content_length(RD) of
                 CL when CL =:= 0 orelse CL =:= undefined ->
                     UpdLocalCtx = LocalCtx#key_context{size=0},
-                    {true, RD, Ctx#context{local_context=UpdLocalCtx}};
+                    {true, RD, Ctx#rcs_context{local_context=UpdLocalCtx}};
                 _ -> {false, RD, Ctx}
             end;
         _ ->

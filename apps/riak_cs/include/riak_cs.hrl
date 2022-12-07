@@ -29,36 +29,36 @@
 
 -type riak_client() :: pid().
 
--record(context, {start_time :: undefined | erlang:timestamp(),
-                  auth_bypass :: atom(),
-                  user :: undefined | moss_user(),
-                  user_object :: undefined | riakc_obj:riakc_obj(),
-                  bucket :: undefined | binary(),
-                  acl :: 'undefined' | acl(),
-                  requested_perm :: undefined | acl_perm(),
-                  riak_client :: undefined | riak_client(),
-                  rc_pool :: atom(),    % pool name which riak_client belongs to
-                  auto_rc_close = true :: boolean(),
-                  submodule :: atom(),
-                  exports_fun :: undefined | function(),
-                  auth_module :: atom(),
-                  response_module :: atom(),
-                  policy_module :: atom(),
-                  %% Key for API rate and latency stats.
-                  %% If `stats_prefix' or `stats_key' is `no_stats', no stats
-                  %% will be gathered by riak_cs_wm_common.
-                  %% The prefix is defined by `stats_prefix()' callback of sub-module.
-                  %% If sub-module provides only `stats_prefix' (almost the case),
-                  %% stats key is [Prefix, HttpMethod]. Otherwise, sum-module
-                  %% can set specific `stats_key' by any callback that returns
-                  %% this context.
-                  stats_prefix = no_stats :: atom(),
-                  stats_key=prefix_and_method :: prefix_and_method |
-                                                 no_stats |
-                                                 riak_cs_stats:key(),
-                  local_context :: term(),
-                  api :: atom()
-                 }).
+-record(rcs_context, {start_time :: undefined | erlang:timestamp(),
+                      auth_bypass :: atom(),
+                      user :: undefined | moss_user(),
+                      user_object :: undefined | riakc_obj:riakc_obj(),
+                      bucket :: undefined | binary(),
+                      acl :: 'undefined' | acl(),
+                      requested_perm :: undefined | acl_perm(),
+                      riak_client :: undefined | riak_client(),
+                      rc_pool :: atom(),    % pool name which riak_client belongs to
+                      auto_rc_close = true :: boolean(),
+                      submodule :: atom(),
+                      exports_fun :: undefined | function(),
+                      auth_module :: atom(),
+                      response_module :: atom(),
+                      policy_module :: atom(),
+                      %% Key for API rate and latency stats.
+                      %% If `stats_prefix' or `stats_key' is `no_stats', no stats
+                      %% will be gathered by riak_cs_wm_common.
+                      %% The prefix is defined by `stats_prefix()' callback of sub-module.
+                      %% If sub-module provides only `stats_prefix' (almost the case),
+                      %% stats key is [Prefix, HttpMethod]. Otherwise, sum-module
+                      %% can set specific `stats_key' by any callback that returns
+                      %% this context.
+                      stats_prefix = no_stats :: atom(),
+                      stats_key=prefix_and_method :: prefix_and_method |
+                                                     no_stats |
+                                                     riak_cs_stats:key(),
+                      local_context :: term(),
+                      api :: atom()
+                     }).
 
 -record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
                       upload_id :: undefined | binary(),

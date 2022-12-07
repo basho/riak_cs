@@ -43,9 +43,9 @@
 
 -define(RIAKCPOOL, request_pool).
 
--spec init(#context{}) -> {ok, #context{}}.
+-spec init(#rcs_context{}) -> {ok, #rcs_context{}}.
 init(Ctx) ->
-    {ok, Ctx#context{rc_pool=?RIAKCPOOL}}.
+    {ok, Ctx#rcs_context{rc_pool=?RIAKCPOOL}}.
 
 -spec stats_prefix() -> multiple_delete.
 stats_prefix() -> multiple_delete.
@@ -57,36 +57,36 @@ allowed_methods() ->
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
--spec authorize(#wm_reqdata{}, #context{}) -> {boolean(), #wm_reqdata{}, #context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
 authorize(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    {false, RD, Ctx#context{bucket=Bucket}}.
+    {false, RD, Ctx#rcs_context{bucket=Bucket}}.
 
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
--spec process_post(#wm_reqdata{}, #context{}) -> {term(), #wm_reqdata{}, #context{}}.
-process_post(RD, Ctx=#context{bucket=Bucket,
-                              riak_client=RcPid, user=User}) ->
+-spec process_post(#wm_reqdata{}, #rcs_context{}) -> {term(), #wm_reqdata{}, #rcs_context{}}.
+process_post(RD, Ctx=#rcs_context{bucket=Bucket,
+                                  riak_client=RcPid, user=User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"multiple_delete">>, [], [UserName, Bucket]),
 
     handle_with_bucket_obj(riak_cs_bucket:fetch_bucket_object(Bucket, RcPid), RD, Ctx).
 
 handle_with_bucket_obj({error, notfound}, RD,
-                       #context{response_module=ResponseMod} = Ctx) ->
+                       #rcs_context{response_module=ResponseMod} = Ctx) ->
     ResponseMod:api_error(no_such_bucket, RD, Ctx);
 
 handle_with_bucket_obj({error, _} = Error, RD,
-                       #context{response_module=ResponseMod} = Ctx) ->
+                       #rcs_context{response_module=ResponseMod} = Ctx) ->
     ?LOG_DEBUG("bucket error: ~p", [Error]),
     ResponseMod:api_error(Error, RD, Ctx);
 
 handle_with_bucket_obj({ok, BucketObj},
-                       RD, Ctx=#context{bucket=Bucket,
-                                        riak_client=RcPid, user=User,
-                                        response_module=ResponseMod,
-                                        policy_module=PolicyMod}) ->
+                       RD, Ctx=#rcs_context{bucket=Bucket,
+                                            riak_client=RcPid, user=User,
+                                            response_module=ResponseMod,
+                                            policy_module=PolicyMod}) ->
 
     case parse_body(binary_to_list(wrq:req_body(RD))) of
         {error, _} = Error ->
