@@ -107,7 +107,7 @@ create_bucket(BucketFields) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, User, _UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        {ok, {User, _UserObj}} = get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(add, User, BucketRecord),
                         save_user(UpdUser, Pbc);
                     {error, _} ->
@@ -176,7 +176,7 @@ delete_bucket(Bucket, OwnerId) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, User, _UserObj} = riak_cs_user:get_user(OwnerId, Pbc),
+                        {ok, {User, _UserObj}} = get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(delete, User, BucketRecord),
                         save_user(UpdUser, Pbc);
                     {error, _} ->
@@ -820,13 +820,13 @@ save_user(false, User, UserObj, RiakPid) ->
     Res.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user('undefined' | list(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+-spec get_user('undefined' | iolist(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RiakPid) ->
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
-    BinKey = list_to_binary(KeyId),
+    BinKey = iolist_to_binary(KeyId),
     case fetch_user(BinKey, RiakPid) of
         {ok, {Obj, KeepDeletedBuckets}} ->
             from_riakc_obj(Obj, KeepDeletedBuckets);
