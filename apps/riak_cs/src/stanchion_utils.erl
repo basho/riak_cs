@@ -59,14 +59,6 @@
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--type bucket_op() :: create | update_acl | delete | update_policy | delete_policy | update_versioning.
--type bucket_op_option() :: {acl, acl()}
-                          | {policy, binary()}
-                          | delete_policy
-                          | {bag, binary()}
-                          | {versioning, binary()}.
--type bucket_op_options() :: [bucket_op_option()].
-
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -284,56 +276,6 @@ pow(Base, Power, Acc) ->
             pow(Base, Power - 1, Acc * Base)
     end.
 
-%% @doc Store a new bucket in Riak
-%% though whole metadata itself is a dict, a metadata of ?MD_USERMETA is
-%% proplists of {?MD_ACL, ACL::binary()}|{?MD_POLICY, PolicyBin::binary()}|
-%%  {?MD_BAG, BagId::binary()}, {?MD_VERSIONING, bucket_versioning_option()}}.
-%% should preserve other metadata. ACL and Policy can be overwritten.
--spec put_bucket(term(), binary(), bucket_op_options(), pid()) ->
-                        ok | {error, term()}.
-put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
-    PutOptions = [{w, all}, {pw, all}],
-    UpdBucketObj0 = riakc_obj:update_value(BucketObj, OwnerId),
-    MD = case riakc_obj:get_metadatas(UpdBucketObj0) of
-             [] -> % create
-                 dict:from_list([{?MD_USERMETA, []}]);
-             [MD0] -> MD0;
-             _E ->
-                 MsgData = {siblings, riakc_obj:key(BucketObj)},
-                 logger:error("bucket has siblings: ~p", [MsgData]),
-                 throw(MsgData) % @TODO: data broken; handle this
-           end,
-    MetaData = make_new_metadata(MD, Opts),
-    UpdBucketObj = riakc_obj:update_metadata(UpdBucketObj0, MetaData),
-    {Result, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UpdBucketObj, PutOptions)),
-    stanchion_stats:update([riakc, put_cs_bucket], TAT),
-    Result.
-
--spec make_new_metadata(dict:dict(), bucket_op_options()) -> dict:dict().
-make_new_metadata(MD, Opts) ->
-    MetaVals = dict:fetch(?MD_USERMETA, MD),
-    UserMetaData = make_new_user_metadata(MetaVals, Opts),
-    dict:store(?MD_USERMETA, UserMetaData, dict:erase(?MD_USERMETA, MD)).
-
--spec make_new_user_metadata(proplists:proplist(), bucket_op_options()) -> proplists:proplist().
-make_new_user_metadata(MetaVals, [])->
-    MetaVals;
-make_new_user_metadata(MetaVals, [{acl, Acl} | Opts]) ->
-    make_new_user_metadata(replace_meta(?MD_ACL, Acl, MetaVals), Opts);
-make_new_user_metadata(MetaVals, [{policy, Policy} | Opts]) ->
-    make_new_user_metadata(replace_meta(?MD_POLICY, Policy, MetaVals), Opts);
-make_new_user_metadata(MetaVals, [{bag, undefined} | Opts]) ->
-    make_new_user_metadata(MetaVals, Opts);
-make_new_user_metadata(MetaVals, [{bag, BagId} | Opts]) ->
-    make_new_user_metadata(replace_meta(?MD_BAG, BagId, MetaVals), Opts);
-make_new_user_metadata(MetaVals, [delete_policy | Opts]) ->
-    make_new_user_metadata(proplists:delete(?MD_POLICY, MetaVals), Opts);
-make_new_user_metadata(MetaVals, [{versioning, VsnOpt} | Opts]) ->
-    make_new_user_metadata(replace_meta(?MD_VERSIONING, VsnOpt, MetaVals), Opts).
-
-replace_meta(Key, NewValue, MetaVals) ->
-    [{Key, term_to_binary(NewValue)} | proplists:delete(Key, MetaVals)].
-
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.
 -type riak_connect_failed() :: {riak_connect_failed, tuple()}.
@@ -501,7 +443,6 @@ handle_active_manifests({ok, _Active}=ActiveReply) ->
 handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
--spec bucket_available(binary(), fun(), bucket_op(), pid()) -> {true, term()} | {false, atom()}.
 bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
     GetOptions = [{pr, all}],
     case ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, ?BUCKETS_BUCKET, Bucket, GetOptions)) of
@@ -570,7 +511,8 @@ do_bucket_op(Bucket, OwnerId, Opts, BucketOp, undefined) ->
 do_bucket_op(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
     try
         do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc)
-    catch T:E:ST ->
+    catch
+        T:E:ST ->
             logger:error("Error on updating bucket ~s: ~p. Stacktrace: ~p",
                          [Bucket, {T, E}, ST]),
             {error, {T, E}}
@@ -591,6 +533,54 @@ do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
         {false, Reason1} ->
             {error, Reason1}
     end.
+
+%% @doc Store a new bucket in Riak
+%% though whole metadata itself is a dict, a metadata of ?MD_USERMETA is
+%% proplists of {?MD_ACL, ACL::binary()}|{?MD_POLICY, PolicyBin::binary()}|
+%%  {?MD_BAG, BagId::binary()}, {?MD_VERSIONING, bucket_versioning_option()}}.
+%% should preserve other metadata. ACL and Policy can be overwritten.
+put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
+    logger:debug("put_bucket(~p, ~p, ~p)", [BucketObj, OwnerId, Opts]),
+    PutOptions = [{w, all}, {pw, all}],
+    UpdBucketObj0 = riakc_obj:update_value(BucketObj, OwnerId),
+    logger:debug("UpdBucketObj0 ~p", [UpdBucketObj0]),
+    MD = case riakc_obj:get_metadatas(UpdBucketObj0) of
+             [] -> % create
+                 dict:from_list([{?MD_USERMETA, []}]);
+             [MD0] -> MD0;
+             _E ->
+                 MsgData = {siblings, riakc_obj:key(BucketObj)},
+                 logger:error("bucket has siblings: ~p", [MsgData]),
+                 throw(MsgData) % @TODO: data broken; handle this
+           end,
+    MetaData = make_new_metadata(MD, Opts),
+    UpdBucketObj = riakc_obj:update_metadata(UpdBucketObj0, MetaData),
+    {Result, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UpdBucketObj, PutOptions)),
+    stanchion_stats:update([riakc, put_cs_bucket], TAT),
+    Result.
+
+make_new_metadata(MD, Opts) ->
+    MetaVals = dict:fetch(?MD_USERMETA, MD),
+    UserMetaData = make_new_user_metadata(MetaVals, Opts),
+    dict:store(?MD_USERMETA, UserMetaData, dict:erase(?MD_USERMETA, MD)).
+
+make_new_user_metadata(MetaVals, [])->
+    MetaVals;
+make_new_user_metadata(MetaVals, [{acl, Acl} | Opts]) ->
+    make_new_user_metadata(replace_meta(?MD_ACL, Acl, MetaVals), Opts);
+make_new_user_metadata(MetaVals, [{policy, Policy} | Opts]) ->
+    make_new_user_metadata(replace_meta(?MD_POLICY, Policy, MetaVals), Opts);
+make_new_user_metadata(MetaVals, [{bag, undefined} | Opts]) ->
+    make_new_user_metadata(MetaVals, Opts);
+make_new_user_metadata(MetaVals, [{bag, BagId} | Opts]) ->
+    make_new_user_metadata(replace_meta(?MD_BAG, BagId, MetaVals), Opts);
+make_new_user_metadata(MetaVals, [delete_policy | Opts]) ->
+    make_new_user_metadata(proplists:delete(?MD_POLICY, MetaVals), Opts);
+make_new_user_metadata(MetaVals, [{versioning, VsnOpt} | Opts]) ->
+    make_new_user_metadata(replace_meta(?MD_VERSIONING, VsnOpt, MetaVals), Opts).
+
+replace_meta(Key, NewValue, MetaVals) ->
+    [{Key, term_to_binary(NewValue)} | proplists:delete(Key, MetaVals)].
 
 
 %% @doc bucket is ok to delete when bucket is empty. Ongoing multipart
@@ -983,7 +973,6 @@ update_user_record([{<<"status">>, Status} | RestUserFields], User, EmailUpdated
             update_user_record(RestUserFields, User, EmailUpdated)
     end;
 update_user_record([_ | RestUserFields], User, EmailUpdated) ->
-
     update_user_record(RestUserFields, User, EmailUpdated).
 
 
