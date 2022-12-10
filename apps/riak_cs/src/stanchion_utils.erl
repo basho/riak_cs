@@ -107,9 +107,9 @@ create_bucket(BucketFields) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, {User, _UserObj}} = get_user(OwnerId, Pbc),
+                        {ok, {User, UserObj}} = get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(add, User, BucketRecord),
-                        save_user(UpdUser, Pbc);
+                        save_user(false, UpdUser, UserObj, Pbc);
                     {error, _} ->
                         OpResult1
                 end,
@@ -175,10 +175,10 @@ delete_bucket(Bucket, OwnerId) ->
             OpResult2 =
                 case OpResult1 of
                     ok ->
-                        BucketRecord = bucket_record(Bucket, create),
-                        {ok, {User, _UserObj}} = get_user(OwnerId, Pbc),
+                        BucketRecord = bucket_record(Bucket, delete),
+                        {ok, {User, UserObj}} = get_user(OwnerId, Pbc),
                         UpdUser = update_user_buckets(delete, User, BucketRecord),
-                        save_user(UpdUser, Pbc);
+                        save_user(false, UpdUser, UserObj, Pbc);
                     {error, _} ->
                         OpResult1
                 end,
