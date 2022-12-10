@@ -60,36 +60,7 @@ authenticate(RD, [KeyId, Signature]) ->
                         string(),
                         string()) -> string().
 request_signature(HttpVerb, RawHeaders, Path, KeyData) ->
-    Headers = normalize_headers(RawHeaders),
-    BashoHeaders = extract_basho_headers(Headers),
-    case proplists:is_defined("x-basho-date", Headers) of
-        true ->
-            Date = "\n";
-        false ->
-            Date = [proplists:get_value("date", Headers), "\n"]
-    end,
-    case proplists:get_value("content-md5", Headers) of
-        undefined ->
-            CMD5 = [];
-        CMD5 ->
-            ok
-    end,
-    case proplists:get_value("content-type", Headers) of
-        undefined ->
-            ContentType = [];
-        ContentType ->
-            ok
-    end,
-    STS = [atom_to_list(HttpVerb),
-           "\n",
-           CMD5,
-           "\n",
-           ContentType,
-           "\n",
-           Date,
-           BashoHeaders,
-           Path],
-    base64:encode_to_string(stanchion_utils:sha_mac(KeyData, STS)).
+    velvet:request_signature(HttpVerb, RawHeaders, Path, KeyData).
 
 %% ===================================================================
 %% Internal functions
