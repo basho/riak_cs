@@ -177,7 +177,7 @@ set_bucket_versioning(Bucket, ContentType, Doc, Options) ->
 delete_bucket_policy(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
-    Path = buckets_path(Bucket, policy) ++ QS,
+    Path = buckets_path(Bucket, policy),
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->
@@ -191,7 +191,7 @@ delete_bucket_policy(Bucket, Requester, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(delete, Path, [204], Headers) of
+    case request(delete, Path ++ QS, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
