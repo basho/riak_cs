@@ -540,10 +540,8 @@ do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
 %%  {?MD_BAG, BagId::binary()}, {?MD_VERSIONING, bucket_versioning_option()}}.
 %% should preserve other metadata. ACL and Policy can be overwritten.
 put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
-    logger:debug("put_bucket(~p, ~p, ~p)", [BucketObj, OwnerId, Opts]),
     PutOptions = [{w, all}, {pw, all}],
     UpdBucketObj0 = riakc_obj:update_value(BucketObj, OwnerId),
-    logger:debug("UpdBucketObj0 ~p", [UpdBucketObj0]),
     MD = case riakc_obj:get_metadatas(UpdBucketObj0) of
              [] -> % create
                  dict:from_list([{?MD_USERMETA, []}]);
