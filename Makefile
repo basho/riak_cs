@@ -8,25 +8,20 @@ BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl 2>/dev/null) 2>/dev/null)
 OTP_VER          = $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 REBAR           ?= $(BASE_DIR)/rebar3
-CS_HTTP_PORT    ?= 8080
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: rel stagedevrel deps test depgraph graphviz all compile package pkg-clean
+.PHONY: rel stagedevrel test depgraph graphviz all compile package pkg-clean
 
 all: compile
 
 compile:
-	@($(REBAR) compile)
-
-deps:
-	$(if $(HEAD_REVISION),$(warning "Warning: you have checked out a tag ($(HEAD_REVISION)) and should use the compile target"))
-	$(REBAR) upgrade
+	@$(REBAR) compile
 
 clean:
-	$(REBAR) clean
+	@$(REBAR) clean
 
-distclean: clean devclean relclean
-	@rm -rf _build
+distclean: devclean relclean
+	@$(REBAR) clean -a
 
 ##
 ## Release targets
@@ -105,11 +100,6 @@ devclean: clean
 stage : rel
 	$(foreach app,$(wildcard apps/*),               rm -rf rel/riak-cs/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) rel/riak-cs/lib;)
 	$(foreach dep,$(wildcard _build/default/lib/*), rm -rf rel/riak-cs/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) rel/riak-cs/lib;)
-
-
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	webtool eunit syntax_tools compiler
-PLT ?= $(HOME)/.riak-cs_dialyzer_plt
 
 
 ## Create a dependency graph png
