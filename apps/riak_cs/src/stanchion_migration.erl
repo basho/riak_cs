@@ -54,7 +54,9 @@ validate_stanchion() ->
                 _ ->
                     ok
             end,
-            apply_stanchion_details({Host, Port})
+            apply_stanchion_details({Host, Port});
+        {error, notfound} ->
+            apply_stanchion_details({ConfiguredIP, ConfiguredPort})
     end,
     ok = riakc_pb_socket:stop(Pbc).
 
