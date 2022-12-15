@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,.
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021, 2022 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -92,7 +92,7 @@ info(Format, Args) ->
     log(info, Format, Args).
 
 log(Level, Format, Args) ->
-    logger:log(Level, self(), Format, Args).
+    logger:log(Level, Format, Args).
 
 audit2(Pid, Opts) ->
     info("Filter actual orphaned blocks from maybe ones. This may take a while...", []),

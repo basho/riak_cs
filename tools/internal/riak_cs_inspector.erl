@@ -1,9 +1,7 @@
-#!/usr/bin/env escript
-
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2013 Basho Technologies, Inc.  All Rights Reserved,.
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021, 2022 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -1033,7 +1031,7 @@ print_manifest(V) ->
 -spec get_riak_object(pid(), binary(), binary()) ->
                              [{SiblingNo::integer(),
                                {tombstone, tombstone} |
-                               {Metadata::dict(), Value::binary()}}].
+                               {Metadata::dict:dict(), Value::binary()}}].
 get_riak_object(RiakcPid, RiakBucket, RiakKey) ->
     %% With option deletedvclock, tombstone is represented as Object with no contents
     case riakc_pb_socket:get(RiakcPid, RiakBucket, RiakKey, [deletedvclock]) of

@@ -1,5 +1,3 @@
-#!/usr/bin/env escript
-
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved,.
@@ -54,15 +52,12 @@
 -include_lib("riak_cs/include/riak_cs.hrl").
 
 main(Args) ->
-    _ = application:load(lager),
-    ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, info}]}]),
-    ok = lager:start(),
     {ok, {Options, _PlainArgs}} = getopt:parse(option_spec(), Args),
     LogLevel = case proplists:get_value(debug, Options) of
                    0 ->
                        info;
                    _ ->
-                       ok = lager:set_loglevel(lager_console_backend, debug),
+                       ok = logger:set_primary_config(level, debug),
                        debug
                end,
     debug("Log level is set to ~p", [LogLevel]),
@@ -113,7 +108,7 @@ info(Format, Args) ->
     log(info, Format, Args).
 
 log(Level, Format, Args) ->
-    lager:log(Level, self(), Format, Args).
+    logger:log(Level, Format, Args).
 
 -spec repair(pid(), proplists:proplist()) -> term().
 repair(Pbc, Options) ->

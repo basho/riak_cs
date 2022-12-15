@@ -1,8 +1,7 @@
-%%! 
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,.
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021, 2022 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -29,7 +28,8 @@
 
 -define(SLK_TIMEOUT, 360000000). %% 100 hours
 
--include_lib("riak_cs/include/riak_cs.hrl").
+%%-include_lib("riak_cs/include/riak_cs.hrl").
+-define(BUCKETS_BUCKET, <<"moss.buckets">>).
 
 -record(buuid, {uuid  :: binary(),
                 seqs  :: [non_neg_integer()] % sequence numbers
