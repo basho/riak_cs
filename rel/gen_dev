@@ -16,6 +16,7 @@ BUILD_ROOT="`cd "$SCRIPT_DIR" && pwd -P`"
 
 NUMBER=${NAME##dev}
 RIAKBASE=$((10000 + 10 * $NUMBER))
+FIRSTRIAKPBPORT=$((10000 + 10 * 1 + 7))
 CSBASE=$((15000 + 10 * $NUMBER))
 RIAKPBPORT=$(($RIAKBASE + 7))
 CSPORT=$(($CSBASE + 8))
@@ -27,5 +28,6 @@ echo "Generating $NAME - node='$NODE' riakpbport=$RIAKPBPORT csport=$CSPORT admi
 sed -e "s|@PLATFORM_BASE_DIR@|$PLATFORM_BASE_DIR|" \
     -e "s/@NODE@/$NODE/" \
     -e "s/@RIAKPBPORT@/$RIAKPBPORT/" \
+    -e "s/@FIRSTRIAKPBPORT@/$FIRSTRIAKPBPORT/" \
     -e "s/@CSPORT@/$CSPORT/" \
     -e "s/@ADMINPORT@/$ADMINPORT/" < $TEMPLATE > $VARFILE

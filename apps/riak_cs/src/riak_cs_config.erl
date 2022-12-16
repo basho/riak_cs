@@ -70,7 +70,8 @@
          active_delete_threshold/0,
          fast_user_get/0,
          root_host/0,
-         operation_mode/0
+         stanchion_hosting_mode/0,
+         tussle_voss_riak_host/0
         ]).
 
 %% Timeouts hitting Riak
@@ -439,11 +440,15 @@ fast_user_get() ->
 root_host() ->
     get_env(riak_cs, cs_root_host, ?ROOT_HOST).
 
--spec operation_mode() -> auto | riak_cs_only | stanchion_only | riak_cs_with_stanchion.
-operation_mode() ->
-    {ok, A} = application:get_env(riak_cs, operation_mode),
+-spec stanchion_hosting_mode() -> auto | riak_cs_only | stanchion_only | riak_cs_with_stanchion.
+stanchion_hosting_mode() ->
+    {ok, A} = application:get_env(riak_cs, stanchion_hosting_mode),
     true = (A == auto orelse A == riak_cs_only orelse A == stanchion_only orelse A == riak_cs_with_stanchion),
     A.
+
+-spec tussle_voss_riak_host() -> string().
+tussle_voss_riak_host() ->
+    get_env(riak_cs, tussle_voss_riak_host, auto).
 
 %% ===================================================================
 %% ALL Timeouts hitting Riak

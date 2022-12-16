@@ -36,20 +36,18 @@ start_link() ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    {ok, Mode} = application:get_env(riak_cs, operation_mode),
-    {ok, Pbc} = riak_connection(),
+    {ok, Mode} = application:get_env(riak_cs, stanchion_hosting_mode),
     ThisHostAddr = riak_cs_utils:this_host_addr(),
     Children =
-        case stanchion_migration:do_we_get_to_run_stanchion(Mode, ThisHostAddr, Pbc) of
+        case stanchion_migration:do_we_get_to_run_stanchion(Mode, ThisHostAddr) of
             {use_saved, HostPort} ->
                 ok = stanchion_migration:apply_stanchion_details(HostPort),
                 [];
             use_ours ->
                 {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
-                ok = stanchion_migration:save_stanchion_data(Pbc, {ThisHostAddr, Port}),
+                ok = stanchion_migration:save_stanchion_data({ThisHostAddr, Port}),
                 stanchion_process_specs()
         end,
-    ok = riakc_pb_socket:stop(Pbc),
     {ok, {#{strategy => one_for_one,
             intensity => 10,
             period => 10}, Children
@@ -96,15 +94,3 @@ stanchion_process_specs() ->
           type => supervisor,
           modules => dynamic},
     [ServerSup, Web].
-
-riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
-                  {ok, ConfigValue} ->
-                      ConfigValue;
-                  undefined ->
-                      10000
-              end,
-    StartOptions = [{connect_timeout, Timeout},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).

@@ -6,17 +6,25 @@
 %% == Basic Configuration ==
 
 %% @doc Whether to run stanchion on this node (auto means we will
-%% check if stanchion is already started on any connected nodes, and
+%% check if stanchion is already started on any nodes in our tussle, and
 %% only start it here if it is not).
-{mapping, "operation_mode", "riak_cs.operation_mode", [
-  {default, {{ operation_mode }} },
+{mapping, "stanchion_hosting_mode", "riak_cs.stanchion_hosting_mode", [
+  {default, {{ stanchion_hosting_mode }} },
   {datatype, {enum, [auto, riak_cs_with_stanchion,
                      riak_cs_only, stanchion_only]}},
-  {validators, ["valid_operation_mode"]}
+  {validators, ["valid_stanchion_hosting_mode"]}
+]}.
+
+%% @doc Riak node to store volatile tussle data (ip:port of the node
+%% running stanchion, currently).
+{mapping, "tussle_voss_riak_host", "riak_cs.tussle_voss_riak_host", [
+  {default, "{{ tussle_voss_riak_host }}" },
+  {datatype, [fqdn, ip, {enum, [auto]}]},
+  {validators, ["valid_host_or_auto"]}
 ]}.
 
 {validator,
- "valid_operation_mode",
+ "valid_stanchion_hosting_mode",
  "should be one of: auto, riak_cs_with_stanchion, riak_cs_only, stanchion_only",
  fun(A) -> lists:member(A, [auto, riak_cs_with_stanchion,
                             riak_cs_only, stanchion_only]) end
@@ -34,6 +42,12 @@
  "valid_host",
  "should be a valid host",
  fun({Host, Port}) -> is_list(Host) andalso 0 < Port andalso Port < 65536 end}.
+
+{validator,
+ "valid_host_or_auto",
+ "should be a valid host or 'auto'",
+ fun({Host, Port}) -> is_list(Host) andalso 0 < Port andalso Port < 65536;
+    (Auto) -> Auto == auto end}.
 
 %% @doc Riak node to which Riak CS accesses
 {mapping, "riak_host", "riak_cs.riak_host", [

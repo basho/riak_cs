@@ -24,11 +24,11 @@
 
 -export([validate_stanchion/0,
          adopt_stanchion/0,
-         do_we_get_to_run_stanchion/3,
+         do_we_get_to_run_stanchion/2,
          apply_stanchion_details/1,
          apply_stanchion_details/2,
          read_stanchion_data/1,
-         save_stanchion_data/2]).
+         save_stanchion_data/1]).
 
 -include("riak_cs.hrl").
 
@@ -63,7 +63,7 @@ validate_stanchion() ->
 
 -spec adopt_stanchion() -> ok | {error, stanchion_not_relocatable}.
 adopt_stanchion() ->
-    case riak_cs_config:operation_mode() of
+    case riak_cs_config:stanchion_hosting_mode() of
         auto ->
             {ok, Pbc} = riak_connection(),
             ThisHostAddr = riak_cs_utils:this_host_addr(),
@@ -74,7 +74,7 @@ adopt_stanchion() ->
             ok = riakc_pb_socket:stop(Pbc),
             ok;
         M ->
-            logger:error("Riak CS operation_mode is ~s. Cannot relocate stanchion.", [M]),
+            logger:error("Riak CS start_stanchion_here is ~s. Cannot relocate stanchion.", [M]),
             {error, stanchion_not_relocatable}
     end.
 
@@ -96,40 +96,44 @@ stop_stanchion_here() ->
     end.
 
 
-do_we_get_to_run_stanchion(Mode, ThisHostAddr, Pbc) ->
+do_we_get_to_run_stanchion(Mode, ThisHostAddr) ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    case read_stanchion_data(Pbc) of
+    {ok, Pbc} = riak_connection(),
+    Res =
+        case read_stanchion_data(Pbc) of
 
-        {ok, {{Host, Port}, Node}} when Mode == auto ->
-            logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-            if Host == ThisHostAddr andalso
-               Port == ConfiguredPort andalso
-               Node == node() ->
-                    logger:info("read stanchion details previously saved by us;"
-                                " will start stanchion again at ~s:~b", [Host, Port]),
-                    use_ours;
-               el/=se ->
-                    {use_saved, {Host, Port}}
-            end;
+            {ok, {{Host, Port}, Node}} when Mode == auto ->
+                logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
+                if Host == ThisHostAddr andalso
+                   Port == ConfiguredPort andalso
+                   Node == node() ->
+                        logger:info("read stanchion details previously saved by us;"
+                                    " will start stanchion again at ~s:~b", [Host, Port]),
+                        use_ours;
+                   el/=se ->
+                        {use_saved, {Host, Port}}
+                end;
 
-        {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
-                                                  Mode == stanchion_only ->
-            case ThisHostAddr of
-                ConfiguredIP when ConfiguredPort == SavedPort,
-                                  Node == node() ->
-                    %% we read what we must have saved before
-                    {use_saved, {SavedHost, SavedPort}};
-                _ ->
-                    logger:error("this node is configured to run stanchion but"
-                                 " stanchion has already been started at ~s:~b",
-                                 [SavedHost, SavedPort]),
-                    conflicting_stanchion_configuration
-            end;
+            {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
+                                                      Mode == stanchion_only ->
+                case ThisHostAddr of
+                    ConfiguredIP when ConfiguredPort == SavedPort,
+                                      Node == node() ->
+                        %% we read what we must have saved before
+                        {use_saved, {SavedHost, SavedPort}};
+                    _ ->
+                        logger:error("this node is configured to run stanchion but"
+                                     " stanchion has already been started at ~s:~b",
+                                     [SavedHost, SavedPort]),
+                        conflicting_stanchion_configuration
+                end;
 
-        _ ->
-            logger:info("no previously saved stanchion details; going to start stanchion on this node"),
-            use_ours
-    end.
+            _ ->
+                logger:info("no previously saved stanchion details; going to start stanchion on this node"),
+                use_ours
+        end,
+    ok = riakc_pb_socket:stop(Pbc),
+    Res.
 
 apply_stanchion_details({Host, Port}) ->
     riak_cs_config:set_stanchion(Host, Port).
@@ -154,14 +158,19 @@ read_stanchion_data(Pbc) ->
                                  Value /= <<>>  % tombstone
                              ],
                     logger:warning("Read stanchion details riak object has ~b siblings."
-                                   " Please select a riak_cs node, reconfigure it with operation_mode = riak_cs_with_stanchion (or stanchion_only),"
-                                   " configure rest with operation_mode = riak_cs_only, and restart all nodes", [N]),
+                                   " Please select a riak_cs node, reconfigure it with stanchion_hosting_mode = riak_cs_with_stanchion (or stanchion_only),"
+                                   " configure rest with stanchion_hosting_mode = riak_cs_only, and restart all nodes", [N]),
                     {ok, hd(Values)}
             end;
         _ ->
             {error, notfound}
     end.
 
+save_stanchion_data(HostPort) ->
+    {ok, Pbc} = riak_connection(),
+    Res = save_stanchion_data(Pbc, HostPort),
+    ok = riakc_pb_socket:stop(Pbc),
+    Res.
 save_stanchion_data(Pbc, HostPort) ->
     ok = riak_cs_pbc:put_sans_stats(
            Pbc, riakc_obj:new(?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
@@ -171,7 +180,15 @@ save_stanchion_data(Pbc, HostPort) ->
     ok.
 
 riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
+    {Host, Port} =
+        case riak_cs_config:tussle_voss_riak_host() of
+            auto ->
+                {H,P} = riak_cs_config:riak_host_port(),
+                logger:info("using main riak cluster for voss data at ~p:~p", [H, P]),
+                {H,P};
+            Configured ->
+                Configured
+        end,
     Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
                   {ok, ConfigValue} ->
                       ConfigValue;

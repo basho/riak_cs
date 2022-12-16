@@ -35,7 +35,7 @@
                   admin_listener,
                   ssl,
                   admin_ssl,
-                  {operation_mode, auto}]).
+                  {stanchion_hosting_mode, auto}]).
 
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
@@ -61,7 +61,7 @@ init([]) ->
     init2(Options).
 
 init2(Options) ->
-    Mode = proplists:get_value(operation_mode, Options),
+    Mode = proplists:get_value(stanchion_hosting_mode, Options),
     RCSChildren =
         case Mode of
             M when M == auto;
