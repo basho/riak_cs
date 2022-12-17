@@ -641,7 +641,7 @@ manifest_connection(RiakPid, BucketObj) ->
     case bag_id_from_bucket(BucketObj) of
         undefined -> {ok, RiakPid};
         BagId ->
-            case conn_info_from_bag(BagId, application:get_env(stanchion, bags)) of
+            case conn_info_from_bag(BagId, application:get_env(riak_cs, bags)) of
                 %% No connection information for the bag. Mis-configuration. Stop processing.
                 undefined -> {error, {no_bag, BagId}};
                 {Address, Port} -> riak_connection(Address, Port)
