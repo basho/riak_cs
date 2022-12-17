@@ -80,6 +80,10 @@ check_admin_creds() ->
     end.
 
 fetch_and_cache_admin_creds(Key) ->
+    fetch_and_cache_admin_creds(Key, _MaxRetries = 5, no_error).
+fetch_and_cache_admin_creds(_Key, 0, Error) ->
+    Error;
+fetch_and_cache_admin_creds(Key, Attempt, _Error) ->
     %% Not using as the master pool might not be initialized
     {ok, MasterPbc} = riak_connection(),
     ?LOG_DEBUG("setting admin as ~s", [Key]),
@@ -95,12 +99,10 @@ fetch_and_cache_admin_creds(Key) ->
                 Secret = User?RCS_USER.key_secret,
                 application:set_env(riak_cs, admin_secret, Secret);
             Error ->
-                logger:error("Couldn't get admin user (~s) record: ~p", [Key, Error]),
-                Error
+                logger:error("Couldn't get admin user (~s) record: ~p. Will retry ~b more times", [Key, Error, Attempt]),
+                timer:sleep(3000),
+                fetch_and_cache_admin_creds(Key, Attempt - 1, Error)
         end
-    catch T:E ->
-            logger:error("Couldn't get admin user (~s) record: ~p", [Key, {T, E}]),
-            {error, {T, E}}
     after
         riakc_pb_socket:stop(MasterPbc)
     end.
