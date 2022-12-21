@@ -701,6 +701,12 @@
   {default, "riak"}
 ]}.
 
+%% override zdbbl from 1mb to 32mb
+{mapping, "erlang.distribution_buffer_size", "vm_args.+zdbbl", [
+  {default, "32MB"},
+  merge
+]}.
+
 %% VM scheduler collapse, part 1 of 2
 {mapping, "erlang.schedulers.force_wakeup_interval", "vm_args.+sfwi", [
   {default, 500},
