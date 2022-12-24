@@ -52,21 +52,21 @@ bucket_resolution_test() ->
                                           "festersquest",
                                           "wasthebest",
                                           "cid"),
-    BucketList1 = [riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket2">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket3">>, create)],
-    BucketList2 = [riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, create)],
-    BucketList3 = [riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, delete),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, create)],
-    BucketList4 = [riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, create),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, delete)],
-    BucketList5 = [riak_cs_bucket:bucket_record(<<"bucket1">>, delete),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, delete),
-                   riak_cs_bucket:bucket_record(<<"bucket1">>, delete)],
+    BucketList1 = [bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket2">>, create),
+                   bucket_record(<<"bucket3">>, create)],
+    BucketList2 = [bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket1">>, create)],
+    BucketList3 = [bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket1">>, delete),
+                   bucket_record(<<"bucket1">>, create)],
+    BucketList4 = [bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket1">>, create),
+                   bucket_record(<<"bucket1">>, delete)],
+    BucketList5 = [bucket_record(<<"bucket1">>, delete),
+                   bucket_record(<<"bucket1">>, delete),
+                   bucket_record(<<"bucket1">>, delete)],
     Obj1 = riakc_obj:new_obj(<<"bucket">>,
                             <<"key">>,
                             <<"value">>,
@@ -108,5 +108,17 @@ bucket_resolution_test() ->
     ?assertEqual([hd(lists:reverse(BucketList4))], ResBuckets4),
     ?assertEqual([hd(BucketList5)], ResBuckets5).
 
+%% This function existed in riak_cs_bucket, but was refactored out.
+%% Return a bucket record for the specified bucket name.
+bucket_record(Name, Operation) ->
+    Action = case Operation of
+                 create -> created;
+                 delete -> deleted;
+                 _ -> undefined
+             end,
+    ?RCS_BUCKET{name=binary_to_list(Name),
+                last_action=Action,
+                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
+                modification_time=os:timestamp()}.
 
 -endif.

@@ -14,9 +14,9 @@
 {platform_gen_dir,   "{{platform_base_dir}}"}.
 {platform_patch_dir, "{{platform_lib_dir}}/patches"}.
 
-{cs_ip,             "0.0.0.0"}.
+{cs_ip,             "127.0.0.1"}.
 {cs_port,           @CSPORT@}.
-{admin_ip,          "0.0.0.0"}.
+{admin_ip,          "127.0.0.1"}.
 {admin_port,        @ADMINPORT@}.
 {riak_ip,           "127.0.0.1"}.
 {riak_pb_port,      @RIAKPBPORT@}.

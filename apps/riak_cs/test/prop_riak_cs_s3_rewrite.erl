@@ -90,8 +90,8 @@ prop_s3_rewrite(Style) ->
                 %% Corresponding {Bucket, Key} for manifest is
                 %% <<"0o:", hash(Bucket)/binary>> and Key - The key should be exactly
                 %% same as the original one in the client-app before URL encoding.
-                Ctx = #context{local_context=#key_context{}},
-                {ok, #context{local_context=LocalCtx}} = riak_cs_wm_utils:extract_key(RD, Ctx),
+                Ctx = #rcs_context{local_context=#key_context{}},
+                {ok, #rcs_context{local_context=LocalCtx}} = riak_cs_wm_utils:extract_key(RD, Ctx),
 
                 %% ?debugVal(CSKey),
                 {CSBucket, CSKey} =:=
