@@ -37,6 +37,9 @@
 
 -type v4_attrs() :: [{string(), string()}].
 
+-type sigv2_quirk() :: none | boto3_1_26_36.
+-define(SIGV2_QUIRKS, [none, boto3_1_26_36]).
+
 -define(QS_KEYID, "AWSAccessKeyId").
 -define(QS_SIGNATURE, "Signature").
 
@@ -85,9 +88,12 @@ authenticate(User, Signature, RD, Ctx) ->
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
 authenticate_1(User, Signature, RD, _Ctx) ->
-    CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD),
-    case check_auth(Signature, CalculatedSignature) of
-        true ->
+    authenticate_1(User, Signature, RD, _Ctx, ?SIGV2_QUIRKS).
+authenticate_1(_, _, _, _, []) ->
+    {error, invalid_authentication};
+authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
+    CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD, Quirk),
+    if Signature == CalculatedSignature ->
             Expires = wrq:get_qs_value("Expires", RD),
             case Expires of
                 undefined ->
@@ -104,8 +110,8 @@ authenticate_1(User, Signature, RD, _Ctx) ->
                             ok
                     end
             end;
-        _ ->
-            {error, invalid_authentication}
+        el/=se ->
+            authenticate_1(User, Signature, RD, _Ctx, MoreQuirks)
     end.
 
 %% ===================================================================
@@ -156,14 +162,22 @@ parse_auth_v4_header([KV | KVs], UserId, Acc) ->
             parse_auth_v4_header(KVs, UserId, Acc)
     end.
 
--spec calculate_signature_v2(string(), #wm_reqdata{}) -> string().
-calculate_signature_v2(KeyData, RD) ->
+-spec calculate_signature_v2(string(), #wm_reqdata{}, sigv2_quirk()) -> string().
+calculate_signature_v2(KeyData, RD, Quirk) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
     OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
     Resource = case OriginalResource of
-                   undefined -> []; %% TODO: get noisy here?
-                   {Path, QS} -> [Path, canonicalize_qs(v2, QS)]
+                   undefined ->
+                       logger:warning("Empty OriginalResource in RD ~p", [RD]),
+                       [];
+                   {Path, QS} ->
+                       case Quirk of
+                           boto3_1_26_36 ->
+                               apply_sigv2_quirk(boto3_1_26_36, {Path, QS});
+                           none ->
+                               [Path, canonicalize_qs(v2, QS)]
+                       end
                end,
     Date = case wrq:get_qs_value("Expires", RD) of
                undefined ->
@@ -194,6 +208,39 @@ calculate_signature_v2(KeyData, RD) ->
     ?LOG_DEBUG("STS: ~p", [STS]),
 
     base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
+
+apply_sigv2_quirk(boto3_1_26_36, {Path, QS}) ->
+    logger:notice("applying boto3-1.26.36 quirk to QS ~p", [QS]),
+    CQ =
+        case QS of
+            [{"versions", []}, {"encoding-type", _}] ->
+                "?versions?versions";
+            [{"delete", []}] ->
+                "?delete?delete";
+            [{"acl", []}] ->
+                "?acl?acl";
+            [{"acl", []}, {"versionId", V}] ->
+                "?acl?acl&versionId="++V;
+            [{"uploads", []}] ->
+                "?uploads?uploads";
+            [{"policy", []}] ->
+                "?policy?policy";
+            [{"versioning", []}] ->
+                "?versioning?versioning";
+            _ ->
+                canonicalize_qs(v2, QS)
+        end,
+    [drop_slash(Path), CQ].
+
+drop_slash("") ->
+    "";
+drop_slash(A) ->
+    case lists:last(A) of
+        $/ ->
+            drop_slash(lists:droplast(A));
+        _ ->
+            A
+    end.
 
 -spec authenticate_v4(rcs_user(), v4_attrs(), RD::term()) ->
                              ok |
@@ -285,9 +332,6 @@ hmac_sha256(Key, Data) ->
 hex_sha256hash(Data) ->
     mochihex:to_hex(crypto:hash(sha256, Data)).
 
-check_auth(PresentedSignature, CalculatedSignature) ->
-    PresentedSignature == CalculatedSignature.
-
 canonicalize_qs(Version, QS) ->
     %% The QS must be sorted be canonicalized,
     %% and since `canonicalize_qs/2` builds up the
@@ -315,7 +359,7 @@ canonicalize_qs_v2([{K, []}|T], Acc) ->
             canonicalize_qs_v2(T, Acc)
     end;
 canonicalize_qs_v2([{K, V}|T], Acc) ->
-    case lists:member(K, ?SUBRESOURCES) of
+    case lists:member(K, ?SUBRESOURCES ++ ["list-type"]) of
         true ->
             Amp = if Acc == [] -> "";
                      true      -> "&"
@@ -384,6 +428,9 @@ hexdigit(C) when C < 16 -> $A + (C - 10).
 %% Test cases for the examples provided by Amazon here:
 %% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
 
+calculate_signature_v2(KeyData, RD) ->
+    calculate_signature_v2(KeyData, RD, none).
+
 auth_test_() ->
     {spawn,
      [
@@ -413,7 +460,7 @@ teardown(_) ->
     application:unset_env(riak_cs, cs_root_host).
 
 test_fun(Desc, ExpectedSignature, CalculatedSignature) ->
-    {Desc, ?_assert(check_auth(ExpectedSignature,CalculatedSignature))}.
+    {Desc, ?assert(ExpectedSignature == CalculatedSignature)}.
 
 example_get_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
