@@ -59,7 +59,7 @@
 %% @doc Configuration for access to request
 %% serialization service
 {mapping, "stanchion_host", "riak_cs.stanchion_host", [
-  {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
+  {default, {"{{stanchion_host}}", {{stanchion_port}} }},
   {datatype, [fqdn, ip]},
   {validators, ["valid_host"]}
 ]}.
