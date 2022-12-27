@@ -605,12 +605,12 @@ if [ 1 -eq $get_cfgs ]; then
     if [ -z "$exclude" ]; then
         run="find . -type f -exec sh -c '
                 mkdir -p \"\$0/\${1%/*}\";
-                cp \"\$1\" \"\$0/\$1\"
+                cp -a \"\$1\" \"\$0/\$1\"
             ' \"\${start_dir}\"/\"\${debug_dir}\"/config {} \;"
     else
         run="find . -type f \\( $exclude \\) -exec sh -c '
                 mkdir -p \"\$0/\${1%/*}\";
-                cp \"\$1\" \"\$0/\$1\"
+                cp -a \"\$1\" \"\$0/\$1\"
             ' \"\${start_dir}\"/\"\${debug_dir}\"/config {} \;"
     fi
     eval $run
