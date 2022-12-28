@@ -551,9 +551,13 @@ this_host_addr() ->
             ?LOG_DEBUG("this host address is ~s on iface ~s", [IP, If]),
             IP;
         [{If, IP}|_] ->
-            logger:warning("This host has multiple network interfaces configured."
-                           " Selecting ~p on ~s", [IP, If]),
-            IP
+            logger:warning("This host has multiple network interfaces configured:"
+                           " selecting ~p on ~s", [IP, If]),
+            IP;
+        [] ->
+            logger:warning("This host has no network interfaces with assigned addresses:"
+                           " falling back to 127.0.0.1", []),
+            "127.0.0.1"
     end.
 
 -ifdef(TEST).
