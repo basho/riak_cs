@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2022 TI Tokyo    All Rights Reserved.
+%% Copyright (c) 2022, 2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -76,7 +76,7 @@ adopt_stanchion() ->
             ok = riakc_pb_socket:stop(Pbc),
             ok;
         M ->
-            logger:error("Riak CS start_stanchion_here is ~s. Cannot relocate stanchion.", [M]),
+            logger:error("Riak CS stanchion_hosting_mode is ~s. Cannot adopt stanchion.", [M]),
             {error, stanchion_not_relocatable}
     end.
 
@@ -119,6 +119,10 @@ do_we_get_to_run_stanchion(Mode, ThisHostAddr) ->
                    el/=se ->
                         {use_saved, {Host, Port}}
                 end;
+
+            {ok, {{Host, Port}, Node}} when Mode == riak_cs_only ->
+                logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
+                {use_saved, {Host, Port}};
 
             {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
                                                       Mode == stanchion_only ->
