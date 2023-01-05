@@ -22,7 +22,7 @@
 
 -module(supps).
 
--export([q/1]).
+-export([q/1, p/1]).
 
 -record(p, {name :: atom() | tuple(),
             info :: undefined | proplists:proplist(),
@@ -36,6 +36,10 @@
 sups() ->
     [riak_cs_sup].
 
+
+-spec p(proplists:proplist()) -> ok.
+p(Opts) ->
+    io:putchars(q(Opts)).
 
 -spec q(proplists:proplist()) -> string().
 q(Options0) ->
