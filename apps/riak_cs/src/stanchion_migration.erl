@@ -28,7 +28,9 @@
          apply_stanchion_details/1,
          apply_stanchion_details/2,
          read_stanchion_data/1,
-         save_stanchion_data/1]).
+         save_stanchion_data/1,
+         stop_stanchion_here/0
+        ]).
 
 -include("riak_cs.hrl").
 
@@ -92,7 +94,11 @@ stop_stanchion_here() ->
         [] ->
             already_stopped;
         FF ->
-            _ = [supervisor:delete_child(stanchion_sup, Id) || {Id, _, _, _} <- FF]
+            logger:notice("Stopping stanchion on this node"),
+            [begin
+                 ok = supervisor:terminate_child(stanchion_sup, Id),
+                 ok = supervisor:delete_child(stanchion_sup, Id)
+             end || {Id, _, _, _} <- FF]
     end.
 
 
