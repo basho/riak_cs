@@ -36,8 +36,6 @@
          get_manifests/4,
          get_manifests_raw/4,
          has_tombstone/1,
-         pow/2,
-         pow/3,
          riak_connection/0,
          riak_connection/2,
          set_bucket_acl/2,
@@ -259,21 +257,6 @@ list_keys(BucketName, RiakPid) ->
         {{error, _} = ER, TAT} ->
             stanchion_stats:update([riakc, list_all_manifest_keys], TAT),
             ER
-    end.
-
-%% @doc Integer version of the standard pow() function; call the recursive accumulator to calculate.
--spec pow(integer(), integer()) -> integer().
-pow(Base, Power) ->
-    pow(Base, Power, 1).
-
-%% @doc Integer version of the standard pow() function.
--spec pow(integer(), integer(), integer()) -> integer().
-pow(Base, Power, Acc) ->
-    case Power of
-        0 ->
-            Acc;
-        _ ->
-            pow(Base, Power - 1, Acc * Base)
     end.
 
 %% @doc Get a protobufs connection to the riak cluster
