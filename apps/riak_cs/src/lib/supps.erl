@@ -39,7 +39,7 @@ sups() ->
 
 -spec p(proplists:proplist()) -> ok.
 p(Opts) ->
-    io:putchars(q(Opts)).
+    io:put_chars(q(Opts)).
 
 -spec q(proplists:proplist()) -> string().
 q(Options0) ->
