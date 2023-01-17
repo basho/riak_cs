@@ -114,6 +114,7 @@ error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and H
 error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(disconnected) -> "Please contact administrator.";
+error_message(stanchion_recovery_failure) -> "Bucket and user operations are temporarily unavailable because the node running stanchion is currently unreachable. Please report this to your administrator.";
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -165,6 +166,7 @@ error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(malformed_xml) -> "MalformedXML";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(disconnected) -> "ServiceUnavailable";
+error_code(stanchion_recovery_failure) -> "ServiceDegraded";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -193,6 +195,7 @@ status_code(invalid_user_update)           -> 400;
 status_code(no_such_bucket)                -> 404;
 status_code(no_such_key)                   -> 404;
 status_code(no_copy_source_key)            -> 404;
+status_code(stanchion_recovery_failure)    -> 503;
 status_code({riak_connect_failed, _})      -> 503;
 status_code(admin_key_undefined)           -> 503;
 status_code(admin_secret_undefined)        -> 503;
@@ -271,6 +274,8 @@ api_error({invalid_argument, Name, Value}, RD, Ctx) ->
     invalid_argument_response(Name, Value, RD, Ctx);
 api_error({key_too_long, Len}, RD, Ctx) ->
     key_too_long(Len, RD, Ctx);
+api_error(stanchion_recovery_failure, RD, Ctx) ->
+    stanchion_recovery_failure(RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
@@ -333,6 +338,16 @@ key_too_long(Len, RD, Ctx) ->
                {'Message', [error_message({key_too_long, Len})]},
                {'Size', [Len]},
                {'MaxSizeAllowed', [riak_cs_config:max_key_length()]},
+               {'RequestId', [""]}
+              ]},
+    Body = riak_cs_xml:to_xml([XmlDoc]),
+    respond(status_code(invalid_argument), Body, RD, Ctx).
+
+stanchion_recovery_failure(RD, Ctx) ->
+    XmlDoc = {'Error',
+              [
+               {'Code', [error_code(stanchion_recovery_failure)]},
+               {'Message', [error_message(stanchion_recovery_failure)]},
                {'RequestId', [""]}
               ]},
     Body = riak_cs_xml:to_xml([XmlDoc]),

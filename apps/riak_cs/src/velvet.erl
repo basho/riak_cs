@@ -311,8 +311,8 @@ request(Method, Path, Expect, ContentType, Headers, Body) ->
 
 request(Method, Path, _Expect, _ContentType, _Headers, _Body, 0) ->
     {Ip, Port, Ssl} = riak_cs_utils:stanchion_data(),
-    logger:error("Giving up trying to send a ~s request to stanchion (~s)",
-                 [Method, url(Ip, Port, Ssl, Path)]),
+    logger:warning("Giving up trying to send a ~s request to stanchion (~s)",
+                   [Method, url(Ip, Port, Ssl, Path)]),
     {error, stanchion_recovery_failure};
 request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
     stanchion_migration:validate_stanchion(),
