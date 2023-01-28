@@ -22,7 +22,7 @@
 
 -module(supps).
 
--export([q/1, p/1]).
+-export([q/1, p/1, p/0]).
 
 -record(p, {name :: atom() | tuple(),
             info :: undefined | proplists:proplist(),
@@ -40,6 +40,10 @@ sups() ->
 -spec p(proplists:proplist()) -> ok.
 p(Opts) ->
     io:put_chars(q(Opts)).
+
+-spec p() -> ok.
+p() ->
+    io:put_chars(q([])).
 
 -spec q(proplists:proplist()) -> string().
 q(Options0) ->
