@@ -498,6 +498,8 @@
   {datatype, flag}
 ]}.
 
+%% == logger ==
+
 %% @doc The severity level of the console log, default is 'info'.
 {mapping, "logger.level", "kernel.logger_level", [
   {default, {{log_level}} },
@@ -532,36 +534,9 @@
   {datatype, bytesize}
 ]}.
 
-%% @doc Determines if messages should emit to syslog.
-{mapping, "syslogger.enabled", "kernel.logger", [
-  {default, off},
-  {datatype, {flag, on, off}}
-]}.
-
-%% @doc The severity level of the syslog log, default is 'notice'.
-{mapping, "syslogger.level", "kernel.logger", [
-  {default, notice},
-  {datatype, {enum, [debug, info, notice, warning, error, critical, alert, emergency, none]}}
-]}.
-
-%% @doc The syslog facility to use, default is 'user'.
-{mapping, "syslogger.facility", "kernel.logger", [
-  {default, user},
-  {datatype, {enum, [user, local0]}}
-]}.
-
-%% @doc Format string for the messages emitted to syslog. The string is passed into
-%% the handler as a logger_formatter template, the format is a list containing strings
-%% and atoms. The atoms denote the keys for retrieving metadata from the logger events.
-%% More information on default metadata can be found here (https://www.erlang.org/doc/man/logger_formatter.html#type-template).
-{mapping, "syslogger.format", "kernel.logger", [
-  {default, "[\"severity=\",level,\" text=\",msg]."},
-  {datatype, string}
-]}.
-
-%% @doc Filename to use for SASL reports.
+%% @doc Whether to enable SASL reports.
 {mapping, "logger.sasl.enabled", "kernel.logger", [
-  {default, on},
+  {default, {{logger_sasl_enabled}}},
   {datatype, {flag, on, off}}
 ]}.
 
@@ -571,91 +546,57 @@
   {datatype, file}
 ]}.
 
-%% @doc Default opts that need setting for the syslogger application to ensure that
-%% the PID is printed with log messages, along with the correct process identifier.
-{translation, "syslogger",
-    fun(_Conf) ->
-        [{log_opts, [pid]}, {ident, "riak"}]
-    end
-}.
-
 {translation,
  "kernel.logger",
  fun(Conf) ->
-    LogFile = cuttlefish:conf_get("logger.file", Conf),
-    MaxNumBytes = cuttlefish:conf_get("logger.max_file_size", Conf),
-    MaxNumFiles = cuttlefish:conf_get("logger.max_files", Conf),
+         LogFile = cuttlefish:conf_get("logger.file", Conf),
+         MaxNumBytes = cuttlefish:conf_get("logger.max_file_size", Conf),
+         MaxNumFiles = cuttlefish:conf_get("logger.max_files", Conf),
 
-    DefaultFormatStr = cuttlefish:conf_get("logger.format", Conf),
-    DefaultFormatTerm =
-        case erl_scan:string(DefaultFormatStr) of
-            {ok, DefaultTokens, _} ->
-                case erl_parse:parse_term(DefaultTokens) of
-                    {ok, DefaultTerm} ->
-                        DefaultTerm;
-                    {error, {_, _, DefaultError}} ->
-                        cuttlefish:error(foo)
-                end;
-            {error, {_, _, DefaultScanError}} ->
-                cuttlefish:error(foo)
-        end,
-    ConfigMap0 = #{config => #{file => LogFile,
-                              max_no_bytes => MaxNumBytes,
-                              max_no_files => MaxNumFiles},
-                   filters => [{no_sasl, {fun logger_filters:domain/2, {stop, super, [otp, sasl]}}}],
-                   formatter => {logger_formatter,
-                                 #{template => DefaultFormatTerm}
-                                }
-                  },
-    DefaultLog = [{handler, default, logger_std_h, ConfigMap0}],
+         DefaultFormatStr = cuttlefish:conf_get("logger.format", Conf),
+         DefaultFormatTerm =
+             case erl_scan:string(DefaultFormatStr) of
+                 {ok, DefaultTokens, _} ->
+                     case erl_parse:parse_term(DefaultTokens) of
+                         {ok, DefaultTerm} ->
+                             DefaultTerm;
+                         {error, {_, _, DefaultError}} ->
+                             cuttlefish:error(foo)
+                     end;
+                 {error, {_, _, DefaultScanError}} ->
+                     cuttlefish:error(foo)
+             end,
+         ConfigMap0 = #{config => #{file => LogFile,
+                                    max_no_bytes => MaxNumBytes,
+                                    max_no_files => MaxNumFiles},
+                        formatter => {logger_formatter,
+                                      #{template => DefaultFormatTerm}
+                                     }
+                       },
 
-    SaslLog =
-        case cuttlefish:conf_get("logger.sasl.enabled", Conf) of
-            true ->
-                SaslLogFile = cuttlefish:conf_get("logger.sasl.file", Conf),
-                SaslConfigMap = #{config => #{file => SaslLogFile,
-                                              max_no_bytes => MaxNumBytes,  %% reuse
-                                              max_no_files => MaxNumFiles},
-                                  filter_default => stop,
-                                  filters => [{sasl_here, {fun logger_filters:domain/2, {log, equal, [otp, sasl]}}}],
-                                  formatter => {logger_formatter,
-                                                #{legacy_header => true,
-                                                  single_line => false}
-                                               }
-                                 },
-                [{handler, sasl, logger_std_h, SaslConfigMap}];
-            _ ->
-                []
-        end,
+         StandardCfg = [{handler, default, logger_std_h, ConfigMap0}],
 
-    SyslogLog =
-        case cuttlefish:conf_get("syslogger.enabled", Conf) of
-            true ->
-                SyslogLevel = cuttlefish:conf_get("syslogger.level", Conf),
-                SyslogFacility = cuttlefish:conf_get("syslogger.facility", Conf),
-                SyslogFormatStr = cuttlefish:conf_get("syslogger.format", Conf),
-                SyslogFormatTerm =
-                    case erl_scan:string(SyslogFormatStr) of
-                        {ok, SyslogTokens, _} ->
-                            case erl_parse:parse_term(SyslogTokens) of
-                                {ok, SyslogTerm} ->
-                                    SyslogTerm;
-                                {error, {_, _, SyslogError}} ->
-                                    cuttlefish:error(foo)
-                            end;
-                        {error, {_, _, SyslogScanError}} ->
-                            cuttlefish:error(foo)
-                    end,
-                ConfigMap1 = #{level => SyslogLevel,
-                               formatter => {logger_formatter,
-                                                #{template => SyslogFormatTerm,
-                                                  single_line => true}}, facility => SyslogFacility},
-                [{handler, syslog, syslogger, ConfigMap1}];
-            false ->
-                []
-        end,
-    DefaultLog ++ SyslogLog ++ SaslLog
-  end
+         SaslCfg =
+             case cuttlefish:conf_get("logger.sasl.enabled", Conf) of
+                 true ->
+                     SaslLogFile = cuttlefish:conf_get("logger.sasl.file", Conf),
+                     SaslConfigMap = #{config => #{file => SaslLogFile,
+                                                   max_no_bytes => MaxNumBytes,  %% reuse
+                                                   max_no_files => MaxNumFiles},
+                                       filter_default => stop,
+                                       filters => [{sasl_here, {fun logger_filters:domain/2, {log, equal, [otp, sasl]}}}],
+                                       formatter => {logger_formatter,
+                                                     #{legacy_header => true,
+                                                       single_line => false}
+                                                    }
+                                      },
+                     [{handler, sasl, logger_std_h, SaslConfigMap}];
+                 _ ->
+                     []
+             end,
+
+         StandardCfg ++ SaslCfg
+ end
 }.
 
 

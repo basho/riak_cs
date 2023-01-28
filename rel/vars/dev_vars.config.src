@@ -33,6 +33,7 @@
 {tussle_voss_riak_host, "127.0.0.1:@FIRSTRIAKPBPORT@"}.
 
 {log_level, debug}.
+{logger_sasl_enabled, true}.
 
 {node,         "@NODE@"}.
 {crash_dump,   "{{platform_log_dir}}/erl_crash.dump"}.
