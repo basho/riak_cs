@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved,.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -26,6 +26,10 @@
 %%
 %% Note: make sure you remove AAE tree after this script was run, and
 %% turn off AAE on other nodes that's running on the cluster.
+%%
+%% Note2: With riak-3.2.0, which does not include getopt, export
+%% ERL_LIBS with a path to riak_cs/.../lib//getopt before running this
+%% escript.
 
 -module(offline_delete).
 
