@@ -147,7 +147,7 @@ parse_auth_v4_header(String) ->
 parse_auth_v4_header([], UserId, Acc) ->
     {UserId, {v4, lists:reverse(Acc)}};
 parse_auth_v4_header([KV | KVs], UserId, Acc) ->
-    ?LOG_DEBUG("Auth header ~p", [KV]),
+    %% ?LOG_DEBUG("Auth header ~p", [KV]),
     case string:tokens(KV, "=") of
         [Key, Value] ->
             case Key of
@@ -205,7 +205,7 @@ calculate_signature_v2(KeyData, RD, Quirk) ->
            "\n",
            AmazonHeaders,
            Resource],
-    ?LOG_DEBUG("STS: ~p", [STS]),
+    %%?LOG_DEBUG("STS: ~p", [STS]),
 
     base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
 
@@ -254,17 +254,18 @@ authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) 
 
 authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders) ->
     CanonicalRequest = canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders),
-    ?LOG_DEBUG("CanonicalRequest(v4): ~s", [CanonicalRequest]),
+    %% ?LOG_DEBUG("CanonicalRequest(v4): ~s", [CanonicalRequest]),
     {StringToSign, Scope} =
         string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest),
-    ?LOG_DEBUG("StringToSign(v4): ~s", [StringToSign]),
-    CalculatedSignature = calculate_signature_v4(SecretAccessKey, Scope, StringToSign),
-    ?LOG_DEBUG("CalculatedSignature(v4): ~s", [CalculatedSignature]),
-    {"Signature", PresentedSignature} = lists:keyfind("Signature", 1, AuthAttrs),
-    ?LOG_DEBUG(" PresentedSignature(v4): ~s", [PresentedSignature]),
-    case CalculatedSignature of
-        PresentedSignature -> ok;
-        _ -> {error, {unmatched_signature, PresentedSignature, CalculatedSignature}}
+    %% ?LOG_DEBUG("StringToSign(v4): ~s", [StringToSign]),
+    Calculated = calculate_signature_v4(SecretAccessKey, Scope, StringToSign),
+    {"Signature", Presented} = lists:keyfind("Signature", 1, AuthAttrs),
+    case Calculated == Presented of
+        true ->
+            ok;
+        _ ->
+            ?LOG_NOTICE("Bad signature: ~s (expected: ~s", [Presented, Calculated]),
+            {error, {unmatched_signature, Presented, Calculated}}
     end.
 
 canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders) ->

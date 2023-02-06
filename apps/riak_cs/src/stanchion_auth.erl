@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -39,11 +39,8 @@
 authenticate(RD, [KeyId, Signature]) ->
     case stanchion_utils:get_admin_creds() of
         {ok, {AdminKeyId, AdminSecret}} ->
-            CalculatedSignature = signature(AdminSecret, RD),
-            ?LOG_DEBUG(" Presented Signature: ~p", [Signature]),
-            ?LOG_DEBUG("Calculated Signature: ~p", [CalculatedSignature]),
             case KeyId == AdminKeyId andalso
-                check_auth(Signature, CalculatedSignature) of
+                check_auth(Signature, signature(AdminSecret, RD)) of
                 true ->
                     ok;
                 _ ->
@@ -98,8 +95,12 @@ signature(KeyData, RD) ->
            Resource],
     base64:encode_to_string(stanchion_utils:sha_mac(KeyData, STS)).
 
-check_auth(PresentedSignature, CalculatedSignature) ->
-    PresentedSignature == CalculatedSignature.
+check_auth(Signature, Calculated) when Signature /= Calculated ->
+    ?LOG_NOTICE("Bad signature presented: ~s (calculated: ~s)", [Signature, Calculated]),
+    false;
+check_auth(_, _) ->
+    true.
+
 
 get_request_headers(RD) ->
     mochiweb_headers:to_list(wrq:req_headers(RD)).
