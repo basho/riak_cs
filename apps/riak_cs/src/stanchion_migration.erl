@@ -27,25 +27,26 @@
          do_we_get_to_run_stanchion/2,
          apply_stanchion_details/1,
          apply_stanchion_details/2,
-         read_stanchion_data/1,
+         read_stanchion_data/0,
          save_stanchion_data/1,
          stop_stanchion_here/0
         ]).
 
 -include("riak_cs.hrl").
 
--define(REASONABLY_SMALL_TIMEOUT, 1000).
+-define(REASONABLY_SMALL_TIMEOUT, 3000).
 
 
 -spec validate_stanchion() -> boolean().
 validate_stanchion() ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    {ok, Pbc} = riak_connection(),
-    case read_stanchion_data(Pbc) of
+    logger:info("validate_stanchion: ~p", [{ConfiguredIP, ConfiguredPort}]),
+    case read_stanchion_data() of
         {ok, {{Host, Port}, Node}}
           when Host == ConfiguredIP,
                Port == ConfiguredPort,
                Node == node() ->
+            logger:info("validate_stanchion: matching data read"),
             ok;
         {ok, {{Host, Port}, Node}} ->
             logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),
@@ -58,22 +59,22 @@ validate_stanchion() ->
             end,
             apply_stanchion_details({Host, Port});
         {error, notfound} ->
-            apply_stanchion_details({ConfiguredIP, ConfiguredPort})
-    end,
-    ok = riakc_pb_socket:stop(Pbc).
+            logger:info("no previously saved stanchion details; adopting stanchion here"),
+            apply_stanchion_details({ConfiguredIP, ConfiguredPort}),
+            start_stanchion_here(),
+            ok = save_stanchion_data({ConfiguredIP, ConfiguredPort})
+    end.
 
 
 -spec adopt_stanchion() -> ok | {error, stanchion_not_relocatable}.
 adopt_stanchion() ->
     case riak_cs_config:stanchion_hosting_mode() of
         auto ->
-            {ok, Pbc} = riak_connection(),
             ThisHostAddr = riak_cs_utils:this_host_addr(),
             {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
             start_stanchion_here(),
-            ok = save_stanchion_data(Pbc, {ThisHostAddr, Port}),
+            ok = save_stanchion_data({ThisHostAddr, Port}),
             apply_stanchion_details({ThisHostAddr, Port}),
-            ok = riakc_pb_socket:stop(Pbc),
             ok;
         M ->
             logger:error("Riak CS stanchion_hosting_mode is ~s. Cannot adopt stanchion.", [M]),
@@ -104,46 +105,41 @@ stop_stanchion_here() ->
 
 do_we_get_to_run_stanchion(Mode, ThisHostAddr) ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    {ok, Pbc} = riak_connection(),
-    Res =
-        case read_stanchion_data(Pbc) of
+    case read_stanchion_data() of
+        {ok, {{Host, Port}, Node}} when Mode == auto ->
+            logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
+            if Host == ThisHostAddr andalso
+               Port == ConfiguredPort andalso
+               Node == node() ->
+                    logger:info("read stanchion details previously saved by us;"
+                                " will start stanchion again at ~s:~b", [Host, Port]),
+                    use_ours;
+               el/=se ->
+                    {use_saved, {Host, Port}}
+            end;
 
-            {ok, {{Host, Port}, Node}} when Mode == auto ->
-                logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-                if Host == ThisHostAddr andalso
-                   Port == ConfiguredPort andalso
-                   Node == node() ->
-                        logger:info("read stanchion details previously saved by us;"
-                                    " will start stanchion again at ~s:~b", [Host, Port]),
-                        use_ours;
-                   el/=se ->
-                        {use_saved, {Host, Port}}
-                end;
+        {ok, {{Host, Port}, Node}} when Mode == riak_cs_only ->
+            logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
+            {use_saved, {Host, Port}};
 
-            {ok, {{Host, Port}, Node}} when Mode == riak_cs_only ->
-                logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-                {use_saved, {Host, Port}};
+        {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
+                                                  Mode == stanchion_only ->
+            case ThisHostAddr of
+                ConfiguredIP when ConfiguredPort == SavedPort,
+                                  Node == node() ->
+                    %% we read what we must have saved before
+                    {use_saved, {SavedHost, SavedPort}};
+                _ ->
+                    logger:error("this node is configured to run stanchion but"
+                                 " stanchion has already been started at ~s:~b",
+                                 [SavedHost, SavedPort]),
+                    conflicting_stanchion_configuration
+            end;
 
-            {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
-                                                      Mode == stanchion_only ->
-                case ThisHostAddr of
-                    ConfiguredIP when ConfiguredPort == SavedPort,
-                                      Node == node() ->
-                        %% we read what we must have saved before
-                        {use_saved, {SavedHost, SavedPort}};
-                    _ ->
-                        logger:error("this node is configured to run stanchion but"
-                                     " stanchion has already been started at ~s:~b",
-                                     [SavedHost, SavedPort]),
-                        conflicting_stanchion_configuration
-                end;
-
-            _ ->
-                logger:info("no previously saved stanchion details; going to start stanchion on this node"),
-                use_ours
-        end,
-    ok = riakc_pb_socket:stop(Pbc),
-    Res.
+        _ ->
+            logger:info("no previously saved stanchion details; going to start stanchion on this node"),
+            use_ours
+    end.
 
 apply_stanchion_details({Host, Port}) ->
     riak_cs_config:set_stanchion(Host, Port).
@@ -151,7 +147,8 @@ apply_stanchion_details({Host, Port}, Ssl) ->
     riak_cs_config:set_stanchion(Host, Port, Ssl).
 
 
-read_stanchion_data(Pbc) ->
+read_stanchion_data() ->
+    Pbc = stanchion_utils:get_pbc(),
     case riak_cs_pbc:get_sans_stats(Pbc, ?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
                                     [{notfound_ok, false}],
                                     ?REASONABLY_SMALL_TIMEOUT) of
@@ -177,34 +174,10 @@ read_stanchion_data(Pbc) ->
     end.
 
 save_stanchion_data(HostPort) ->
-    {ok, Pbc} = riak_connection(),
-    Res = save_stanchion_data(Pbc, HostPort),
-    ok = riakc_pb_socket:stop(Pbc),
-    Res.
-save_stanchion_data(Pbc, HostPort) ->
+    Pbc = stanchion_utils:get_pbc(),
     ok = riak_cs_pbc:put_sans_stats(
            Pbc, riakc_obj:new(?SERVICE_BUCKET, ?STANCHION_DETAILS_KEY,
                               term_to_binary({HostPort, node()})),
            ?REASONABLY_SMALL_TIMEOUT),
     logger:info("saved stanchion details: ~p", [{HostPort, node()}]),
     ok.
-
-riak_connection() ->
-    {Host, Port} =
-        case riak_cs_config:tussle_voss_riak_host() of
-            auto ->
-                {H,P} = riak_cs_config:riak_host_port(),
-                logger:info("using main riak cluster for voss data at ~p:~p", [H, P]),
-                {H,P};
-            Configured ->
-                Configured
-        end,
-    Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
-                  {ok, ConfigValue} ->
-                      ConfigValue;
-                  undefined ->
-                      10000
-              end,
-    StartOptions = [{connect_timeout, Timeout},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).

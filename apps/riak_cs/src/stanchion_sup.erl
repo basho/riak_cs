@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2022 TI Tokyo, All Rights Reserved.
+%% Copyright (c) 2022, 2023 TI Tokyo, All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,30 +28,44 @@
 -export([init/1]).
 -export([stanchion_process_specs/0]).
 
+-include("stanchion.hrl").
+-include("moss.hrl").
 
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
+    stanchion_stats:init(),
+
+    ets:new(?STANCHION_OWN_PBC_TABLE, [named_table]),
+
+    Pbc = stanchion_utils:get_pbc(),
+    ok = ensure_service_bucket_props(Pbc),
+
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+ensure_service_bucket_props(Pbc) ->
+    riakc_pb_socket:set_bucket(Pbc, ?SERVICE_BUCKET, [{allow_mult, false}]).
 
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    {ok, Mode} = application:get_env(riak_cs, stanchion_hosting_mode),
-    ThisHostAddr = riak_cs_utils:this_host_addr(),
-    Children =
-        case stanchion_migration:do_we_get_to_run_stanchion(Mode, ThisHostAddr) of
-            {use_saved, HostPort} ->
-                ok = stanchion_migration:apply_stanchion_details(HostPort),
-                [];
-            use_ours ->
-                {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
-                ok = stanchion_migration:save_stanchion_data({ThisHostAddr, Port}),
-                stanchion_process_specs()
-        end,
+    Children = [],
+    %% stanchion webmachine to be added to this sup on demand
+    %% {ok, Mode} = application:get_env(riak_cs, stanchion_hosting_mode),
+    %% ThisHostAddr = riak_cs_utils:this_host_addr(),
+    %% case stanchion_migration:do_we_get_to_run_stanchion(Mode, ThisHostAddr) of
+    %%     {use_saved, HostPort} ->
+    %%         ok = stanchion_migration:apply_stanchion_details(HostPort),
+    %%         [];
+    %%     use_ours ->
+    %%         {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
+    %%         ok = stanchion_migration:save_stanchion_data({ThisHostAddr, Port}),
+    %%         stanchion_process_specs()
+    %% end,
     {ok, {#{strategy => one_for_one,
             intensity => 10,
             period => 10}, Children
          }}.
+
 
 
 stanchion_process_specs() ->

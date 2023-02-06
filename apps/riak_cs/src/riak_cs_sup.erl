@@ -42,11 +42,6 @@ start_link() ->
     catch dyntrace:p(),                    % NIF load trigger (R15B01+)
 
     riak_cs_stats:init(),
-    stanchion_stats:init(),
-
-    {ok, Pbc} = riak_connection(),
-    ok = ensure_service_bucket_props(Pbc),
-    ok = riakc_pb_socket:stop(Pbc),
 
     RewriteMod = application:get_env(riak_cs, rewrite_module, ?S3_API_MOD),
     ok = application:set_env(webmachine_mochiweb, rewrite_modules, [{object_web, RewriteMod}]),
@@ -75,9 +70,6 @@ init2(Options) ->
             intensity => 10,
             period => 10}, RCSChildren
           }}.
-
-ensure_service_bucket_props(Pbc) ->
-    riakc_pb_socket:set_bucket(Pbc, ?SERVICE_BUCKET, [{allow_mult, false}]).
 
 rcs_process_specs() ->
     [ #{id => riak_cs_access_archiver_manager,
@@ -231,15 +223,3 @@ add_admin_dispatch_table(Config) ->
         riak_cs_web:admin_api_dispatch_table(),
     [{dispatch, UpdDispatchTable} | proplists:delete(dispatch, Config)].
 
-
-riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
-                  {ok, ConfigValue} ->
-                      ConfigValue;
-                  undefined ->
-                      10000
-              end,
-    StartOptions = [{connect_timeout, Timeout},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).

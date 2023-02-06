@@ -35,7 +35,9 @@
          get_keys_and_values/1,
          get_manifests/4,
          get_manifests_raw/4,
+         get_pbc/0,
          has_tombstone/1,
+         make_pbc/0,
          riak_connection/0,
          riak_connection/2,
          set_bucket_acl/2,
@@ -57,9 +59,36 @@
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
 
-%% ===================================================================
-%% Public API
-%% ===================================================================
+make_pbc() ->
+    {Host, Port} =
+        case riak_cs_config:tussle_voss_riak_host() of
+            auto ->
+                {H,P} = riak_cs_config:riak_host_port(),
+                logger:info("using main riak cluster for voss data at ~p:~p", [H, P]),
+                {H,P};
+            Configured ->
+                Configured
+        end,
+    Timeout = application:get_env(riak_cs, riakc_connect_timeout, 10000),
+    StartOptions = [{connect_timeout, Timeout},
+                    {auto_reconnect, true}],
+    Pid = riakc_pb_socket:start_link(Host, Port, StartOptions),
+    ets:insert(?STANCHION_OWN_PBC_TABLE, {pid, Pid}),
+    Pid.
+
+get_pbc() ->
+    [{pid, Pid}] = ets:lookup(?STANCHION_OWN_PBC_TABLE, pid),
+    case is_process_alive(Pid) of
+        true ->
+            Pid;
+        false ->
+            ?LOG_WARNING("voss riakc process ~p exited; spawning a new one."
+                         " Check riak is reachable as configured (~p)",
+                         [Pid, riak_cs_config:tussle_voss_riak_host()]),
+            make_pbc(),
+            timer:sleep(1000),
+            get_pbc()
+    end.
 
 %% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
 -spec binary_to_hexlist(binary()) -> string().
