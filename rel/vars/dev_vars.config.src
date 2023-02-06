@@ -30,7 +30,7 @@
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
 {stanchion_hosting_mode, auto}.
-{tussle_voss_riak_host, "127.0.0.1:@FIRSTRIAKPBPORT@"}.
+{tussle_voss_riak_host, "127.0.0.1:@RIAKPBPORT@"}.
 
 {log_level, debug}.
 {logger_sasl_enabled, true}.
