@@ -569,6 +569,7 @@
          ConfigMap0 = #{config => #{file => LogFile,
                                     max_no_bytes => MaxNumBytes,
                                     max_no_files => MaxNumFiles},
+                        filters => [{no_sasl, {fun logger_filters:domain/2, {stop, super, [otp, sasl]}}}],
                         formatter => {logger_formatter,
                                       #{template => DefaultFormatTerm}
                                      }
