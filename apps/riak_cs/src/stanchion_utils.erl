@@ -72,7 +72,7 @@ make_pbc() ->
     Timeout = application:get_env(riak_cs, riakc_connect_timeout, 10000),
     StartOptions = [{connect_timeout, Timeout},
                     {auto_reconnect, true}],
-    Pid = riakc_pb_socket:start_link(Host, Port, StartOptions),
+    {ok, Pid} = riakc_pb_socket:start_link(Host, Port, StartOptions),
     ets:insert(?STANCHION_OWN_PBC_TABLE, {pid, Pid}),
     Pid.
 

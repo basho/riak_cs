@@ -37,7 +37,7 @@ start_link() ->
 
     ets:new(?STANCHION_OWN_PBC_TABLE, [named_table]),
 
-    Pbc = stanchion_utils:get_pbc(),
+    Pbc = stanchion_utils:make_pbc(),
     ok = ensure_service_bucket_props(Pbc),
 
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
