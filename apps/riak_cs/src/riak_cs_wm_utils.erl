@@ -106,14 +106,9 @@ service_available(Pool, RD, Ctx) ->
                                                  string() | undefined}.
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
     {riak_cs_s3_passthru_auth, KeyId, undefined};
-parse_auth_header("AWS " ++ Key, _) ->
-    case string:tokens(Key, ":") of
-        [KeyId, KeyData] ->
-            {riak_cs_s3_auth, KeyId, KeyData};
-        Other -> Other
-    end;
-parse_auth_header(_, _) ->
-    {riak_cs_blockall_auth, undefined, undefined}.
+parse_auth_header(S, _) ->
+    {KeyId, Signature} = riak_cs_s3_auth:parse_auth_header(S),
+    {riak_cs_s3_auth, KeyId, Signature}.
 
 %% @doc Parse authentication query parameters and determine
 %%      the appropriate module to use to authenticate the request.

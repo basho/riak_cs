@@ -24,6 +24,7 @@
 -behavior(riak_cs_auth).
 
 -export([identify/2, authenticate/4]).
+-export([parse_auth_header/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -114,15 +115,6 @@ authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
             authenticate_1(User, Signature, RD, _Ctx, MoreQuirks)
     end.
 
-%% ===================================================================
-%% Internal functions
-%% ===================================================================
-
-%% Idintify user by query string.
-%% Currently support signature v2 only, does NOT support signature v4.
-identify_by_query_string(RD) ->
-    {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)}.
-
 parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
     case riak_cs_config:auth_v4_enabled() of
         true ->
@@ -138,6 +130,15 @@ parse_auth_header("AWS " ++ Key) ->
     end;
 parse_auth_header(_) ->
     {undefined, undefined}.
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+%% Idintify user by query string.
+%% Currently support signature v2 only, does NOT support signature v4.
+identify_by_query_string(RD) ->
+    {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)}.
 
 -spec parse_auth_v4_header(string()) -> {string(), {v4, [{string(), string()}]}}.
 parse_auth_v4_header(String) ->
