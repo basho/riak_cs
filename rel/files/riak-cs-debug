@@ -41,8 +41,53 @@ fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
 ###
+### Set up variables
+###
+
+is_relative() {
+    if [ "${1#/}" = "$1" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+PLATFORM_BASE_DIR={{platform_base_dir}}
+PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
+cs_base_dir=$PLATFORM_BASE_DIR
+if is_relative "{{platform_bin_dir}}"; then
+    cs_bin_dir="$PLATFORM_BASE_DIR/{{platform_bin_dir}}"
+else
+    cs_bin_dir="{{platform_bin_dir}}"
+fi
+if is_relative "{{platform_etc_dir}}"; then
+    cs_etc_dir="$PLATFORM_BASE_DIR/{{platform_etc_dir}}"
+else
+    cs_etc_dir="{{platform_etc_dir}}"
+fi
+if is_relative "{{platform_log_dir}}"; then
+    cs_log_dir="$PLATFORM_BASE_DIR/{{platform_log_dir}}"
+else
+    cs_log_dir="{{platform_log_dir}}"
+fi
+if is_relative "{{platform_lib_dir}}"; then
+    cs_lib_dir="$PLATFORM_BASE_DIR/{{platform_lib_dir}}"
+else
+    cs_lib_dir="{{platform_lib_dir}}"
+fi
+if is_relative "{{platform_gen_dir}}"; then
+    cs_gen_dir="$PLATFORM_BASE_DIR/{{platform_gen_dir}}"
+else
+    cs_gen_dir="{{platform_gen_dir}}"
+fi
+
+cuttlefish_conf_dir=${cs_gen_dir}/generated.conf
+
+###
 ### Function declarations
 ###
+
+. $cs_lib_dir/lib.sh
 
 echoerr () { echo "$@" 1>&2; }
 
@@ -134,50 +179,26 @@ EOF
 exit
 }
 
+cd "$PLATFORM_BASE_DIR"
+
+gen_result=`"{{platform_bin_dir}}"/riak-cs-chkconfig | grep -v "OK"`
+app_config=`echo $gen_result | cut -d' ' -f 2`
+
+# make a flat, searchable version of the app.config
+if [ -z "$app_config" ]; then
+    echoerr "App configs missing in {{platform_base_dir}}/generated.conf. Aborting."
+    exit 1
+fi
+riak_epaths=`make_app_epaths "${app_config}"`
+
+if [ -d "${cuttlefish_conf_dir}" ]; then
+    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args 2>/dev/null | head -1`
+fi
+
+
 ###
-### Set up variables
+### Set defaults for items to gather in the report
 ###
-
-is_relative() {
-    if [ "${1#/}" = "$1" ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-PLATFORM_BASE_DIR={{platform_base_dir}}
-PLATFORM_BASE_DIR=${PLATFORM_BASE_DIR:-$(cd $(dirname "$0")/.. && pwd -P)}
-cs_base_dir=$PLATFORM_BASE_DIR
-if is_relative "{{platform_bin_dir}}"; then
-    cs_bin_dir="$PLATFORM_BASE_DIR/{{platform_bin_dir}}"
-else
-    cs_bin_dir="{{platform_bin_dir}}"
-fi
-if is_relative "{{platform_etc_dir}}"; then
-    cs_etc_dir="$PLATFORM_BASE_DIR/{{platform_etc_dir}}"
-else
-    cs_etc_dir="{{platform_etc_dir}}"
-fi
-if is_relative "{{platform_log_dir}}"; then
-    cs_log_dir="$PLATFORM_BASE_DIR/{{platform_log_dir}}"
-else
-    cs_log_dir="{{platform_log_dir}}"
-fi
-if is_relative "{{platform_lib_dir}}"; then
-    cs_lib_dir="$PLATFORM_BASE_DIR/{{platform_lib_dir}}"
-else
-    cs_lib_dir="{{platform_lib_dir}}"
-fi
-if is_relative "{{platform_gen_dir}}"; then
-    cs_gen_dir="$PLATFORM_BASE_DIR/{{platform_gen_dir}}"
-else
-    cs_gen_dir="{{platform_gen_dir}}"
-fi
-
-cd $PLATFORM_BASE_DIR
-
-cuttlefish_conf_dir=${cs_gen_dir}/generated.conf
 
 get_cfgs=0
 get_ssl_certs=0
@@ -285,8 +306,6 @@ fi
 
 if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
 
-    . $cs_lib_dir/lib.sh
-
     # Allow overriding cs_base_dir and cs_etc_dir from the environment
     if [ -n "$cs_base_dir" ]; then
         cs_base_dir="$cs_base_dir"
@@ -317,11 +336,6 @@ if [ 0 -ne $(( $get_cfgs + $get_logs + $get_riakcmds + $get_extracmds )) ]; then
             exit 1
         fi
     fi
-fi
-
-#prefer vm.args if it exists
-if [ -d "${cuttlefish_conf_dir}" ]; then
-    vmargs=`ls -t ${cuttlefish_conf_dir}/vm.*.args 2>/dev/null | head -1`
 fi
 
 
@@ -510,15 +524,6 @@ fi
 if [ 1 -eq $get_logs ]; then
     mkdir_or_die "${start_dir}"/"${debug_dir}"/logs/.info
     cd "${start_dir}"/"${debug_dir}"/logs
-
-    # if not already made, make a flat, searchable version of the app.config
-    if [ -z "$riak_epaths" ]; then
-        #prefer app.config if it exists
-        if [  -d "${cuttlefish_conf_dir}" ]; then
-            appconfig=`ls -t ${cuttlefish_conf_dir}/app.*.config 2>/dev/null | head -1`
-            riak_epaths=`make_app_epaths "${appconfig}"`
-        fi
-    fi
 
     # grab a listing of the log directory to show if there are crash dumps
     dump ls_log_dir ls -lhR $cs_log_dir
