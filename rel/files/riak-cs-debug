@@ -421,7 +421,7 @@ if [ 1 -eq $get_syscmds ]; then
 
     BLOCKDEV=/sbin/blockdev
     if [ -e $BLOCKDEV ]; then
-        for mount_point in `mount | egrep '^/' | awk '{print $1}'`; do
+        for mount_point in `mount | grep -E '^/' | grep -v /dev/shm | awk '{print $1}'`; do
             flat_point=`echo $mount_point | sed 's:/:_:g'`
             dump blockdev.$flat_point $BLOCKDEV --getra $mount_point
         done
