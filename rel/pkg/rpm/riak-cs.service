@@ -3,7 +3,7 @@ Description=Riak CS Database
 
 [Service]
 User=riak_cs
-ExecStart=/usr/sbin/riak-cs foreground
+ExecStart=/usr/sbin/riak-cs start
 ExecStop=/usr/sbin/riak-cs stop
 Type=simple
 PIDFile=/run/riak-cs/riak-cs.pid
