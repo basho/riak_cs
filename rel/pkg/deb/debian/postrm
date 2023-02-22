@@ -28,7 +28,7 @@ case "$1" in
         if [ -d /var/lib/riak-cs ]; then
                 rm -r /var/lib/riak-cs
         fi
-        if [ -d /var/run/riak-cs ]; then
+        if [ -d /run/riak-cs ]; then
                 rm -r /var/run/riak-cs
         fi
         if [ -d /etc/riak-cs ]; then
