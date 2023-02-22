@@ -1,9 +1,7 @@
-
 PWD    = $(shell pwd)
 
-
 # No hyphens are allowed in the _version field in RPM
-PKG_VERSION_NO_H	?= $(shell echo $(PKG_VERSION) | tr - .)
+PKG_VERSION_NO_H ?= $(shell echo $(PKG_VERSION) | tr - .)
 
 default:
 	rpmbuild --define "_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}$(DISTRO).%%{ARCH}.rpm" \

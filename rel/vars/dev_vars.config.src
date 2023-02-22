@@ -2,8 +2,6 @@
 
 {rel_vsn, "{{release_version}}"}.
 
-{devrel, true}.
-
 %% Platform-specific installation paths
 {platform_base_dir,  "@PLATFORM_BASE_DIR@"}.
 {platform_bin_dir,   "{{platform_base_dir}}/bin"}.
@@ -30,13 +28,15 @@
 {rewrite_module,    riak_cs_s3_rewrite}.
 {auth_module,       riak_cs_s3_auth}.
 {stanchion_hosting_mode, auto}.
-{tussle_voss_riak_host, "127.0.0.1:@RIAKPBPORT@"}.
-
-{log_level, debug}.
-{logger_sasl_enabled, true}.
+{tussle_voss_riak_host, auto}.
 
 {node,         "@NODE@"}.
 {crash_dump,   "{{platform_log_dir}}/erl_crash.dump"}.
 
+{log_level, debug}.
+{logger_sasl_enabled, true}.
+
 {cuttlefish,         "on"}.
 {cuttlefish_conf,    "riak-cs.conf"}.
+
+{devrel, true}.
