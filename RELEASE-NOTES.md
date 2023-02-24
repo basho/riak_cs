@@ -4,10 +4,54 @@ Released Momtomber 11, 2023.
 
 ## General
 
-* Stanchion is merged into riak_cs.
-* De-lager-ification.
-    
-    
+This is a release centred around a single architectural change:
+merging of stanchion into Riak CS. There are no substantial additions
+in the scope of supported S3 methods, and no changes to the behaviour
+or feature set otherwise.
+
+## New features
+
+* Stanchion, which was a separate Erlang application serving the
+  purpose of serializing CRUD operations on users and buckets, and
+  therefore had to be deployed and run alongside Riak CS nodes on a
+  dedicated node, is now colocated on one of the Riak CS nodes.
+
+  In `auto` mode, it is dynamically created at the node receiving the
+  first request that needs to be serialized. This node will then store
+  stanchion details (ip:port) in a special service bucket on a
+  configured riak node. Nodes will read that ip:port and send
+  subsequent stanchion requests to that endpoint. If a node finds that
+  stanchion is unreachable, it will spawn a new instance on its
+  premises and update the details in riak. When a node that previously
+  hosted stanchion, after being temporarily unavailable, sees the
+  stanchion ip:port has changed, it will stop its stanchion instance.
+
+* Riak CS now can be built on OTP-22 and 24.
+
+* A new subcommand, `supps` has been added to `riak-cs admin`, which
+  will produce a ps-like output for the processes in the riak_cs
+  main supervisor tree with some stats.
+
+## Changes
+
+### User-visible changes
+
+* New configuration parameters:
+
+    `stanchion_hosting_mode`, with acceptable values: `auto`, `riak_cs_with_stanchion`,
+    `riak_cs_only`, `stanchion_only` (default is `auto`).
+
+    `tussle_voss_riak_host`, which can be `auto` or a fqdn:port at
+    which riak_cs will store stanchion details. A value of `auto`
+    is equivalent to setting it to `riak_host`. The purpose of this
+    parameter is to enable users operating in suboptimal networking
+    conditions to set it to a dedicated, single-node riak cluster on a
+    separate network, presumably more reliable than the one carrying
+    S3 traffic.
+
+    `stanchion.listener`, ip:port at which stanchion instance will
+    listen (if/when this node gets to start it).
+
 # Riak CS 3.0.1 Release Notes
 
 Released June 10, 2022.
@@ -21,6 +65,47 @@ from 3.0.0.
 
 * Support for fqdn data type for `riak_host` and `stanchion_host`
   configuration items in riak-cs.conf.
+
+## Changes
+
+### User-visible changes
+
+* S3 request signature v4 is now the default. The old (v2) signatures
+  continue to be supported.
+* A change of internal structures needed to support object versions,
+  meaning downgrade to 2.x is no longer possible (even if the objects
+  created with 3.0 have no versions). Upgrade from 2.x is possible.
+* The rpm and deb packages now rely on systemd (old-style SysV init
+  scripts are no longer included).
+
+### Other changes
+
+* Riak CS and Stanchion now require OTP-22 and rebar3.
+* Riak CS Test framework:
+  - The framework, along with a suite of tests (also the [multibag
+    additions](https://github.com/TI-Tokyo/riak_cs_multibag)), has been
+    upgraded to OTP-22/rebar3 and moved into a separate project,
+    [riak_cs_test](https://github.com/TI-Tokyo/riak_cs_test).
+  - A new battery of tests is written for `s3cmd` as a client.
+  - The Python client tests have been upgraded to boto3 and python-3.9.
+* A refactoring of code shared between Riak CS and stanchion resulted
+  in that code being collected into a separate dependency,
+  [rcs_common](https://github.com/TI-Tokyo/rcs_common).
+* [Riak CS Control](https://github.com/TI-Tokyo/riak_cs_control)
+  application has been upgraded to OTP-22/rebar3, too, however without
+  any new features.
+* All EQC tests have been converted to use PropEr (no shortcuts taken,
+  all coverage is preserved).
+
+## Upgrading
+
+Existing data in the riak cluster underlying a 2.x instance of Riak CS
+can be used with Riak CS 3.0 without any modification.
+
+*Note:* Once a new object is written into a database by Riak CS 3.0,
+that database cannot be used again with 2.x.
+
+## Compatibility
 
 
 # Riak CS 3.0.0 Release Notes
