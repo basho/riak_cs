@@ -54,11 +54,8 @@ status([]) ->
     ok.
 
 supps(Opts) ->
-    io:put_chars(supps:q(validate_supps_options(Opts))).
+    supps:p(Opts).
 
-validate_supps_options(Opts) ->
-    io:format("Opts ~p\n", [Opts]),
-    catch mochijson2:decode(Opts).
 
 test([]) ->
     UserName = "ADMINTESTUSER",

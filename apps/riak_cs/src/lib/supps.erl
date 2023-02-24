@@ -18,7 +18,6 @@
 %%
 %% ---------------------------------------------------------------------
 
-%% @doc A ps-like utility to print the supervision tree.
 
 -module(supps).
 
@@ -33,6 +32,23 @@
            }
        ).
 
+usage() ->
+    "A ps-like output of process_info items (memory, message_queue_len\n"
+    "etc) of processes under the supervisor trees of riak_cs_sup.\n"
+    "\n"
+    "Options:\n"
+    "  --format flat|tree, selects the output format (default is 'tree');\n"
+    "  --depth Depth, print children up to Depth level deep (default\n"
+    "      is 2, meaning top-level sups with their immediate children). Depth\n"
+    "      can be 'max';\n"
+    "  --filter Regex, filter on process names to use (default is \".+\"):\n"
+    "    * if a sup's name matches, all its children are shown;\n"
+    "    * if a sup's name doesn't match, it is only shown if a match is\n"
+    "      found in its children or below;\n"
+    "  --order_by, ProcessInfoItem, sort by this process_info item, or 'none'\n"
+    "      to preserve the order children are created (default is 'memory').\n".
+
+
 sups() ->
     [riak_cs_sup].
 
@@ -45,7 +61,11 @@ p(Opts) ->
 p() ->
     io:put_chars(q([])).
 
--spec q(proplists:proplist()) -> string().
+-spec q(string() | proplists:proplist()) -> string().
+q(["--help"]) ->
+    usage();
+q([O|_] = Options) when not is_tuple(O) ->
+    q(validate_options(Options, []));
 q(Options0) ->
     Nodes = [node() | nodes()],
     Options = extract_options(Options0),
@@ -63,6 +83,28 @@ q(Options0) ->
       end, Nodes
      ),
     lists:flatten(lists:reverse(erlang:get(supps_output))).
+
+validate_options([], Good) ->
+    Good;
+validate_options(["--depth", "max" | R], Q) ->
+    validate_options(R, [{depth, max} | Q]);
+validate_options(["--depth", A | R], Q) ->
+    validate_options(R, [{depth, list_to_integer(A)} | Q]);
+validate_options(["--format", "flat" | R], Q) ->
+    validate_options(R, [{format, flat} | Q]);
+validate_options(["--format", "tree" | R], Q) ->
+    validate_options(R, [{format, tree} | Q]);
+validate_options(["--filter", A | R], Q) ->
+    validate_options(R, [{filter, A} | Q]);
+validate_options(["--order_by", A | R], Q) when A == "none";
+                                                A == "memory" ->
+    validate_options(R, [{order_by, list_to_atom(A)} | Q]);
+validate_options([K], Q) ->
+    io:format("Option requires a value: ~s\n", [K]),
+    validate_options([], Q);
+validate_options([K, V | R], Q) ->
+    io:format("Invalid option ~s or value ~s\n", [K, V]),
+    validate_options(R, Q).
 
 extract_options(PL) ->
     Depth =

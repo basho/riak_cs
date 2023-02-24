@@ -59,7 +59,7 @@ case "$1" in
         ;;
     supps)
         shift
-        rpc riak_cs_console supps "$@"
+        rpc riak_cs_console supps $@
         ;;
     gc)
         shift
