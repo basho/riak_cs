@@ -52,6 +52,20 @@ or feature set otherwise.
     `stanchion.listener`, ip:port at which stanchion instance will
     listen (if/when this node gets to start it).
 
+* `riak-cs admin stanchion` loses the `switch` subcommand.
+
+### Other changes
+
+* A fair bit of work has gone to uplift riak\_cs\_suite, hopefully
+  making life easier for the next decade. Specifically:
+
+    - we switched erlcloud from an ancient, Basho-patched fork to
+      upstream (tag 3.6.7), incidentally triggereing (and fixing) a bug
+      with /stats endpoint, which previously only accepted v2 signatures.
+
+    - riak\_cs\_test can be built with OTP-24.
+
+
 # Riak CS 3.0.1 Release Notes
 
 Released June 10, 2022.
