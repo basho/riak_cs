@@ -59,6 +59,7 @@
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+-spec make_pbc() -> pid().
 make_pbc() ->
     {Host, Port} =
         case riak_cs_config:tussle_voss_riak_host() of
@@ -141,8 +142,7 @@ create_bucket(BucketFields) ->
 bucket_record(Name, Operation) ->
     Action = case Operation of
                  create -> created;
-                 delete -> deleted;
-                 _ -> undefined
+                 delete -> deleted
              end,
     ?RCS_BUCKET{name=binary_to_list(Name),
                 last_action=Action,

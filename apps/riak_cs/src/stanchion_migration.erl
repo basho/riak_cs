@@ -37,7 +37,7 @@
 -define(REASONABLY_SMALL_TIMEOUT, 3000).
 
 
--spec validate_stanchion() -> boolean().
+-spec validate_stanchion() -> ok.
 validate_stanchion() ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
     logger:info("validate_stanchion: ~p", [{ConfiguredIP, ConfiguredPort}]),

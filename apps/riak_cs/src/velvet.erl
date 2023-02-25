@@ -32,7 +32,6 @@
          set_bucket_versioning/4,
          delete_bucket_policy/3,
          update_user/4
-         % @TODO: update_bucket/3
         ]).
 
 -define(MAX_REQUEST_RETRIES, 3).
@@ -231,6 +230,7 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
             {error, Error}
     end.
 
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -266,14 +266,13 @@ update_bucket(Path, ContentType, Doc, Options, Expect) ->
             {error, Error}
     end.
 
+
 %% @doc Assemble the path for a bucket request
--spec buckets_path(binary()) -> string().
 buckets_path(Bucket) ->
     stringy(["/buckets",
              ["/" ++ binary_to_list(Bucket) || Bucket /= <<>>]]).
 
 %% @doc Assemble the path for a bucket request
--spec buckets_path(binary(), acl|policy|versioning) -> string().
 buckets_path(Bucket, acl) ->
     stringy([buckets_path(Bucket), "/acl"]);
 buckets_path(Bucket, policy) ->
@@ -281,31 +280,18 @@ buckets_path(Bucket, policy) ->
 buckets_path(Bucket, versioning) ->
     stringy([buckets_path(Bucket), "/versioning"]).
 
-%% @doc Assemble the URL for a buckets request
--spec url(string(), pos_integer(), boolean(), [string()]) ->
-                         string().
 %% @doc send an HTTP request where `Expect' is a list
 %% of expected HTTP status codes.
--spec request(atom(), string(), [pos_integer()]) ->
-                     {ok, {term(), term(), term()}} | {error, term()}.
 request(Method, Url, Expect) ->
     request(Method, Url, Expect, [], [], []).
 
 %% @doc send an HTTP request  where `Expect' is a list
 %% of expected HTTP status codes.
--spec request(atom(), string(), [pos_integer()], [{string(), string()}]) ->
-                     {ok, {term(), term(), term()}} | {error, term()}.
 request(Method, Url, Expect, Headers) ->
     request(Method, Url, Expect, [], Headers, []).
 
 %% @doc send an HTTP request where `Expect' is a list
 %% of expected HTTP status codes.
--spec request(atom(),
-              string(),
-              [pos_integer()],
-              string(),
-              [{string(), string()}],
-              string()) -> {ok, {term(), term(), term()}} | {error, term()}.
 request(Method, Path, Expect, ContentType, Headers, Body) ->
     request(Method, Path, Expect, ContentType, Headers, Body, ?MAX_REQUEST_RETRIES).
 
@@ -339,7 +325,6 @@ request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
     end.
 
 %% @doc Assemble the root URL for the given client
--spec root_url(string(), pos_integer(), boolean()) -> [string()].
 root_url(Ip, Port, true) ->
     ["https://", Ip, ":", integer_to_list(Port)];
 root_url(Ip, Port, false) ->
@@ -352,16 +337,10 @@ url(Ip, Port, Ssl, Path) ->
       ]).
 
 %% @doc Calculate an MD5 hash of a request body.
--spec content_md5(string()) -> string().
 content_md5(Body) ->
     base64:encode_to_string(riak_cs_utils:md5(list_to_binary(Body))).
 
 %% @doc Construct a MOSS authentication header
--spec auth_header(atom(),
-                  string(),
-                  [{string() | atom() | binary(), string()}],
-                  string(),
-                  {string(), iodata()}) -> nonempty_string().
 auth_header(HttpVerb, ContentType, Headers, Path, {AuthKey, AuthSecret}) ->
     Signature = velvet_auth:request_signature(HttpVerb,
                                               [{"content-type", ContentType} |
@@ -372,18 +351,15 @@ auth_header(HttpVerb, ContentType, Headers, Path, {AuthKey, AuthSecret}) ->
 
 %% @doc Assemble a requester query string for
 %% user in a bucket deletion request.
--spec requester_qs(string()) -> string().
 requester_qs(Requester) ->
     "?requester=" ++
         mochiweb_util:quote_plus(Requester).
 
 %% @doc Assemble the path for a users request
--spec users_path(string()) -> string().
 users_path(User) ->
     stringy(["/users",
              ["/" ++ User || User /= []]
             ]).
 
--spec stringy(string() | list(string())) -> string().
 stringy(List) ->
     lists:flatten(List).

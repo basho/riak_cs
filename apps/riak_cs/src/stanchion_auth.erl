@@ -21,8 +21,7 @@
 
 -module(stanchion_auth).
 
--export([authenticate/2,
-         request_signature/4]).
+-export([authenticate/2]).
 
 -include("stanchion.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -49,15 +48,6 @@ authenticate(RD, [KeyId, Signature]) ->
         _ ->
             {error, invalid_authentication}
     end.
-
-%% Calculate a signature for inclusion in a client request.
--type http_verb() :: 'GET' | 'HEAD' | 'PUT' | 'POST' | 'DELETE'.
--spec request_signature(http_verb(),
-                        [{string(), string()}],
-                        string(),
-                        string()) -> string().
-request_signature(HttpVerb, RawHeaders, Path, KeyData) ->
-    velvet:request_signature(HttpVerb, RawHeaders, Path, KeyData).
 
 %% ===================================================================
 %% Internal functions

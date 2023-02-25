@@ -446,7 +446,7 @@ stanchion_hosting_mode() ->
     true = (A == auto orelse A == riak_cs_only orelse A == stanchion_only orelse A == riak_cs_with_stanchion),
     A.
 
--spec tussle_voss_riak_host() -> string().
+-spec tussle_voss_riak_host() -> {string(), string()} | auto.
 tussle_voss_riak_host() ->
     get_env(riak_cs, tussle_voss_riak_host, auto).
 
