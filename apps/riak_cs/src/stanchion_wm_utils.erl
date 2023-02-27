@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,10 +24,16 @@
 -export([service_available/2,
          parse_auth_header/2,
          iso_8601_datetime/0,
-         json_to_proplist/1]).
+         json_to_proplist/1
+        ]).
+
+-ignore_xref([service_available/2,
+              parse_auth_header/2,
+              iso_8601_datetime/0,
+              json_to_proplist/1
+             ]).
 
 -include("stanchion.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 service_available(RD, Ctx) ->
     {true, RD, Ctx}.

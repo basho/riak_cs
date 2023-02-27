@@ -27,7 +27,16 @@
          allowed_methods/0,
          content_types_accepted/2,
          accept_body/2,
-         delete_resource/2]).
+         delete_resource/2
+        ]).
+-ignore_xref([stats_prefix/0,
+              content_types_provided/2,
+              to_json/2,
+              allowed_methods/0,
+              content_types_accepted/2,
+              accept_body/2,
+              delete_resource/2
+             ]).
 
 -export([authorize/2]).
 

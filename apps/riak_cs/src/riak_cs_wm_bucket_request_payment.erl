@@ -24,7 +24,13 @@
 -export([stats_prefix/0,
          content_types_provided/2,
          to_xml/2,
-         allowed_methods/0]).
+         allowed_methods/0
+        ]).
+-ignore_xref([stats_prefix/0,
+              content_types_provided/2,
+              to_xml/2,
+              allowed_methods/0
+             ]).
 
 -export([authorize/2]).
 

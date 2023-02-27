@@ -26,7 +26,6 @@
 -export([create_bucket/3,
          create_user/3,
          delete_bucket/3,
-         ping/0,
          set_bucket_acl/4,
          set_bucket_policy/4,
          set_bucket_versioning/4,
@@ -127,16 +126,6 @@ delete_bucket(Bucket, Requester, Options) ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
-        {error, Error} ->
-            {error, Error}
-    end.
-
-%% @doc Ping the server by requesting the "/ping" resource.
--spec ping() -> ok | {error, term()}.
-ping() ->
-    case request(get, "/ping", [200, 204]) of
-        {ok, {{_, _Status, _}, _Headers, _Body}} ->
-            ok;
         {error, Error} ->
             {error, Error}
     end.
@@ -281,11 +270,6 @@ buckets_path(Bucket, versioning) ->
     stringy([buckets_path(Bucket), "/versioning"]).
 
 %% @doc send an HTTP request where `Expect' is a list
-%% of expected HTTP status codes.
-request(Method, Url, Expect) ->
-    request(Method, Url, Expect, [], [], []).
-
-%% @doc send an HTTP request  where `Expect' is a list
 %% of expected HTTP status codes.
 request(Method, Url, Expect, Headers) ->
     request(Method, Url, Expect, [], Headers, []).

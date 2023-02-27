@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2022 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,16 +22,24 @@
 -module(riak_cs_wm_stats).
 
 %% webmachine resource exports
--export([
-         init/1,
+-export([init/1,
          encodings_provided/2,
          content_types_provided/2,
          service_available/2,
          forbidden/2,
-         finish_request/2]).
--export([
-         produce_body/2,
-         pretty_print/2
+         finish_request/2,
+         produce_body/2
+        ]).
+-ignore_xref([init/1,
+              encodings_provided/2,
+              content_types_provided/2,
+              service_available/2,
+              forbidden/2,
+              finish_request/2,
+              produce_body/2
+             ]).
+
+-export([pretty_print/2
         ]).
 
 -include("riak_cs.hrl").

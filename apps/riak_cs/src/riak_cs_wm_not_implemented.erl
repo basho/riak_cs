@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,7 +24,11 @@
 -module(riak_cs_wm_not_implemented).
 
 -export([allowed_methods/0,
-         malformed_request/2]).
+         malformed_request/2
+        ]).
+-ignore_xref([allowed_methods/0,
+              malformed_request/2
+             ]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").

@@ -36,7 +36,18 @@
          allowed_methods/0,
          malformed_request/2,
          content_types_accepted/2,
-         finish_request/2]).
+         finish_request/2
+        ]).
+-ignore_xref([init/1,
+              stats_prefix/0,
+              authorize/2,
+              content_types_provided/2,
+              to_xml/2,
+              allowed_methods/0,
+              malformed_request/2,
+              content_types_accepted/2,
+              finish_request/2
+             ]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").

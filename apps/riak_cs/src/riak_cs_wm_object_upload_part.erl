@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -33,7 +33,23 @@
          valid_entity_length/2,
          delete_resource/2,
          accept_body/2,
-         to_xml/2]).
+         to_xml/2
+        ]).
+
+-ignore_xref([init/1,
+              stats_prefix/0,
+              authorize/2,
+              content_types_provided/2,
+              allowed_methods/0,
+              malformed_request/2,
+              content_types_accepted/2,
+              post_is_create/2,
+              process_post/2,
+              valid_entity_length/2,
+              delete_resource/2,
+              accept_body/2,
+              to_xml/2
+             ]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").

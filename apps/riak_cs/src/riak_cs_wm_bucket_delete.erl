@@ -30,6 +30,13 @@
          process_post/2
         ]).
 
+-ignore_xref([init/1,
+              stats_prefix/0,
+              allowed_methods/0,
+              post_is_create/2,
+              process_post/2
+             ]).
+
 -export([authorize/2]).
 
 -include("riak_cs.hrl").

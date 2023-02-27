@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -45,11 +45,9 @@
 -endif.
 
 %% export Public API
--export([
-         new/0,
+-export([new/0,
          size/1,
          to_list/1,
-         is_element/2,
          add_element/2,
          del_element/2,
          resolve/1
@@ -75,8 +73,10 @@ size(Set) ->
 to_list(Set) ->
     sets:to_list(minus_deletes(Set)).
 
+-ifdef(TEST).
 is_element(Element, Set) ->
     sets:is_element(Element, minus_deletes(Set)).
+-endif.
 
 add_element(Element, Set={Adds,Dels}) ->
     case sets:is_element(Element, Dels) of

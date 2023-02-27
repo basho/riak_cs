@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -30,11 +30,22 @@
          allowed_methods/2,
          content_types_accepted/2,
          %% accept_body/2,
-         delete_resource/2]).
+         delete_resource/2
+        ]).
+-ignore_xref([init/1,
+              service_available/2,
+              is_authorized/2,
+              content_types_provided/2,
+              malformed_request/2,
+              to_xml/2,
+              allowed_methods/2,
+              content_types_accepted/2,
+              %% accept_body/2,
+              delete_resource/2
+             ]).
 
 -include("stanchion.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
--include_lib("kernel/include/logger.hrl").
 
 
 init(Config) ->
@@ -120,7 +131,6 @@ to_xml(RD, Ctx) ->
 delete_resource(ReqData, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, ReqData)),
     RequesterId = list_to_binary(wrq:get_qs_value("requester", "", ReqData)),
-    ?LOG_DEBUG("Bucket: ~p Requester: ~p", [Bucket, RequesterId]),
     case stanchion_server:delete_bucket(Bucket, RequesterId) of
         ok ->
             {true, ReqData, Ctx};

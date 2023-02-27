@@ -23,6 +23,8 @@
 
 -export([q/1, p/1, p/0]).
 
+-ignore_xref([q/1, p/1, p/0]).
+
 -record(p, {name :: atom() | tuple(),
             info :: undefined | proplists:proplist(),
             total_mem = 0 :: non_neg_integer(),

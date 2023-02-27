@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -20,7 +20,9 @@
 %% ---------------------------------------------------------------------
 
 -module(stanchion_wm_error_handler).
+
 -export([render_error/3]).
+-ignore_xref([render_error/3]).
 
 render_error(500, Req, Reason) ->
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),

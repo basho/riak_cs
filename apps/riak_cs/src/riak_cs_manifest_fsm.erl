@@ -165,6 +165,14 @@ stop(Pid) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
+-ifndef(TEST).
+init([Bucket, Key, ObjVsn, RcPid]) ->
+    process_flag(trap_exit, true),
+    {ok, waiting_command, #state{bucket = Bucket,
+                                 key = Key,
+                                 obj_vsn = ObjVsn,
+                                 riak_client = RcPid}}.
+-else.
 init([Bucket, Key, ObjVsn, RcPid]) ->
     process_flag(trap_exit, true),
     {ok, waiting_command, #state{bucket = Bucket,
@@ -179,6 +187,8 @@ init([test, Bucket, Key]) ->
                                  key = Key,
                                  obj_vsn = ?LFS_DEFAULT_OBJECT_VERSION,
                                  riak_client = FakePbc}}.
+-endif.
+
 
 %% This clause is for adding a new
 %% manifest that doesn't exist yet.

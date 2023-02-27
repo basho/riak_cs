@@ -462,7 +462,7 @@ teardown(_) ->
     application:unset_env(riak_cs, cs_root_host).
 
 test_fun(Desc, ExpectedSignature, CalculatedSignature) ->
-    {Desc, ?assert(ExpectedSignature == CalculatedSignature)}.
+    {Desc, ?_assert(ExpectedSignature == CalculatedSignature)}.
 
 example_get_object() ->
     KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",

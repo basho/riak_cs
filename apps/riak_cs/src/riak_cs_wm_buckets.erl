@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,7 +24,14 @@
 -export([stats_prefix/0,
          allowed_methods/0,
          api_request/2,
-         anon_ok/0]).
+         anon_ok/0
+        ]).
+
+-ignore_xref([stats_prefix/0,
+              allowed_methods/0,
+              api_request/2,
+              anon_ok/0
+             ]).
 
 -include("riak_cs.hrl").
 -include("riak_cs_api.hrl").

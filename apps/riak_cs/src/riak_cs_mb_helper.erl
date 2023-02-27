@@ -25,7 +25,6 @@
 
 -export([process_specs/0, bags/0,
          cluster_id/1,
-         get_cluster_id/1,
          choose_bag_id/2,
          set_bag_id_to_manifest/2,
          bag_id_from_manifest/1]).

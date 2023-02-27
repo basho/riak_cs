@@ -24,8 +24,7 @@
 -module(riak_cs_user).
 
 %% Public API
--export([
-         create_user/2,
+-export([create_user/2,
          create_user/4,
          display_name/1,
          is_admin/1,
@@ -33,7 +32,6 @@
          get_user_by_index/3,
          from_riakc_obj/2,
          to_3tuple/1,
-         save_user/3,
          update_key_secret/1,
          update_user/3,
          key_id/1,
@@ -206,8 +204,6 @@ to_3tuple(U) ->
     {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
      U?RCS_USER.key_id}.
 
-%% @doc Save information about a Riak CS user
--spec save_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) -> ok | {error, term()}.
 save_user(User, UserObj, RcPid) ->
     riak_cs_riak_client:save_user(RcPid, User, UserObj).
 

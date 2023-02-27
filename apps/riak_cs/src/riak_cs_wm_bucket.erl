@@ -21,15 +21,27 @@
 
 -module(riak_cs_wm_bucket).
 
--export([stats_prefix/0,
-         content_types_provided/2,
-         to_xml/2,
+-export([accept_body/2,
          allowed_methods/0,
-         malformed_request/2,
+         authorize/2,
          content_types_accepted/2,
-         accept_body/2,
+         content_types_provided/2,
          delete_resource/2,
-         authorize/2]).
+         malformed_request/2,
+         stats_prefix/0,
+         to_xml/2
+        ]).
+
+-ignore_xref([accept_body/2,
+              allowed_methods/0,
+              authorize/2,
+              content_types_accepted/2,
+              content_types_provided/2,
+              delete_resource/2,
+              malformed_request/2,
+              stats_prefix/0,
+              to_xml/2
+             ]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,10 +28,20 @@
          post_is_create/2,
          create_path/2,
          content_types_accepted/2,
-         accept_body/2]).
+         accept_body/2
+        ]).
+
+-ignore_xref([init/1,
+              service_available/2,
+              allowed_methods/2,
+              is_authorized/2,
+              post_is_create/2,
+              create_path/2,
+              content_types_accepted/2,
+              accept_body/2
+             ]).
 
 -include("stanchion.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 init(Config) ->
     %% Check if authentication is disabled and

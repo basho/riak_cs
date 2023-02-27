@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -104,8 +104,7 @@
 
 -module(riak_cs_wm_usage).
 
--export([
-         init/1,
+-export([init/1,
          service_available/2,
          malformed_request/2,
          resource_exists/2,
@@ -116,6 +115,19 @@
          produce_xml/2,
          finish_request/2
         ]).
+
+-ignore_xref([init/1,
+              service_available/2,
+              malformed_request/2,
+              resource_exists/2,
+              content_types_provided/2,
+              generate_etag/2,
+              forbidden/2,
+              produce_json/2,
+              produce_xml/2,
+              finish_request/2
+             ]).
+
 -on_load(on_load/0).
 
 -ifdef(TEST).

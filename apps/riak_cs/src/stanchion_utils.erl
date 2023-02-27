@@ -23,32 +23,21 @@
 -module(stanchion_utils).
 
 %% Public API
--export([binary_to_hexlist/1,
-         close_riak_connection/1,
-         create_bucket/1,
+-export([create_bucket/1,
          create_user/1,
-         get_user/2,
-         from_riakc_obj/2,
          delete_bucket/2,
-         from_bucket_name/1,
          get_admin_creds/0,
-         get_keys_and_values/1,
-         get_manifests/4,
          get_manifests_raw/4,
          get_pbc/0,
          has_tombstone/1,
          make_pbc/0,
-         riak_connection/0,
-         riak_connection/2,
          set_bucket_acl/2,
          set_bucket_policy/2,
          set_bucket_versioning/2,
          delete_bucket_policy/2,
-         timestamp/1,
          to_bucket_name/2,
          update_user/2,
-         sha_mac/2,
-         md5/1
+         sha_mac/2
         ]).
 
 -include("riak_cs.hrl").
@@ -58,6 +47,8 @@
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
+
+-type riak_connect_failed() :: {riak_connect_failed, tuple()}.
 
 -spec make_pbc() -> pid().
 make_pbc() ->
@@ -90,26 +81,6 @@ get_pbc() ->
             timer:sleep(1000),
             get_pbc()
     end.
-
-%% @doc Convert the passed binary into a string where the numbers are represented in hexadecimal (lowercase and 0 prefilled).
--spec binary_to_hexlist(binary()) -> string().
-binary_to_hexlist(Bin) ->
-    XBin =
-        [ begin
-              Hex = erlang:integer_to_list(X, 16),
-              if
-                  X < 16 ->
-                      lists:flatten(["0" | Hex]);
-                  true ->
-                      Hex
-              end
-          end || X <- binary_to_list(Bin)],
-    string:to_lower(lists:flatten(XBin)).
-
-%% @doc Close a protobufs connection to the riak cluster.
--spec close_riak_connection(pid()) -> ok.
-close_riak_connection(Pid) ->
-    riakc_pb_socket:stop(Pid).
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
@@ -207,22 +178,6 @@ delete_bucket(Bucket, OwnerId) ->
             Error
     end.
 
-%% Get the root bucket name for either a MOSS object
-%% bucket or the data block bucket name.
--spec from_bucket_name(binary()) -> {'blocks' | 'objects', binary()}.
-from_bucket_name(BucketNameWithPrefix) ->
-    BlocksName = ?BLOCK_BUCKET_PREFIX,
-    ObjectsName = ?OBJECT_BUCKET_PREFIX,
-    BlockByteSize = byte_size(BlocksName),
-    ObjectsByteSize = byte_size(ObjectsName),
-
-    case BucketNameWithPrefix of
-        <<BlocksName:BlockByteSize/binary, BucketName/binary>> ->
-            {blocks, BucketName};
-        <<ObjectsName:ObjectsByteSize/binary, BucketName/binary>> ->
-            {objects, BucketName}
-    end.
-
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
 get_admin_creds() ->
@@ -290,14 +245,11 @@ list_keys(BucketName, RiakPid) ->
 
 %% @doc Get a protobufs connection to the riak cluster
 %% using information from the application environment.
--type riak_connect_failed() :: {riak_connect_failed, tuple()}.
--spec riak_connection() -> {ok, pid()} | {error, riak_connect_failed()}.
 riak_connection() ->
     {ok, {Host, Port}} = application:get_env(riak_cs, riak_host),
     riak_connection(Host, Port).
 
 %% @doc Get a protobufs connection to the riak cluster.
--spec riak_connection(string(), pos_integer()) -> {ok, pid()} | {error, riak_connect_failed()}.
 riak_connection(Host, Port) ->
     %% We use start() here instead of start_link() because if we can't
     %% connect to Host & Port for whatever reason (e.g. service down,
@@ -314,6 +266,9 @@ riak_connection(Host, Port) ->
         {error, Else} ->
             {error, {riak_connect_failed, {Else, Host, Port}}}
     end.
+
+close_riak_connection(Pid) ->
+    riakc_pb_socket:stop(Pid).
 
 %% @doc Set the ACL for a bucket
 -spec set_bucket_acl(binary(), term()) -> ok | {error, term()}.
@@ -348,11 +303,6 @@ set_bucket_versioning(Bucket, FieldList) ->
 -spec delete_bucket_policy(binary(), binary()) -> ok | {error, term()}.
 delete_bucket_policy(Bucket, OwnerId) ->
     do_bucket_op(Bucket, OwnerId, [delete_policy], delete_policy).
-
-%% @doc Generate a key for storing a set of manifests for deletion.
--spec timestamp(erlang:timestamp()) -> non_neg_integer().
-timestamp({MegaSecs, Secs, _MicroSecs}) ->
-    (MegaSecs * 1000000) + Secs.
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
@@ -727,28 +677,6 @@ email_available(Email_, RiakPid) ->
             {false, Reason}
     end.
 
-%% @doc Return a list of keys for a bucket along
-%% with their associated values
--spec get_keys_and_values(binary()) -> {ok, [{binary(), binary()}]} | {error, term()}.
-get_keys_and_values(BucketName) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            Res =
-                case list_keys(BucketName, RiakPid) of
-                    {ok, Keys} ->
-                        KeyValuePairs =
-                            [{Key, get_value(BucketName, Key, RiakPid)}
-                             || Key <- Keys],
-                        {ok, KeyValuePairs};
-                    {error, Reason1} ->
-                        {error, Reason1}
-                end,
-            close_riak_connection(RiakPid),
-            Res;
-        {error, _} = Else ->
-            Else
-    end.
-
 %% internal fun to retrieve the riak object
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary(), binary()) ->
@@ -760,21 +688,6 @@ get_manifests_raw(RiakcPid, Bucket, Key, Vsn) ->
                                         rcs_common_manifest:make_versioned_key(Key, Vsn))),
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
-
-%% @doc Extract the value from a Riak object.
--spec get_value(binary(), binary(), pid()) ->
-                       binary().
-get_value(BucketName, Key, RiakPid) ->
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, BucketName, Key)),
-    stanchion_stats:update([riakc, get_manifest], TAT),
-    case Res of
-    %% case get_object(BucketName, Key, RiakPid) of
-        {ok, RiakObj} ->
-            riakc_obj:get_value(RiakObj);
-        {error, Reason} ->
-            logger:warning("Failed to retrieve value for ~p. Reason: ~p", [Key, Reason]),
-            <<"unknown">>
-    end.
 
 save_user(User, RiakPid) ->
     Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
@@ -820,7 +733,6 @@ save_user(false, User, UserObj, RiakPid) ->
     Res.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user('undefined' | iolist(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RiakPid) ->
     {error, no_user_key};
 get_user(KeyId, RiakPid) ->

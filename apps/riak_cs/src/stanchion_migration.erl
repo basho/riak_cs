@@ -26,10 +26,7 @@
          adopt_stanchion/0,
          do_we_get_to_run_stanchion/2,
          apply_stanchion_details/1,
-         apply_stanchion_details/2,
-         read_stanchion_data/0,
-         save_stanchion_data/1,
-         stop_stanchion_here/0
+         save_stanchion_data/1
         ]).
 
 -include("riak_cs.hrl").
@@ -143,9 +140,6 @@ do_we_get_to_run_stanchion(Mode, ThisHostAddr) ->
 
 apply_stanchion_details({Host, Port}) ->
     riak_cs_config:set_stanchion(Host, Port).
-apply_stanchion_details({Host, Port}, Ssl) ->
-    riak_cs_config:set_stanchion(Host, Port, Ssl).
-
 
 read_stanchion_data() ->
     Pbc = stanchion_utils:get_pbc(),
