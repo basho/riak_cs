@@ -104,7 +104,7 @@ make_authorization(Config, Method, ContentMD5, ContentType, Date, AmzHeaders,
                     format_subresources(Subresources)
 
                    ],
-    Signature = base64:encode(crypto:hmac(sha, Config#aws_config.secret_access_key, StringToSign)),
+    Signature = base64:encode(crypto:mac(hmac, sha, Config#aws_config.secret_access_key, StringToSign)),
     ["AWS ", Config#aws_config.access_key_id, $:, Signature].
 
 format_subresources([]) ->
