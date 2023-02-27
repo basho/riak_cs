@@ -42,12 +42,12 @@ or feature set otherwise.
     `riak_cs_only`, `stanchion_only` (default is `auto`).
 
     `tussle_voss_riak_host`, which can be `auto` or a fqdn:port at
-    which riak_cs will store stanchion details. A value of `auto`
-    is equivalent to setting it to `riak_host`. The purpose of this
+    which riak_cs will store stanchion details. A value of `auto` is
+    equivalent to setting it to `riak_host`. The purpose of this
     parameter is to enable users operating in suboptimal networking
     conditions to set it to a dedicated, single-node riak cluster on a
-    separate network, presumably more reliable than the one carrying
-    S3 traffic.
+    separate network, which can be made more reliable than the one
+    carrying S3 traffic.
 
     `stanchion.listener`, ip:port at which stanchion instance will
     listen (if/when this node gets to start it).
@@ -64,6 +64,9 @@ or feature set otherwise.
       with /stats endpoint, which previously only accepted v2 signatures.
 
     - riak\_cs\_test can be built with OTP-24.
+
+    - php and ruby tests have been updated and re-included in external
+      client tests.
 
 
 # Riak CS 3.0.1 Release Notes
