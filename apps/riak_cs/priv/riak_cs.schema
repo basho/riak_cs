@@ -56,14 +56,6 @@
   {validators, ["valid_host"]}
 ]}.
 
-%% @doc Configuration for access to request
-%% serialization service
-{mapping, "stanchion_host", "riak_cs.stanchion_host", [
-  {default, {"{{stanchion_host}}", {{stanchion_port}} }},
-  {datatype, [fqdn, ip]},
-  {validators, ["valid_host"]}
-]}.
-
 %% @doc Default cert location for https can be overridden
 %% with the ssl config variable, for example:
 {mapping, "ssl.certfile", "riak_cs.ssl.certfile", [
@@ -79,12 +71,17 @@
 ]}.
 
 
-
 %% @doc Stanchion http/https port and IP address to listen at
 {mapping, "stanchion.listener", "riak_cs.stanchion_listener", [
   {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
   {datatype, ip},
   {validators, ["valid_host"]}
+]}.
+
+%% @doc Netmask to use when selecting which network to place stanchion on
+{mapping, "stanchion_netmask", "riak_cs.stanchion_netmask", [
+  {default, "{{stanchion_netmask}}"},
+  {datatype, string}
 ]}.
 
 %% @doc SSL configuration for access to request serialization

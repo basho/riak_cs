@@ -49,18 +49,6 @@ ensure_service_bucket_props(Pbc) ->
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     Children = [],
-    %% stanchion webmachine to be added to this sup on demand
-    %% {ok, Mode} = application:get_env(riak_cs, stanchion_hosting_mode),
-    %% ThisHostAddr = riak_cs_utils:this_host_addr(),
-    %% case stanchion_migration:do_we_get_to_run_stanchion(Mode, ThisHostAddr) of
-    %%     {use_saved, HostPort} ->
-    %%         ok = stanchion_migration:apply_stanchion_details(HostPort),
-    %%         [];
-    %%     use_ours ->
-    %%         {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
-    %%         ok = stanchion_migration:save_stanchion_data({ThisHostAddr, Port}),
-    %%         stanchion_process_specs()
-    %% end,
     {ok, {#{strategy => one_for_one,
             intensity => 10,
             period => 10}, Children

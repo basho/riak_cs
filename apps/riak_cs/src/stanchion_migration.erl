@@ -37,18 +37,18 @@
 -spec validate_stanchion() -> ok.
 validate_stanchion() ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    logger:info("validate_stanchion: ~p", [{ConfiguredIP, ConfiguredPort}]),
+    logger:debug("validate_stanchion: ~p", [{ConfiguredIP, ConfiguredPort}]),
     case read_stanchion_data() of
         {ok, {{Host, Port}, Node}}
           when Host == ConfiguredIP,
                Port == ConfiguredPort,
                Node == node() ->
-            logger:info("validate_stanchion: matching data read"),
+            logger:debug("validate_stanchion: matching data read"),
             ok;
         {ok, {{Host, Port}, Node}} ->
             logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),
-            case riak_cs_utils:this_host_addr() of
-                ConfiguredIP when node() == Node ->
+            case lists:member(ConfiguredIP, riak_cs_utils:this_host_addresses()) of
+                true when node() == Node ->
                     stop_stanchion_here(),
                     ok;
                 _ ->
@@ -57,9 +57,7 @@ validate_stanchion() ->
             apply_stanchion_details({Host, Port});
         {error, notfound} ->
             logger:info("no previously saved stanchion details; adopting stanchion here"),
-            apply_stanchion_details({ConfiguredIP, ConfiguredPort}),
-            start_stanchion_here(),
-            ok = save_stanchion_data({ConfiguredIP, ConfiguredPort})
+            adopt_stanchion()
     end.
 
 
@@ -67,11 +65,11 @@ validate_stanchion() ->
 adopt_stanchion() ->
     case riak_cs_config:stanchion_hosting_mode() of
         auto ->
-            ThisHostAddr = riak_cs_utils:this_host_addr(),
+            Addr = riak_cs_utils:select_addr_for_stanchion(),
             {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
             start_stanchion_here(),
-            ok = save_stanchion_data({ThisHostAddr, Port}),
-            apply_stanchion_details({ThisHostAddr, Port}),
+            ok = save_stanchion_data({Addr, Port}),
+            apply_stanchion_details({Addr, Port}),
             ok;
         M ->
             logger:error("Riak CS stanchion_hosting_mode is ~s. Cannot adopt stanchion.", [M]),

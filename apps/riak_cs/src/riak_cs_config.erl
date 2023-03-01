@@ -62,7 +62,6 @@
          max_key_length/0,
          read_before_last_manifest_write/0,
          region/0,
-         stanchion/0,
          set_stanchion/2, set_stanchion/3,
          use_2i_for_storage_calc/0,
          detailed_storage_calc/0,
@@ -70,6 +69,8 @@
          active_delete_threshold/0,
          fast_user_get/0,
          root_host/0,
+         stanchion/0,
+         stanchion_netmask/0,
          stanchion_hosting_mode/0,
          tussle_voss_riak_host/0
         ]).
@@ -377,9 +378,14 @@ max_key_length() ->
 %% @doc Return `stanchion' configuration data.
 -spec stanchion() -> {string(), pos_integer(), boolean()}.
 stanchion() ->
-    {ok, {Host, Port}} = application:get_env(riak_cs, stanchion_host),
-    {ok, SSL}  = application:get_env(riak_cs, stanchion_ssl),
+    {Host, Port} = application:get_env(riak_cs, stanchion_host, {"127.0.0.1", 8085}),
+    SSL  = application:get_env(riak_cs, stanchion_ssl, false),
     {Host, Port, SSL}.
+
+-spec stanchion_netmask() -> string().
+stanchion_netmask() ->
+    {ok, A} = application:get_env(riak_cs, stanchion_netmask),
+    A.
 
 -spec set_stanchion(string(), inet:port()) -> ok.
 set_stanchion(Host, Port) ->
