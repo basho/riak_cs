@@ -71,9 +71,7 @@
          big_end_key/0,
          stanchion_data/0,
          camel_case/1,
-         capitalize/1,
-         this_host_addresses/0,
-         select_addr_for_stanchion/0
+         capitalize/1
         ]).
 
 -include("riak_cs.hrl").
@@ -536,58 +534,6 @@ camel_case(String) when is_list(String) ->
 capitalize("") -> "";
 capitalize([H|T]) -> string:to_upper([H]) ++ T.
 
-
--spec select_addr_for_stanchion() -> string().
-select_addr_for_stanchion() ->
-    {ok, Ifs} = inet:getifaddrs(),
-    Mask = riak_cs_config:stanchion_netmask(),
-    {ok, {M1, M2, M3, M4}} = inet:parse_address(Mask),
-    case lists:filtermap(
-           fun({_If, IfOpts}) ->
-                   {A1, A2, A3, A4} = Addr = extract_addr(IfOpts),
-                   if (M1 band A1) > 0 andalso
-                      (M2 band A2) > 0 andalso
-                      (M3 band A3) > 0 andalso
-                      (M4 band A4) > 0 ->
-                           {true, Addr};
-                      el/=se ->
-                           false
-                   end
-           end,
-           Ifs) of
-        [{A1, A2, A3, A4}|_] ->
-            lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]));
-        [] ->
-            logger:warning("No network interfaces with assigned addresses matching ~s:"
-                           " falling back to 127.0.0.1", [Mask]),
-            "127.0.0.1"
-    end.
-
-extract_addr(IfItem) ->
-    case proplists:get_value(addr, IfItem) of
-        AA when AA /= undefined,
-                AA /= {0,0,0,0},
-                size(AA) == 4 ->
-            AA;
-        _ ->
-            {127,0,0,1}
-    end.
-
--spec this_host_addresses() -> [string()].
-this_host_addresses() ->
-    {ok, Ifs} = inet:getifaddrs(),
-    lists:filtermap(
-      fun({_If, PL}) ->
-              case proplists:get_value(addr, PL) of
-                  AA when AA /= undefined,
-                          AA /= {0,0,0,0},
-                          size(AA) == 4 ->
-                      {A1, A2, A3, A4} = AA,
-                      {true, lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]))};
-                  _ ->
-                      false
-              end
-      end, Ifs).
 
 -ifdef(TEST).
 

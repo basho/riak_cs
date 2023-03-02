@@ -39,7 +39,8 @@
       {stanchion_ssl, ${STANCHION_SSL}},
       {stanchion_ssl_certfile, ${STANCHION_SSL_CERTFILE}},
       {stanchion_ssl_keyfile, ${STANCHION_SSL_KEYFILE}},
-      {stanchion_netmask, ${STANCHION_NETMASK}},
+      {stanchion_subnet, ${STANCHION_SUBNET},
+      {stanchion_netmask, ${STANCHION_NETMASK},
       {tussle_voss_riak_host, ${TUSSLE_VOSS_RIAK_HOST}}
       {connection_pools,[{request_pool,{128,0}},{bucket_list_pool,{5,0}}]}]},
  {sasl,[{sasl_error_logger,false}]},

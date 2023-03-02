@@ -70,7 +70,7 @@
          fast_user_get/0,
          root_host/0,
          stanchion/0,
-         stanchion_netmask/0,
+         stanchion_subnet_and_netmask/0,
          stanchion_hosting_mode/0,
          tussle_voss_riak_host/0
         ]).
@@ -382,10 +382,11 @@ stanchion() ->
     SSL  = application:get_env(riak_cs, stanchion_ssl, false),
     {Host, Port, SSL}.
 
--spec stanchion_netmask() -> string().
-stanchion_netmask() ->
-    {ok, A} = application:get_env(riak_cs, stanchion_netmask),
-    A.
+-spec stanchion_subnet_and_netmask() -> {string(), string()}.
+stanchion_subnet_and_netmask() ->
+    {ok, Subnet} = application:get_env(riak_cs, stanchion_subnet),
+    {ok, Netmask} = application:get_env(riak_cs, stanchion_netmask),
+    {Subnet, Netmask}.
 
 -spec set_stanchion(string(), inet:port()) -> ok.
 set_stanchion(Host, Port) ->

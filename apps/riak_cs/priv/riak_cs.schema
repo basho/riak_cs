@@ -78,6 +78,11 @@
   {validators, ["valid_host"]}
 ]}.
 
+%% @doc Subnet to use when selecting which network to place stanchion on
+{mapping, "stanchion_subnet", "riak_cs.stanchion_subnet", [
+  {default, "{{stanchion_subnet}}"},
+  {datatype, string}
+]}.
 %% @doc Netmask to use when selecting which network to place stanchion on
 {mapping, "stanchion_netmask", "riak_cs.stanchion_netmask", [
   {default, "{{stanchion_netmask}}"},

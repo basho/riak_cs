@@ -56,7 +56,7 @@ make_pbc() ->
         case riak_cs_config:tussle_voss_riak_host() of
             auto ->
                 {H,P} = riak_cs_config:riak_host_port(),
-                logger:info("using main riak cluster for voss data at ~p:~p", [H, P]),
+                logger:info("using main riak cluster for voss data at ~s:~b", [H, P]),
                 {H,P};
             Configured ->
                 Configured

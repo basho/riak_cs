@@ -24,7 +24,6 @@
 
 -export([validate_stanchion/0,
          adopt_stanchion/0,
-         do_we_get_to_run_stanchion/2,
          apply_stanchion_details/1,
          save_stanchion_data/1
         ]).
@@ -37,7 +36,6 @@
 -spec validate_stanchion() -> ok.
 validate_stanchion() ->
     {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    logger:debug("validate_stanchion: ~p", [{ConfiguredIP, ConfiguredPort}]),
     case read_stanchion_data() of
         {ok, {{Host, Port}, Node}}
           when Host == ConfiguredIP,
@@ -47,7 +45,7 @@ validate_stanchion() ->
             ok;
         {ok, {{Host, Port}, Node}} ->
             logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),
-            case lists:member(ConfiguredIP, riak_cs_utils:this_host_addresses()) of
+            case lists:member(ConfiguredIP, this_host_addresses()) of
                 true when node() == Node ->
                     stop_stanchion_here(),
                     ok;
@@ -60,12 +58,38 @@ validate_stanchion() ->
             adopt_stanchion()
     end.
 
+this_host_addresses() ->
+    {ok, Ifs} = inet:getifaddrs(),
+    lists:filtermap(
+      fun({_If, PL}) ->
+              case proplists:get_value(addr, PL) of
+                  AA when AA /= undefined,
+                          AA /= {0,0,0,0},
+                          size(AA) == 4 ->
+                      {A1, A2, A3, A4} = AA,
+                      {true, lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]))};
+                  _ ->
+                      false
+              end
+      end, Ifs).
 
--spec adopt_stanchion() -> ok | {error, stanchion_not_relocatable}.
+select_addr_for_stanchion() ->
+    {Subnet_, Mask_} = riak_cs_config:stanchion_subnet_and_netmask(),
+    {ok, Subnet} = inet:parse_address(Subnet_),
+    {ok, Mask} = inet:parse_address(Mask_),
+    case netutils:get_local_ip_from_subnet({Subnet, Mask}) of
+        {ok, {A1, A2, A3, A4}} ->
+            lists:flatten(io_lib:format("~b.~b.~b.~b", [A1, A2, A3, A4]));
+        undefined ->
+            logger:warning("No network interfaces with assigned addresses matching ~s:"
+                           " falling back to 127.0.0.1", [Mask_]),
+            "127.0.0.1"
+    end.
+
 adopt_stanchion() ->
     case riak_cs_config:stanchion_hosting_mode() of
         auto ->
-            Addr = riak_cs_utils:select_addr_for_stanchion(),
+            Addr = select_addr_for_stanchion(),
             {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
             start_stanchion_here(),
             ok = save_stanchion_data({Addr, Port}),
@@ -75,7 +99,6 @@ adopt_stanchion() ->
             logger:error("Riak CS stanchion_hosting_mode is ~s. Cannot adopt stanchion.", [M]),
             {error, stanchion_not_relocatable}
     end.
-
 
 start_stanchion_here() ->
     case supervisor:which_children(stanchion_sup) of
@@ -97,44 +120,6 @@ stop_stanchion_here() ->
              end || {Id, _, _, _} <- FF]
     end.
 
-
-do_we_get_to_run_stanchion(Mode, ThisHostAddr) ->
-    {ConfiguredIP, ConfiguredPort, _Ssl} = riak_cs_config:stanchion(),
-    case read_stanchion_data() of
-        {ok, {{Host, Port}, Node}} when Mode == auto ->
-            logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-            if Host == ThisHostAddr andalso
-               Port == ConfiguredPort andalso
-               Node == node() ->
-                    logger:info("read stanchion details previously saved by us;"
-                                " will start stanchion again at ~s:~b", [Host, Port]),
-                    use_ours;
-               el/=se ->
-                    {use_saved, {Host, Port}}
-            end;
-
-        {ok, {{Host, Port}, Node}} when Mode == riak_cs_only ->
-            logger:info("going to use stanchion started at ~s:~b (~s)", [Host, Port, Node]),
-            {use_saved, {Host, Port}};
-
-        {ok, {{SavedHost, SavedPort}, Node}} when Mode == riak_cs_with_stanchion;
-                                                  Mode == stanchion_only ->
-            case ThisHostAddr of
-                ConfiguredIP when ConfiguredPort == SavedPort,
-                                  Node == node() ->
-                    %% we read what we must have saved before
-                    {use_saved, {SavedHost, SavedPort}};
-                _ ->
-                    logger:error("this node is configured to run stanchion but"
-                                 " stanchion has already been started at ~s:~b",
-                                 [SavedHost, SavedPort]),
-                    conflicting_stanchion_configuration
-            end;
-
-        _ ->
-            logger:info("no previously saved stanchion details; going to start stanchion on this node"),
-            use_ours
-    end.
 
 apply_stanchion_details({Host, Port}) ->
     riak_cs_config:set_stanchion(Host, Port).
