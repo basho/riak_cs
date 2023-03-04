@@ -57,7 +57,7 @@ init([]) ->
 
 
 stanchion_process_specs() ->
-    {ok, {Ip, Port}} = application:get_env(riak_cs, stanchion_listener),
+    {Ip, Port, _SSL} = riak_cs_config:stanchion(),
 
     %% Hide any bags from user-facing parts.
     case application:get_env(riak_cs, supercluster_members) of

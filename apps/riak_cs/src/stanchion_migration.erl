@@ -90,10 +90,10 @@ adopt_stanchion() ->
     case riak_cs_config:stanchion_hosting_mode() of
         auto ->
             Addr = select_addr_for_stanchion(),
-            {ok, {_IP, Port}} = application:get_env(riak_cs, stanchion_listener),
-            start_stanchion_here(),
+            {ok, Port} = application:get_env(riak_cs, stanchion_port),
             ok = save_stanchion_data({Addr, Port}),
-            apply_stanchion_details({Addr, Port}),
+            ok = apply_stanchion_details({Addr, Port}),
+            start_stanchion_here(),
             ok;
         M ->
             logger:error("Riak CS stanchion_hosting_mode is ~s. Cannot adopt stanchion.", [M]),

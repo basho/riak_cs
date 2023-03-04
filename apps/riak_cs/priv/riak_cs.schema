@@ -1,5 +1,4 @@
 %% -*- erlang -*-
-%% ex: ft=erlang ts=4 sw=4 et
 
 %% Riak CS configuration
 
@@ -71,21 +70,22 @@
 ]}.
 
 
-%% @doc Stanchion http/https port and IP address to listen at
-{mapping, "stanchion.listener", "riak_cs.stanchion_listener", [
-  {default, {"{{stanchion_ip}}", {{stanchion_port}} }},
-  {datatype, ip},
-  {validators, ["valid_host"]}
+%% @doc Stanchion http/https port to listen at. The IP address will be
+%% selected based on stanchion_subnet and stanchion_netmask.
+{mapping, "stanchion_port", "riak_cs.stanchion_port", [
+  {default, {{stanchion_port}} },
+  {datatype, integer},
+  {validators, ["valid_port"]}
 ]}.
 
 %% @doc Subnet to use when selecting which network to place stanchion on
 {mapping, "stanchion_subnet", "riak_cs.stanchion_subnet", [
-  {default, "{{stanchion_subnet}}"},
+  {default, "127.0.0.1"},
   {datatype, string}
 ]}.
 %% @doc Netmask to use when selecting which network to place stanchion on
 {mapping, "stanchion_netmask", "riak_cs.stanchion_netmask", [
-  {default, "{{stanchion_netmask}}"},
+  {default, "255.255.255.255"},
   {datatype, string}
 ]}.
 
