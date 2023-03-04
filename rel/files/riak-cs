@@ -40,7 +40,7 @@ fi
 
 function maybe_su {
     if [[ $EUID -ne 0 ]]; then
-        $*
+o        $*
     else
 	# if we are executing an admin command that spins up a
 	# (hidden) node to then execute custom erlang code via -eval,
