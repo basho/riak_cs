@@ -2,12 +2,12 @@ Source: riak-cs
 Section: net
 Priority: optional
 Maintainer: Andrei Zavada <andriy.zavada@tiot.jp>
-Build-Depends: debhelper (>= 7), libssl-dev
+Build-Depends: debhelper (>= 9.20), libssl-dev
 Standards-Version: 4.6.0.1
 Homepage: https://tiot.jp
 
 Package: riak-cs
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, adduser, logrotate, erlang-base, openssl
+Depends: ${misc:Depends}, ${shlibs:Depends}, adduser, openssl
 Homepage: https://tiot.jp
 Description: Riak CS Database

@@ -17,8 +17,8 @@ ROOTDIR := debian/riak-cs
 ## note that it is necessary to use overlay_vars relative to .. as
 ## the generate command EXECUTES in rel/
 build:
-	unset CC CFLAGS CPPFLAGS LDFLAGS CXX CXXFLAGS \
-		&& make rel-deb
+	make rel-deb
+	rm -rf rel/riak-cs/lib/*/c_src rel/riak-cs/lib/*/src
 	touch build
 
 clean:
