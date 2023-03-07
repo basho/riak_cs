@@ -2,15 +2,6 @@
 
 {rel_vsn, "{{release_version}}"}.
 
-{platform_base_dir,  "/usr/lib64/riak-cs"}.
-{platform_bin_dir,   "/usr/lib64/riak-cs/bin"}.
-{platform_data_dir,  "/var/lib/riak-cs"}.
-{platform_etc_dir,   "/etc/riak-cs"}.
-{platform_lib_dir,   "/usr/lib64/riak-cs/lib"}.
-{platform_log_dir,   "/var/log/riak-cs"}.
-{platform_gen_dir,   "{{platform_data_dir}}"}.
-{platform_patch_dir, "{{platform_lib_dir}}/patches"}.
-
 {cs_ip,             "127.0.0.1"}.
 {cs_port,           8080}.
 {admin_ip,          "127.0.0.1"}.
@@ -27,10 +18,9 @@
 {stanchion_hosting_mode, auto}.
 {tussle_voss_riak_host, auto}.
 
-{node,         "riak-cs@127.0.0.1"}.
-{crash_dump,   "{{platform_log_dir}}/erl_crash.dump"}.
+{node, "riak-cs@127.0.0.1"}.
 
-{pid_dir,            "/var/run/riak-cs"}.
+{pid_dir, "/run/riak-cs"}.
 
 {log_level, info}.
 {logger_sasl_enabled, false}.

@@ -1,6 +1,6 @@
 ## -------------------------------------------------------------------
 ##
-## Copyright (c) 2014 Basho Technologies, Inc.; 2021 TI Tokyo
+## Copyright (c) 2014 Basho Technologies, Inc.; 2021-2023 TI Tokyo
 ##
 ## This file is provided to you under the Apache License,
 ## Version 2.0 (the "License"); you may not use this file
@@ -30,7 +30,6 @@ Packager: "Riak CS Package Maintainer" <"andriy.zavada@tiot.jp">
 BuildRoot: %{_tmppath}/%{name}-%{_revision}-%{release}-root
 Summary: "Riak CS is a Riak-backed S3 drop-in replacement"
 BuildRequires: systemd
-Requires: logrotate
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
@@ -41,29 +40,41 @@ Requires(postun): systemd
 %define debug_package %{nil}
 %define __prelink_undo_cmd /bin/cat prelink library
 
+# disable shebang mangling
+%undefine __brp_mangle_shebangs
+
 %define platform_etc_dir %{_sysconfdir}/riak-cs
 %define platform_base_dir %{_libdir}/riak-cs
 %define platform_bin_dir %{platform_base_dir}/bin
 %define platform_lib_dir %{platform_base_dir}/lib
 %define platform_log_dir %{_localstatedir}/log/riak-cs
+# no data as such; it's only used for cuttlefish-generated configs
+%define platform_data_dir %{_localstatedir}/lib/riak-cs
 
 %prep
 %setup -q -n %{_tarname_base} -c %{_tarname_base}
 
 # Setup vars.config like other platforms, but do it inside of spec file
-cat > rpm.vars.config <<EOF
+cp rel/pkg/rpm/vars.config.part rel/pkg/rpm/vars.config
+cat >>rel/pkg/rpm/vars.config <<EOF
 %% Platform-specific installation paths
 {platform_bin_dir,  "%{platform_bin_dir}"}.
 {platform_etc_dir,  "%{platform_etc_dir}"}.
 {platform_base_dir, "%{platform_base_dir}"}.
+{platform_gen_dir,  "%{platform_data_dir}"}.
 {platform_lib_dir,  "%{platform_lib_dir}"}.
 {platform_log_dir,  "%{platform_log_dir}"}.
+{crash_dump,        "%{platform_log_dir}/erl_crash.dump"}.
 EOF
 
 %define _build_id_links none
 
 %build
+# symlink deps, to reuse deps fetched previously with rebar3 get-deps
+(mkdir -p _build/default/lib && cd _build/default/lib && for d in ../../../../../../../../_build/default/lib/*; do ln -sf $d; done)
 make rel-rpm
+# remove sources
+rm -rf rel/riak-cs/lib/*/c_src rel/riak-cs/lib/*/src
 
 %install
 %define relpath %{_builddir}/%{buildsubdir}/rel/riak-cs
