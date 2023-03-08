@@ -96,7 +96,10 @@ $(BUILD_STAGE_DIR): buildrel
 #  * copy the vars.config over for build config
 buildrel:
 	tar -xf $(BASE_DIR)/rel/pkg/out/$(PKG_ID).tar.gz -C $(BASE_DIR)/rel/pkg/out/riak_cs-$(PKG_ID)
-	$(MAKE) -C $(BASE_DIR)/rel/pkg/out/riak_cs-$(PKG_ID) rel-fbsdng
+	cd $(BASE_DIR)/rel/pkg/out/$(PKG_ID); \
+	  (mkdir -p _build/default && cd _build/default && for d in lib; do ln -fs $(BASE_DIR)/_build/default/$$d; done); \
+	  $(MAKE) -C $(BASE_DIR)/rel/pkg/out/riak_cs-$(PKG_ID) rel-fbsdng
+	rm -rf rel/riak-cs/lib/*/src
 	chmod 0755 rel/riak-cs/bin/* rel/riak-cs/erts-*/bin/*
 
 $(BUILDDIR):
