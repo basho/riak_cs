@@ -1,11 +1,11 @@
 # Riak CS 3.1.0 Release Notes
 
-Released Momtomber 11, 2023.
+Released March 15, 2023.
 
 ## General
 
-This is a release centred around a single architectural change:
-merging of stanchion into Riak CS. There are no substantial additions
+This release is centred around a single architectural change:
+merge of stanchion into Riak CS. There are no substantial additions
 in the scope of supported S3 methods, and no changes to the behaviour
 or feature set otherwise.
 
@@ -19,14 +19,14 @@ or feature set otherwise.
   In `auto` mode, it is dynamically created at the node receiving the
   first request that needs to be serialized. This node will then store
   stanchion details (ip:port) in a special service bucket on a
-  configured riak node. Nodes will read that ip:port and send
+  configured riak node. Riak CS nodes will read that ip:port and send
   subsequent stanchion requests to that endpoint. If a node finds that
   stanchion is unreachable, it will spawn a new instance on its
   premises and update the details in riak. When a node that previously
   hosted stanchion, after being temporarily unavailable, sees the
   stanchion ip:port has changed, it will stop its stanchion instance.
 
-* Riak CS now can be built on OTP-22 and 24.
+* Riak CS now can be built on OTP-22 through 25.
 
 * A new subcommand, `supps` has been added to `riak-cs admin`, which
   will produce a ps-like output for the processes in the riak_cs
@@ -41,18 +41,23 @@ or feature set otherwise.
     `stanchion_hosting_mode`, with acceptable values: `auto`, `riak_cs_with_stanchion`,
     `riak_cs_only`, `stanchion_only` (default is `auto`).
 
-    `tussle_voss_riak_host`, which can be `auto` or a fqdn:port at
-    which riak_cs will store stanchion details. A value of `auto` is
-    equivalent to setting it to `riak_host`. The purpose of this
-    parameter is to enable users operating in suboptimal networking
-    conditions to set it to a dedicated, single-node riak cluster on a
-    separate network, which can be made more reliable than the one
-    carrying S3 traffic.
+    `tussle_voss_riak_host` ("voss" stands for some combination of
+    "volatile, storage, serialized"), which can be `auto` or a
+    fqdn:port at which riak_cs will store stanchion details. A value
+    of `auto` is equivalent to setting it to `riak_host`. The purpose
+    of this parameter is to enable users operating in suboptimal
+    networking conditions to set it to a dedicated, single-node riak
+    cluster on a separate network, which can be made more reliable
+    than the one carrying S3 traffic.
 
-    `stanchion.listener`, ip:port at which stanchion instance will
+    `stanchion_port`, port at which stanchion instance will
     listen (if/when this node gets to start it).
 
-* `riak-cs admin stanchion` loses the `switch` subcommand.
+    `stanchion_subnet`, `stanchion_netmask` (with default values of
+    "127.0.0.1" and "255.255.255.255"), to use when selecting which
+    network to place stanchion on.
+
+* `riak-cs admin stanchion` lost the `switch` subcommand.
 
 ### Other changes
 
@@ -63,10 +68,14 @@ or feature set otherwise.
       upstream (tag 3.6.7), incidentally triggereing (and fixing) a bug
       with /stats endpoint, which previously only accepted v2 signatures.
 
-    - riak\_cs\_test can be built with OTP-24.
+    - riak\_cs\_test can be built with OTP-24, and has lager replaced
+      by the standard kernel logger facility.
 
     - php and ruby tests have been updated and re-included in external
       client tests.
+
+* riak\_cs\_service\_bundle has been updated to accommodate
+  stanchion-less version of Riak CS.
 
 
 # Riak CS 3.0.1 Release Notes
