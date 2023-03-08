@@ -160,6 +160,7 @@ PKG_ID := "$(REPO_TAG)-OTP$(OTP_VER)"
 PKG_VERSION = $(shell echo $(PKG_ID) | sed -e 's/^$(REPO)-//')
 
 package:
+	$(REBAR) get-deps
 	mkdir -p rel/pkg/out/riak_cs-$(PKG_ID)
 	git archive --format=tar HEAD | gzip >rel/pkg/out/$(PKG_ID).tar.gz
 	$(MAKE) -f rel/pkg/Makefile
