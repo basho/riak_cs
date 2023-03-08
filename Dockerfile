@@ -1,6 +1,6 @@
-FROM erlang:22 AS compile-image
+FROM erlang:24 AS compile-image
 
-EXPOSE 8080
+EXPOSE 8080 8085
 
 WORKDIR /usr/src/riak_cs
 COPY . /usr/src/riak_cs
@@ -13,7 +13,7 @@ COPY . /usr/src/riak_cs
 # /sys.config.src.
 RUN make rel-docker
 
-FROM debian:11 AS runtime-image
+FROM debian:latest AS runtime-image
 
 COPY --from=compile-image /usr/src/riak_cs/rel/riak-cs /opt/riak-cs
 

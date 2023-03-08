@@ -35,7 +35,6 @@
       {riak_host, {${RIAK_HOST}, ${RIAK_PORT}}},
       {listener, {${RCS_LISTENER_IP}, ${RCS_LISTENER_PORT}}},
       {stanchion_hosting_mode, ${STANCHION_HOSTING_MODE}},
-      {stanchion_listener, ${STANCHION_LISTENER_IP}, ${STANCHION_LISTENER_PORT}},
       {stanchion_ssl, ${STANCHION_SSL}},
       {stanchion_ssl_certfile, ${STANCHION_SSL_CERTFILE}},
       {stanchion_ssl_keyfile, ${STANCHION_SSL_KEYFILE}},
