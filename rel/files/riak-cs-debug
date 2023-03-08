@@ -421,7 +421,7 @@ if [ 1 -eq $get_syscmds ]; then
 
     BLOCKDEV=/sbin/blockdev
     if [ -e $BLOCKDEV ]; then
-        for mount_point in `mount | grep -E '^/' | grep -v /dev/shm | awk '{print $1}'`; do
+        for mount_point in `mount | grep -E '^/' | grep -v /dev/shm | grep -v /var/lib/snapd | awk '{print $1}'`; do
             flat_point=`echo $mount_point | sed 's:/:_:g'`
             dump blockdev.$flat_point $BLOCKDEV --getra $mount_point
         done
@@ -500,14 +500,14 @@ if [ 1 -eq $get_riakcmds ]; then
     mkdir_or_die "${start_dir}"/"${debug_dir}"/commands/.info
     cd "${start_dir}"/"${debug_dir}"/commands
 
-    dump riak_cs_ping "$cs_bin_dir"/riak-cs ping
-    dump riak_cs_version "$cs_bin_dir"/riak-cs-admin version
-    dump riak_cs_status "$cs_bin_dir"/riak-cs-admin status
-    dump riak_cs_gc_status "$cs_bin_dir"/riak-cs-admin gc status
-    dump riak_cs_storage_status "$cs_bin_dir"/riak-cs-admin storage status
-    if [ -f "$cs_bin_dir/riak-cs-multibag" ]; then
-      dump riak_cs_multibag_list_bags "$cs_bin_dir"/riak-cs-multibag list-bags
-      dump riak_cs_multibag_weight "$cs_bin_dir"/riak-cs-multibag weight
+    dump riak_cs_ping riak-cs ping
+    dump riak_cs_version riak-cs admin version
+    dump riak_cs_status riak-cs admin status
+    dump riak_cs_gc_status riak-cs admin gc status
+    dump riak_cs_storage_status riak-cs admin storage status
+    if grep -q supercluster $cs_etc_dir/riak-cs.conf; then
+      dump riak_cs_multibag_list_bags riak-cs supercluster list-members
+      dump riak_cs_multibag_weight riak-cs supercluster weight
     fi
 
     CI=`pwd`/cluster-info.html
