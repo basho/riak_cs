@@ -29,7 +29,7 @@ riak-cs admin test
 riak-cs admin status
 
 echo "Stopping $s"
-systemctl start riak-cs
+systemctl stop riak-cs riak
 
 echo "2. using cmd start/stop"
 riak start
