@@ -19,7 +19,7 @@ using Riak CS. For more information, browse the following files:
 
 The full suite of Riak CS includes:
  * one or more nodes of Riak CS proper;
- * a single instance of Stanchion;
+ * prior to version 3.1.0, a single instance of Stanchion;
  * a Riak cluster;
  * optionally, a node running Riak CS Control.
 
