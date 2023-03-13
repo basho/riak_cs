@@ -23,14 +23,12 @@
 
 -export([service_available/2,
          parse_auth_header/2,
-         iso_8601_datetime/0,
-         json_to_proplist/1
+         iso_8601_datetime/0
         ]).
 
 -ignore_xref([service_available/2,
               parse_auth_header/2,
-              iso_8601_datetime/0,
-              json_to_proplist/1
+              iso_8601_datetime/0
              ]).
 
 -include("stanchion.hrl").
@@ -62,21 +60,3 @@ iso_8601_datetime() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",
                   [Year, Month, Day, Hour, Min, Sec]).
-
-%% @doc Convert a list of mochijson2-decoded JSON objects
-%% into a standard propllist.
--type json_term() :: {struct, [{term(), term()}]}.
--type json_terms() :: [{struct, [{term(), term()}]}].
--spec json_to_proplist(json_term() | json_terms()) -> [{term(), term()}].
-json_to_proplist({struct, JsonObject}) ->
-    JsonObject;
-json_to_proplist([{struct, JsonObjects}]) ->
-    json_to_proplist(JsonObjects, []).
-
-%% @doc Convert a list of mochijson2-decoded JSON objects
-%% into a standard propllist.
--spec json_to_proplist([{'struct',[any(),...]}],[any()]) -> [any()].
-json_to_proplist([], Acc) ->
-    lists:flatten(Acc);
-json_to_proplist([{struct, [ObjContents]} | RestObjs], Acc) ->
-    json_to_proplist(RestObjs, [ObjContents | Acc]).

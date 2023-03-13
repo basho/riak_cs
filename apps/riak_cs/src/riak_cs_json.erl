@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,8 +25,9 @@
 -module(riak_cs_json).
 
 -include("riak_cs.hrl").
--include("list_objects.hrl").
+-include("riak_cs_web.hrl").
 -include("oos_api.hrl").
+-include("aws_api.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
@@ -79,11 +80,18 @@ to_json(?KEYSTONE_S3_AUTH_REQ{}=Req) ->
                       {<<"signature">>, Req?KEYSTONE_S3_AUTH_REQ.signature},
                       {<<"token">>, Req?KEYSTONE_S3_AUTH_REQ.token}]},
     iolist_to_binary(mochijson2:encode({struct, [{<<"credentials">>, Inner}]}));
-to_json(?RCS_USER{}=Req) ->
-    iolist_to_binary(mochijson2:encode(user_object(Req)));
-to_json({users, Users}) ->
-    UserList = [user_object(User) || User <- Users],
-    iolist_to_binary(mochijson2:encode(UserList));
+to_json(?RCS_USER{} = A) ->
+    jason:encode(A, [{records, [{rcs_user_v2, record_info(fields, rcs_user_v2)},
+                                {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
+                                {acl_v3, record_info(fields, acl_v3)}]}]);
+to_json({users, AA}) ->
+    jason:encode(AA, [{records, [{rcs_user_v2, record_info(fields, rcs_user_v2)}]}]);
+to_json(?IAM_ROLE{} = A) ->
+    jason:encode(A, [{records, [{role_v1, record_info(fields, role_v1)},
+                                {policy_v1, record_info(fields, policy_v1)},
+                                {arn_v1, record_info(fields, arn_v1)},
+                                {permissions_boundary, record_info(fields, permissions_boundary)}
+                               ]}]);
 to_json(undefined) ->
     [];
 to_json([]) ->
@@ -144,28 +152,6 @@ target_tuple_values(Keys, JsonItems) ->
       [proplists:get_value(element(Index, Keys), JsonItems)
        || Index <- lists:seq(1, tuple_size(Keys))]).
 
--spec user_object(rcs_user()) -> {struct, proplists:proplist()}.
-user_object(?RCS_USER{email=Email,
-                      display_name=DisplayName,
-                      name=Name,
-                      key_id=KeyID,
-                      key_secret=KeySecret,
-                      canonical_id=CanonicalID,
-                      status=Status}) ->
-    StatusBin = case Status of
-                    enabled ->
-                        <<"enabled">>;
-                    _ ->
-                        <<"disabled">>
-                end,
-    UserData = [{email, list_to_binary(Email)},
-                {display_name, list_to_binary(DisplayName)},
-                {name, list_to_binary(Name)},
-                {key_id, list_to_binary(KeyID)},
-                {key_secret, list_to_binary(KeySecret)},
-                {id, list_to_binary(CanonicalID)},
-                {status, StatusBin}],
-    {struct, UserData}.
 
 %% ===================================================================
 %% Eunit tests

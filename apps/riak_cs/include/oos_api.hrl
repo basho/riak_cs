@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -29,11 +29,11 @@
 -define(DEFAULT_OS_ADMIN_TOKEN, "ADMIN").
 -define(DEFAULT_OS_OPERATOR_ROLES, [<<"admin">>, <<"swiftoperator">>]).
 
--record(keystone_s3_auth_req_v1, {
+-record(keystone_aws_auth_req_v1, {
           access :: binary(),
           signature :: binary(),
           token :: binary()}).
--type keystone_s3_auth_req() :: #keystone_s3_auth_req_v1{}.
--define(KEYSTONE_S3_AUTH_REQ, #keystone_s3_auth_req_v1).
+-type keystone_aws_auth_req() :: #keystone_aws_auth_req_v1{}.
+-define(KEYSTONE_S3_AUTH_REQ, #keystone_aws_auth_req_v1).
 
 -endif.

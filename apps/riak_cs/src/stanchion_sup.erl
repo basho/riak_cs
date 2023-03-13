@@ -29,6 +29,7 @@
 -export([stanchion_process_specs/0]).
 
 -include("stanchion.hrl").
+-include("riak_cs.hrl").
 -include("moss.hrl").
 
 -spec start_link() -> supervisor:startlink_ret().

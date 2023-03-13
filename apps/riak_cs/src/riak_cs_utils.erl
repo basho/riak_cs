@@ -1,7 +1,7 @@
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -37,15 +37,12 @@
          delete_object/4,
          encode_term/1,
          has_tombstone/1,
-         map_keys_and_manifests/3,
-         maybe_process_resolved/3,
          sha_mac/2,
          sha/1,
          md5/1,
          md5_init/0,
          md5_update/2,
          md5_final/1,
-         reduce_keys_and_manifests/2,
          active_manifest_from_response/1,
          hexlist_to_binary/1,
          binary_to_hexlist/1,
@@ -74,6 +71,16 @@
          capitalize/1
         ]).
 
+%% mapreduce functions that run on a riak node (should probably be
+%% removed into a separate module)
+-export([map_keys_and_manifests/3,
+         maybe_process_resolved/3,
+         reduce_keys_and_manifests/2,
+         map_roles/3,
+         reduce_roles/2
+        ]).
+
+
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
@@ -90,6 +97,8 @@
 -define(is_quote(C), (C == $\") orelse (C == $\')).
 -define(is_indent(C), (C == 91) orelse (C == 123)). % [, {
 -define(is_undent(C), (C == 93) orelse (C == 125)). % ], }
+
+-type digest() :: binary().
 
 %% ===================================================================
 %% Public API
@@ -218,6 +227,29 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
 %% work is done.
 reduce_keys_and_manifests(Acc, _) ->
     Acc.
+
+
+map_roles({error, notfound}, _, _) ->
+    [];
+map_roles(Object, _2, Args) ->
+    #{path_prefix := PathPrefix} = Args,
+    [RoleBin|_] = riak_object:get_values(Object),
+    case RoleBin of
+        ?FREE_ROLE_MARKER ->
+            [];
+        _ ->
+            ?IAM_ROLE{path = Path} = Role = binary_to_term(RoleBin),
+            case string:str(Path, PathPrefix) of
+                0 ->
+                    [];
+                _ ->
+                    [Role]
+            end
+    end.
+
+reduce_roles(Acc, _) ->
+    Acc.
+
 
 -spec sha_mac(iolist() | binary(), iolist() | binary()) -> binary().
 sha_mac(Key,STS) -> crypto:mac(hmac, sha, Key,STS).

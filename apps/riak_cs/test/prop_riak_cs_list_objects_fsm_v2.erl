@@ -253,7 +253,9 @@ raw_manifest(Key, State) ->
               created = "20221111T010101",
               content_md5 = <<"Content-MD5">>,
               content_length=100,
-              acl=?ACL{owner={"display-name", "canonical-id", "key-id"}}}.
+              acl=?ACL{owner=#{display_name => "display-name",
+                               canonical_id => "canonical-id",
+                               key_id =>"key-id"}}}.
 
 bin_key({no_prefix, Rest}) ->
     Rest;

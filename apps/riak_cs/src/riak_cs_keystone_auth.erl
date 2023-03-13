@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -26,7 +26,7 @@
 -export([identify/2, authenticate/4]).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
+-include("aws_api.hrl").
 -include("oos_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
@@ -41,16 +41,16 @@
 %% Public API
 %% ===================================================================
 
--spec identify(#wm_reqdata{}, #rcs_context{}) -> failed | {string() | undefined , string()}.
-identify(RD, #rcs_context{api=s3}) ->
+-spec identify(#wm_reqdata{}, #rcs_s3_context{}) -> failed | {string() | undefined , string()}.
+identify(RD, #rcs_s3_context{api = s3}) ->
     validate_token(s3, RD);
-identify(RD, #rcs_context{api=oos}) ->
+identify(RD, #rcs_s3_context{api = oos}) ->
     validate_token(oos, wrq:get_req_header("x-auth-token", RD)).
 
 -spec authenticate(rcs_user(),
                    {string(), term()}|tuple(),
-                   #wm_reqdata{}, #rcs_context{}) ->
-                          ok | {error, invalid_authentication}.
+                   #wm_reqdata{}, #rcs_s3_context{}) ->
+          ok | {error, invalid_authentication}.
 authenticate(_User, {_, TokenItems}, _RD, _Ctx) ->
     %% @TODO Expand authentication check for non-operators who may
     %% have access
@@ -99,18 +99,19 @@ request_keystone_token_info(oos, AuthToken) ->
     RequestHeaders = [{"X-Auth-Token", riak_cs_config:os_admin_token()}],
     httpc:request(get, {RequestURI, RequestHeaders}, [], []);
 request_keystone_token_info(s3, RD) ->
-    {KeyId, Signature}  = case wrq:get_req_header("authorization", RD) of
-                              undefined ->
-                                  {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
-                              AuthHeader ->
-                                  parse_auth_header(AuthHeader)
-                          end,
+    {KeyId, Signature} =
+        case wrq:get_req_header("authorization", RD) of
+            undefined ->
+                {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)};
+            AuthHeader ->
+                parse_auth_header(AuthHeader)
+        end,
     RequestURI = riak_cs_config:os_s3_tokens_url(),
     STS = base64url:encode_to_string(calculate_sts(RD)),
-    RequestBody = riak_cs_json:to_json(?KEYSTONE_S3_AUTH_REQ{
-                                           access=list_to_binary(KeyId),
-                                           signature=list_to_binary(Signature),
-                                           token=list_to_binary(STS)}),
+    RequestBody = riak_cs_json:to_json(
+                    ?KEYSTONE_S3_AUTH_REQ{access = list_to_binary(KeyId),
+                                          signature = list_to_binary(Signature),
+                                          token = list_to_binary(STS)}),
     RequestHeaders = [{"X-Auth-Token", riak_cs_config:os_admin_token()}],
     httpc:request(post, {RequestURI, RequestHeaders, "application/json", RequestBody}, [], []).
 
@@ -147,7 +148,7 @@ parse_auth_header(_) ->
 calculate_sts(RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
-    OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
+    OriginalResource = riak_cs_aws_rewrite:original_resource(RD),
     Resource = case OriginalResource of
         undefined -> []; %% TODO: get noisy here?
         {Path,QS} -> [Path, canonicalize_qs(lists:sort(QS))]

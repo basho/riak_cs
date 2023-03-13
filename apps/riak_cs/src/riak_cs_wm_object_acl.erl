@@ -47,13 +47,13 @@
 -include_lib("webmachine/include/webmachine.hrl").
 
 init(Ctx) ->
-    {ok, Ctx#rcs_context{local_context=#key_context{}}}.
+    {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
 
 -spec stats_prefix() -> object_acl.
 stats_prefix() -> object_acl.
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) -> {false, #wm_reqdata{}, #rcs_context{}}.
-malformed_request(RD, #rcs_context{response_module=ResponseMod} = Ctx) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
+malformed_request(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
     case riak_cs_wm_utils:has_acl_header_and_body(RD) of
         true ->
             ResponseMod:api_error(unexpected_content, RD, Ctx);
@@ -70,13 +70,13 @@ malformed_request(RD, #rcs_context{response_module=ResponseMod} = Ctx) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
-authorize(RD, Ctx0=#rcs_context{local_context=LocalCtx0, riak_client=RcPid}) ->
+authorize(RD, Ctx0=#rcs_s3_context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         %% This is really the only difference between authorize/2 in this module and riak_cs_wm_object
         riak_cs_acl_utils:requested_access(Method, true),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
-    Ctx = Ctx0#rcs_context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    Ctx = Ctx0#rcs_s3_context{requested_perm=RequestedAccess,local_context=LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
               Method, LocalCtx#key_context.manifest).
@@ -96,9 +96,9 @@ allowed_methods() ->
     ['GET', 'PUT'].
 
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_provided(RD, Ctx=#rcs_context{local_context=LocalCtx,
-                                            riak_client=RcPid}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_provided(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
+                                               riak_client=RcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
     %% TODO:
     %% As I understand S3, the content types provided
@@ -111,7 +111,7 @@ content_types_provided(RD, Ctx=#rcs_context{local_context=LocalCtx,
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
-                    UpdCtx = Ctx#rcs_context{local_context=UpdLocalCtx},
+                    UpdCtx = Ctx#rcs_s3_context{local_context=UpdLocalCtx},
                     {[{ContentType, produce_body}], RD, UpdCtx}
             end;
        true ->
@@ -120,15 +120,15 @@ content_types_provided(RD, Ctx=#rcs_context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
--spec content_types_accepted(term(), term()) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_accepted(RD, Ctx=#rcs_context{local_context=LocalCtx0}) ->
+-spec content_types_accepted(term(), term()) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_accepted(RD, Ctx=#rcs_s3_context{local_context=LocalCtx0}) ->
     case wrq:get_req_header("Content-Type", RD) of
         undefined ->
             DefaultCType = "application/octet-stream",
             LocalCtx = LocalCtx0#key_context{putctype=DefaultCType},
             {[{DefaultCType, add_acl_to_context_then_accept}],
              RD,
-             Ctx#rcs_context{local_context=LocalCtx}};
+             Ctx#rcs_s3_context{local_context=LocalCtx}};
         %% This was shamelessly ripped out of
         %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
         CType ->
@@ -137,7 +137,7 @@ content_types_accepted(RD, Ctx=#rcs_context{local_context=LocalCtx0}) ->
                 [_Type, _Subtype] ->
                     %% accept whatever the user says
                     LocalCtx = LocalCtx0#key_context{putctype=Media},
-                    {[{Media, add_acl_to_context_then_accept}], RD, Ctx#rcs_context{local_context=LocalCtx}};
+                    {[{Media, add_acl_to_context_then_accept}], RD, Ctx#rcs_s3_context{local_context=LocalCtx}};
                 _ ->
                     %% TODO:
                     %% Maybe we should have caught
@@ -157,9 +157,9 @@ content_types_accepted(RD, Ctx=#rcs_context{local_context=LocalCtx0}) ->
 
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
-produce_body(RD, Ctx=#rcs_context{local_context=LocalCtx,
-                                  requested_perm='READ_ACP',
-                                  user=User}) ->
+produce_body(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
+                                     requested_perm='READ_ACP',
+                                     user=User}) ->
     #key_context{get_fsm_pid = GetFsmPid,
                  manifest = ?MANIFEST{bkey = {Bucket, File},
                                       vsn = Vsn,
@@ -179,18 +179,18 @@ produce_body(RD, Ctx=#rcs_context{local_context=LocalCtx,
 
 -spec accept_body(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_body(RD, Ctx = #rcs_context{local_context = #key_context{get_fsm_pid = GetFsmPid,
-                                                                manifest = Mfst,
-                                                                key = Key,
-                                                                obj_vsn = Vsn,
-                                                                bucket = Bucket},
-                                   user = User,
-                                   acl = AclFromHeadersOrDefault,
-                                   requested_perm = 'WRITE_ACP',
-                                   riak_client = RcPid})  when Bucket /= undefined,
-                                                               Key /= undefined,
-                                                               Mfst /= undefined,
-                                                               RcPid /= undefined ->
+accept_body(RD, Ctx = #rcs_s3_context{local_context = #key_context{get_fsm_pid = GetFsmPid,
+                                                                   manifest = Mfst,
+                                                                   key = Key,
+                                                                   obj_vsn = Vsn,
+                                                                   bucket = Bucket},
+                                      user = User,
+                                      acl = AclFromHeadersOrDefault,
+                                      requested_perm = 'WRITE_ACP',
+                                      riak_client = RcPid})  when Bucket /= undefined,
+                                                                  Key /= undefined,
+                                                                  Mfst /= undefined,
+                                                                  RcPid /= undefined ->
     BFile_str = bfile_str(Bucket, Key, Vsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,

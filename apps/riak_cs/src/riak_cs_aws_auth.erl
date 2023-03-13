@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_s3_auth).
+-module(riak_cs_aws_auth).
 
 -behavior(riak_cs_auth).
 
@@ -32,7 +32,7 @@
 -endif.
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
+-include("aws_api.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -56,11 +56,11 @@
 %% Public API
 %% ===================================================================
 
--spec identify(RD::term(), #rcs_context{}) ->
+-spec identify(#wm_reqdata{}, #rcs_s3_context{}) ->
           {string() | undefined,
            string() | {v4, v4_attrs()} | undefined} |
           {failed, Reason::atom()}.
-identify(RD,_Ctx) ->
+identify(RD, _Ctx) ->
     case wrq:get_req_header("authorization", RD) of
         undefined ->
             identify_by_query_string(RD);
@@ -68,7 +68,7 @@ identify(RD,_Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_context{}) ->
+-spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_s3_context{}) ->
           ok | {error, atom()}.
 authenticate(User, Signature, RD, Ctx) ->
     case wrq:get_req_header("authorization", RD) of
@@ -84,7 +84,7 @@ authenticate(User, Signature, RD, Ctx) ->
             end
     end.
 
--spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_context{}) ->
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_s3_context{}) ->
           ok | {error, atom()}.
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
@@ -167,7 +167,7 @@ parse_auth_v4_header([KV | KVs], UserId, Acc) ->
 calculate_signature_v2(KeyData, RD, Quirk) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
-    OriginalResource = riak_cs_s3_rewrite:original_resource(RD),
+    OriginalResource = riak_cs_aws_rewrite:original_resource(RD),
     Resource = case OriginalResource of
                    undefined ->
                        logger:warning("Empty OriginalResource in RD ~p", [RD]),
@@ -249,7 +249,7 @@ drop_slash(A) ->
                                       Presented::string(), Calculated::string()}}.
 authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) ->
     Method = wrq:method(RD),
-    {Path, Qs} = riak_cs_s3_rewrite:raw_url(RD),
+    {Path, Qs} = riak_cs_aws_s3_rewrite:raw_url(RD),
     AllHeaders = riak_cs_wm_utils:normalize_headers(RD),
     authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders).
 
@@ -310,7 +310,7 @@ string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest) ->
     %% Are there any good points to check `AwsRegion' to be region in app env?
     %% So far, it does not improve security (at least for CS) but
     %% introduces some complexity for client (config/coding/etc).
-    [_UserId, CredDate, AwsRegion, "s3" = AwsService, "aws4_request" = AwsRequest] =
+    [_UserId, CredDate, AwsRegion, AwsService, "aws4_request" = AwsRequest] =
         string:tokens(Cred, [$/]),
     %% TODO: Validate `CredDate' be within 7 days
     Scope = [CredDate, $/, AwsRegion, $/, AwsService, $/, AwsRequest],

@@ -57,17 +57,17 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--spec init(#rcs_context{}) -> {ok, #rcs_context{}}.
+-spec init(#rcs_s3_context{}) -> {ok, #rcs_s3_context{}}.
 init(Ctx) ->
-    %% {ok, Ctx#rcs_context{local_context=#key_context{}}}.
-    {ok, Ctx#rcs_context{local_context=#key_context{}}}.
+    %% {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
+    {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
 
 -spec stats_prefix() -> multipart_upload.
 stats_prefix() -> multipart_upload.
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) ->
-          {false, #wm_reqdata{}, #rcs_context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #rcs_context{}}.
-malformed_request(RD,  #rcs_context{response_module=ResponseMod} = Ctx) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {false, #wm_reqdata{}, #rcs_s3_context{}} | {{halt, pos_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+malformed_request(RD,  #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
     Method = wrq:method(RD),
     case Method == 'PUT' andalso not valid_part_number(RD) of
         %% For multipart upload part,
@@ -94,14 +94,14 @@ valid_part_number(RD)  ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
--spec authorize(#wm_reqdata{}, #rcs_context{}) ->
-          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_context{}}.
-authorize(RD, Ctx0=#rcs_context{local_context=LocalCtx0, riak_client=RcPid}) ->
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+authorize(RD, Ctx0=#rcs_s3_context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
-    Ctx = Ctx0#rcs_context{requested_perm=RequestedAccess, local_context=LocalCtx},
+    Ctx = Ctx0#rcs_s3_context{requested_perm=RequestedAccess, local_context=LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
               Method, LocalCtx#key_context.manifest).
@@ -127,11 +127,11 @@ allowed_methods() ->
 post_is_create(RD, Ctx) ->
     {false, RD, Ctx}.
 
-process_post(RD, Ctx = #rcs_context{riak_client = RcPid,
-                                    local_context = #key_context{bucket = Bucket,
-                                                                 key = Key,
-                                                                 obj_vsn = ObjVsn}}) ->
-    User = riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+process_post(RD, Ctx = #rcs_s3_context{riak_client = RcPid,
+                                       local_context = #key_context{bucket = Bucket,
+                                                                    key = Key,
+                                                                    obj_vsn = ObjVsn}}) ->
+    User = riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
     UploadId64 = re:replace(wrq:path(RD), ".*/uploads/", "", [{return, binary}]),
     Body = binary_to_list(wrq:req_body(RD)),
     case {parse_body(Body), catch base64url:decode(UploadId64)} of
@@ -169,16 +169,16 @@ process_post(RD, Ctx = #rcs_context{riak_client = RcPid,
     end.
 
 response_location(Bucket, Key) ->
-    iolist_to_binary(["http://", Bucket, ".", riak_cs_config:root_host(), "/", Key]).
+    iolist_to_binary(["http://", Bucket, ".", riak_cs_config:s3_root_host(), "/", Key]).
 
--spec valid_entity_length(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
+-spec valid_entity_length(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
 valid_entity_length(RD, Ctx) ->
     MaxLen = riak_cs_lfs_utils:max_content_len(),
     riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx).
 
--spec delete_resource(#wm_reqdata{}, #rcs_context{}) ->
-          {boolean() | {'halt', term()}, #wm_reqdata{}, #rcs_context{}}.
-delete_resource(RD, Ctx=#rcs_context{local_context=LocalCtx,
+-spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {boolean() | {'halt', term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+delete_resource(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
                                      riak_client=RcPid}) ->
     ReqUploadId = wrq:path_info('uploadId', RD),
     case (catch base64url:decode(ReqUploadId)) of
@@ -188,7 +188,7 @@ delete_resource(RD, Ctx=#rcs_context{local_context=LocalCtx,
             #key_context{bucket = Bucket,
                          key = Key,
                          obj_vsn = ObjVsn} = LocalCtx,
-            User = riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+            User = riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
             case riak_cs_mp_utils:abort_multipart_upload(
                    Bucket, Key, ObjVsn, UploadId,
                    User, RcPid) of
@@ -201,9 +201,9 @@ delete_resource(RD, Ctx=#rcs_context{local_context=LocalCtx,
             end
     end.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) ->
-          {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_provided(RD, Ctx=#rcs_context{}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_provided(RD, Ctx=#rcs_s3_context{}) ->
     Method = wrq:method(RD),
     if Method == 'GET' ->
             {[{?XML_TYPE, to_xml}], RD, Ctx};
@@ -217,7 +217,7 @@ content_types_provided(RD, Ctx=#rcs_context{}) ->
             {[{"text/plain", unused_callback2}], RD, Ctx}
     end.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(RD, Ctx) ->
     %% For multipart upload part,
     %% e.g., PUT /ObjectName?partNumber=PartNumber&uploadId=UploadId
@@ -237,9 +237,9 @@ parse_body(Body0) ->
             bad
     end.
 
--spec accept_body(#wm_reqdata{}, #rcs_context{}) ->
-          {{halt, integer()}, #wm_reqdata{}, #rcs_context{}}.
-accept_body(RD, #rcs_context{local_context=LocalCtx0} = Ctx0) ->
+-spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+accept_body(RD, #rcs_s3_context{local_context=LocalCtx0} = Ctx0) ->
     catch riak_cs_get_fsm:stop(LocalCtx0#key_context.get_fsm_pid),
 
     try
@@ -250,15 +250,15 @@ accept_body(RD, #rcs_context{local_context=LocalCtx0} = Ctx0) ->
             {t, riak_cs_utils:safe_list_to_integer(wrq:get_qs_value("partNumber", RD))},
         LocalCtx = LocalCtx0#key_context{upload_id=UploadId,
                                          part_number=PartNumber},
-        Ctx = Ctx0#rcs_context{local_context=LocalCtx},
+        Ctx = Ctx0#rcs_s3_context{local_context=LocalCtx},
         validate_copy_header(RD, Ctx)
     catch
         error:{badmatch, {t, _}} ->
             {{halt, 400}, RD, Ctx0}
     end.
 
-validate_copy_header(RD, #rcs_context{response_module=ResponseMod,
-                                      local_context=LocalCtx} = Ctx) ->
+validate_copy_header(RD, #rcs_s3_context{response_module=ResponseMod,
+                                         local_context=LocalCtx} = Ctx) ->
     case riak_cs_copy_object:get_copy_source(RD) of
         {error, Reason} ->
             riak_cs_s3_response:api_error(Reason, RD, Ctx);
@@ -274,7 +274,7 @@ validate_copy_header(RD, #rcs_context{response_module=ResponseMod,
                     {ok, SrcManifest} ->
                         {Start,End} = riak_cs_copy_object:copy_range(RD, SrcManifest),
                         validate_part_size(RD,
-                                           Ctx#rcs_context{stats_key=[multipart_upload, put_copy]},
+                                           Ctx#rcs_s3_context{stats_key=[multipart_upload, put_copy]},
                                            End - Start + 1,
                                            SrcManifest, ReadRcPid)
                 end
@@ -283,7 +283,7 @@ validate_copy_header(RD, #rcs_context{response_module=ResponseMod,
             end
     end.
 
-validate_part_size(RD, #rcs_context{response_module=ResponseMod} = Ctx,
+validate_part_size(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx,
                    ExactSize, SrcManifest, ReadRcPid) ->
     case ExactSize =< riak_cs_lfs_utils:max_content_len() of
         false ->
@@ -292,12 +292,12 @@ validate_part_size(RD, #rcs_context{response_module=ResponseMod} = Ctx,
             prepare_part_upload(RD, Ctx, ExactSize, SrcManifest, ReadRcPid)
     end.
 
-prepare_part_upload(RD, #rcs_context{riak_client = RcPid,
-                                     local_context = LocalCtx0} = Ctx0,
+prepare_part_upload(RD, #rcs_s3_context{riak_client = RcPid,
+                                        local_context = LocalCtx0} = Ctx0,
                     ExactSize, SrcManifest, ReadRcPid) ->
     #key_context{bucket = DstBucket, key = Key, obj_vsn = ObjVsn,
                  upload_id = UploadId, part_number = PartNumber} = LocalCtx0,
-    Caller = riak_cs_user:to_3tuple(Ctx0#rcs_context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx0#rcs_s3_context.user),
     case riak_cs_mp_utils:upload_part(DstBucket, Key, ObjVsn, UploadId, PartNumber,
                                       ExactSize, Caller, RcPid) of
         {error, notfound} ->
@@ -306,7 +306,7 @@ prepare_part_upload(RD, #rcs_context{riak_client = RcPid,
             riak_cs_s3_response:api_error(Reason, RD, Ctx0);
         {upload_part_ready, PartUUID, PutPid} ->
             LocalCtx = LocalCtx0#key_context{part_uuid = PartUUID},
-            Ctx = Ctx0#rcs_context{local_context = LocalCtx},
+            Ctx = Ctx0#rcs_s3_context{local_context = LocalCtx},
             case SrcManifest of
                 undefined ->
                     BlockSize = riak_cs_lfs_utils:block_size(),
@@ -320,15 +320,15 @@ prepare_part_upload(RD, #rcs_context{riak_client = RcPid,
             end
     end.
 
--spec accept_streambody(#wm_reqdata{}, #rcs_context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #rcs_context{}}.
+-spec accept_streambody(#wm_reqdata{}, #rcs_s3_context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
 accept_streambody(RD,
-                  Ctx=#rcs_context{local_context=_LocalCtx=#key_context{size=0}},
+                  Ctx=#rcs_s3_context{local_context=_LocalCtx=#key_context{size=0}},
                   Pid,
                   {_Data, _Next}) ->
     finalize_request(RD, Ctx, Pid);
 accept_streambody(RD,
-                  Ctx=#rcs_context{local_context=LocalCtx,
-                                   user=User},
+                  Ctx=#rcs_s3_context{local_context=LocalCtx,
+                                      user=User},
                   Pid,
                   {Data, Next}) ->
     #key_context{bucket=Bucket,
@@ -343,12 +343,12 @@ accept_streambody(RD,
             finalize_request(RD, Ctx, Pid)
     end.
 
-to_xml(RD, Ctx = #rcs_context{local_context = #key_context{bucket = Bucket, key = Key, obj_vsn = Vsn},
-                              riak_client = RcPid}) ->
+to_xml(RD, Ctx = #rcs_s3_context{local_context = #key_context{bucket = Bucket, key = Key, obj_vsn = Vsn},
+                                 riak_client = RcPid}) ->
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
     {UserDisplay, _Canon, UserKeyId} = User =
-        riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+        riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
     case riak_cs_mp_utils:list_parts(Bucket, Key, Vsn, UploadId, User, [], RcPid) of
         {ok, Ps} ->
             Us = [{'Part',
@@ -394,16 +394,16 @@ to_xml(RD, Ctx = #rcs_context{local_context = #key_context{bucket = Bucket, key 
     end.
 
 
-finalize_request(RD, Ctx=#rcs_context{local_context=LocalCtx,
-                                      response_module=ResponseMod,
-                                      riak_client=RcPid}, PutPid) ->
+finalize_request(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
+                                         response_module=ResponseMod,
+                                         riak_client=RcPid}, PutPid) ->
     #key_context{bucket = Bucket,
                  key = Key,
                  obj_vsn = ObjVsn,
                  upload_id = UploadId,
                  part_number = PartNumber,
                  part_uuid = PartUUID} = LocalCtx,
-    Caller = riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+    Caller = riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
     case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
         {ok, M} ->
@@ -427,9 +427,9 @@ maybe_copy_part(PutPid,
                 ?MANIFEST{bkey={SrcBucket, SrcKey},
                           vsn = SrcVsn} = SrcManifest,
                 ReadRcPid,
-                RD, #rcs_context{riak_client=RcPid,
-                                 local_context=LocalCtx,
-                                 user=User} = Ctx) ->
+                RD, #rcs_s3_context{riak_client=RcPid,
+                                    local_context=LocalCtx,
+                                    user=User} = Ctx) ->
     #key_context{bucket = DstBucket,
                  key = DstKey,
                  obj_vsn = DstVsn,
@@ -473,6 +473,6 @@ maybe_copy_part(PutPid,
             {{halt, 403}, RD, Ctx};
         Error ->
             ?LOG_DEBUG("unknown error: ~p", [Error]),
-            %% ResponseMod:api_error(Error, RD, Ctx#rcs_context{local_context=LocalCtx})
+            %% ResponseMod:api_error(Error, RD, Ctx#rcs_s3_context{local_context=LocalCtx})
             Error
     end.

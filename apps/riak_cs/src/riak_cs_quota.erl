@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -93,13 +93,13 @@
                      | string()|binary(),  %% Other authenticated user
             Access :: access(), %% including accessor, bucket, key, RD
             Context::term()) ->
-    {ok, Request::#wm_reqdata{}, Context::#rcs_context{}} |
+    {ok, Request::#wm_reqdata{}, Context::#rcs_s3_context{}} |
     {error, Reason::term()}.
 
 -callback error_response(Reason :: term(),
-                         #wm_reqdata{}, #rcs_context{}) ->
+                         #wm_reqdata{}, #rcs_s3_context{}) ->
     {non_neg_integer() | {non_neg_integer(), string()},
-     #wm_reqdata{}, #rcs_context{}}.
+     #wm_reqdata{}, #rcs_s3_context{}}.
 
 %% @doc for now, to know the accessor, RD should be retrieved from
 %% headers in LogData (not knowing whether he's authenticated or not)

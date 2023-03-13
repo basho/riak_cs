@@ -162,7 +162,9 @@ dtgs(DT) -> calendar:datetime_to_gregorian_seconds(DT).
 gsdt(S)  -> calendar:gregorian_seconds_to_datetime(S).
 
 %% @doc Produce an ISO8601-compatible representation of the given time.
--spec iso8601(calendar:datetime()) -> binary().
+-spec iso8601(calendar:datetime() | os:timestamp()) -> binary().
+iso8601(TS) when is_integer(TS) ->
+    iso8601(calendar:system_time_to_local_time(TS, millisecond));
 iso8601({{Y,M,D},{H,I,S}}) ->
     iolist_to_binary(
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",

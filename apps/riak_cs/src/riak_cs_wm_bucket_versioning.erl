@@ -51,12 +51,12 @@ stats_prefix() -> bucket_versioning.
 allowed_methods() ->
     ['GET', 'PUT'].
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) ->
-                                    {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
@@ -66,17 +66,17 @@ content_types_accepted(RD, Ctx) ->
             {[{Media, add_acl_to_context_then_accept}], RD, Ctx}
     end.
 
--spec authorize(#wm_reqdata{}, #rcs_context{}) ->
-                       {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) ->
+                       {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_s3_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_version, false, RD, Ctx).
 
 
--spec to_xml(#wm_reqdata{}, #rcs_context{}) ->
-          {binary() | {halt, term()}, #wm_reqdata{}, #rcs_context{}}.
-to_xml(RD, Ctx=#rcs_context{user = User,
-                            bucket = Bucket,
-                            riak_client = RcPid}) ->
+-spec to_xml(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {binary() | {halt, term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+to_xml(RD, Ctx=#rcs_s3_context{user = User,
+                               bucket = Bucket,
+                               riak_client = RcPid}) ->
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
@@ -106,12 +106,12 @@ to_string(mfa_delete, disabled) -> "Disabled";
 to_string(bool, true) -> "True";
 to_string(bool, false) -> "False".
 
--spec accept_body(#wm_reqdata{}, #rcs_context{}) -> {{halt, integer()}, #wm_reqdata{}, #rcs_context{}}.
-accept_body(RD, Ctx = #rcs_context{user = User,
-                                   user_object = UserObj,
-                                   bucket = Bucket,
-                                   response_module = ResponseMod,
-                                   riak_client = RcPid}) ->
+-spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) -> {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+accept_body(RD, Ctx = #rcs_s3_context{user = User,
+                                      user_object = UserObj,
+                                      bucket = Bucket,
+                                      response_module = ResponseMod,
+                                      riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_versioning">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     {ok, OldV} = riak_cs_bucket:get_bucket_versioning(Bucket, RcPid),

@@ -49,6 +49,9 @@ duration_metrics() ->
      [user, create],
      [user, update],
 
+     [role, create],
+     [role, delete],
+
      %% Riak PB client, per key operations
      [riakc, get_cs_bucket],
      [riakc, put_cs_bucket], %% Always strong put
@@ -56,6 +59,9 @@ duration_metrics() ->
      [riakc, get_cs_user_strong],
      [riakc, put_cs_user],
      [riakc, get_manifest],
+     [riakc, get_cs_role],
+     [riakc, get_cs_role_strong],
+     [riakc, put_cs_role],
 
      %% Riak PB client, coverage operations
      [riakc, list_all_manifest_keys],

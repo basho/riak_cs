@@ -36,6 +36,8 @@
          delete_bucket_policy/2,
          stop/1,
          update_user/2,
+         create_role/1,
+         delete_role/1,
          msgq_len/0]).
 
 %% gen_server callbacks
@@ -141,6 +143,20 @@ delete_bucket_policy(Bucket, RequesterId) ->
                              {delete_policy, Bucket, RequesterId},
                              infinity)).
 
+-spec create_role([{term(), term()}]) -> ok | {error, term()}.
+create_role(RoleData) ->
+    ?MEASURE([role, create],
+             gen_server:call(?MODULE,
+                             {create_role, RoleData},
+                             infinity)).
+
+-spec delete_role(string()) -> ok | {error, term()}.
+delete_role(RoleName) ->
+    ?MEASURE([role, delete],
+             gen_server:call(?MODULE,
+                             {delete_role, RoleName},
+                             infinity)).
+
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
@@ -214,6 +230,16 @@ handle_call({delete_policy, Bucket, RequesterId},
             _From,
             State=#state{}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:delete_bucket_policy(Bucket, RequesterId)),
+    {reply, Result, State};
+handle_call({create_role, RoleData},
+            _From,
+            State=#state{}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_role(RoleData)),
+    {reply, Result, State};
+handle_call({delete_role, RoleName},
+            _From,
+            State=#state{}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_role(RoleName)),
     {reply, Result, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.

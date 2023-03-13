@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,12 +28,10 @@
          status_code/1]).
 
 -include("riak_cs.hrl").
--include("riak_cs_api.hrl").
--include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--spec respond(term(), #wm_reqdata{}, #rcs_context{}) ->
-          {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_context{}}.
+-spec respond(term(), #wm_reqdata{}, #rcs_s3_context{}) ->
+          {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_s3_context{}}.
 respond(?LBRESP{}=Response, RD, Ctx) ->
     BucketsDoc =
         [begin

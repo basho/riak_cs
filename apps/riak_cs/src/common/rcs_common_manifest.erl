@@ -24,7 +24,7 @@
 -export([make_versioned_key/2,
          decompose_versioned_key/1]).
 
--include("defs.hrl").
+-include("riak_cs.hrl").
 -include("manifest.hrl").
 
 

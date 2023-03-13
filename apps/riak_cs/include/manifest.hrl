@@ -31,7 +31,6 @@
 -define(PART_MANIFEST, #part_manifest_v2).
 -define(PART_MANIFEST_RECNAME, part_manifest_v2).
 -define(MULTIPART_DESCR, #multipart_descr_v1).
--define(ACL, #acl_v2).
 -define(PART_DESCR, #part_descr_v1).
 
 -define(LFS_DEFAULT_OBJECT_VERSION, <<"null">>).
@@ -279,7 +278,7 @@
 
 -record(multipart_manifest_v1, {
     upload_id :: binary(),
-    owner :: acl_owner3(),
+    owner :: acl_owner(),
 
     %% since we don't have any point of strong
     %% consistency (other than stanchion), we

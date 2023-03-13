@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -43,7 +43,7 @@ start_link() ->
 
     riak_cs_stats:init(),
 
-    RewriteMod = application:get_env(riak_cs, rewrite_module, ?S3_API_MOD),
+    RewriteMod = application:get_env(riak_cs, rewrite_module, ?AWS_API_MOD),
     ok = application:set_env(webmachine_mochiweb, rewrite_modules, [{object_web, RewriteMod}]),
 
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -83,11 +83,6 @@ rcs_process_specs() ->
 
       #{id => riak_cs_delete_fsm_sup,
         start => {riak_cs_delete_fsm_sup, start_link, []},
-        type => supervisor,
-        modules => dynamic},
-
-      #{id => riak_cs_list_objects_ets_cache_sup,
-        start => {riak_cs_list_objects_ets_cache_sup, start_link, []},
         type => supervisor,
         modules => dynamic},
 

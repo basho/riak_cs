@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -124,7 +124,7 @@ refresher() ->
             refresher()
     end.
 
--spec allow(rcs_user(), access(), #rcs_context{}) -> {ok, #wm_reqdata{}, #rcs_context{}}.
+-spec allow(rcs_user(), access(), #rcs_s3_context{}) -> {ok, #wm_reqdata{}, #rcs_s3_context{}}.
 allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 
     OwnerKey = list_to_binary(riak_cs_user:key_id(Owner)),

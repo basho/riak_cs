@@ -46,18 +46,18 @@ stats_prefix() -> bucket_location.
 allowed_methods() ->
     ['GET'].
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec authorize(#wm_reqdata{}, #rcs_context{}) ->
-                       {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) ->
+                       {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_location, false, RD, Ctx).
 
--spec to_xml(#wm_reqdata{}, #rcs_context{}) ->
-                    {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_context{}}.
-to_xml(RD, Ctx=#rcs_context{user=User,bucket=Bucket}) ->
+-spec to_xml(#wm_reqdata{}, #rcs_s3_context{}) ->
+                    {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+to_xml(RD, Ctx=#rcs_s3_context{user=User,bucket=Bucket}) ->
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of

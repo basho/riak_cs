@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -42,16 +42,19 @@
 
 
 
--module(riak_cs_s3_rewrite).
+-module(riak_cs_aws_s3_rewrite).
+-behaviour(riak_cs_rewrite).
 
--export([rewrite/5, original_resource/1, raw_url/1]).
--export([rewrite_path_and_headers/5]).
+-export([rewrite/5,
+         original_resource/1,
+         raw_url/1
+        ]).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
-
--define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
--define(RCS_RAW_URL_HEADER, "x-rcs-raw-url").
+-include("riak_cs_web.hrl").
+-include("aws_api.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -63,34 +66,24 @@
 -type query_params() :: [{string(), string()}].
 -type subresources() :: [subresource()].
 
+
 %% @doc Function to rewrite headers prior to processing by webmachine.
 -spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
-                     {mochiweb_headers(), string()}.
+          {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, Url) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(Url),
     rewrite_path_and_headers(Method, Headers, Url, Path, QueryString).
 
--spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
+-spec original_resource(#wm_reqdata{}) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
-    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
-        undefined -> undefined;
-        RawPath ->
-            {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
-            {Path, mochiweb_util:parse_qs(QS)}
-    end.
+    riak_cs_rewrite:original_resource(RD).
 
--spec raw_url(term()) -> undefined | {string(), [{term(), term()}]}.
+-spec raw_url(#wm_reqdata{}) -> undefined | {string(), [{term(), term()}]}.
 raw_url(RD) ->
-    case wrq:get_req_header(?RCS_RAW_URL_HEADER, RD) of
-        undefined -> undefined;
-        RawUrl ->
-            {Path, QS, _} = mochiweb_util:urlsplit_path(RawUrl),
-            {Path, mochiweb_util:parse_qs(QS)}
-    end.
+    riak_cs_rewrite:raw_url(RD).
 
--spec rewrite_path_and_headers(atom(), mochiweb_headers(), string(), string(), string()) ->
-                    {mochiweb_headers(), string()}.
+
 rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
     Host = mochiweb_headers:get_value("host", Headers),
     HostBucket = bucket_from_host(Host),
@@ -107,7 +100,6 @@ rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
 
 
 %% @doc Internal function to handle rewriting the URL
--spec rewrite_path(atom(),string(), string(), undefined | string()) -> string().
 rewrite_path(_Method, "/", _QS, undefined) ->
     "/buckets";
 rewrite_path(Method, Path, QS, undefined) ->
@@ -143,11 +135,9 @@ rcs_rewrite_header(RawPath, Bucket) ->
 %% host name in the Host header value.
 -spec bucket_from_host(undefined | string()) -> undefined | string().
 bucket_from_host(undefined) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
     undefined;
 bucket_from_host(HostHeader) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"bucket_from_host">>),
-    {ok, RootHost} = application:get_env(riak_cs, cs_root_host),
+    {ok, RootHost} = application:get_env(riak_cs, s3_root_host),
     bucket_from_host(HostHeader, RootHost).
 
 bucket_from_host(HostHeader, RootHost) ->

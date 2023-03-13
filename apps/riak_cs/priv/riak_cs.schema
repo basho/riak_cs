@@ -130,9 +130,7 @@
 ]}.
 
 %% @doc Admin user credentials. Admin access like /riak-cs/stats
-%% requires this entry to be set properly. The credentials specified
-%% here must match the admin credentials specified in the
-%% stanchion.conf for the system to function properly.
+%% requires this entry to be set properly.
 {mapping, "admin.key", "riak_cs.admin_key", [
   {default, "{{admin_key}}"},
   {datatype, string}
@@ -162,11 +160,17 @@
    {datatype, flag}
 ]}.
 
-%% @doc Root host name which Riak CS accepts.
+%% @doc Root host name which Riak CS accepts for S3 requests.
 %% Your CS bucket at s3.example.com will be accessible
 %% via URL like http://bucket.s3.example.com/object/name
-{mapping, "root_host", "riak_cs.cs_root_host", [
+{mapping, "s3_root_host", "riak_cs.s3_root_host", [
   {default, "s3.amazonaws.com"},
+  {datatype, string}
+]}.
+
+%% @doc Root host name which Riak CS accepts, for IAM requests.
+{mapping, "iam_root_host", "riak_cs.iam_root_host", [
+  {default, "iam.amazonaws.com"},
   {datatype, string}
 ]}.
 
@@ -429,7 +433,7 @@
 
 %% @doc URL rewrite module.
 {mapping, "rewrite_module", "riak_cs.rewrite_module", [
-  {commented, riak_cs_s3_rewrite},
+  {commented, riak_cs_aws_rewrite},
   {datatype, atom},
   {validators, ["valid_rewrite_module"]}
 ]}.
@@ -437,15 +441,14 @@
 {validator,
   "valid_rewrite_module",
   "should be a valid rewrite module",
-  fun(riak_cs_s3_rewrite) -> true;
-     (riak_cs_s3_rewrite_legacy) -> true;
+  fun(riak_cs_aws_rewrite) -> true;
      (riak_cs_oos_rewrite) -> true;
      (_) -> false
   end}.
 
 %% @doc Authentication module.
 {mapping, "auth_module", "riak_cs.auth_module", [
-  {commented, riak_cs_s3_auth},
+  {commented, riak_cs_aws_auth},
   {datatype, atom},
   {validators, ["valid_auth_module"]}
 ]}.
@@ -453,20 +456,11 @@
 {validator,
   "valid_auth_module",
   "should be a valid auth module",
-  fun(riak_cs_s3_auth) -> true;
+  fun(riak_cs_aws_auth) -> true;
      (riak_cs_keystone_auth) -> true;
      (_) -> false
   end}.
 
-%% == Bucket (List Objects) ==
-
-%% @doc Set this to false if you're running
-%% Riak nodes prior to version 1.4.0.
-{mapping, "fold_objects_for_list_keys", "riak_cs.fold_objects_for_list_keys", [
-  {default, on},
-  {datatype, flag},
-  hidden
-]}.
 
 %% == Rolling upgrade support ==
 

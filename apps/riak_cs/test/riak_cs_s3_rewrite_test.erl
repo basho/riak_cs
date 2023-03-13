@@ -22,7 +22,7 @@
 -module(riak_cs_s3_rewrite_test).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
+-include("aws_api.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -114,8 +114,8 @@ refresher() ->
 
 %% @doc Only puts affected
 
--spec allow(rcs_user(), access(), #rcs_context{}) ->
-                   {ok, #wm_reqdata{}, #rcs_context{}} |
+-spec allow(rcs_user(), access(), #rcs_s3_context{}) ->
+                   {ok, #wm_reqdata{}, #rcs_s3_context{}} |
                    {error, {disk_quota, non_neg_integer(), non_neg_integer()}}.
 allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
     OwnerKey = iolist_to_binary(riak_cs_user:key_id(Owner)),
@@ -141,11 +141,11 @@ allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
 allow(_Owner, #access_v1{req = RD} = _Access, Ctx) ->
     {ok, RD, Ctx}.
 
--spec maybe_usage(binary(), #rcs_context{}) -> non_neg_integer().
-maybe_usage(_, _Ctx = #rcs_context{riak_client=undefined}) ->
+-spec maybe_usage(binary(), #rcs_s3_context{}) -> non_neg_integer().
+maybe_usage(_, _Ctx = #rcs_s3_context{riak_client=undefined}) ->
     %% can't happen here
     error(no_riak_client);
-maybe_usage(User0, _Ctx = #rcs_context{riak_client=RiakClient}) ->
+maybe_usage(User0, _Ctx = #rcs_s3_context{riak_client=RiakClient}) ->
     User = binary_to_list(User0),
     Usage = case get_latest_usage(RiakClient, User) of
                 {error, notfound} ->

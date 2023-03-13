@@ -48,7 +48,7 @@
 init(Props) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     AuthBypass = not proplists:get_value(admin_auth_enabled, Props),
-    {ok, #rcs_context{auth_bypass = AuthBypass}}.
+    {ok, #rcs_s3_context{auth_bypass = AuthBypass}}.
 
 %% @spec encodings_provided(webmachine:wrq(), context()) ->
 %%         {[encoding()], webmachine:wrq(), context()}
@@ -90,7 +90,7 @@ service_available(RD, Ctx) ->
         true ->
             case riak_cs_riak_client:checkout() of
                 {ok, Pid} ->
-                    {true, RD, Ctx#rcs_context{riak_client = Pid}};
+                    {true, RD, Ctx#rcs_s3_context{riak_client = Pid}};
                 _ ->
                     {false, RD, Ctx}
             end
@@ -104,23 +104,23 @@ produce_body(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"produce_body">>),
     {Body, RD2, Ctx}.
 
-forbidden(RD, Ctx=#rcs_context{auth_bypass=AuthBypass}) ->
+forbidden(RD, Ctx=#rcs_s3_context{auth_bypass=AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
-finish_request(RD, #rcs_context{riak_client=undefined}=Ctx) ->
+finish_request(RD, #rcs_s3_context{riak_client=undefined}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
-finish_request(RD, #rcs_context{riak_client=RcPid}=Ctx) ->
+finish_request(RD, #rcs_s3_context{riak_client=RcPid}=Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(RcPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
-    {true, RD, Ctx#rcs_context{riak_client=undefined}}.
+    {true, RD, Ctx#rcs_s3_context{riak_client=undefined}}.
 
 %% @spec pretty_print(webmachine:wrq(), context()) ->
 %%          {string(), webmachine:wrq(), context()}
 %% @doc Format the respons JSON object is a "pretty-printed" style.
-pretty_print(RD1, C1=#rcs_context{}) ->
+pretty_print(RD1, C1=#rcs_s3_context{}) ->
     {Json, RD2, C2} = produce_body(RD1, C1),
     Body = riak_cs_utils:json_pp_print(lists:flatten(Json)),
     ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(term_to_binary(Body))),

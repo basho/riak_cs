@@ -19,7 +19,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_s3_auth_v4_test).
+-module(riak_cs_aws_auth_v4_test).
 
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -74,10 +74,10 @@ auth_v4_GET_Object() ->
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
-                 riak_cs_s3_auth:identify(RD, Context)),
+                 riak_cs_aws_auth:identify(RD, Context)),
     ?assertEqual(ok,
-                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
-                                              {v4, AuthAttrs}, RD, Context)).
+                 riak_cs_aws_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                               {v4, AuthAttrs}, RD, Context)).
 
 auth_v4_GET_Object_with_extra_spaces() ->
     Method = 'GET',
@@ -99,10 +99,10 @@ auth_v4_GET_Object_with_extra_spaces() ->
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
-                 riak_cs_s3_auth:identify(RD, Context)),
+                 riak_cs_aws_auth:identify(RD, Context)),
     ?assertEqual(ok,
-                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
-                                              {v4, AuthAttrs}, RD, Context)).
+                 riak_cs_aws_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                               {v4, AuthAttrs}, RD, Context)).
 
 auth_v4_PUT_Object() ->
     Method = 'PUT',
@@ -122,10 +122,10 @@ auth_v4_PUT_Object() ->
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
-                 riak_cs_s3_auth:identify(RD, Context)),
+                 riak_cs_aws_auth:identify(RD, Context)),
     ?assertEqual(ok,
-                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
-                                              {v4, AuthAttrs}, RD, Context)).
+                 riak_cs_aws_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                               {v4, AuthAttrs}, RD, Context)).
 
 auth_v4_GET_Object_Lifecycle() ->
     Method = 'GET',
@@ -144,10 +144,10 @@ auth_v4_GET_Object_Lifecycle() ->
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
-                 riak_cs_s3_auth:identify(RD, Context)),
+                 riak_cs_aws_auth:identify(RD, Context)),
     ?assertEqual(ok,
-                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
-                                              {v4, AuthAttrs}, RD, Context)).
+                 riak_cs_aws_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                               {v4, AuthAttrs}, RD, Context)).
 
 auth_v4_GET_Bucket() ->
     Method = 'GET',
@@ -165,10 +165,10 @@ auth_v4_GET_Bucket() ->
     RD = wrq:create(Method, ?VERSION, "rewritten/path", AllHeaders),
     Context = context_not_used,
     ?assertEqual({?ACCESS_KEY_ID, {v4, AuthAttrs}},
-                 riak_cs_s3_auth:identify(RD, Context)),
+                 riak_cs_aws_auth:identify(RD, Context)),
     ?assertEqual(ok,
-                 riak_cs_s3_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
-                                              {v4, AuthAttrs}, RD, Context)).
+                 riak_cs_aws_auth:authenticate(?RCS_USER{key_secret=?SECRET_ACCESS_KEY},
+                                               {v4, AuthAttrs}, RD, Context)).
 
 authorization_header(AuthAttrs) ->
     authorization_header(AuthAttrs, no_space).

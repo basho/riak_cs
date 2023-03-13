@@ -23,14 +23,12 @@
 
 -include("riak_cs.hrl").
 -include("stanchion.hrl").
+-include("aws_api.hrl").
 
 -compile(export_all).
 -compile(nowarn_export_all).
 
 -dialyzer([ {nowarn_function, fromlist_access_v1/1}
-          , {nowarn_function, fromlist_rcs_context/1}
-          , {nowarn_function, fromlist_key_context/1}
-          , {nowarn_function, fromlist_stanchion_context/1}
           , {nowarn_function, fromlist_lfs_manifest_v2/1}
           , {nowarn_function, fromlist_lfs_manifest_v3/1}
           , {nowarn_function, fromlist_moss_bucket/1}
@@ -43,9 +41,6 @@
           , {nowarn_function, fromlist_part_manifest_v1/1}
           , {nowarn_function, fromlist_rcs_user_v2/1}
           , {nowarn_function, frommap_access_v1/1}
-          , {nowarn_function, frommap_rcs_context/1}
-          , {nowarn_function, frommap_key_context/1}
-          , {nowarn_function, frommap_stanchion_context/1}
           , {nowarn_function, frommap_lfs_manifest_v2/1}
           , {nowarn_function, frommap_lfs_manifest_v3/1}
           , {nowarn_function, frommap_moss_bucket/1}
@@ -58,9 +53,6 @@
           , {nowarn_function, frommap_part_manifest_v1/1}
           , {nowarn_function, frommap_rcs_user_v2/1}
           , {nowarn_function, new_access_v1/1}
-          , {nowarn_function, new_rcs_context/1}
-          , {nowarn_function, new_key_context/1}
-          , {nowarn_function, new_stanchion_context/1}
           , {nowarn_function, new_lfs_manifest_v2/1}
           , {nowarn_function, new_lfs_manifest_v3/1}
           , {nowarn_function, new_moss_bucket/1}
@@ -73,9 +65,6 @@
           , {nowarn_function, new_part_manifest_v1/1}
           , {nowarn_function, new_rcs_user_v2/1}
           , {nowarn_function, new_access_v1/0}
-          , {nowarn_function, new_rcs_context/0}
-          , {nowarn_function, new_key_context/0}
-          , {nowarn_function, new_stanchion_context/0}
           , {nowarn_function, new_lfs_manifest_v2/0}
           , {nowarn_function, new_lfs_manifest_v3/0}
           , {nowarn_function, new_moss_bucket/0}
@@ -95,11 +84,9 @@
         , rcs_user_v2
         , moss_bucket
         , moss_bucket_v1
-        , rcs_context
-        , key_context
-        , stanchion_context
         , acl_v1
-        , acl_v2
+        , acl_v3
+        , acl_grant_v2
         , lfs_manifest_v2
         , lfs_manifest_v3
         , part_manifest_v1
@@ -107,6 +94,15 @@
         , multipart_descr_v1
         , part_descr_v1
         , access_v1
+          %% S3 records
+        , arn_v1
+        , policy_v1
+        , statement
+        , tag
+        , role_last_used
+        , permissions_boundary
+        , role_v1
+        , saml_provider_v1
         ]
        ).
 

@@ -24,10 +24,9 @@
 -export([rewrite/5, original_resource/1]).
 
 -include("riak_cs.hrl").
+-include("riak_cs_web.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 
--define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
--define(OOS_API_VSN_HEADER, "x-oos-api-version").
--define(OOS_ACCOUNT_HEADER, "x-oos-account").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -47,12 +46,8 @@ rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
 
 -spec original_resource(term()) -> undefined | {string(), [{term(),term()}]}.
 original_resource(RD) ->
-    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
-        undefined -> undefined;
-        RawPath ->
-            {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
-            {Path, mochiweb_util:parse_qs(QS)}
-    end.
+    riak_cs_rewrite:original_resource(RD).
+
 
 %% @doc Parse the path string into its component parts: the API version,
 %% the account identifier, and the remainder of the path information

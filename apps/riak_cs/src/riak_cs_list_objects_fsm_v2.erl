@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -27,7 +27,7 @@
 -behaviour(gen_fsm).
 
 -include("riak_cs.hrl").
--include("list_objects.hrl").
+-include("riak_cs_web.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 %%%===================================================================
@@ -130,7 +130,6 @@ start_link(RcPid, ListKeysRequest, FoldObjectsBatchSize) ->
 
 -spec init(list()) -> {ok, prepare, state(), 0}.
 init([RcPid, Request, FoldObjectsBatchSize]) ->
-
     State = #state{riak_client=RcPid,
                    fold_objects_batch_size=FoldObjectsBatchSize,
                    req=Request},
@@ -227,7 +226,6 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                common_prefixes=NewPrefixes,
                                                reached_end_of_keyspace=ReachedEnd,
                                                object_buffer=[]},
-    ?LOG_DEBUG("Ranges: ~p", [NewStateData#state.object_list_ranges]),
     respond(NewStateData, NewManis, NewPrefixes).
 
 -spec reached_end_of_keyspace(non_neg_integer(),
@@ -280,10 +278,8 @@ respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
             {NewManis, NewPrefixes} =
             riak_cs_list_objects_utils:untagged_manifest_and_prefix(SlicedTaggedItems),
             Response =
-            response_from_manifests_and_common_prefixes(Request,
-                                                        Truncated,
-                                                        NextMarker,
-                                                        {NewManis, NewPrefixes}),
+                response_from_manifests_and_common_prefixes(
+                  Request, Truncated, NextMarker, {NewManis, NewPrefixes}),
             try_reply({ok, Response}, StateData);
         false ->
             RcPid = StateData#state.riak_client,
@@ -347,8 +343,6 @@ response_from_manifests_and_common_prefixes(?LOREQ{req_type = ReqType} = Request
                                       CommonPrefixes,
                                       KeyContent).
 
--spec make_2i_request(riak_client(), state()) ->
-                             {state(), {ok, reference()} | {error, term()}}.
 make_2i_request(RcPid, State=#state{req = ?LOREQ{name = BucketName, prefix = Prefix},
                                     fold_objects_batch_size = BatchSize}) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, BucketName),
@@ -364,7 +358,7 @@ make_2i_request(RcPid, State=#state{req = ?LOREQ{name = BucketName, prefix = Pre
     Opts = [{max_results, BatchSize},
             {start_key, StartKey},
             {end_key, EndKey},
-            {timeout, riak_cs_list_objects_utils:fold_objects_timeout()}],
+            {timeout, riak_cs_config:fold_objects_timeout()}],
     {ok, ManifestPbc} = riak_cs_riak_client:manifest_pbc(RcPid),
     FoldResult = riakc_pb_socket:cs_bucket_fold(ManifestPbc,
                                                 ManifestBucket,

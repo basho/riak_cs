@@ -48,15 +48,15 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--spec init(#rcs_context{}) -> {ok, #rcs_context{}}.
+-spec init(#rcs_s3_context{}) -> {ok, #rcs_s3_context{}}.
 init(Ctx) ->
-    {ok, Ctx#rcs_context{local_context=#key_context{}}}.
+    {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
 
 -spec stats_prefix() -> multipart.
 stats_prefix() -> multipart.
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) -> {false, #wm_reqdata{}, #rcs_context{}}.
-malformed_request(RD, #rcs_context{response_module=ResponseMod} = Ctx) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
+malformed_request(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
     case riak_cs_wm_utils:extract_key(RD, Ctx) of
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx);
@@ -74,14 +74,14 @@ malformed_request(RD, #rcs_context{response_module=ResponseMod} = Ctx) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
--spec authorize(#wm_reqdata{}, #rcs_context{}) ->
-          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_context{}}.
-authorize(RD, Ctx0=#rcs_context{local_context=LocalCtx0, riak_client=RcPid}) ->
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+authorize(RD, Ctx0=#rcs_s3_context{local_context=LocalCtx0, riak_client=RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
-    Ctx = Ctx0#rcs_context{requested_perm=RequestedAccess,local_context=LocalCtx},
+    Ctx = Ctx0#rcs_s3_context{requested_perm=RequestedAccess,local_context=LocalCtx},
     authorize(RD, Ctx, LocalCtx#key_context.bucket_object).
 
 authorize(RD, Ctx, notfound = _BucketObj) ->
@@ -105,18 +105,18 @@ process_post(RD, Ctx) ->
             HaltResponse
     end.
 
-process_post_helper(RD, Ctx = #rcs_context{riak_client = RcPid,
-                                           local_context = #key_context{bucket = Bucket,
-                                                                        key = Key,
-                                                                        obj_vsn = ObjVsn},
-                                           acl = ACL}) ->
+process_post_helper(RD, Ctx = #rcs_s3_context{riak_client = RcPid,
+                                              local_context = #key_context{bucket = Bucket,
+                                                                           key = Key,
+                                                                           obj_vsn = ObjVsn},
+                                              acl = ACL}) ->
     ContentType = try
                       list_to_binary(wrq:get_req_header("Content-Type", RD))
                   catch error:badarg ->
                           %% Per http://docs.amazonwebservices.com/AmazonS3/latest/API/mpUploadInitiate.html
                           <<"binary/octet-stream">>
                   end,
-    User = riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+    User = riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     Opts = [{acl, ACL}, {meta_data, Metadata}],
 
@@ -140,8 +140,8 @@ process_post_helper(RD, Ctx = #rcs_context{riak_client = RcPid,
             riak_cs_s3_response:api_error(Reason, RD, Ctx)
     end.
 
--spec valid_entity_length(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-valid_entity_length(RD, Ctx=#rcs_context{local_context=LocalCtx}) ->
+-spec valid_entity_length(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+valid_entity_length(RD, Ctx=#rcs_s3_context{local_context=LocalCtx}) ->
     case wrq:method(RD) of
         'PUT' ->
             case catch(
@@ -154,7 +154,7 @@ valid_entity_length(RD, Ctx=#rcs_context{local_context=LocalCtx}) ->
                               entity_too_large, RD, Ctx);
                         true ->
                             UpdLocalCtx = LocalCtx#key_context{size=Length},
-                            {true, RD, Ctx#rcs_context{local_context=UpdLocalCtx}}
+                            {true, RD, Ctx#rcs_s3_context{local_context=UpdLocalCtx}}
                     end;
                 _ ->
                     {false, RD, Ctx}
@@ -163,8 +163,8 @@ valid_entity_length(RD, Ctx=#rcs_context{local_context=LocalCtx}) ->
             {true, RD, Ctx}
     end.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_provided(RD, Ctx=#rcs_context{}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_provided(RD, Ctx=#rcs_s3_context{}) ->
     Method = wrq:method(RD),
     if Method == 'POST' ->
             {[{?XML_TYPE, unused_callback}], RD, Ctx};
@@ -174,6 +174,6 @@ content_types_provided(RD, Ctx=#rcs_context{}) ->
             {[{"text/plain", unused_callback}], RD, Ctx}
     end.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).

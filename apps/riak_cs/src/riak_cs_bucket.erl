@@ -286,7 +286,7 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
 -spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl(), riak_client()) ->
-                            ok | {error, term()}.
+          ok | {error, term()}.
 set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
     serialized_bucket_op(Bucket,
                          ACL,
@@ -296,8 +296,9 @@ set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), riak_client()) ->
-                               ok | {error, term()}.
+          ok | {error, term()}.
 set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
+    ?LOG_DEBUG("set_bucket_policy: ~p", [a]),
     serialized_bucket_op(Bucket,
                          PolicyJson,
                          User,
@@ -306,8 +307,9 @@ set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
 -spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), riak_client()) ->
-                                  ok | {error, term()}.
+          ok | {error, term()}.
 delete_bucket_policy(User, _UserObj, Bucket, _RcPid) ->
+    ?LOG_DEBUG("are we delete_bucket_policy?"),
     serialized_bucket_op(Bucket,
                          [],
                          User,
@@ -316,7 +318,7 @@ delete_bucket_policy(User, _UserObj, Bucket, _RcPid) ->
 
 %% @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
-                                   {acl(), policy()} | {error, term()}.
+          {acl(), policy()} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
     case fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
@@ -397,21 +399,17 @@ versioning_json_to_struct({struct, Doc}) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
--spec bucket_acl_json(acl(), string()) -> string().
-bucket_acl_json(ACL, KeyId)  ->
-    binary_to_list(
-      iolist_to_binary(
-        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
-                                    riak_cs_acl_utils:acl_to_json_term(ACL)]}))).
+bucket_acl_json(ACL, KeyId) ->
+    jason:encode([{requester, KeyId},
+                  {acl, ACL}],
+                 [{records, [{acl_v3, record_info(fields, acl_v3)},
+                             {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]).
 
 %% @doc Generate a JSON document to use for a bucket
 -spec bucket_policy_json(binary(), string()) -> string().
 bucket_policy_json(PolicyJson, KeyId)  ->
-    binary_to_list(
-      iolist_to_binary(
-        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
-                                    {<<"policy">>, PolicyJson}]
-                          }))).
+    jason:encode([{requester, KeyId},
+                  {policy, PolicyJson}]).
 
 %% @doc Generate a JSON document to use in setting bucket versioning option
 -spec bucket_versioning_json(bucket_versioning(), string()) -> string().
@@ -462,7 +460,7 @@ bucket_empty_any_pred(RcPid, Bucket) ->
 
 %% @doc Fetches the bucket object and verify its status.
 -spec fetch_bucket_object(binary(), riak_client()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+          {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(BucketName, RcPid) ->
     case fetch_bucket_object_raw(BucketName, RcPid) of
         {ok, Obj} ->
@@ -579,14 +577,12 @@ bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds) ->
 bucket_json(Bucket, BagId, ACL, KeyId)  ->
     BagElement = case BagId of
                      undefined -> [];
-                     _ -> [{<<"bag">>, BagId}]
+                     _ -> [{bag, BagId}]
                  end,
-    binary_to_list(
-      iolist_to_binary(
-        mochijson2:encode({struct, [{<<"bucket">>, Bucket},
-                                    {<<"requester">>, list_to_binary(KeyId)},
-                                    riak_cs_acl_utils:acl_to_json_term(ACL)] ++
-                               BagElement}))).
+    jason:encode([{bucket, Bucket},
+                  {requester, KeyId},
+                  {acl, ACL}] ++ BagElement, [{records, [{acl_v3, record_info(fields, acl_v3)},
+                                                         {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]).
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -722,8 +718,7 @@ handle_stanchion_response(409, ErrorDoc, Op, Bucket)
                             " Clean up the deleted buckets now.", [Bucket]),
             %% Broken, returns 500
             throw({remaining_multipart_upload_on_deleted_bucket, Bucket});
-        Other ->
-            ?LOG_DEBUG("errordoc: ~p => ~s", [Other, ErrorDoc]),
+        _Other ->
             riak_cs_s3_response:error_response(ErrorDoc)
     end;
 handle_stanchion_response(_C, ErrorDoc, _M, _) ->

@@ -54,20 +54,20 @@
 
 -define(RIAKCPOOL, bucket_list_pool).
 
--spec init(#rcs_context{}) -> {ok, #rcs_context{}}.
+-spec init(#rcs_s3_context{}) -> {ok, #rcs_s3_context{}}.
 init(Ctx) ->
-    {ok, Ctx#rcs_context{local_context=#key_context{}}}.
+    {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
 
 -spec stats_prefix() -> list_uploads.
 stats_prefix() -> list_uploads.
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) -> {false, #wm_reqdata{}, #rcs_context{}}.
-malformed_request(RD,Ctx=#rcs_context{local_context=LocalCtx0}) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
+malformed_request(RD,Ctx=#rcs_s3_context{local_context=LocalCtx0}) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     LocalCtx = LocalCtx0#key_context{bucket=Bucket},
-    {false, RD, Ctx#rcs_context{local_context=LocalCtx}}.
+    {false, RD, Ctx#rcs_s3_context{local_context=LocalCtx}}.
 
--spec authorize(#wm_reqdata{}, #rcs_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_uploads, false, RD, Ctx).
 
@@ -76,10 +76,10 @@ authorize(RD, Ctx) ->
 allowed_methods() ->
     ['GET'].
 
-to_xml(RD, Ctx=#rcs_context{local_context=LocalCtx,
-                            riak_client=RcPid}) ->
+to_xml(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
+                               riak_client=RcPid}) ->
     #key_context{bucket=Bucket} = LocalCtx,
-    User = riak_cs_user:to_3tuple(Ctx#rcs_context.user),
+    User = riak_cs_user:to_3tuple(Ctx#rcs_s3_context.user),
     Opts = make_list_mp_uploads_opts(RD),
     case riak_cs_mp_utils:list_multipart_uploads(Bucket, User, Opts, RcPid) of
         {ok, {Ds, Commons}} ->
@@ -134,8 +134,8 @@ finish_request(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx}.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_provided(RD, Ctx=#rcs_context{}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_provided(RD, Ctx=#rcs_s3_context{}) ->
     Method = wrq:method(RD),
     if Method == 'GET' ->
             {[{?XML_TYPE, to_xml}], RD, Ctx};
@@ -145,7 +145,7 @@ content_types_provided(RD, Ctx=#rcs_context{}) ->
             {[{"text/plain", unused_callback}], RD, Ctx}
     end.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(RD, Ctx) ->
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx).
 

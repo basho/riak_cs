@@ -45,6 +45,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -spec stats_prefix() -> bucket.
 stats_prefix() -> bucket.
@@ -54,7 +55,7 @@ stats_prefix() -> bucket.
 allowed_methods() ->
     ['HEAD', 'PUT', 'DELETE'].
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) -> {false, #wm_reqdata{}, #rcs_context{}}.
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
 malformed_request(RD, Ctx) ->
     case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
         true ->
@@ -64,17 +65,18 @@ malformed_request(RD, Ctx) ->
             {false, RD, Ctx}
     end.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) ->
-                                    {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(RD, Ctx) ->
     content_types_accepted(wrq:get_req_header("content-type", RD), RD, Ctx).
 
--spec content_types_accepted(undefined | string(), #wm_reqdata{}, #rcs_context{}) ->
-                                    {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #rcs_s3_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
 content_types_accepted(CT, RD, Ctx) when CT =:= undefined;
                                          CT =:= [] ->
     content_types_accepted("application/octet-stream", RD, Ctx);
@@ -82,14 +84,14 @@ content_types_accepted(CT, RD, Ctx) ->
     {Media, _Params} = mochiweb_util:parse_header(CT),
     {[{Media, add_acl_to_context_then_accept}], RD, Ctx}.
 
--spec authorize(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-authorize(RD, #rcs_context{user=User}=Ctx) ->
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+authorize(RD, #rcs_s3_context{user=User}=Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    PermCtx = Ctx#rcs_context{bucket=Bucket,
-                              requested_perm=RequestedAccess},
+    PermCtx = Ctx#rcs_s3_context{bucket = Bucket,
+                                 requested_perm = RequestedAccess},
 
     case {Method, RequestedAccess} of
         {_, 'WRITE'} when User == undefined ->
@@ -104,14 +106,14 @@ authorize(RD, #rcs_context{user=User}=Ctx) ->
     end.
 
 
--spec to_xml(#wm_reqdata{}, #rcs_context{}) ->
-                    {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_context{}}.
+-spec to_xml(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_s3_context{}}.
 to_xml(RD, Ctx) ->
     handle_read_request(RD, Ctx).
 
 %% @private
-handle_read_request(RD, Ctx=#rcs_context{user=User,
-                                         bucket=Bucket}) ->
+handle_read_request(RD, Ctx=#rcs_s3_context{user=User,
+                                            bucket=Bucket}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_head">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     %% override the content-type on HEAD
@@ -130,15 +132,15 @@ handle_read_request(RD, Ctx=#rcs_context{user=User,
     end.
 
 %% @doc Process request body on `PUT' request.
--spec accept_body(#wm_reqdata{}, #rcs_context{}) -> {{halt, integer()}, #wm_reqdata{}, #rcs_context{}}.
-accept_body(RD, Ctx=#rcs_context{user=User,
-                                 acl=ACL,
-                                 user_object=UserObj,
-                                 bucket=Bucket,
-                                 response_module=ResponseMod,
-                                 riak_client=RcPid}) ->
+-spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) -> {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+accept_body(RD, Ctx=#rcs_s3_context{user=User,
+                                    acl=ACL,
+                                    user_object=UserObj,
+                                    bucket=Bucket,
+                                    response_module=ResponseMod,
+                                    riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     BagId = riak_cs_mb_helper:choose_bag_id(manifest, Bucket),
     case riak_cs_bucket:create_bucket(User,
                                       UserObj,
@@ -158,13 +160,13 @@ accept_body(RD, Ctx=#rcs_context{user=User,
     end.
 
 %% @doc Callback for deleting a bucket.
--spec delete_resource(#wm_reqdata{}, #rcs_context{}) ->
-                             {boolean() | {'halt', term()}, #wm_reqdata{}, #rcs_context{}}.
-delete_resource(RD, Ctx=#rcs_context{user=User,
-                                     user_object=UserObj,
-                                     response_module=ResponseMod,
-                                     bucket=Bucket,
-                                     riak_client=RcPid}) ->
+-spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {boolean() | {'halt', term()}, #wm_reqdata{}, #rcs_s3_context{}}.
+delete_resource(RD, Ctx=#rcs_s3_context{user=User,
+                                        user_object=UserObj,
+                                        response_module=ResponseMod,
+                                        bucket=Bucket,
+                                        riak_client=RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_bucket:delete_bucket(User,

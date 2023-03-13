@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -29,11 +29,12 @@
 -export([pbc_pools/0,
          pbc_pool_name/1,
          rts_puller/4]).
--export([
-         stop/1,
+-export([stop/1,
          get_bucket/2,
          set_bucket_name/2,
+         get_role/2,
          get_user/2,
+         get_user_with_pbc/2,
          save_user/3,
          set_manifest_bag/2,
          get_manifest_bag/1,
@@ -48,21 +49,15 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
-%% exported for other `riak_client' implementations
--export([get_bucket_with_pbc/2,
-         get_user_with_pbc/2,
-         save_user_with_pbc/3]).
-
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          master_pbc :: undefined | pid(),
-          bucket_name,
-          bucket_obj
+          master_pbc :: undefined | pid()
          }).
 
 start_link(_Args) ->
@@ -154,6 +149,10 @@ rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
     gen_server:call(RcPid, {get_bucket, BucketName}, infinity).
 
+-spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+get_role(RcPid, BucketName) when is_binary(BucketName) ->
+    gen_server:call(RcPid, {get_role, BucketName}, infinity).
+
 -spec set_bucket_name(riak_client(), binary()) -> ok | {error, term()}.
 set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
     gen_server:call(RcPid, {set_bucket_name, BucketName}, infinity).
@@ -213,18 +212,25 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(cleanup, _From, State) ->
     {reply, ok, do_cleanup(State)};
-handle_call({get_bucket, BucketName}, _From, State) ->
-    case do_get_bucket(State#state{bucket_name=BucketName}) of
-        {ok, #state{bucket_obj=BucketObj} = NewState} ->
-            {reply, {ok, BucketObj}, NewState};
-        {error, Reason, NewState} ->
-            {reply, {error, Reason}, NewState}
+handle_call({get_bucket, BucketName}, _From, State0) ->
+    case do_get_from_bucket(?BUCKETS_BUCKET, BucketName, get_cs_bucket, State0) of
+        {ok, Obj, State9} ->
+            {reply, {ok, Obj}, State9};
+        {error, Reason, State9} ->
+            {reply, {error, Reason}, State9}
     end;
 handle_call({set_bucket_name, _BucketName}, _From, State) ->
     {reply, ok, State};
+handle_call({get_role, Id}, _From, State0) ->
+    case do_get_from_bucket(?IAM_BUCKET, Id, get_cs_role, State0) of
+        {ok, Obj, State9} ->
+            {reply, {ok, Obj}, State9};
+        {error, Reason, State9} ->
+            {reply, {error, Reason}, State9}
+    end;
 handle_call({get_user, UserKey}, _From, State) ->
     case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc} = NewState} ->
+        {ok, #state{master_pbc = MasterPbc} = NewState} ->
             Res = get_user_with_pbc(MasterPbc, UserKey),
             {reply, Res, NewState};
         {error, Reason} ->
@@ -297,17 +303,17 @@ stop_pbc(Pbc) when is_pid(Pbc) ->
     riak_cs_utils:close_riak_connection(pbc_pool_name(master), Pbc),
     ok.
 
-do_get_bucket(State) ->
-    case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc, bucket_name=BucketName} = NewState} ->
-            case get_bucket_with_pbc(MasterPbc, BucketName) of
+do_get_from_bucket(Bucket, Key, StatsItem, State0) ->
+    case ensure_master_pbc(State0) of
+        {ok, State9 = #state{master_pbc = Pbc}} ->
+            case get_object_with_pbc(Pbc, Bucket, Key, StatsItem) of
                 {ok, Obj} ->
-                    {ok, NewState#state{bucket_obj=Obj}};
+                    {ok, Obj, State9};
                 {error, Reason} ->
-                    {error, Reason, NewState}
+                    {error, Reason, State0}
             end;
         {error, Reason} ->
-            {error, Reason, State}
+            {error, Reason, State0}
     end.
 
 ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
@@ -319,10 +325,10 @@ ensure_master_pbc(#state{} = State) ->
         {error, Reason} -> {error, Reason}
     end.
 
-get_bucket_with_pbc(MasterPbc, BucketName) ->
+get_object_with_pbc(MasterPbc, Bucket, Key, StatsItem) ->
     Timeout = riak_cs_config:get_bucket_timeout(),
-    riak_cs_pbc:get(MasterPbc, ?BUCKETS_BUCKET, BucketName, [], Timeout,
-                    [riakc, get_cs_bucket]).
+    riak_cs_pbc:get(MasterPbc, Bucket, Key, [], Timeout,
+                    [riakc, StatsItem]).
 
 get_user_with_pbc(MasterPbc, Key) ->
     get_user_with_pbc(MasterPbc, Key, riak_cs_config:fast_user_get()).

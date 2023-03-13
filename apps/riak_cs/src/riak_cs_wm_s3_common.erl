@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_wm_common).
+-module(riak_cs_wm_s3_common).
 
 -export([init/1,
          service_available/2,
@@ -71,7 +71,7 @@
 %% Webmachine callbacks
 %% ===================================================================
 
--spec init([{atom(),term()}]) -> {ok, #rcs_context{}}.
+-spec init([{atom(),term()}]) -> {ok, #rcs_s3_context{}}.
 init(Config) ->
     catch dyntrace:put_tag(pid_to_list(self())),
     Mod = proplists:get_value(submodule, Config),
@@ -85,35 +85,35 @@ init(Config) ->
     Exports = orddict:from_list(Mod:module_info(exports)),
     ExportsFun = exports_fun(Exports),
     StatsPrefix = resource_call(Mod, stats_prefix, [], ExportsFun),
-    Ctx = #rcs_context{auth_bypass=AuthBypass,
-                       auth_module=AuthModule,
-                       response_module=RespModule,
-                       policy_module=PolicyModule,
-                       exports_fun=ExportsFun,
-                       stats_prefix=StatsPrefix,
-                       start_time=os:timestamp(),
-                       submodule=Mod,
-                       api=Api},
+    Ctx = #rcs_s3_context{auth_bypass=AuthBypass,
+                          auth_module=AuthModule,
+                          response_module=RespModule,
+                          policy_module=PolicyModule,
+                          exports_fun=ExportsFun,
+                          stats_prefix=StatsPrefix,
+                          submodule=Mod,
+                          api=Api},
     resource_call(Mod, init, [Ctx], ExportsFun).
 
--spec service_available(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-service_available(RD, Ctx=#rcs_context{rc_pool=undefined}) ->
-    service_available(RD, Ctx#rcs_context{rc_pool=request_pool});
-service_available(RD, Ctx=#rcs_context{submodule=Mod, rc_pool=Pool}) ->
+-spec service_available(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+service_available(RD, #rcs_s3_context{rc_pool = undefined} = Ctx) ->
+    service_available(RD, Ctx#rcs_s3_context{rc_pool = request_pool});
+service_available(RD, #rcs_s3_context{submodule = Mod,
+                                      rc_pool = Pool} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"service_available">>),
     case riak_cs_riak_client:checkout(Pool) of
         {ok, RcPid} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [1], []),
-            {true, RD, Ctx#rcs_context{riak_client=RcPid}};
+            {true, RD, Ctx#rcs_s3_context{riak_client=RcPid}};
         {error, _Reason} ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"service_available">>, [0], []),
             {false, RD, Ctx}
     end.
 
--spec malformed_request(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-malformed_request(RD, Ctx=#rcs_context{submodule=Mod,
-                                       exports_fun=ExportsFun,
-                                       stats_prefix=StatsPrefix}) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+malformed_request(RD, #rcs_s3_context{submodule = Mod,
+                                      exports_fun = ExportsFun,
+                                      stats_prefix = StatsPrefix} = Ctx) ->
     %% Methoid is used in stats keys, updating inflow should be *after*
     %% allowed_methods assertion.
     _ = update_stats_inflow(RD, StatsPrefix),
@@ -129,8 +129,9 @@ malformed_request(RD, Ctx=#rcs_context{submodule=Mod,
     R.
 
 
--spec valid_entity_length(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-valid_entity_length(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun}) ->
+-spec valid_entity_length(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+valid_entity_length(RD, #rcs_s3_context{submodule = Mod,
+                                        exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"valid_entity_length">>),
     {Valid, _, _} = R = resource_call(Mod,
                                       valid_entity_length,
@@ -145,9 +146,10 @@ valid_entity_length(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun})
 -type validate_checksum_response() :: {error, term()} |
                                       {halt, pos_integer()} |
                                       boolean().
--spec validate_content_checksum(#wm_reqdata{}, #rcs_context{}) ->
-                                       {validate_checksum_response(), #wm_reqdata{}, #rcs_context{}}.
-validate_content_checksum(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun}) ->
+-spec validate_content_checksum(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {validate_checksum_response(), #wm_reqdata{}, #rcs_s3_context{}}.
+validate_content_checksum(RD, #rcs_s3_context{submodule = Mod,
+                                              exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"validate_content_checksum">>),
     {Valid, _, _} = R = resource_call(Mod,
                                       validate_content_checksum,
@@ -159,12 +161,11 @@ validate_content_checksum(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=Export
                                                   true),
     R.
 
--spec forbidden(#wm_reqdata{}, #rcs_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-forbidden(RD, Ctx=#rcs_context{auth_module=AuthMod,
-                               submodule=Mod,
-                               riak_client=RcPid,
-                               exports_fun=ExportsFun}) ->
-
+-spec forbidden(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+forbidden(RD, #rcs_s3_context{auth_module = AuthMod,
+                              submodule = Mod,
+                              riak_client = RcPid,
+                              exports_fun = ExportsFun} = Ctx) ->
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
             failed ->
@@ -180,8 +181,8 @@ forbidden(RD, Ctx=#rcs_context{auth_module=AuthMod,
                 case maybe_create_user(
                        riak_cs_user:get_user(UserKey, RcPid),
                        UserKey,
-                       Ctx#rcs_context.api,
-                       Ctx#rcs_context.auth_module,
+                       Ctx#rcs_s3_context.api,
+                       Ctx#rcs_s3_context.auth_module,
                        AuthData,
                        RcPid) of
                     {ok, {User, Obj}} = _LookupResult ->
@@ -214,11 +215,11 @@ maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, 
     %% Attempt to create a Riak CS user to represent the OS tenant
     _ = riak_cs_user:create_user(Name, Email, KeyId, Secret),
     riak_cs_user:get_user(KeyId, RcPid);
-maybe_create_user({error, no_user_key}=Error, _, _, _, _, _) ->
+maybe_create_user({error, no_user_key} = Error, _, _, _, _, _) ->
     %% Anonymous access may be authorized by ACL or policy afterwards,
     %% no logging here.
     Error;
-maybe_create_user({error, disconnected}=Error, _, _, _, _, RcPid) ->
+maybe_create_user({error, disconnected} = Error, _, _, _, _, RcPid) ->
     {ok, MasterPid} = riak_cs_riak_client:master_pbc(RcPid),
     riak_cs_pbc:check_connection_status(MasterPid, maybe_create_user),
     Error;
@@ -228,9 +229,9 @@ maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
     Error.
 
 %% @doc Get the list of methods a resource supports.
--spec allowed_methods(#wm_reqdata{}, #rcs_context{}) -> {[atom()], #wm_reqdata{}, #rcs_context{}}.
-allowed_methods(RD, Ctx=#rcs_context{submodule=Mod,
-                                     exports_fun=ExportsFun}) ->
+-spec allowed_methods(#wm_reqdata{}, #rcs_s3_context{}) -> {[atom()], #wm_reqdata{}, #rcs_s3_context{}}.
+allowed_methods(RD, #rcs_s3_context{submodule = Mod,
+                                    exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"allowed_methods">>),
     Methods = resource_call(Mod,
                             allowed_methods,
@@ -238,44 +239,45 @@ allowed_methods(RD, Ctx=#rcs_context{submodule=Mod,
                             ExportsFun),
     {Methods, RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_accepted(RD, Ctx=#rcs_context{submodule=Mod,
-                                            exports_fun=ExportsFun}) ->
+-spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_accepted(RD, #rcs_s3_context{submodule = Mod,
+                                           exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_accepted">>),
     resource_call(Mod,
                   content_types_accepted,
                   [RD,Ctx],
                   ExportsFun).
 
--spec content_types_provided(#wm_reqdata{}, #rcs_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_context{}}.
-content_types_provided(RD, Ctx=#rcs_context{submodule=Mod,
-                                            exports_fun=ExportsFun}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+content_types_provided(RD, #rcs_s3_context{submodule = Mod,
+                                           exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"content_types_provided">>),
     resource_call(Mod,
                   content_types_provided,
                   [RD,Ctx],
                   ExportsFun).
 
--spec generate_etag(#wm_reqdata{}, #rcs_context{}) -> {string(), #wm_reqdata{}, #rcs_context{}}.
-generate_etag(RD, Ctx=#rcs_context{submodule=Mod,
-                                   exports_fun=ExportsFun}) ->
+-spec generate_etag(#wm_reqdata{}, #rcs_s3_context{}) -> {string(), #wm_reqdata{}, #rcs_s3_context{}}.
+generate_etag(RD, #rcs_s3_context{submodule = Mod,
+                                  exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"generate_etag">>),
     resource_call(Mod,
                   generate_etag,
                   [RD,Ctx],
                   ExportsFun).
 
--spec last_modified(#wm_reqdata{}, #rcs_context{}) -> {calendar:datetime(), #wm_reqdata{}, #rcs_context{}}.
-last_modified(RD, Ctx=#rcs_context{submodule=Mod,
-                                   exports_fun=ExportsFun}) ->
+-spec last_modified(#wm_reqdata{}, #rcs_s3_context{}) -> {calendar:datetime(), #wm_reqdata{}, #rcs_s3_context{}}.
+last_modified(RD, #rcs_s3_context{submodule = Mod,
+                                  exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"last_modified">>),
     resource_call(Mod,
                   last_modified,
                   [RD,Ctx],
                   ExportsFun).
 
--spec delete_resource(#wm_reqdata{}, #rcs_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-delete_resource(RD, Ctx=#rcs_context{submodule=Mod,exports_fun=ExportsFun}) ->
+-spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+delete_resource(RD, #rcs_s3_context{submodule = Mod,
+                                    exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"delete_resource">>),
     %% TODO: add dt_wm_return from subresource?
     resource_call(Mod,
@@ -283,11 +285,11 @@ delete_resource(RD, Ctx=#rcs_context{submodule=Mod,exports_fun=ExportsFun}) ->
                   [RD,Ctx],
                   ExportsFun).
 
--spec to_xml(#wm_reqdata{}, #rcs_context{}) ->
-                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-to_xml(RD, Ctx=#rcs_context{user=User,
-                            submodule=Mod,
-                            exports_fun=ExportsFun}) ->
+-spec to_xml(#wm_reqdata{}, #rcs_s3_context{}) ->
+                    {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+to_xml(RD, Ctx=#rcs_s3_context{user=User,
+                               submodule=Mod,
+                               exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"to_xml">>),
     Res = resource_call(Mod,
                         to_xml,
@@ -296,11 +298,11 @@ to_xml(RD, Ctx=#rcs_context{user=User,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_xml">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
--spec to_json(#wm_reqdata{}, #rcs_context{}) ->
-          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-to_json(RD, Ctx=#rcs_context{user=User,
-                             submodule=Mod,
-                             exports_fun=ExportsFun}) ->
+-spec to_json(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+to_json(RD, Ctx=#rcs_s3_context{user=User,
+                                submodule=Mod,
+                                exports_fun=ExportsFun}) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"to_json">>),
     Res = resource_call(Mod,
                         to_json,
@@ -309,24 +311,24 @@ to_json(RD, Ctx=#rcs_context{user=User,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"to_json">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
-post_is_create(RD, Ctx=#rcs_context{submodule=Mod,
-                                    exports_fun=ExportsFun}) ->
+post_is_create(RD, #rcs_s3_context{submodule = Mod,
+                                   exports_fun = ExportsFun} = Ctx) ->
     resource_call(Mod, post_is_create, [RD, Ctx], ExportsFun).
 
-create_path(RD, Ctx=#rcs_context{submodule=Mod,
-                                 exports_fun=ExportsFun}) ->
+create_path(RD, #rcs_s3_context{submodule = Mod,
+                                exports_fun = ExportsFun} = Ctx) ->
     resource_call(Mod, create_path, [RD, Ctx], ExportsFun).
 
-process_post(RD, Ctx=#rcs_context{submodule=Mod,
-                                  exports_fun=ExportsFun}) ->
+process_post(RD, #rcs_s3_context{submodule = Mod,
+                                 exports_fun = ExportsFun} = Ctx) ->
     resource_call(Mod, process_post, [RD, Ctx], ExportsFun).
 
-resp_body(RD, Ctx=#rcs_context{submodule=Mod,
-                               exports_fun=ExportsFun}) ->
+resp_body(RD, #rcs_s3_context{submodule = Mod,
+                              exports_fun = ExportsFun} = Ctx) ->
     resource_call(Mod, resp_body, [RD, Ctx], ExportsFun).
 
-multiple_choices(RD, Ctx=#rcs_context{submodule=Mod,
-                                      exports_fun=ExportsFun}) ->
+multiple_choices(RD, #rcs_s3_context{submodule = Mod,
+                                     exports_fun = ExportsFun} = Ctx) ->
     try
         resource_call(Mod, multiple_choices, [RD, Ctx], ExportsFun)
     catch _:_ ->
@@ -343,9 +345,11 @@ add_acl_to_context_then_accept(RD, Ctx) ->
             HaltResponse
     end.
 
--spec accept_body(#wm_reqdata{}, #rcs_context{}) ->
-          {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-accept_body(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun, user=User}) ->
+-spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {boolean() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+accept_body(RD, #rcs_s3_context{submodule = Mod,
+                                exports_fun = ExportsFun,
+                                user = User} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"accept_body">>),
     Res = resource_call(Mod,
                         accept_body,
@@ -355,12 +359,12 @@ accept_body(RD, Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun, user=Use
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"accept_body">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
--spec produce_body(#wm_reqdata{}, #rcs_context{}) ->
-          {iolist()|binary(), #wm_reqdata{}, #rcs_context{}} |
-          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #rcs_context{}}.
-produce_body(RD, Ctx=#rcs_context{user=User,
-                                  submodule=Mod,
-                                  exports_fun=ExportsFun}) ->
+-spec produce_body(#wm_reqdata{}, #rcs_s3_context{}) ->
+          {iolist()|binary(), #wm_reqdata{}, #rcs_s3_context{}} |
+          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #rcs_s3_context{}}.
+produce_body(RD, #rcs_s3_context{user = User,
+                                 submodule = Mod,
+                                 exports_fun = ExportsFun} = Ctx) ->
     %% TODO: add dt_wm_return w/ content length
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"produce_body">>),
     Res = resource_call(Mod,
@@ -370,11 +374,11 @@ produce_body(RD, Ctx=#rcs_context{user=User,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"produce_body">>, [], [riak_cs_wm_utils:extract_name(User)]),
     Res.
 
--spec finish_request(#wm_reqdata{}, #rcs_context{}) -> {boolean(), #wm_reqdata{}, #rcs_context{}}.
-finish_request(RD, Ctx=#rcs_context{riak_client=RcPid,
-                                    auto_rc_close=AutoRcClose,
-                                    submodule=Mod,
-                                    exports_fun=ExportsFun})
+-spec finish_request(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+finish_request(RD, #rcs_s3_context{riak_client = RcPid,
+                                   auto_rc_close = AutoRcClose,
+                                   submodule = Mod,
+                                   exports_fun = ExportsFun} = Ctx)
   when RcPid =:= undefined orelse AutoRcClose =:= false ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [0], []),
     Res = resource_call(Mod,
@@ -384,13 +388,13 @@ finish_request(RD, Ctx=#rcs_context{riak_client=RcPid,
     riak_cs_dtrace:dt_wm_return({?MODULE, Mod}, <<"finish_request">>, [0], []),
     update_stats(RD, Ctx),
     Res;
-finish_request(RD, Ctx0=#rcs_context{riak_client=RcPid,
-                                     rc_pool=Pool,
-                                     submodule=Mod,
-                                     exports_fun=ExportsFun}) ->
+finish_request(RD, #rcs_s3_context{riak_client = RcPid,
+                                   rc_pool = Pool,
+                                   submodule = Mod,
+                                   exports_fun = ExportsFun} = Ctx0) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(Pool, RcPid),
-    Ctx = Ctx0#rcs_context{riak_client=undefined},
+    Ctx = Ctx0#rcs_s3_context{riak_client=undefined},
     Res = resource_call(Mod,
                         finish_request,
                         [RD, Ctx],
@@ -403,8 +407,9 @@ finish_request(RD, Ctx0=#rcs_context{riak_client=RcPid,
 %% Helper functions
 %% ===================================================================
 
--spec authorize(#wm_reqdata{}, #rcs_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_context{}}.
-authorize(RD,Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun}) ->
+-spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+authorize(RD, #rcs_s3_context{submodule = Mod,
+                              exports_fun = ExportsFun} = Ctx) ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authorize">>),
     {Success, _, _} = R = resource_call(Mod, authorize, [RD,Ctx], ExportsFun),
     case Success of
@@ -418,8 +423,9 @@ authorize(RD,Ctx=#rcs_context{submodule=Mod, exports_fun=ExportsFun}) ->
     R.
 
 -spec authenticate(rcs_user(), riakc_obj:riakc_obj(), term(), term(), term()) ->
-                          {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, bad_auth}.
-authenticate(User, UserObj, RD, Ctx=#rcs_context{auth_module=AuthMod, submodule=Mod}, AuthData)
+          {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, bad_auth}.
+authenticate(User, UserObj, RD, #rcs_s3_context{auth_module = AuthMod,
+                                                submodule = Mod} = Ctx, AuthData)
   when User?RCS_USER.status =:= enabled ->
     riak_cs_dtrace:dt_wm_entry({?MODULE, Mod}, <<"authenticate">>, [], [atom_to_binary(AuthMod, latin1)]),
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
@@ -453,12 +459,12 @@ resource_call(Mod, Fun, Args, ExportsFun) ->
     resource_call(Mod, Fun, Args, ExportsFun(Fun)).
 
 
-post_authentication(AuthResult, RD, Ctx = #rcs_context{submodule=Mod}, AnonOk) ->
+post_authentication(AuthResult, RD, Ctx = #rcs_s3_context{submodule=Mod}, AnonOk) ->
     case post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk) of
         {false, _RD2, Ctx2} = FalseRet ->
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
                                         <<"forbidden">>, [],
-                                        [riak_cs_wm_utils:extract_name(Ctx2#rcs_context.user),
+                                        [riak_cs_wm_utils:extract_name(Ctx2#rcs_s3_context.user),
                                          <<"false">>]),
             FalseRet;
         {Rsn, _RD2, Ctx2} = Ret ->
@@ -469,15 +475,15 @@ post_authentication(AuthResult, RD, Ctx = #rcs_context{submodule=Mod}, AnonOk) -
                 end,
             riak_cs_dtrace:dt_wm_return({?MODULE, Mod},
                                         <<"forbidden">>, [Reason],
-                                        [riak_cs_wm_utils:extract_name(Ctx2#rcs_context.user),
+                                        [riak_cs_wm_utils:extract_name(Ctx2#rcs_s3_context.user),
                                         <<"true">>]),
             Ret
     end.
 
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
     %% given keyid and signature matched, proceed
-    Authorize(RD, Ctx#rcs_context{user=User,
-                                  user_object=UserObj});
+    Authorize(RD, Ctx#rcs_s3_context{user=User,
+                                     user_object=UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize, true) ->
     %% no keyid was given, proceed anonymously
     ?LOG_DEBUG("No user key"),
@@ -491,18 +497,18 @@ post_authentication({error, bad_auth}, RD, Ctx, _, _) ->
     ?LOG_DEBUG("bad_auth"),
     riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({error, reqtime_tooskewed} = Error, RD,
-                    #rcs_context{response_module = ResponseMod} = Ctx, _, _) ->
+                    #rcs_s3_context{response_module = ResponseMod} = Ctx, _, _) ->
     ?LOG_DEBUG("reqtime_tooskewed"),
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
-                    #rcs_context{response_module=ResponseMod} = Ctx, _, _) ->
+                    #rcs_s3_context{response_module=ResponseMod} = Ctx, _, _) ->
     ?LOG_DEBUG("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
 post_authentication({error, notfound}, RD, Ctx, _, _) ->
     ?LOG_DEBUG("User does not exist"),
     riak_cs_wm_utils:deny_invalid_key(RD, Ctx);
 post_authentication({error, Reason}, RD,
-                    #rcs_context{response_module=ResponseMod} = Ctx, _, _) ->
+                    #rcs_s3_context{response_module=ResponseMod} = Ctx, _, _) ->
     %% Lookup failed, basically due to disconnected stuff
     ?LOG_DEBUG("Authentication error: ~p", [Reason]),
     ResponseMod:api_error(Reason, RD, Ctx).
@@ -516,12 +522,13 @@ update_stats_inflow(RD, StatsPrefix) ->
     Key = [StatsPrefix, Method],
     riak_cs_stats:inflow(Key).
 
-update_stats(_RD, #rcs_context{stats_key=no_stats}) ->
+update_stats(_RD, #rcs_s3_context{stats_key = no_stats}) ->
     ok;
-update_stats(_RD, #rcs_context{stats_prefix=no_stats}) ->
+update_stats(_RD, #rcs_s3_context{stats_prefix = no_stats}) ->
     ok;
-update_stats(RD, #rcs_context{start_time=StartTime,
-                              stats_prefix=StatsPrefix, stats_key=StatsKey}) ->
+update_stats(RD, #rcs_s3_context{start_time = StartTime,
+                                 stats_prefix = StatsPrefix,
+                                 stats_key = StatsKey}) ->
     catch update_stats(StartTime,
                        wrq:response_code(RD),
                        StatsPrefix,
@@ -601,11 +608,11 @@ default_validate_content_checksum(RD, Ctx) ->
 default_content_types_accepted(RD, Ctx) ->
     {[], RD, Ctx}.
 
--spec default_content_types_provided(#wm_reqdata{}, #rcs_context{}) ->
+-spec default_content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) ->
           {[{string(), atom()}],
            #wm_reqdata{},
-           #rcs_context{}}.
-default_content_types_provided(RD, Ctx=#rcs_context{api=oos}) ->
+           #rcs_s3_context{}}.
+default_content_types_provided(RD, Ctx=#rcs_s3_context{api=oos}) ->
     {[{"text/plain", produce_body}], RD, Ctx};
 default_content_types_provided(RD, Ctx) ->
     {[{"application/xml", produce_body}], RD, Ctx}.
@@ -628,9 +635,9 @@ default_finish_request(RD, Ctx) ->
 default_anon_ok() ->
     true.
 
-default_produce_body(RD, Ctx=#rcs_context{submodule=Mod,
-                                          response_module=ResponseMod,
-                                          exports_fun=ExportsFun}) ->
+default_produce_body(RD, Ctx=#rcs_s3_context{submodule=Mod,
+                                             response_module=ResponseMod,
+                                             exports_fun=ExportsFun}) ->
     try
         ResponseMod:respond(
           resource_call(Mod, api_request, [RD, Ctx], ExportsFun),

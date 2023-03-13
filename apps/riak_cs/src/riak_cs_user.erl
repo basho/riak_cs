@@ -40,6 +40,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -68,15 +69,13 @@ create_user(Name, Email, KeyId, Secret) ->
             Error
     end.
 
--spec create_credentialed_user({ok, {term(), term()}}, rcs_user()) ->
-                                      {ok, rcs_user()} | {error, term()}.
 create_credentialed_user({ok, AdminCreds}, User) ->
     %% Make a call to the user request serialization service.
     StatsKey = [velvet, create_user],
     _ = riak_cs_stats:inflow(StatsKey),
     StartTime = os:timestamp(),
     Result = velvet:create_user("application/json",
-                                binary_to_list(riak_cs_json:to_json(User)),
+                                riak_cs_json:to_json(User),
                                 [{auth_creds, AdminCreds}]),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
     handle_create_user(Result, User).
@@ -124,20 +123,19 @@ update_user(User, UserObj, RcPid) ->
     handle_update_user(Result, User, UserObj, RcPid).
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user('undefined' | list(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+-spec get_user(undefined | iodata(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
-    BinKey = list_to_binary(KeyId),
-    case riak_cs_riak_client:get_user(RcPid, BinKey) of
+    BinKey = iolist_to_binary([KeyId]),
+    case catch riak_cs_riak_client:get_user(RcPid, BinKey) of
         {ok, {Obj, KeepDeletedBuckets}} ->
             {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
         Error ->
             Error
     end.
-
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
 from_riakc_obj(Obj, KeepDeletedBuckets) ->
     case riakc_obj:value_count(Obj) of
@@ -145,7 +143,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
             Value = binary_to_term(riakc_obj:get_value(Obj)),
             User = update_user_record(Value),
             Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
-            User?RCS_USER{buckets=Buckets};
+            User?RCS_USER{buckets = Buckets};
         0 ->
             error(no_value);
         N ->
@@ -216,10 +214,9 @@ update_key_secret(User=?RCS_USER{email=Email,
     User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
 
 %% @doc Strip off the user name portion of an email address
--spec display_name(string()) -> string().
+-spec display_name(binary()) -> string().
 display_name(Email) ->
-    Index = string:chr(Email, $@),
-    string:sub_string(Email, 1, Index-1).
+    hd(binary:split(Email, <<"@">>)).
 
 %% @doc Grab the whole list of Riak CS user keys.
 -spec fetch_user_keys(riak_client()) -> {ok, [binary()]} | {error, term()}.
@@ -234,11 +231,10 @@ fetch_user_keys(RcPid) ->
 %% ===================================================================
 
 %% @doc Generate a new set of access credentials for user.
--spec generate_access_creds(string()) -> {iodata(), iodata()}.
+-spec generate_access_creds(binary()) -> {iodata(), iodata()}.
 generate_access_creds(UserId) ->
-    UserBin = list_to_binary(UserId),
-    KeyId = generate_key(UserBin),
-    Secret = generate_secret(UserBin, KeyId),
+    KeyId = generate_key(UserId),
+    Secret = generate_secret(UserId, KeyId),
     {KeyId, Secret}.
 
 %% @doc Generate the canonical id for a user.
@@ -282,23 +278,17 @@ is_admin(?RCS_USER{key_id=KeyId, key_secret=KeySecret},
 is_admin(_, _) ->
     false.
 
-%% @doc Validate an email address.
--spec validate_email(string()) -> ok | {error, term()}.
 validate_email(EmailAddr) ->
-    %% @TODO More robust email address validation
-    case string:chr(EmailAddr, $@) of
-        0 ->
+    case re:run(EmailAddr, "^[a-z0-9]+[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,17}$", [caseless]) of
+        nomatch ->
             {error, invalid_email_address};
         _ ->
             ok
     end.
 
-%% @doc Update a user record from a previous version if necessary.
--spec update_user_record(rcs_user()) -> rcs_user().
-update_user_record(User=?RCS_USER{buckets=Buckets}) ->
-    User?RCS_USER{buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
-                              Bucket <- Buckets]};
-update_user_record(User=#moss_user_v1{}) ->
+update_user_record(User = ?RCS_USER{buckets = Buckets}) ->
+    User?RCS_USER{buckets = [riak_cs_bucket:update_bucket_record(Bucket) || Bucket <- Buckets]};
+update_user_record(User = #moss_user_v1{}) ->
     ?RCS_USER{name=User#moss_user_v1.name,
               display_name=User#moss_user_v1.display_name,
               email=User#moss_user_v1.email,
@@ -308,16 +298,9 @@ update_user_record(User=#moss_user_v1{}) ->
               buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
                           Bucket <- User#moss_user_v1.buckets]}.
 
-%% @doc Return a user record for the specified user name and
-%% email address.
--spec user_record(string(), string(), string(), string(), string()) -> rcs_user().
 user_record(Name, Email, KeyId, Secret, CanonicalId) ->
     user_record(Name, Email, KeyId, Secret, CanonicalId, []).
 
-%% @doc Return a user record for the specified user name and
-%% email address.
--spec user_record(string(), string(), string(), string(), string(), [cs_bucket()]) ->
-                         rcs_user().
 user_record(Name, Email, KeyId, Secret, CanonicalId, Buckets) ->
     DisplayName = display_name(Email),
     ?RCS_USER{name=Name,

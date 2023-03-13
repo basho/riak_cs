@@ -27,7 +27,7 @@
 -compile(nowarn_export_all).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
+-include("aws_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
 
 -ifdef(TEST).

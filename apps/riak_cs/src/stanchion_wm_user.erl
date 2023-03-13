@@ -40,23 +40,26 @@
              ]).
 
 -include("stanchion.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 
+-spec init(proplists:proplist()) -> {ok, #stanchion_context{}}.
 init(Config) ->
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
-    {ok, #stanchion_context{auth_bypass=AuthBypass}}.
+    {ok, #stanchion_context{auth_bypass = AuthBypass}}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
+-spec service_available(#wm_reqdata{}, #stanchion_context{}) -> {true, #wm_reqdata{}, #stanchion_context{}}.
 service_available(RD, Ctx) ->
     stanchion_wm_utils:service_available(RD, Ctx).
 
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+-spec allowed_methods(#wm_reqdata{}, #stanchion_context{}) -> {[atom()], #wm_reqdata{}, #stanchion_context{}}.
 allowed_methods(RD, Ctx) ->
     {['PUT'], RD, Ctx}.
 
 %% @doc Check that the request is from the admin user
-is_authorized(RD, Ctx=#stanchion_context{auth_bypass=AuthBypass}) ->
+-spec is_authorized(#wm_reqdata{}, #stanchion_context{}) -> {boolean(), #wm_reqdata{}, #stanchion_context{}}.
+is_authorized(RD, Ctx=#stanchion_context{auth_bypass = AuthBypass}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case stanchion_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
@@ -72,27 +75,24 @@ is_authorized(RD, Ctx=#stanchion_context{auth_bypass=AuthBypass}) ->
 
 %% @doc Set the path for the new user resource and set
 %% the Location header to generate a 201 Created response.
-%% -spec create_path(term(), term()) -> {string(), term(), term()}.
+-spec create_path(#wm_reqdata{}, #stanchion_context{}) -> {string(), #wm_reqdata{}, #stanchion_context{}}.
 create_path(RD, Ctx) ->
     {wrq:disp_path(RD), RD, Ctx}.
 
--spec content_types_accepted(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+-spec content_types_accepted(#wm_reqdata{}, #stanchion_context{}) ->
+    {[{string(), atom()}], #wm_reqdata{}, #stanchion_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{"application/json", accept_body}], RD, Ctx}.
 
 %% @doc Create a user from a POST
--spec accept_body(term(), term()) ->
-                         {true | {halt, pos_integer()},
-                          term(),
-                          term()}.
+-spec accept_body(#wm_reqdata{}, #stanchion_context{}) ->
+          {true | {halt, pos_integer()},
+           #wm_reqdata{}, #stanchion_context{}}.
 accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
     KeyId = wrq:path_info(key_id, RD),
-    %% @TODO Handle json decoding exceptions
-    ParsedBody = mochijson2:decode(Body),
-    FieldList = stanchion_wm_utils:json_to_proplist(ParsedBody),
-    case stanchion_server:update_user(KeyId, FieldList) of
+    FF = jsx:decode(Body, [{labels, atom}]),
+    case stanchion_server:update_user(KeyId, FF) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,13 +25,12 @@
 -module(riak_cs_xml).
 
 -include("riak_cs.hrl").
--include("riak_cs_api.hrl").
--include("list_objects.hrl").
+-include_lib("kernel/include/logger.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
--include_lib("xmerl/include/xmerl.hrl").
 
 %% Public API
 -export([scan/1,
@@ -39,10 +38,10 @@
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
--type attributes() :: [{atom(), string()}].
--type external_node() :: {atom(), [string()]}.
--type internal_node() :: {atom(), [internal_node() | external_node()]} |
-                         {atom(), attributes(), [internal_node() | external_node()]}.
+-type xml_attributes() :: [{atom(), string()}].
+-type xml_external_node() :: {atom(), [string()]}.
+-type xml_internal_node() :: {atom(), [xml_internal_node() | xml_external_node()]} |
+                         {atom(), xml_attributes(), [xml_internal_node() | xml_external_node()]}.
 
 %% these types should be defined in xmerl.hrl or xmerl.erl
 %% for now they're defined here for convenience.
@@ -56,15 +55,15 @@
 -export_type([xmlNode/0, xmlElement/0, xmlText/0]).
 
 %% Types for simple forms
--type tag() :: atom().
--type content() :: [element()].
--type element() :: {tag(), attributes(), content()} |
-                   {tag(), content()} |
-                   tag() |
+-type xml_tag() :: atom().
+-type xml_content() :: [xml_element()].
+-type xml_element() :: {xml_tag(), xml_attributes(), xml_content()} |
+                   {xml_tag(), xml_content()} |
+                   xml_tag() |
                    iodata() |
                    integer() |
                    float().         % Really Needed?
--type simple_form() :: content().
+-type simple_form() :: xml_content().
 
 %% ===================================================================
 %% Public API
@@ -101,14 +100,30 @@ to_xml(Resp) when is_record(Resp, list_objects_response);
 to_xml(?RCS_USER{}=User) ->
     user_record_to_xml(User);
 to_xml({users, Users}) ->
-    user_records_to_xml(Users).
+    user_records_to_xml(Users);
+to_xml(?IAM_ROLE{}=Role) ->
+    role_record_to_xml(Role);
+to_xml({roles, RR}) ->
+    role_records_to_xml(RR);
+to_xml(#create_role_response{} = R) ->
+    create_role_response_to_xml(R);
+to_xml(#get_role_response{} = R) ->
+    get_role_response_to_xml(R);
+to_xml(#delete_role_response{} = R) ->
+    delete_role_response_to_xml(R);
+to_xml(#list_roles_response{} = R) ->
+    list_roles_response_to_xml(R).
+
+
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
 export_xml(XmlDoc) ->
-    list_to_binary(xmerl:export_simple(XmlDoc, xmerl_xml, [{prolog, ?XML_PROLOG}])).
+    export_xml(XmlDoc, [{prolog, ?XML_PROLOG}]).
+export_xml(XmlDoc, Opts) ->
+    list_to_binary(xmerl:export_simple(XmlDoc, xmerl_xml, Opts)).
 
 %% @doc Convert simple form into XML.
 -spec simple_form_to_xml(simple_form()) -> iodata().
@@ -128,29 +143,16 @@ format_element(Value) ->
 
 %% @doc Convert an internal representation of an ACL into XML.
 -spec acl_to_xml(acl()) -> binary().
-acl_to_xml(Acl) ->
-    Content = [make_internal_node('Owner', owner_content(acl_owner(Acl))),
-               make_internal_node('AccessControlList', make_grants(acl_grants(Acl)))],
+acl_to_xml(?ACL{owner = Owner, grants = Grants}) ->
+    Content = [make_internal_node('Owner', owner_content(Owner)),
+               make_internal_node('AccessControlList', make_grants(Grants))],
     XmlDoc = [make_internal_node('AccessControlPolicy', Content)],
     export_xml(XmlDoc).
 
--spec acl_grants(?ACL{} | #acl_v1{}) -> [acl_grant()].
-acl_grants(?ACL{grants=Grants}) ->
-    Grants;
-acl_grants(#acl_v1{grants=Grants}) ->
-    Grants.
-
--spec acl_owner(?ACL{} | #acl_v1{}) -> {string(), string()}.
-acl_owner(?ACL{owner=Owner}) ->
-    {OwnerName, OwnerId, _} = Owner,
-    {OwnerName, OwnerId};
-acl_owner(#acl_v1{owner=Owner}) ->
-    Owner.
-
--spec owner_content({string(), string()}) -> [external_node()].
-owner_content({OwnerName, OwnerId}) ->
-    [make_external_node('ID', OwnerId),
-     make_external_node('DisplayName', OwnerName)].
+owner_content(#{display_name := Name,
+                canonical_id := Id}) ->
+    [make_external_node('ID', Id),
+     make_external_node('DisplayName', Name)].
 
 list_objects_response_to_simple_form(?LORESP{contents = Contents,
                                              common_prefixes = CommonPrefixes,
@@ -258,36 +260,24 @@ user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
     make_internal_node('Owner', [make_external_node('ID', [CanonicalId]),
                                  make_external_node('DisplayName', [Name])]).
 
--spec make_internal_node(atom(), term()) -> internal_node().
-make_internal_node(Name, Content) ->
-    {Name, Content}.
-
--spec make_internal_node(atom(), attributes(), term()) -> internal_node().
-make_internal_node(Name, Attributes, Content) ->
-    {Name, Attributes, Content}.
-
--spec make_external_node(atom(), term()) -> external_node().
-make_external_node(Name, Content) ->
-    {Name, [format_value(Content)]}.
-
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec make_grants([acl_grant()]) -> [internal_node()].
 make_grants(Grantees) ->
     make_grants(Grantees, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
--spec make_grants([acl_grant()], [[internal_node()]]) -> [internal_node()].
 make_grants([], Acc) ->
     lists:flatten(Acc);
-make_grants([{{GranteeName, GranteeId}, Perms} | RestGrantees], Acc) ->
+make_grants([?ACL_GRANT{grantee = #{display_name := GranteeName,
+                                    canonical_id := GranteeId},
+                        perms = Perms} | RestGrantees], Acc) ->
     Grantee = [make_grant(GranteeName, GranteeId, Perm) || Perm <- Perms],
     make_grants(RestGrantees, [Grantee | Acc]);
-make_grants([{Group, Perms} | RestGrantees], Acc) ->
+make_grants([?ACL_GRANT{grantee = Group,
+                        perms = Perms} | RestGrantees], Acc) ->
     Grantee = [make_grant(Group, Perm) || Perm <- Perms],
     make_grants(RestGrantees, [Grantee | Acc]).
 
 %% @doc Assemble the xml for a group grantee for an acl.
--spec make_grant(atom(), acl_perm()) -> internal_node().
 make_grant(Group, Permission) ->
     Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                   {'xsi:type', "Group"}],
@@ -298,7 +288,6 @@ make_grant(Group, Permission) ->
     make_internal_node('Grant', GrantContent).
 
 %% @doc Assemble the xml for a single grantee for an acl.
--spec make_grant(string(), string(), acl_perm()) -> internal_node().
 make_grant(DisplayName, CanonicalId, Permission) ->
     Attributes = [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                   {'xsi:type', "CanonicalUser"}],
@@ -309,35 +298,17 @@ make_grant(DisplayName, CanonicalId, Permission) ->
          make_external_node('Permission', Permission)],
     make_internal_node('Grant', GrantContent).
 
--spec format_value(atom() | integer() | binary() | list()) -> string().
-%% @doc Convert value depending on its type into strings
-format_value(undefined) ->
-    [];
-format_value(Val) when is_atom(Val) ->
-    atom_to_list(Val);
-format_value(Val) when is_binary(Val) ->
-    binary_to_list(Val);
-format_value(Val) when is_integer(Val) ->
-    integer_to_list(Val);
-format_value(Val) when is_list(Val) ->
-    Val;
-format_value(Val) when is_float(Val) ->
-    io_lib:format("~p", [Val]).
-
 %% @doc Map a ACL group atom to its corresponding URI.
--spec uri_for_group(atom()) -> string().
 uri_for_group('AllUsers') ->
     ?ALL_USERS_GROUP;
 uri_for_group('AuthUsers') ->
     ?AUTH_USERS_GROUP.
 
 %% @doc Convert a Riak CS user record to XML
--spec user_record_to_xml(rcs_user()) -> binary().
 user_record_to_xml(User) ->
     export_xml([user_node(User)]).
 
 %% @doc Convert a set of Riak CS user records to XML
--spec user_records_to_xml([rcs_user()]) -> binary().
 user_records_to_xml(Users) ->
     UserNodes = [user_node(User) || User <- Users],
     export_xml([make_internal_node('Users', UserNodes)]).
@@ -355,14 +326,151 @@ user_node(?RCS_USER{email=Email,
                     _ ->
                         "disabled"
                 end,
-    Content = [make_external_node('Email', Email),
-               make_external_node('DisplayName', DisplayName),
-               make_external_node('Name', Name),
-               make_external_node('KeyId', KeyID),
-               make_external_node('KeySecret', KeySecret),
-               make_external_node('Id', CanonicalID),
-               make_external_node('Status', StatusStr)],
+    Content = [make_external_node(K, V)
+               || {K, V} <- [{'Email', Email},
+                             {'DisplayName', DisplayName},
+                             {'Name', Name},
+                             {'KeyId', KeyID},
+                             {'KeySecret', KeySecret},
+                             {'Id', CanonicalID},
+                             {'Status', StatusStr}]],
     make_internal_node('User', Content).
+
+
+role_record_to_xml(Role) ->
+    export_xml([role_node(Role)]).
+
+role_records_to_xml(Roles) ->
+    NN = [role_node(R) || R <- Roles],
+    export_xml([make_internal_node('Roles', NN)]).
+
+role_node(?IAM_ROLE{arn = Arn,
+                    assume_role_policy_document = AssumeRolePolicyDocument,
+                    create_date = CreateDate,
+                    description = Description,
+                    max_session_duration = MaxSessionDuration,
+                    path = Path,
+                    permissions_boundary = PermissionsBoundary,
+                    role_id = RoleId,
+                    role_last_used = RoleLastUsed,
+                    role_name = RoleName}) ->
+    C = lists:flatten(
+          [[{'Arn', make_arn(Arn)} || Arn /= undefined],
+           [{'AssumeRolePolicyDocument', AssumeRolePolicyDocument} || AssumeRolePolicyDocument /= undefined],
+           {'CreateDate', binary_to_list(CreateDate)},
+           [{'Description', Description} || Description /= undefined],
+           [{'MaxSessionDuration', list_to_integer(MaxSessionDuration)} || MaxSessionDuration /= undefined],
+           {'Path', Path},
+           [{'PermissionsBoundary', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+                                     {'xsi:type', "PermissionsBoundary"}],
+             make_permission_boundary(PermissionsBoundary)} || PermissionsBoundary /= undefined],
+           {'RoleId', RoleId},
+           [{'RoleLastUsed', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+                              {'xsi:type', "RoleLastUsed"}],
+             make_role_last_used(RoleLastUsed)} || RoleLastUsed /= undefined],
+           [{'RoleName', RoleName} || RoleName /= undefined]
+          ]),
+    {'Role', [make_external_node(K, V) || {K, V} <- C]}.
+
+make_arn(BareArn) when is_list(BareArn) ->
+    BareArn;
+make_arn(?S3_ARN{provider = Provider,
+                 service = Service,
+                 region = Region,
+                 id = Id,
+                 path = Path}) ->
+    lists:flatten([Provider, Service, Region, Id, Path]).
+
+make_role_last_used(?IAM_ROLE_LAST_USED{last_used_date = LastUsedDate,
+                                        region = Region}) ->
+    [{'LastUsedDate', LastUsedDate} || LastUsedDate =/= undefined ]
+        ++ [{'Region', Region} || Region =/= undefined].
+
+make_permission_boundary(BareArn) when is_list(BareArn);
+                                       is_binary(BareArn) ->
+    make_permission_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = BareArn,
+                                                      permissions_boundary_type = "Policy"});
+make_permission_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = PermissionsBoundaryArn,
+                                                  permissions_boundary_type = PermissionsBoundaryType}) ->
+    C = [{'PermissionsBoundaryArn', make_arn(PermissionsBoundaryArn)},
+         {'PermissionsBoundaryType', PermissionsBoundaryType}
+        ],
+    C.
+
+%% make_tags(TT) ->
+%%     [make_tag(T) || T <- TT].
+%% make_tag(?IAM_TAG{key = Key,
+%%                   value = Value}) ->
+%%     {'Tag', [{'Key', [Key]}, {'Value', [Value]}]}.
+
+
+create_role_response_to_xml(#create_role_response{role = Role, request_id = RequestId}) ->
+    CreateRoleResult = role_node(Role),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'CreateRoleResult', [CreateRoleResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('CreateRoleResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+
+get_role_response_to_xml(#get_role_response{role = Role, request_id = RequestId}) ->
+    GetRoleResult = role_node(Role),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'GetRoleResult', [GetRoleResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('GetRoleResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+delete_role_response_to_xml(#delete_role_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('DeleteRoleResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+list_roles_response_to_xml(#list_roles_response{roles = RR,
+                                                request_id = RequestId,
+                                                is_truncated = IsTruncated,
+                                                marker = Marker}) ->
+    ListRolesResult =
+        lists:flatten(
+          [{'Roles', [role_node(R) || R <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ListRolesResult', ListRolesResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListRolesResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
+
+
+make_internal_node(Name, Content) ->
+    {Name, Content}.
+
+make_internal_node(Name, Attributes, Content) ->
+    {Name, Attributes, Content}.
+
+make_external_node(Name, Content) ->
+    {Name, [format_value(Content)]}.
+
+
+%% @doc Convert value depending on its type into strings
+format_value(undefined) ->
+    [];
+format_value(Val) when is_atom(Val) ->
+    atom_to_list(Val);
+format_value(Val) when is_binary(Val) ->
+    binary_to_list(Val);
+format_value(Val) when is_integer(Val) ->
+    integer_to_list(Val);
+format_value(Val) when is_list(Val) ->
+    Val;
+format_value(Val) when is_float(Val) ->
+    io_lib:format("~p", [Val]).
+
 
 %% ===================================================================
 %% Eunit tests

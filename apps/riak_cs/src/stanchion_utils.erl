@@ -1,6 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,8 +25,10 @@
 
 %% Public API
 -export([create_bucket/1,
+         create_role/1,
          create_user/1,
          delete_bucket/2,
+         delete_role/1,
          get_admin_creds/0,
          get_manifests_raw/4,
          get_pbc/0,
@@ -37,6 +40,7 @@
          delete_bucket_policy/2,
          to_bucket_name/2,
          update_user/2,
+         get_role/2,
          sha_mac/2
         ]).
 
@@ -47,6 +51,11 @@
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
+
+
+-define(ROLE_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
+-define(ROLE_ID_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
+
 
 -type riak_connect_failed() :: {riak_connect_failed, tuple()}.
 
@@ -84,13 +93,12 @@ get_pbc() ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket([{term(), term()}]) -> ok | {error, term()}.
-create_bucket(BucketFields) ->
-    Bucket = proplists:get_value(<<"bucket">>, BucketFields, <<>>),
-    BagId = proplists:get_value(<<"bag">>, BucketFields, undefined),
-    OwnerId = proplists:get_value(<<"requester">>, BucketFields, <<>>),
-    AclJson = proplists:get_value(<<"acl">>, BucketFields, []),
-    Acl = stanchion_acl_utils:acl_from_json(AclJson),
+-spec create_bucket(maps:map()) -> ok | {error, term()}.
+create_bucket(#{bucket := Bucket,
+                requester := OwnerId,
+                acl := Acl_} = FF) ->
+    Acl = riak_cs_acl:exprec_detailed(Acl_),
+    BagId = maps:get(bag, FF, undefined),
     case riak_connection() of
         {ok, Pbc} ->
             OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, Acl}, {bag, BagId}], create, Pbc),
@@ -98,7 +106,8 @@ create_bucket(BucketFields) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, create),
-                        {ok, {User, UserObj}} = get_user(OwnerId, Pbc),
+                        {ok, {UserObj, KeepDeletedBuckets}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
+                        User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
                         UpdUser = update_user_buckets(add, User, BucketRecord),
                         save_user(false, UpdUser, UserObj, Pbc);
                     {error, _} ->
@@ -110,44 +119,35 @@ create_bucket(BucketFields) ->
             Error
     end.
 
+
 bucket_record(Name, Operation) ->
     Action = case Operation of
                  create -> created;
                  delete -> deleted
              end,
-    ?RCS_BUCKET{name=binary_to_list(Name),
-                last_action=Action,
-                creation_date=riak_cs_wm_utils:iso_8601_datetime(),
-                modification_time=os:timestamp()}.
+    ?RCS_BUCKET{name = Name,
+                last_action = Action,
+                creation_date = riak_cs_wm_utils:iso_8601_datetime(),
+                modification_time = os:system_time(millisecond)}.
 
 
 %% @doc Attempt to create a new user
--spec create_user([{term(), term()}]) -> ok | {error, riak_connect_failed() | term()}.
-create_user(UserFields) ->
-    UserName = binary_to_list(proplists:get_value(<<"name">>, UserFields, <<>>)),
-    DisplayName = binary_to_list(proplists:get_value(<<"display_name">>, UserFields, <<>>)),
-    Email = proplists:get_value(<<"email">>, UserFields, <<>>),
-    KeyId = binary_to_list(proplists:get_value(<<"key_id">>, UserFields, <<>>)),
-    KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, UserFields, <<>>)),
-    CanonicalId = binary_to_list(proplists:get_value(<<"id">>, UserFields, <<>>)),
+-spec create_user(maps:map()) -> ok | {error, riak_connect_failed() | term()}.
+create_user(FF = #{email := Email, key_id := KeyId}) ->
     case riak_connection() of
         {ok, RiakPid} ->
             try
                 case email_available(Email, RiakPid) of
                     true ->
-                        User = ?MOSS_USER{name=UserName,
-                                          display_name=DisplayName,
-                                          email=binary_to_list(Email),
-                                          key_id=KeyId,
-                                          key_secret=KeySecret,
-                                          canonical_id=CanonicalId},
+                        User = exprec:frommap_rcs_user_v2(FF#{status => enabled, buckets => []}),
                         save_user(User, RiakPid);
                     {false, _} ->
                         logger:info("Refusing to create an existing user with email ~s", [Email]),
                         {error, user_already_exists}
                 end
-            catch T:E:ST ->
-                    logger:error("Error on creating user ~s: ~p. Stacktrace: ~p", [KeyId, {T, E}, ST]),
+            catch T:E ->
+                    logger:error("Error on creating user ~s (key_id: ~s): ~p",
+                                 [Email, KeyId, {T, E}]),
                     {error, {T, E}}
             after
                 close_riak_connection(RiakPid)
@@ -166,7 +166,8 @@ delete_bucket(Bucket, OwnerId) ->
                 case OpResult1 of
                     ok ->
                         BucketRecord = bucket_record(Bucket, delete),
-                        {ok, {User, UserObj}} = get_user(OwnerId, Pbc),
+                        {ok, {UserObj, KDB}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
+                        User = riak_cs_user:from_riakc_obj(UserObj, KDB),
                         UpdUser = update_user_buckets(delete, User, BucketRecord),
                         save_user(false, UpdUser, UserObj, Pbc);
                     {error, _} ->
@@ -177,6 +178,24 @@ delete_bucket(Bucket, OwnerId) ->
         Error ->
             Error
     end.
+
+-spec create_role(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
+create_role(Fields) ->
+    Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
+                riak_cs_roles:exprec_detailed(
+                  riak_cs_roles:fix_permissions_boundary(Fields)),
+    Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
+    case riak_connection() of
+        {ok, RiakPid} ->
+            try
+                save_role(Role, RiakPid)
+            after
+                close_riak_connection(RiakPid)
+            end;
+        {error, _} = Else ->
+            Else
+    end.
+
 
 %% @doc Return the credentials of the admin user
 -spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
@@ -272,19 +291,16 @@ close_riak_connection(Pid) ->
 
 %% @doc Set the ACL for a bucket
 -spec set_bucket_acl(binary(), term()) -> ok | {error, term()}.
-set_bucket_acl(Bucket, FieldList) ->
-    %% @TODO Check for missing fields
-    OwnerId = proplists:get_value(<<"requester">>, FieldList, <<>>),
-    AclJson = proplists:get_value(<<"acl">>, FieldList, []),
-    Acl = stanchion_acl_utils:acl_from_json(AclJson),
+set_bucket_acl(Bucket, #{requester := OwnerId,
+                         acl := Acl}) ->
     do_bucket_op(Bucket, OwnerId, [{acl, Acl}], update_acl).
 
 %% @doc add bucket policy in the global namespace
 %% FieldList.policy has JSON-encoded policy from user
 -spec set_bucket_policy(binary(), term()) -> ok | {error, term()}.
 set_bucket_policy(Bucket, FieldList) ->
-    OwnerId = proplists:get_value(<<"requester">>, FieldList, <<>>),
-    PolicyJson = proplists:get_value(<<"policy">>, FieldList, []),
+    OwnerId = proplists:get_value(requester, FieldList, <<>>),
+    PolicyJson = proplists:get_value(policy, FieldList, []),
 
     % @TODO: Already Checked at Riak CS, so store as it is JSON here
     % if overhead of parsing JSON were expensive, need to import
@@ -324,9 +340,9 @@ update_user(KeyId, UserFields) ->
     case riak_connection() of
         {ok, RiakPid} ->
             try
-                case get_user(KeyId, RiakPid) of
-                    {ok, {User, UserObj}} ->
-
+                case riak_cs_riak_client:get_user_with_pbc(RiakPid, KeyId) of
+                    {ok, {UserObj, KDB}} ->
+                        User = riak_cs_user:from_riakc_obj(UserObj, KDB),
                         {UpdUser, EmailUpdated} =
                             update_user_record(UserFields, User, false),
                         save_user(EmailUpdated,
@@ -732,139 +748,6 @@ save_user(false, User, UserObj, RiakPid) ->
     stanchion_stats:update([riakc, put_cs_user], TAT),
     Res.
 
-%% @doc Retrieve a Riak CS user's information based on their id string.
-get_user(undefined, _RiakPid) ->
-    {error, no_user_key};
-get_user(KeyId, RiakPid) ->
-    %% Check for and resolve siblings to get a
-    %% coherent view of the bucket ownership.
-    BinKey = iolist_to_binary(KeyId),
-    case fetch_user(BinKey, RiakPid) of
-        {ok, {Obj, KeepDeletedBuckets}} ->
-            from_riakc_obj(Obj, KeepDeletedBuckets);
-        Error ->
-            Error
-    end.
-
-from_riakc_obj(Obj, KeepDeletedBuckets) ->
-    case riakc_obj:value_count(Obj) of
-        1 ->
-            User = binary_to_term(riakc_obj:get_value(Obj)),
-            {ok, {User, Obj}};
-        0 ->
-            {error, no_value};
-        _ ->
-            Values = [binary_to_term(Value) ||
-                         Value <- riakc_obj:get_values(Obj),
-                         Value /= <<>>  % tombstone
-                     ],
-            User = hd(Values),
-            Buckets = resolve_buckets(Values, [], KeepDeletedBuckets),
-            {ok, {User?RCS_USER{buckets=Buckets}, Obj}}
-    end.
-
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
--spec fetch_user(binary(), pid()) ->
-                        {ok, {term(), boolean()}} | {error, term()}.
-fetch_user(Key, RiakPid) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    {Res0, TAT0} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, StrongOptions)),
-    stanchion_stats:update([riakc, get_cs_user_strong], TAT0),
-    case Res0 of
-        {ok, Obj} ->
-            {ok, {Obj, true}};
-        {error, _} ->
-            weak_fetch_user(Key, RiakPid)
-    end.
-
-weak_fetch_user(Key, RiakPid) ->
-    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, ?USER_BUCKET, Key, WeakOptions)),
-    stanchion_stats:update([riakc, get_cs_user], TAT),
-    case Res of
-        {ok, Obj} ->
-            {ok, {Obj, false}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-%% @doc Resolve the set of buckets for a user when
-%% siblings are encountered on a read of a user record.
--spec resolve_buckets([rcs_user()], [cs_bucket()], boolean()) ->
-                             [cs_bucket()].
-resolve_buckets([], Buckets, true) ->
-    lists:sort(fun bucket_sorter/2, Buckets);
-resolve_buckets([], Buckets, false) ->
-    lists:sort(fun bucket_sorter/2, [Bucket || Bucket <- Buckets, not cleanup_bucket(Bucket)]);
-resolve_buckets([HeadUserRec | RestUserRecs], Buckets, _KeepDeleted) ->
-    HeadBuckets = HeadUserRec?RCS_USER.buckets,
-    UpdBuckets = lists:foldl(fun bucket_resolver/2, Buckets, HeadBuckets),
-    resolve_buckets(RestUserRecs, UpdBuckets, _KeepDeleted).
-
-%% @doc Check for and resolve any conflict between
-%% a bucket record from a user record sibling and
-%% a list of resolved bucket records.
--spec bucket_resolver(cs_bucket(), [cs_bucket()]) -> [cs_bucket()].
-bucket_resolver(Bucket, ResolvedBuckets) ->
-    case lists:member(Bucket, ResolvedBuckets) of
-        true ->
-            ResolvedBuckets;
-        false ->
-            case [RB || RB <- ResolvedBuckets,
-                        RB?RCS_BUCKET.name =:=
-                            Bucket?RCS_BUCKET.name] of
-                [] ->
-                    [Bucket | ResolvedBuckets];
-                [ExistingBucket] ->
-                    case keep_existing_bucket(ExistingBucket,
-                                              Bucket) of
-                        true ->
-                            ResolvedBuckets;
-                        false ->
-                            [Bucket | lists:delete(ExistingBucket,
-                                                   ResolvedBuckets)]
-                    end
-            end
-    end.
-
-%% @doc Determine if an existing bucket from the resolution list
-%% should be kept or replaced when a conflict occurs.
--spec keep_existing_bucket(cs_bucket(), cs_bucket()) -> boolean().
-keep_existing_bucket(?RCS_BUCKET{last_action=LastAction1,
-                                  modification_time=ModTime1},
-                     ?RCS_BUCKET{last_action=LastAction2,
-                                  modification_time=ModTime2}) ->
-    if
-        LastAction1 == LastAction2
-        andalso
-        ModTime1 =< ModTime2 ->
-            true;
-        LastAction1 == LastAction2 ->
-            false;
-        ModTime1 > ModTime2 ->
-            true;
-        true ->
-            false
-    end.
-
-%% @doc Return true if the last action for the bucket
-%% is deleted and the action occurred over 24 hours ago.
--spec cleanup_bucket(cs_bucket()) -> boolean().
-cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
-    false;
-cleanup_bucket(?RCS_BUCKET{last_action=deleted,
-                            modification_time=ModTime}) ->
-    timer:now_diff(os:timestamp(), ModTime) > 86400.
-
-%% @doc Ordering function for sorting a list of bucket records
-%% according to bucket name.
--spec bucket_sorter(cs_bucket(), cs_bucket()) -> boolean().
-bucket_sorter(?RCS_BUCKET{name=Bucket1},
-              ?RCS_BUCKET{name=Bucket2}) ->
-    Bucket1 =< Bucket2.
 
 update_user_record([], User, EmailUpdated) ->
     {User, EmailUpdated};
@@ -906,10 +789,10 @@ update_user_buckets(add, User, Bucket) ->
     %% with `Bucket'.
     case [B || B <- Buckets, B?RCS_BUCKET.name =:= Bucket?RCS_BUCKET.name] of
         [] ->
-            User?RCS_USER{buckets=[Bucket | Buckets]};
+            User?RCS_USER{buckets = [Bucket | Buckets]};
         [ExistingBucket] ->
             UpdBuckets = [Bucket | lists:delete(ExistingBucket, Buckets)],
-            User?RCS_USER{buckets=UpdBuckets}
+            User?RCS_USER{buckets = UpdBuckets}
     end;
 update_user_buckets(delete, User, Bucket) ->
     Buckets = User?RCS_USER.buckets,
@@ -922,3 +805,134 @@ update_user_buckets(delete, User, Bucket) ->
             UpdBuckets = lists:delete(ExistingBucket, Buckets),
             User?RCS_USER{buckets=UpdBuckets}
     end.
+
+-spec get_role(string(), pid()) -> {ok, role()} | {error, no_value}.
+get_role(Id, RiakPid) ->
+    %% Check for and resolve siblings to get a
+    %% coherent view of the bucket ownership.
+    BinKey = iolist_to_binary(Id),
+    case fetch_object(?IAM_BUCKET, BinKey, RiakPid) of
+        {ok, {Obj, _KeepDeletedBuckets}} ->
+            role_from_riakc_obj(Obj);
+        Error ->
+            Error
+    end.
+
+role_from_riakc_obj(Obj) ->
+    case riakc_obj:value_count(Obj) of
+        1 ->
+            Role = binary_to_term(riakc_obj:get_value(Obj)),
+            {ok, Role};
+        0 ->
+            {error, no_value};
+        _ ->
+            Values = [binary_to_term(Value) ||
+                         Value <- riakc_obj:get_values(Obj),
+                         Value /= <<>>  % tombstone
+                     ],
+            Role = hd(Values),
+            {ok, Role}
+    end.
+
+
+-spec save_role(role(), pid()) -> {ok, string()} | {error, term()}.
+save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
+                            path = Path}, RiakPid) ->
+    RoleId = ensure_unique_role_id(RiakPid),
+
+    ?LOG_INFO("Saving new role \"~s\" with id ~s", [RoleName, RoleId]),
+    Role1 = Role0?IAM_ROLE{role_id = RoleId},
+
+    Indexes = [{?ROLE_NAME_INDEX, RoleName},
+               {?ROLE_ID_INDEX, RoleId},
+               {?ROLE_PATH_INDEX, Path}
+              ],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Obj = riakc_obj:update_metadata(
+            riakc_obj:new(?IAM_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
+    case Res of
+        ok ->
+            ok = stanchion_stats:update([riakc, put_cs_role], TAT),
+            {ok, RoleId};
+        {error, Reason} ->
+            logger:error("Failed to save role \"~s\": ~p", [Reason]),
+            Res
+    end.
+
+ensure_unique_role_id(RcPid) ->
+    Id = make_role_id(),
+    case fetch_object(?IAM_BUCKET, Id, RcPid) of
+        {ok, _} ->
+            ensure_unique_role_id(RcPid);
+        _ ->
+            Id
+    end.
+
+make_role_id() ->
+    fill(?ROLE_ID_LENGTH - 4, "AROA").
+fill(0, Q) ->
+    Q;
+fill(N, Q) ->
+    fill(N-1, Q ++ [lists:nth(rand:uniform(length(?ROLE_ID_CHARSET)), ?ROLE_ID_CHARSET)]).
+
+
+-spec delete_role(string()) -> ok.
+delete_role(RoleName) ->
+    case riak_connection() of
+        {ok, RiakPid} ->
+            try
+                Obj = riakc_obj:new(?IAM_BUCKET, iolist_to_binary(RoleName), ?FREE_ROLE_MARKER),
+                {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
+                case Res of
+                    ok ->
+                        stanchion_stats:update([riakc, put_cs_role], TAT);
+                    {error, Reason} ->
+                        logger:error("Failed to save deleted role object \"~s\": ~p", [Reason]),
+                        Res
+                end
+            after
+                close_riak_connection(RiakPid)
+            end;
+        {error, _} = Else ->
+            Else
+    end.
+
+
+
+%% @doc Perform an initial read attempt with R=PR=N.
+%% If the initial read fails retry using
+%% R=quorum and PR=1, but indicate that bucket deletion
+%% indicators should not be cleaned up.
+fetch_object(Bucket, Key, RiakPid) ->
+    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, Bucket, Key, StrongOptions)),
+    stanchion_stats:update([riakc, metric_for(Bucket, strong)], TAT),
+    case Res of
+        {ok, Obj} ->
+            {ok, {Obj, true}};
+        {error, _} ->
+            weak_fetch_object(Bucket, Key, RiakPid)
+    end.
+
+weak_fetch_object(Bucket, Key, RiakPid) ->
+    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, Bucket, Key, WeakOptions)),
+    stanchion_stats:update([riakc, metric_for(Bucket, weak)], TAT),
+    case Res of
+        {ok, Obj} ->
+            {ok, {Obj, false}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+metric_for(?IAM_BUCKET, strong) ->
+    get_cs_role_strong;
+metric_for(?USER_BUCKET, strong) ->
+    get_cs_user_strong;
+metric_for(?IAM_BUCKET, weak) ->
+    get_cs_role_strong;
+metric_for(?USER_BUCKET, weak) ->
+    get_cs_user.
+

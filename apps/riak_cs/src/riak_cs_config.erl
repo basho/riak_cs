@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -36,8 +36,6 @@
          enforce_multipart_part_size/0,
          gc_batch_size/0,
          get_env/3,
-         key_list_multiplier/0,
-         set_key_list_multiplier/1,
          md5_chunk_size/0,
          gc_paginated_indexes/0,
          policy_module/0,
@@ -68,11 +66,20 @@
          quota_modules/0,
          active_delete_threshold/0,
          fast_user_get/0,
-         root_host/0,
+         s3_root_host/0,
+         iam_root_host/0,
          stanchion/0,
          stanchion_subnet_and_netmask/0,
          stanchion_hosting_mode/0,
-         tussle_voss_riak_host/0
+         tussle_voss_riak_host/0,
+         saml_idp_host/0,
+         saml_idp_metadata_url/0,
+         saml_sp_privkey/0,
+         saml_sp_cert/0,
+         saml_sp_org_name/0,
+         saml_sp_org_displayname/0,
+         saml_sp_org_url/0,
+         saml_idp_cert_fingerprints/0
         ]).
 
 %% Timeouts hitting Riak
@@ -116,8 +123,7 @@
 
 -include("riak_cs_gc.hrl").
 -include("oos_api.hrl").
--include("s3_api.hrl").
--include("list_objects.hrl").
+-include("aws_api.hrl").
 
 -define(MAYBE_WARN(Bool, Msg),
         case (Bool) of
@@ -129,9 +135,6 @@
 
 -spec warnings() -> ok.
 warnings() ->
-    ?MAYBE_WARN(not riak_cs_list_objects_utils:fold_objects_for_list_keys(),
-                "`fold_objects_for_list_keys` is set as false."
-                " This will be removed at next major version."),
     ?MAYBE_WARN(anonymous_user_creation(),
                 "`anonymous_user_creation` is set as true. Set this as false"
                 " when this CS nodes is populated as public service."),
@@ -162,15 +165,13 @@ admin_creds() ->
 cs_version() ->
     get_env(riak_cs, cs_version, undefined).
 
--spec api() -> s3 | oos.
+-spec api() -> aws | oos.
 api() ->
-    api(get_env(riak_cs, rewrite_module, ?S3_API_MOD)).
+    api(get_env(riak_cs, rewrite_module, ?AWS_API_MOD)).
 
 -spec api(atom() | undefined) -> s3 | oos | undefined.
-api(?S3_API_MOD) ->
-    s3;
-api(?S3_LEGACY_API_MOD) ->
-    s3;
+api(?AWS_API_MOD) ->
+    aws;
 api(?OOS_API_MOD) ->
     oos;
 api(_) ->
@@ -204,14 +205,6 @@ enforce_multipart_part_size() ->
 gc_batch_size() ->
     get_env(riak_cs, gc_batch_size, ?DEFAULT_GC_BATCH_SIZE).
 
--spec key_list_multiplier() -> float().
-key_list_multiplier() ->
-    get_env(riak_cs, key_list_multiplier, ?KEY_LIST_MULTIPLIER).
-
--spec set_key_list_multiplier(float()) -> 'ok'.
-set_key_list_multiplier(Multiplier) ->
-    application:set_env(riak_cs, key_list_multiplier, Multiplier).
-
 -spec policy_module() -> atom().
 policy_module() ->
     get_env(riak_cs, policy_module, ?DEFAULT_POLICY_MODULE).
@@ -231,7 +224,7 @@ response_module() ->
 response_module(oos) ->
     ?OOS_RESPONSE_MOD;
 response_module(_) ->
-    ?S3_RESPONSE_MOD.
+    ?AWS_RESPONSE_MOD.
 
 -spec use_t2b_compression() -> boolean().
 use_t2b_compression() ->
@@ -400,6 +393,46 @@ set_stanchion(Host, Port, Ssl) ->
     ok.
 
 
+-spec saml_idp_host() -> string().
+saml_idp_host() ->
+    {ok, A} = application:get_env(riak_cs, saml_idp_host),
+    A.
+
+-spec saml_idp_metadata_url() -> string().
+saml_idp_metadata_url() ->
+    {ok, A} = application:get_env(riak_cs, saml_idp_metadata_url),
+    A.
+
+-spec saml_sp_privkey() -> string().
+saml_sp_privkey() ->
+    {ok, A} = application:get_env(riak_cs, saml_sp_privkey),
+    A.
+
+-spec saml_sp_cert() -> string().
+saml_sp_cert() ->
+    {ok, A} = application:get_env(riak_cs, saml_sp_cert),
+    A.
+
+-spec saml_sp_org_name() -> string().
+saml_sp_org_name() ->
+    {ok, A} = application:get_env(riak_cs, saml_sp_org_name),
+    A.
+
+-spec saml_sp_org_displayname() -> string().
+saml_sp_org_displayname() ->
+    {ok, A} = application:get_env(riak_cs, saml_sp_org_displayname),
+    A.
+
+-spec saml_sp_org_url() -> string().
+saml_sp_org_url() ->
+    {ok, A} = application:get_env(riak_cs, saml_sp_org_url),
+    A.
+
+-spec saml_idp_cert_fingerprints() -> [string()].
+saml_idp_cert_fingerprints() ->
+    {ok, A} = application:get_env(riak_cs, saml_idp_cert_fingerprints),
+    string:split(A, " ").
+
 %% @doc This options is useful for use case involving high churn and
 %% concurrency on a fixed set of keys and when not using a Riak
 %% version >= 2.0.0 with DVVs enabled. It helps to avoid sibling
@@ -443,9 +476,13 @@ active_delete_threshold() ->
 fast_user_get() ->
     get_env(riak_cs, fast_user_get, false).
 
--spec root_host() -> string().
-root_host() ->
-    get_env(riak_cs, cs_root_host, ?ROOT_HOST).
+-spec s3_root_host() -> string().
+s3_root_host() ->
+    get_env(riak_cs, s3_root_host, ?S3_ROOT_HOST).
+
+-spec iam_root_host() -> string().
+iam_root_host() ->
+    get_env(riak_cs, iam_root_host, ?IAM_ROOT_HOST).
 
 -spec stanchion_hosting_mode() -> auto | riak_cs_only | stanchion_only | riak_cs_with_stanchion.
 stanchion_hosting_mode() ->

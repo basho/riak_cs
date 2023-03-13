@@ -60,7 +60,7 @@
                 block_size :: pos_integer(),
                 caller :: reference(),
                 uuid :: binary(),
-                md5 :: crypto:hash_state() | digest(),
+                md5 :: crypto:hash_state() | binary(),
                 reported_md5 :: undefined | string(),
                 reply_pid :: undefined | {pid(), reference()},
                 riak_client :: riak_client(),

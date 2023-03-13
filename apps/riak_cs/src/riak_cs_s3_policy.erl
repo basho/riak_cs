@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -42,7 +42,6 @@
         ]).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
 -include_lib("webmachine/include/wm_reqdata.hrl").
 -include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -63,10 +62,6 @@
         ]).
 -endif.
 
--type policy1() :: ?POLICY{}.
-
--export_type([policy1/0]).
-
 -define(AMZ_POLICY_OLD_VERSION, <<"2008-10-17">>).
 -define(AMZ_DEFAULT_VERSION, <<"2012-10-17">>).
 -define(POLICY_UNDEF, {error, policy_undefined}).
@@ -78,14 +73,14 @@
 %% @doc evaluates the policy and returns the policy allows, denies or
 %% not says nothing about this access. Usually in case of undefined,
 %% the owner access must be accepted and others must be refused.
--spec eval(access(), policy1() | undefined | binary() ) -> boolean() | undefined.
+-spec eval(access(), amz_policy() | undefined | binary() ) -> boolean() | undefined.
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
     case policy_from_json(JSON) of
         {ok, Policy} ->  eval(Access, Policy);
         {error, _} = E -> E
     end;
-eval(Access, ?POLICY{statement=Stmts} = Policy) ->
+eval(Access, ?AMZ_POLICY{statement=Stmts} = Policy) ->
     case check_version(Policy) of
         true -> aggregate_evaluation(Access, Stmts);
         false -> false
@@ -101,20 +96,20 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 
 % @doc  semantic validation of policy
--spec check_policy(access(), policy1()) -> ok | {error, atom()}.
+-spec check_policy(access(), amz_policy()) -> ok | {error, atom()}.
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
 
     case check_version(Policy) of
-        false -> {error, {malformed_policy_version, Policy?POLICY.version}};
+        false -> {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
         true ->
             case check_all_resources(B, Policy) of
                 false -> {error, malformed_policy_resource};
                 true ->
-                    case check_principals(Policy?POLICY.statement) of
+                    case check_principals(Policy?AMZ_POLICY.statement) of
                         false -> {error, malformed_policy_principal};
                         true ->
-                            case check_actions(Policy?POLICY.statement) of
+                            case check_actions(Policy?AMZ_POLICY.statement) of
                                 false -> {error, malformed_policy_action};
                                 true -> ok
                             end
@@ -122,12 +117,12 @@ check_policy(#access_v1{bucket=B} = _Access,
             end
     end.
 
--spec check_version(policy1()) -> boolean().
-check_version(?POLICY{version = ?AMZ_DEFAULT_VERSION}) ->
+-spec check_version(amz_policy()) -> boolean().
+check_version(?AMZ_POLICY{version = ?AMZ_DEFAULT_VERSION}) ->
     true;
-check_version(?POLICY{version = ?AMZ_POLICY_OLD_VERSION}) ->
+check_version(?AMZ_POLICY{version = ?AMZ_POLICY_OLD_VERSION}) ->
     true;
-check_version(?POLICY{version = Version}) ->
+check_version(?AMZ_POLICY{version = Version}) ->
     logger:info("unknown version: ~p", [Version]),
     false.
 
@@ -170,7 +165,7 @@ check_principal([_|T]) ->
     check_principal(T).
 
 % @doc check if the policy is set to proper bucket by checking arn
-check_all_resources(BucketBin, ?POLICY{statement=Stmts} = _Policy) ->
+check_all_resources(BucketBin, ?AMZ_POLICY{statement = Stmts} = _Policy) ->
     CheckFun = fun(Stmt) ->
                        check_all_resources(BucketBin, Stmt)
                end,
@@ -198,10 +193,11 @@ reqdata_to_access(RD, Target, ID) ->
             key    = Key
            }.
 
--spec policy_from_json(JSON::binary()) -> {ok, policy1()} | {error, term()}.
+-spec policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
 policy_from_json(JSON) ->
+    ?LOG_DEBUG("Policy JSON ~p", [JSON]),
     %% TODO: stop using exception and start some monadic validation and parsing.
-    case catch(mochijson2:decode(JSON)) of
+    case catch(jsx:decode(JSON)) of
         {struct, Pairs} ->
             Version = proplists:get_value(<<"Version">>, Pairs),
             ID      = proplists:get_value(<<"Id">>, Pairs),
@@ -219,13 +215,13 @@ policy_from_json(JSON) ->
                       Stmts ->
                          case {Version, ID} of
                              {undefined, <<"undefined">>} ->
-                                 {ok, ?POLICY{statement=Stmts}};
+                                 {ok, ?AMZ_POLICY{statement = Stmts}};
                              {undefined, _} ->
-                                 {ok, ?POLICY{id=ID, statement=Stmts}};
+                                 {ok, ?AMZ_POLICY{id = ID, statement = Stmts}};
                              {_, <<"undefined">>} ->
-                                 {ok, ?POLICY{version=Version, statement=Stmts}};
+                                 {ok, ?AMZ_POLICY{version = Version, statement = Stmts}};
                              _ ->
-                                 {ok, ?POLICY{id=ID, version=Version, statement=Stmts}}
+                                 {ok, ?AMZ_POLICY{id = ID, version = Version, statement = Stmts}}
                          end
                  end;
         {error, _Reason} = E ->
@@ -235,11 +231,11 @@ policy_from_json(JSON) ->
             {error, malformed_policy_json}
     end.
 
--spec policy_to_json_term(policy1()) -> JSON::binary().
-policy_to_json_term( ?POLICY{ version = Version,
-                              id = ID, statement = Stmts0})
-  when Version =:= ?AMZ_POLICY_OLD_VERSION
-       orelse Version =:= ?AMZ_DEFAULT_VERSION ->
+-spec policy_to_json_term(amz_policy()) -> JSON::binary().
+policy_to_json_term(?AMZ_POLICY{version = Version,
+                                id = ID, statement = Stmts0})
+  when Version =:= ?AMZ_POLICY_OLD_VERSION;
+       Version =:= ?AMZ_DEFAULT_VERSION ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     % hope no unicode included
     Policy = [{"Version", Version},{"Id", ID},{"Statement",Stmts}],
@@ -255,7 +251,7 @@ supported_bucket_action() -> ?SUPPORTED_BUCKET_ACTION.
 %% @doc put required atoms into atom table
 %% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
 -spec log_supported_actions() -> ok.
-log_supported_actions()->
+log_supported_actions() ->
     logger:info("supported object actions: ~p",
                 [lists:map(fun atom_to_list/1, supported_object_action())]),
     logger:info("supported bucket actions: ~p",
@@ -263,7 +259,7 @@ log_supported_actions()->
     ok.
 
 %% @doc Fetch the policy for a bucket
--type policy_from_meta_result() :: {'ok', policy()} | {'error', 'policy_undefined'}.
+-type policy_from_meta_result() :: {'ok', amz_policy()} | {'error', 'policy_undefined'}.
 -type bucket_policy_result() :: policy_from_meta_result() |
                                 {'error', 'notfound'} |
                                 {'error', 'multiple_bucket_owners'}.
@@ -297,7 +293,7 @@ bucket_policy(BucketObj) ->
 %% value. Instead the fact that the bucket has siblings is logged, but the
 %% condition should be rare so we avoid updating the value at this time.
 -spec bucket_policy_from_contents(binary(), riakc_obj:contents()) ->
-                                         bucket_policy_result().
+          bucket_policy_result().
 bucket_policy_from_contents(_, [{MD, _}]) ->
     MetaVals = dict:fetch(?MD_USERMETA, MD),
     policy_from_meta(MetaVals);
@@ -305,11 +301,12 @@ bucket_policy_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
     UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
+    ?LOG_DEBUG("UserMetas ~p", [UserMetas]),
     riak_cs_bucket:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
 -spec resolve_bucket_metadata(list(riakc_obj:metadata()),
-                               list(riakc_obj:value())) -> bucket_policy_result().
+                              list(riakc_obj:value())) -> bucket_policy_result().
 resolve_bucket_metadata(Metas, [_Val]) ->
     Policies = [policy_from_meta(M) || M <- Metas],
     resolve_bucket_policies(Policies);
@@ -327,7 +324,7 @@ resolve_bucket_policies(Policies) ->
 newer_policy(Policy1, ?POLICY_UNDEF) ->
     Policy1;
 newer_policy({ok, Policy1}, {ok, Policy2})
-  when Policy1?POLICY.creation_time >= Policy2?POLICY.creation_time ->
+  when Policy1?AMZ_POLICY.creation_time >= Policy2?AMZ_POLICY.creation_time ->
     {ok, Policy1};
 newer_policy(_, Policy2) ->
     Policy2.

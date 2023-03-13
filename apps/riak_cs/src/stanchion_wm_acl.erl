@@ -102,11 +102,9 @@ to_json(RD, Ctx) ->
 accept_body(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     Body = wrq:req_body(RD),
-    %% @TODO Handle json decoding exceptions
-    ParsedBody = mochijson2:decode(Body),
-    FieldList = stanchion_wm_utils:json_to_proplist(ParsedBody),
-    case stanchion_server:set_bucket_acl(Bucket,
-                                        FieldList) of
+    FF = #{acl := AclMap} = jsx:decode(Body, [{labels, atom}]),
+    case stanchion_server:set_bucket_acl(
+           Bucket, FF#{acl => riak_cs_acl:exprec_detailed(AclMap)}) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -30,8 +30,12 @@
          set_bucket_policy/4,
          set_bucket_versioning/4,
          delete_bucket_policy/3,
-         update_user/4
+         update_user/4,
+         create_role/3,
+         delete_role/2
         ]).
+
+-include_lib("kernel/include/logger.hrl").
 
 -define(MAX_REQUEST_RETRIES, 3).
 
@@ -231,6 +235,7 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
                     pos_integer()) ->
                            ok | {error, term()}.
 update_bucket(Path, ContentType, Doc, Options, Expect) ->
+    ?LOG_DEBUG("Doc: ~p", [Doc]),
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Headers0 = [{"Content-Md5", content_md5(Doc)},
                 {"Date", httpd_util:rfc1123_date()}],
@@ -268,6 +273,63 @@ buckets_path(Bucket, policy) ->
     stringy([buckets_path(Bucket), "/policy"]);
 buckets_path(Bucket, versioning) ->
     stringy([buckets_path(Bucket), "/versioning"]).
+
+
+
+-spec create_role(string(), string(), proplists:proplist()) -> {ok, string()} | {error, term()}.
+create_role(ContentType, Doc, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = roles_path([]),
+    Headers0 = [{"Content-Md5", content_md5(Doc)},
+                {"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('POST',
+                                               ContentType,
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(post, Path, [201], ContentType, Headers, Doc) of
+        {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
+            RoleId = RespBody,
+            {ok, RoleId};
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec delete_role(string(), proplists:proplist()) -> ok | {error, term()}.
+delete_role(Id, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = roles_path(Id),
+    Headers0 = [{"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('DELETE',
+                                               "",
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(delete, Path, [204], Headers) of
+        {ok, {{_, 204, _}, _RespHeaders, _}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 
 %% @doc send an HTTP request where `Expect' is a list
 %% of expected HTTP status codes.
@@ -322,7 +384,7 @@ url(Ip, Port, Ssl, Path) ->
 
 %% @doc Calculate an MD5 hash of a request body.
 content_md5(Body) ->
-    base64:encode_to_string(riak_cs_utils:md5(list_to_binary(Body))).
+    base64:encode_to_string(riak_cs_utils:md5(Body)).
 
 %% @doc Construct a MOSS authentication header
 auth_header(HttpVerb, ContentType, Headers, Path, {AuthKey, AuthSecret}) ->
@@ -339,10 +401,14 @@ requester_qs(Requester) ->
     "?requester=" ++
         mochiweb_util:quote_plus(Requester).
 
-%% @doc Assemble the path for a users request
 users_path(User) ->
     stringy(["/users",
              ["/" ++ User || User /= []]
+            ]).
+
+roles_path(Role) ->
+    stringy(["/roles",
+             ["/" ++ Role || Role /= []]
             ]).
 
 stringy(List) ->

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -40,5 +40,7 @@ dispatch_table() ->
      {["buckets", bucket], stanchion_wm_bucket, [{auth_bypass, AuthBypass}]},
      {["users", key_id], stanchion_wm_user, [{auth_bypass, AuthBypass}]},
      {["users"], stanchion_wm_users, [{auth_bypass, AuthBypass}]},
+     {["roles", role_id], stanchion_wm_roles, [{auth_bypass, AuthBypass}]},
+     {["roles"], stanchion_wm_roles, [{auth_bypass, AuthBypass}]},
      {["stats"], stanchion_wm_stats, [{auth_bypass, AuthBypass}]}
     ].

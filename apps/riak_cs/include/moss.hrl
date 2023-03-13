@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,6 +28,7 @@
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v2).
 
+%% User
 -record(moss_user, { name :: string()
                    , key_id :: string()
                    , key_secret :: string()
@@ -49,7 +50,7 @@
                      , key_id :: string()
                      , key_secret :: string()
                      , canonical_id :: string()
-                     , buckets=[] :: [cs_bucket()]
+                     , buckets = [] :: [cs_bucket()]
                      , status = enabled :: enabled | disabled
                      }).
 
@@ -57,7 +58,7 @@
 -type rcs_user() :: #rcs_user_v2{} | #moss_user_v1{}.
 
 
-
+%% Bucket
 -record(moss_bucket, { name :: string()
                      , creation_date :: term()
                      , acl :: acl()}).
@@ -65,7 +66,7 @@
 -record(moss_bucket_v1, { name :: string() | binary()
                         , last_action :: undefined | created | deleted
                         , creation_date :: undefined | string()
-                        , modification_time :: undefined | erlang:timestamp()
+                        , modification_time :: undefined | non_neg_integer()
                         , acl :: undefined | acl()
                         }).
 
@@ -84,20 +85,5 @@
                            }).
 -type bucket_versioning() :: #bucket_versioning{}.
 
-
--define(USER_BUCKET, <<"moss.users">>).
--define(ACCESS_BUCKET, <<"moss.access">>).
--define(STORAGE_BUCKET, <<"moss.storage">>).
--define(BUCKETS_BUCKET, <<"moss.buckets">>).
--define(SERVICE_BUCKET, <<"moss.service">>).
--define(GC_BUCKET, <<"riak-cs-gc">>).
--define(FREE_BUCKET_MARKER, <<"0">>).
-
--define(MD_BAG, <<"X-Rcs-Bag">>).
--define(MD_ACL, <<"X-Moss-Acl">>).
--define(MD_POLICY, <<"X-Rcs-Policy">>).
--define(MD_VERSIONING, <<"X-Rcs-Versioning">>).
-
--define(STANCHION_DETAILS_KEY, <<"stanchion">>).
 
 -endif.

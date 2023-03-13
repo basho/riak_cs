@@ -24,7 +24,7 @@
 -module(riak_cs_list_objects).
 
 -include("riak_cs.hrl").
--include("list_objects.hrl").
+-include("riak_cs_web.hrl").
 
 %% API
 -export([new_request/2,
@@ -161,10 +161,7 @@ manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
 %% Internal functions
 %% ====================================================================
 
--spec acl_to_owner(acl()) -> list_objects_owner().
-acl_to_owner(?ACL{owner=Owner}) ->
-    {DisplayName, CanonicalId, _KeyId} = Owner,
-    CanonicalIdBinary = list_to_binary(CanonicalId),
-    DisplayNameBinary = list_to_binary(DisplayName),
-    #list_objects_owner{id = CanonicalIdBinary,
-                        display_name = DisplayNameBinary}.
+acl_to_owner(?ACL{owner = #{display_name := DisplayName,
+                            canonical_id := CanonicalId}}) ->
+    #list_objects_owner{id = CanonicalId,
+                        display_name = DisplayName}.

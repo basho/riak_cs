@@ -35,8 +35,6 @@
          xml_error_code/1]).
 
 -include("riak_cs.hrl").
--include("riak_cs_api.hrl").
--include("list_objects.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -75,6 +73,8 @@ error_message(entity_too_small) ->
     "Your proposed upload is smaller than the minimum allowed object size. Each part must be at least 5 MB in size, except the last part.";
 error_message(invalid_user_update) ->
     "The user update you requested was invalid.";
+error_message(invalid_role_parameters) ->
+    "Incomplete or invalid role parameters.";
 error_message(no_such_bucket) ->
     "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
@@ -112,6 +112,8 @@ error_message(invalid_part_number) -> "Part number must be an integer between 1 
 error_message(unexpected_content) -> "This request does not support content";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
 error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
+error_message(no_such_role) -> "No such role";
+error_message(unsupported_iam_action) -> "Action not supported";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(disconnected) -> "Please contact administrator.";
 error_message(stanchion_recovery_failure) -> "Bucket and user operations are temporarily unavailable because the node running stanchion is currently unreachable. Please report this to your administrator.";
@@ -164,6 +166,8 @@ error_code(unexpected_content) -> "UnexpectedContent";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(malformed_xml) -> "MalformedXML";
+error_code(no_such_role) -> "NoSuchEntity";
+error_code(unsupported_iam_action) -> "InvalidAction";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(disconnected) -> "ServiceUnavailable";
 error_code(stanchion_recovery_failure) -> "ServiceDegraded";
@@ -224,6 +228,8 @@ status_code(unexpected_content)            -> 400;
 status_code(canned_acl_and_header_grant)   -> 400;
 status_code(malformed_acl_error)           -> 400;
 status_code(malformed_xml)                 -> 400;
+status_code(no_such_role)                  -> 404;
+status_code(unsupported_iam_action)        -> 400;
 status_code(remaining_multipart_upload)    -> 409;
 status_code(disconnected)                  -> 500;
 status_code(not_implemented)               -> 501;
@@ -231,8 +237,8 @@ status_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
     503.
 
--spec respond(term(), #wm_reqdata{}, #rcs_context{}) ->
-                     {binary(), #wm_reqdata{}, #rcs_context{}}.
+-spec respond(term(), #wm_reqdata{}, #rcs_s3_context{}) ->
+                     {binary(), #wm_reqdata{}, #rcs_s3_context{}}.
 respond(?LBRESP{} = Response, RD, Ctx) ->
     {riak_cs_xml:to_xml(Response), RD, Ctx};
 respond({ok, ?LORESP{} = Response}, RD, Ctx) ->
@@ -304,7 +310,7 @@ error_resource(Tag, RD)
     end;
 
 error_resource(_Tag, RD) ->
-    {OrigResource, _} = riak_cs_s3_rewrite:original_resource(RD),
+    {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
     OrigResource.
 
 toomanybuckets_response(Current, BucketLimit, RD, Ctx) ->

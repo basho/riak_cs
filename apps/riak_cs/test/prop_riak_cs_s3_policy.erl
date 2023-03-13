@@ -31,7 +31,7 @@
          date_condition/0]).
 
 -include("riak_cs.hrl").
--include("s3_api.hrl").
+-include("aws_api.hrl").
 -include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 

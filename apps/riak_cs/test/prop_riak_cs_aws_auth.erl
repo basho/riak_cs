@@ -19,7 +19,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(prop_riak_cs_s3_auth).
+-module(prop_riak_cs_aws_auth).
 
 -include("riak_cs.hrl").
 -include_lib("proper/include/proper.hrl").
@@ -45,7 +45,7 @@ prop_v2_auth() ->
     ?FORALL(Request, gen_request(RootHost),
             begin
                 {KeyData, KeySecret, RD} = Request,
-                SignedString = riak_cs_s3_auth:calculate_signature_v2(KeySecret, RD),
+                SignedString = riak_cs_aws_auth:calculate_signature_v2(KeySecret, RD),
                 CSAuthHeader = ["AWS ", KeyData, $:, list_to_binary(SignedString)],
 
                 ErlCloudAuthHeader = erlcloud_hdr(KeyData, KeySecret, RD),

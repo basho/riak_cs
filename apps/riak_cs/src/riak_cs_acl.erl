@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -46,7 +46,8 @@
          bucket_acl_from_contents/2,
          object_access/5,
          object_access/6,
-         owner_id/2
+         owner_id/2,
+         exprec_detailed/1
         ]).
 
 -define(ACL_UNDEF, {error, acl_undefined}).
@@ -91,14 +92,14 @@ anonymous_bucket_access(_Bucket, RequestedAccess, RcPid, BucketAcl) ->
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
 -spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client()) ->
-                                     {true, string()} |
-                                     false.
+          {true, string()} |
+          false.
 anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid) ->
     anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid, undefined).
 
 
 -spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client(), acl()|undefined) ->
-                                     {true, string()} | false.
+          {true, string()} | false.
 anonymous_object_access(_BucketObj, _ObjAcl, undefined, _, _) ->
     false;
 anonymous_object_access(BucketObj, ObjAcl, 'WRITE', RcPid, undefined) ->
@@ -182,8 +183,8 @@ fetch_bucket_acl(Bucket, RcPid) ->
         {ok, Obj} ->
             bucket_acl(Obj);
         {error, Reason} ->
-            ?LOG_DEBUG("Failed to fetch ACL. Bucket ~p does not exist. Reason: ~p",
-                       [Bucket, Reason]),
+            logger:warning("Failed to fetch ACL. Bucket ~p does not exist. Reason: ~p",
+                           [Bucket, Reason]),
             {error, notfound}
     end.
 
@@ -201,8 +202,6 @@ bucket_acl(BucketObj) ->
 %% We attempt resolution, but intentionally do not write back a resolved
 %% value. Instead the fact that the bucket has siblings is logged, but the
 %% condition should be rare so we avoid updating the value at this time.
--spec bucket_acl_from_contents(binary(), riakc_obj:contents()) ->
-                                      bucket_acl_result().
 bucket_acl_from_contents(_, [{MD, _}]) ->
     MetaVals = dict:fetch(?MD_USERMETA, MD),
     acl_from_meta(MetaVals);
@@ -213,22 +212,17 @@ bucket_acl_from_contents(Bucket, Contents) ->
     riak_cs_bucket:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
--spec resolve_bucket_metadata(list(riakc_obj:metadata()),
-                               list(riakc_obj:value())) -> bucket_acl_result().
 resolve_bucket_metadata(Metas, [_Val]) ->
     Acls = [acl_from_meta(M) || M <- Metas],
     resolve_bucket_acls(Acls);
 resolve_bucket_metadata(_Metas, _) ->
     {error, multiple_bucket_owners}.
 
--spec resolve_bucket_acls(list(acl_from_meta_result())) -> acl_from_meta_result().
 resolve_bucket_acls([Acl]) ->
     Acl;
 resolve_bucket_acls(Acls) ->
     lists:foldl(fun newer_acl/2, ?ACL_UNDEF, Acls).
 
--spec newer_acl(acl_from_meta_result(), acl_from_meta_result()) ->
-                       acl_from_meta_result().
 newer_acl(Acl1, ?ACL_UNDEF) ->
     Acl1;
 newer_acl({ok, Acl1}, {ok, Acl2})
@@ -241,14 +235,14 @@ newer_acl(_, Acl2) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client())
-                   -> boolean() | {true, string()}.
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client()) ->
+          boolean() | {true, string()}.
 object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid) ->
     object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, undefined).
 
 
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client(), undefined|acl())
-                   -> boolean() | {true, string()}.
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client(), undefined|acl()) ->
+          boolean() | {true, string()}.
 object_access(_BucketObj, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
 object_access(_BucketObj, _ObjAcl, _RequestedAccess, undefined, _RcPid, _) ->
@@ -279,13 +273,10 @@ object_access(_BucketObj, _ObjAcl, 'WRITE', CanonicalId, RcPid, BucketAcl) ->
             false
     end;
 object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
-    ?LOG_DEBUG("ObjAcl: ~p; CanonicalId: ~p", [ObjAcl, CanonicalId]),
     IsObjOwner = is_owner(ObjAcl, CanonicalId),
     HasObjPerm = has_permission(acl_grants(ObjAcl),
                                 RequestedAccess,
                                 CanonicalId),
-    ?LOG_DEBUG("IsObjOwner: ~p", [IsObjOwner]),
-    ?LOG_DEBUG("HasObjPerm: ~p", [HasObjPerm]),
     if
         (RequestedAccess == 'READ_ACP' orelse
          RequestedAccess == 'WRITE_ACP') andalso
@@ -304,10 +295,9 @@ object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
 
 %% @doc Get the canonical id of the owner of an entity.
 -spec owner_id(acl(), riak_client()) -> string().
-owner_id(?ACL{owner=Owner}, _) ->
-    {_, _, OwnerId} = Owner,
-    OwnerId;
-owner_id(#acl_v1{owner=OwnerData}, RcPid) ->
+owner_id(?ACL{owner = #{key_id := OwnerKeyId}}, _) ->
+    OwnerKeyId;
+owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
     {Name, CanonicalId} = OwnerData,
     case riak_cs_user:get_user_by_index(?ID_INDEX,
                                         list_to_binary(CanonicalId),
@@ -319,6 +309,22 @@ owner_id(#acl_v1{owner=OwnerData}, RcPid) ->
             []
     end.
 
+exprec_detailed(Map) ->
+    Acl0 = ?ACL{grants = GG0} = exprec:frommap_acl_v3(Map),
+    GG = [exprec_grant(G) || G <- GG0],
+    Acl0?ACL{grants = GG}.
+exprec_grant(Map) ->
+    G0 = ?ACL_GRANT{perms = Perms0,
+                    grantee = Grantee0} = exprec:frommap_acl_grant_v2(Map),
+    G0?ACL_GRANT{perms = [binary_to_existing_atom(P, latin1) || P <- Perms0],
+                 grantee = case Grantee0 of
+                               #{} ->
+                                   Grantee0;
+                               GroupGrantee ->
+                                   binary_to_existing_atom(GroupGrantee, latin1)
+                           end
+                }.
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -326,7 +332,6 @@ owner_id(#acl_v1{owner=OwnerData}, RcPid) ->
 %% @doc Find the ACL in a list of metadata values and
 %% convert it to an erlang term representation. Return
 %% `undefined' if an ACL is not found.
--spec acl_from_meta([{string(), term()}]) -> acl_from_meta_result().
 acl_from_meta([]) ->
     ?ACL_UNDEF;
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
@@ -346,7 +351,7 @@ acl_grants(#acl_v1{grants=Grants}) ->
 -spec group_grants([acl_grant()], [acl_grant()]) -> [acl_grant()].
 group_grants([], GroupGrants) ->
     GroupGrants;
-group_grants([HeadGrant={Grantee, _} | RestGrants],
+group_grants([HeadGrant = ?ACL_GRANT{grantee = Grantee} | RestGrants],
              GroupGrants) when is_atom(Grantee) ->
     group_grants(RestGrants, [HeadGrant | GroupGrants]);
 group_grants([_ | RestGrants], _GroupGrants) ->
@@ -370,7 +375,8 @@ has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
 -spec has_permission([acl_grant()], atom()) -> boolean().
 has_permission(Grants, RequestedAccess) ->
     GroupGrants = group_grants(Grants, []),
-    case [Perms || {Grantee, Perms} <- GroupGrants,
+    case [Perms || ?ACL_GRANT{grantee = Grantee,
+                              perms = Perms} <- GroupGrants,
                    Grantee =:= 'AllUsers'] of
         [] ->
             false;
@@ -386,19 +392,21 @@ has_permission(Grants, RequestedAccess, CanonicalId) ->
     case user_grant(Grants, CanonicalId) of
         undefined ->
             has_group_permission(GroupGrants, RequestedAccess);
-        {_, Perms} ->
+        ?ACL_GRANT{perms = Perms} ->
             check_permission(RequestedAccess, Perms) orelse
                 has_group_permission(GroupGrants, RequestedAccess)
     end.
 
 %% @doc Determine if a user is the owner of a system entity.
 -spec is_owner(acl(), string()) -> boolean().
-is_owner(?ACL{owner={_, CanonicalId, _}}, CanonicalId) ->
+is_owner(?ACL{owner = #{canonical_id := CanonicalId}}, CanonicalId) ->
     true;
 is_owner(?ACL{}, _) ->
     false;
 is_owner(#acl_v1{owner={_, CanonicalId}}, CanonicalId) ->
     true;
+%% is_owner(#acl_v2{owner={_, CanonicalId, _}}, CanonicalId) ->
+%%     true;
 is_owner(#acl_v1{}, _) ->
     false.
 
@@ -420,9 +428,9 @@ check_permission(_Permission, [_ | RestPerms]) ->
 -spec user_grant([acl_grant()], string()) -> undefined | acl_grant().
 user_grant([], _) ->
     undefined;
-user_grant([{Grantee, _} | RestGrants], _CanonicalId) when is_atom(Grantee) ->
-    user_grant(RestGrants, _CanonicalId);
-user_grant([HeadGrant={{_, CanonicalId}, _} | _], CanonicalId) ->
+user_grant([?ACL_GRANT{grantee = Grantee} | RestGrants], CanonicalId) when is_atom(Grantee) ->
+    user_grant(RestGrants, CanonicalId);
+user_grant([HeadGrant=?ACL_GRANT{grantee = #{canonical_id := CanonicalId}} | _], CanonicalId) ->
     HeadGrant;
 user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).
