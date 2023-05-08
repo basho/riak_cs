@@ -104,7 +104,7 @@ accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
     FF = #{acl := AclMap} = jsx:decode(Body, [{labels, atom}]),
     case stanchion_server:set_bucket_acl(
-           Bucket, FF#{acl => riak_cs_acl:exprec_detailed(AclMap)}) of
+           Bucket, FF#{acl => riak_cs_acl:exprec_acl(AclMap)}) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

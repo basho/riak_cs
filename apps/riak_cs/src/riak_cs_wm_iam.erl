@@ -250,7 +250,7 @@ do_action("CreateRole",
     case riak_cs_roles:create_role(Specs) of
         {ok, RoleId} ->
             Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-                riak_cs_roles:exprec_detailed(
+                riak_cs_roles:exprec_role(
                   riak_cs_roles:fix_permissions_boundary(Specs)),
             Role = Role_?IAM_ROLE{assume_role_policy_document = binary_to_list(base64:decode(A)),
                                   role_id = RoleId},
@@ -328,13 +328,11 @@ do_action("CreateSAMLProvider",
               lists:foldl(fun create_saml_provider_fields_filter/2, #{}, Form)),
 
     case riak_cs_roles:create_saml_provider(Specs) of
-        ok ->
+        {ok, Arn} ->
             RequestId = make_request_id(),
             logger:info("Created SAML provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
-            Provider = ?IAM_SAML_PROVIDER{} =
-                exprec:frommap_saml_provider(Specs),
             Doc = riak_cs_xml:to_xml(
-                    #create_saml_provider_response{provider = Provider,
+                    #create_saml_provider_response{saml_provider_arn = Arn,
                                                    request_id = RequestId}),
             {true, make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->

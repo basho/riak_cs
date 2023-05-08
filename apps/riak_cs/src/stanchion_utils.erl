@@ -97,7 +97,7 @@ get_pbc() ->
 create_bucket(#{bucket := Bucket,
                 requester := OwnerId,
                 acl := Acl_} = FF) ->
-    Acl = riak_cs_acl:exprec_detailed(Acl_),
+    Acl = riak_cs_acl:exprec_acl(Acl_),
     BagId = maps:get(bag, FF, undefined),
     case riak_connection() of
         {ok, Pbc} ->
@@ -182,7 +182,7 @@ delete_bucket(Bucket, OwnerId) ->
 -spec create_role(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
 create_role(Fields) ->
     Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-                riak_cs_roles:exprec_detailed(
+                riak_cs_roles:exprec_role(
                   riak_cs_roles:fix_permissions_boundary(Fields)),
     Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
     case riak_connection() of

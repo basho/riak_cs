@@ -304,4 +304,10 @@
 -type list_roles_response() :: #list_roles_response{}.
 -define(LRRESP, #list_objects_response).
 
+-record(create_saml_provider_response, { saml_provider_arn :: arn()
+                                       , tags :: [tag()]
+                                       , request_id :: string()
+                                       }
+       ).
+
 -endif.

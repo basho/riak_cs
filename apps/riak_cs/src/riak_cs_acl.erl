@@ -47,7 +47,7 @@
          object_access/5,
          object_access/6,
          owner_id/2,
-         exprec_detailed/1
+         exprec_acl/1
         ]).
 
 -define(ACL_UNDEF, {error, acl_undefined}).
@@ -309,7 +309,7 @@ owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
             []
     end.
 
-exprec_detailed(Map) ->
+exprec_acl(Map) ->
     Acl0 = ?ACL{grants = GG0} = exprec:frommap_acl_v3(Map),
     GG = [exprec_grant(G) || G <- GG0],
     Acl0?ACL{grants = GG}.
