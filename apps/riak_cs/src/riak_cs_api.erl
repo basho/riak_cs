@@ -62,7 +62,7 @@ list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
             max_items => MaxItems,
             marker => Marker},
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riakc_pb_socket:mapred_bucket(MasterPbc, ?IAM_BUCKET, mapred_query(Arg)) of
+    case riakc_pb_socket:mapred_bucket(MasterPbc, ?IAM_ROLE_BUCKET, mapred_query(Arg)) of
         {ok, Batches} ->
             Roles = extract_roles(Batches, []),
             {ok, #{roles => Roles,

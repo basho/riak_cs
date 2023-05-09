@@ -247,11 +247,11 @@ do_action("CreateRole",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
     Specs = finish_tags(
               lists:foldl(fun role_fields_filter/2, #{}, Form)),
-    case riak_cs_roles:create_role(Specs) of
+    case riak_cs_iam:create_role(Specs) of
         {ok, RoleId} ->
             Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-                riak_cs_roles:exprec_role(
-                  riak_cs_roles:fix_permissions_boundary(Specs)),
+                riak_cs_iam:exprec_role(
+                  riak_cs_iam:fix_permissions_boundary(Specs)),
             Role = Role_?IAM_ROLE{assume_role_policy_document = binary_to_list(base64:decode(A)),
                                   role_id = RoleId},
             RequestId = make_request_id(),
@@ -268,7 +268,7 @@ do_action("GetRole",
           Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
     RoleName = proplists:get_value("RoleName", Form),
-    case riak_cs_roles:get_role(RoleName, RcPid) of
+    case riak_cs_iam:get_role(RoleName, RcPid) of
         {ok, Role} ->
             RequestId = make_request_id(),
             Doc = riak_cs_xml:to_xml(
@@ -284,7 +284,7 @@ do_action("GetRole",
 do_action("DeleteRole",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
     RoleName = proplists:get_value("RoleName", Form),
-    case riak_cs_roles:delete_role(RoleName) of
+    case riak_cs_iam:delete_role(RoleName) of
         ok ->
             RequestId = make_request_id(),
             logger:info("Deleted role \"~s\" on request_id ~s", [RoleName, RequestId]),
@@ -327,12 +327,13 @@ do_action("CreateSAMLProvider",
     Specs = finish_tags(
               lists:foldl(fun create_saml_provider_fields_filter/2, #{}, Form)),
 
-    case riak_cs_roles:create_saml_provider(Specs) of
-        {ok, Arn} ->
+    case riak_cs_iam:create_saml_provider(Specs) of
+        {ok, {Arn, Tags}} ->
             RequestId = make_request_id(),
             logger:info("Created SAML provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_saml_provider_response{saml_provider_arn = Arn,
+                                                   tags = Tags,
                                                    request_id = RequestId}),
             {true, make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->

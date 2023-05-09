@@ -222,7 +222,7 @@ handle_call({get_bucket, BucketName}, _From, State0) ->
 handle_call({set_bucket_name, _BucketName}, _From, State) ->
     {reply, ok, State};
 handle_call({get_role, Id}, _From, State0) ->
-    case do_get_from_bucket(?IAM_BUCKET, Id, get_cs_role, State0) of
+    case do_get_from_bucket(?IAM_ROLE_BUCKET, Id, get_cs_role, State0) of
         {ok, Obj, State9} ->
             {reply, {ok, Obj}, State9};
         {error, Reason, State9} ->

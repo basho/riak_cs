@@ -29,6 +29,7 @@
          create_user/1,
          delete_bucket/2,
          delete_role/1,
+         create_saml_provider/1,
          get_admin_creds/0,
          get_manifests_raw/4,
          get_pbc/0,
@@ -182,8 +183,8 @@ delete_bucket(Bucket, OwnerId) ->
 -spec create_role(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
 create_role(Fields) ->
     Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-                riak_cs_roles:exprec_role(
-                  riak_cs_roles:fix_permissions_boundary(Fields)),
+        riak_cs_iam:exprec_role(
+          riak_cs_iam:fix_permissions_boundary(Fields)),
     Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
     case riak_connection() of
         {ok, RiakPid} ->
@@ -195,6 +196,26 @@ create_role(Fields) ->
         {error, _} = Else ->
             Else
     end.
+
+
+-spec create_saml_provider(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
+create_saml_provider(#{name := Name} = Fields) ->
+    P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
+        riak_cs_iam:exprec_role(
+          riak_cs_iam:fix_permissions_boundary(Fields)),
+    P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
+    case riak_connection() of
+        {ok, RiakPid} ->
+            try
+                save_saml_provider(Name, P1, RiakPid)
+            after
+                close_riak_connection(RiakPid)
+            end;
+        {error, _} = Else ->
+            Else
+    end.
+
+
 
 
 %% @doc Return the credentials of the admin user
@@ -811,7 +832,7 @@ get_role(Id, RiakPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = iolist_to_binary(Id),
-    case fetch_object(?IAM_BUCKET, BinKey, RiakPid) of
+    case fetch_object(?IAM_ROLE_BUCKET, BinKey, RiakPid) of
         {ok, {Obj, _KeepDeletedBuckets}} ->
             role_from_riakc_obj(Obj);
         Error ->
@@ -843,13 +864,11 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
     ?LOG_INFO("Saving new role \"~s\" with id ~s", [RoleName, RoleId]),
     Role1 = Role0?IAM_ROLE{role_id = RoleId},
 
-    Indexes = [{?ROLE_NAME_INDEX, RoleName},
-               {?ROLE_ID_INDEX, RoleId},
-               {?ROLE_PATH_INDEX, Path}
+    Indexes = [{?ROLE_PATH_INDEX, Path}
               ],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
-            riakc_obj:new(?IAM_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
+            riakc_obj:new(?IAM_ROLE_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
     case Res of
@@ -857,13 +876,13 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
             {ok, RoleId};
         {error, Reason} ->
-            logger:error("Failed to save role \"~s\": ~p", [Reason]),
+            logger:error("Failed to save role \"~s\": ~p", [RoleName, Reason]),
             Res
     end.
 
 ensure_unique_role_id(RcPid) ->
     Id = make_role_id(),
-    case fetch_object(?IAM_BUCKET, Id, RcPid) of
+    case fetch_object(?IAM_ROLE_BUCKET, Id, RcPid) of
         {ok, _} ->
             ensure_unique_role_id(RcPid);
         _ ->
@@ -871,11 +890,7 @@ ensure_unique_role_id(RcPid) ->
     end.
 
 make_role_id() ->
-    fill(?ROLE_ID_LENGTH - 4, "AROA").
-fill(0, Q) ->
-    Q;
-fill(N, Q) ->
-    fill(N-1, Q ++ [lists:nth(rand:uniform(length(?ROLE_ID_CHARSET)), ?ROLE_ID_CHARSET)]).
+    fill(?ROLE_ID_LENGTH - 4, "AROA", ?ROLE_ID_CHARSET).
 
 
 -spec delete_role(string()) -> ok.
@@ -883,13 +898,13 @@ delete_role(RoleName) ->
     case riak_connection() of
         {ok, RiakPid} ->
             try
-                Obj = riakc_obj:new(?IAM_BUCKET, iolist_to_binary(RoleName), ?FREE_ROLE_MARKER),
+                Obj = riakc_obj:new(?IAM_ROLE_BUCKET, iolist_to_binary(RoleName), ?FREE_ROLE_MARKER),
                 {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
                 case Res of
                     ok ->
                         stanchion_stats:update([riakc, put_cs_role], TAT);
                     {error, Reason} ->
-                        logger:error("Failed to save deleted role object \"~s\": ~p", [Reason]),
+                        logger:error("Failed to save deleted role object \"~s\": ~p", [RoleName, Reason]),
                         Res
                 end
             after
@@ -898,6 +913,31 @@ delete_role(RoleName) ->
         {error, _} = Else ->
             Else
     end.
+
+
+-spec save_saml_provider(string(), saml_provider(), pid()) -> {ok, string()} | {error, term()}.
+save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
+    Arn = make_provider_arn(Name),
+
+    ?LOG_INFO("Saving new SAML Provider \"~s\" with ARN ~s", [Name, Arn]),
+    P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
+
+    Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Obj = riakc_obj:update_metadata(
+            riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, iolist_to_binary(Name), term_to_binary(P1)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
+    case Res of
+        ok ->
+            ok = stanchion_stats:update([riakc, put_cs_samlprovider], TAT),
+            {ok, {Arn, Tags}};
+        {error, Reason} ->
+            logger:error("Failed to save SAML provider \"~s\": ~p", [Reason]),
+            Res
+    end.
+make_provider_arn(Name) ->
+    "arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name.
 
 
 
@@ -927,12 +967,17 @@ weak_fetch_object(Bucket, Key, RiakPid) ->
             {error, Reason}
     end.
 
-metric_for(?IAM_BUCKET, strong) ->
+metric_for(?IAM_ROLE_BUCKET, strong) ->
     get_cs_role_strong;
 metric_for(?USER_BUCKET, strong) ->
     get_cs_user_strong;
-metric_for(?IAM_BUCKET, weak) ->
+metric_for(?IAM_ROLE_BUCKET, weak) ->
     get_cs_role_strong;
 metric_for(?USER_BUCKET, weak) ->
     get_cs_user.
 
+
+fill(0, Q, _) ->
+    Q;
+fill(N, Q, CharSet) ->
+    fill(N-1, Q ++ [lists:nth(rand:uniform(length(CharSet)), CharSet)], CharSet).

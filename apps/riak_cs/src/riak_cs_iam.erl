@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(riak_cs_roles).
+-module(riak_cs_iam).
 
 -export([create_role/1,
          delete_role/1,
@@ -107,7 +107,8 @@ fix_permissions_boundary(#{permissions_boundary := A} = Map) when not is_map(A) 
 fix_permissions_boundary(Map) ->
     Map.
 
--spec create_saml_provider(maps:map()) -> {ok, Arn::string(), [tag()]} | {error, term()}.
+
+-spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
 create_saml_provider(Specs) ->
     Encoded = jsx:encode(Specs),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),

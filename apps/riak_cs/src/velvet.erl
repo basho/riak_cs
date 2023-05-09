@@ -32,9 +32,11 @@
          delete_bucket_policy/3,
          update_user/4,
          create_role/3,
-         delete_role/2
+         delete_role/2,
+         create_saml_provider/3
         ]).
 
+-include("aws_api.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -define(MAX_REQUEST_RETRIES, 3).
@@ -330,6 +332,41 @@ delete_role(Id, Options) ->
             {error, Error}
     end.
 
+
+-spec create_saml_provider(string(), string(), proplists:proplist()) ->
+          {ok, {string(), [tag()]}} | {error, term()}.
+create_saml_provider(ContentType, Doc, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = "/samlprovider",
+    Headers0 = [{"Content-Md5", content_md5(Doc)},
+                {"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('POST',
+                                               ContentType,
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(post, Path, [201], ContentType, Headers, Doc) of
+        {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
+            RoleId = RespBody,
+            {ok, RoleId};
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+
+%% -------------------------------------
+%% supporting functions
+%% -------------------------------------
 
 %% @doc send an HTTP request where `Expect' is a list
 %% of expected HTTP status codes.
