@@ -105,6 +105,9 @@ to_xml(?IAM_ROLE{} = Role) ->
     role_record_to_xml(Role);
 to_xml({roles, RR}) ->
     role_records_to_xml(RR);
+to_xml(?IAM_SAML_PROVIDER{} = P) ->
+    saml_provider_record_to_xml(P);
+
 to_xml(#create_role_response{} = R) ->
     create_role_response_to_xml(R);
 to_xml(#get_role_response{} = R) ->
@@ -112,7 +115,9 @@ to_xml(#get_role_response{} = R) ->
 to_xml(#delete_role_response{} = R) ->
     delete_role_response_to_xml(R);
 to_xml(#list_roles_response{} = R) ->
-    list_roles_response_to_xml(R).
+    list_roles_response_to_xml(R);
+to_xml(#create_saml_provider_response{} = R) ->
+    create_saml_provider_response_to_xml(R);
 
 
 
@@ -445,6 +450,29 @@ list_roles_response_to_xml(#list_roles_response{roles = RR,
     export_xml([make_internal_node('ListRolesResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    lists:flatten(C))], []).
+
+
+saml_provider_record_to_xml(P) ->
+    export_xml([saml_provider_node(P)]).
+
+saml_provider_records_to_xml(PP) ->
+    NN = [saml_provider_node(P) || P <- PP],
+    export_xml([make_internal_node('SAMLProviders', NN)]).
+
+
+saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
+                                      create_date = CreateDate,
+                                      saml_metadata_document = SAMLMetadataDocument,
+                                      tags = Tags,
+                                      valid_until = ValidUntil}) ->
+    C = lists:flatten(
+          [{'Arn', make_arn(Arn)},
+           {'SAMLMetadataDocument', SAMLMetadataDocument},
+           {'CreateDate', binary_to_list(CreateDate)},
+           {'Tags', }
+          ]),
+          {'SAMLProviderResult', [make_external_node(K, V) || {K, V} <- C]}.
+
 
 
 make_internal_node(Name, Content) ->
