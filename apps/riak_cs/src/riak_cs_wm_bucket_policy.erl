@@ -136,6 +136,7 @@ accept_body(RD, Ctx=#rcs_s3_context{user=User,
             RespMod:api_error(Reason, RD, Ctx)
     end.
 
+
 %% @doc Callback for deleting policy.
 -spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) -> {true, #wm_reqdata{}, #rcs_s3_context{}} |
           {{halt, 200}, #wm_reqdata{}, #rcs_s3_context{}}.
@@ -144,7 +145,6 @@ delete_resource(RD, Ctx=#rcs_s3_context{user=User,
                                         bucket=Bucket,
                                         response_module = RespMod,
                                         riak_client=RcPid}) ->
-    ?LOG_DEBUG("are we delete_bucket_policy?"),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
                                    [], [RD, Ctx, RcPid]),
 

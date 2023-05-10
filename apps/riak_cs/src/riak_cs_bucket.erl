@@ -298,7 +298,6 @@ set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
 -spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), riak_client()) ->
           ok | {error, term()}.
 set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
-    ?LOG_DEBUG("set_bucket_policy: ~p", [a]),
     serialized_bucket_op(Bucket,
                          PolicyJson,
                          User,
@@ -309,7 +308,6 @@ set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
 -spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), riak_client()) ->
           ok | {error, term()}.
 delete_bucket_policy(User, _UserObj, Bucket, _RcPid) ->
-    ?LOG_DEBUG("are we delete_bucket_policy?"),
     serialized_bucket_op(Bucket,
                          [],
                          User,
@@ -406,10 +404,9 @@ bucket_acl_json(ACL, KeyId) ->
                              {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]).
 
 %% @doc Generate a JSON document to use for a bucket
--spec bucket_policy_json(binary(), string()) -> string().
 bucket_policy_json(PolicyJson, KeyId)  ->
     jason:encode([{requester, KeyId},
-                  {policy, PolicyJson}]).
+                  {policy, base64:encode(PolicyJson)}]).
 
 %% @doc Generate a JSON document to use in setting bucket versioning option
 -spec bucket_versioning_json(bucket_versioning(), string()) -> string().

@@ -826,7 +826,6 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->
-            ?LOG_DEBUG("Policy ~p", [Policy]),
             Method = wrq:method(RD),
             CanonicalId = extract_canonical_id(User),
             Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),

@@ -185,34 +185,26 @@ reqdata_to_access(RD, Target, ID) ->
               undefined -> undefined;
               RawKey -> list_to_binary(mochiweb_util:unquote(mochiweb_util:unquote(RawKey)))
           end,
-    #access_v1{
-            method = wrq:method(RD),
-            target = Target,
-            id = ID, req = RD,
-            bucket = list_to_binary(wrq:path_info(bucket, RD)),
-            key    = Key
-           }.
+    #access_v1{method = wrq:method(RD),
+               target = Target,
+               id = ID,
+               req = RD,
+               bucket = list_to_binary(wrq:path_info(bucket, RD)),
+               key = Key
+              }.
 
 -spec policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
 policy_from_json(JSON) ->
-    ?LOG_DEBUG("Policy JSON ~p", [JSON]),
-    %% TODO: stop using exception and start some monadic validation and parsing.
-    case catch(jsx:decode(JSON)) of
-        {struct, Pairs} ->
-            Version = proplists:get_value(<<"Version">>, Pairs),
-            ID      = proplists:get_value(<<"Id">>, Pairs),
-            Stmts0  = proplists:get_value(<<"Statement">>, Pairs),
-
-            case catch(lists:map(fun({struct,S})->
-                                         statement_from_pairs(S, #statement{})
-                                 end, Stmts0)) of
-
-                      {error, _Reason} = E ->
-                         E;
-                      [] ->
+    case catch jsx:decode(JSON) of
+        #{<<"Version">> := Version,
+          <<"ID">> := ID,
+          <<"Statement">> := Stmts0} ->
+            case catch lists:map(fun(S) ->
+                                         statement_from_pairs(maps:to_list(S), #statement{})
+                                 end, Stmts0) of
+                       [] ->
                          {error, malformed_policy_missing};
-
-                      Stmts ->
+                       Stmts ->
                          case {Version, ID} of
                              {undefined, <<"undefined">>} ->
                                  {ok, ?AMZ_POLICY{statement = Stmts}};
@@ -224,10 +216,11 @@ policy_from_json(JSON) ->
                                  {ok, ?AMZ_POLICY{id = ID, version = Version, statement = Stmts}}
                          end
                  end;
-        {error, _Reason} = E ->
-            E;
-        {'EXIT', {{case_clause, B}, _}} when is_binary(B) ->
-            ?LOG_DEBUG("mochiweb failed to parse the JSON: ~p", [B]),
+        #{} ->
+            logger:warning("Policy document missing required fields: ~s", [JSON]),
+            {error, malformed_policy_json};
+        {'EXIT', _} ->
+            logger:warning("Malformed Policy JSON: ~s", [JSON]),
             {error, malformed_policy_json}
     end.
 
@@ -238,8 +231,10 @@ policy_to_json_term(?AMZ_POLICY{version = Version,
        Version =:= ?AMZ_DEFAULT_VERSION ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     % hope no unicode included
-    Policy = [{"Version", Version},{"Id", ID},{"Statement",Stmts}],
-    unicode:characters_to_binary(mochijson2:encode(Policy), unicode).
+    Policy = [{<<"Version">>, Version},
+              {<<"Id">>, ID},
+              {<<"Statement">>, Stmts}],
+    jsx:encode(Policy).
 
 
 -spec supported_object_action() -> [s3_object_action()].
@@ -301,7 +296,6 @@ bucket_policy_from_contents(Bucket, Contents) ->
     {Metas, Vals} = lists:unzip(Contents),
     UniqueVals = lists:usort(Vals),
     UserMetas = [dict:fetch(?MD_USERMETA, MD) || MD <- Metas],
-    ?LOG_DEBUG("UserMetas ~p", [UserMetas]),
     riak_cs_bucket:maybe_log_bucket_owner_error(Bucket, UniqueVals),
     resolve_bucket_metadata(UserMetas, UniqueVals).
 
@@ -343,7 +337,6 @@ policy_from_meta([_ | RestMD]) ->
 %% ===================================================================
 %% internal API
 
--spec resource_matches(binary(), binary()|undefined|list(), #statement{}) -> boolean().
 resource_matches(_, _, #statement{resource='*'} = _Stmt ) -> true;
 resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
   when KeyBin =:= undefined orelse is_binary(KeyBin) ->
@@ -548,7 +541,6 @@ ipv4_eq({A,B,C,D}, {E,F,G,H}) ->
 % ===========================================
 % functions to convert policy record to JSON:
 
--spec statement_to_pairs(#statement{}) -> [{binary(), any()}].
 statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
                               not_action=NA, resource=R, condition_block=Cs})->
     AtomE = case E of
@@ -562,7 +554,6 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
      {<<"Resource">>, print_arns(R)},
      {<<"Condition">>, Conds}].
 
--spec condition_block_from_condition_pair(condition_pair()) -> {binary(), list()}.
 condition_block_from_condition_pair({AtomKey, Conds})->
     Fun = fun({'aws:SourceIp', IPs}) when is_list(IPs) ->
                   {'aws:SourceIp', [print_ip(IP) || IP <- IPs]};
@@ -570,7 +561,7 @@ condition_block_from_condition_pair({AtomKey, Conds})->
                   {'aws:SourceIp', print_ip(IP)};
              (Cond) -> Cond
           end,
-    {atom_to_binary(AtomKey, latin1),  lists:map(Fun, Conds)}.
+    {atom_to_binary(AtomKey, latin1), lists:map(Fun, Conds)}.
 
 % inverse of parse_ip/1
 -spec print_ip({inet:ip_address(), inet:ip_address()}) -> binary().
@@ -614,7 +605,6 @@ int_to_prefix(0) -> 0.
 % ===========================================================
 % functions to convert (parse) JSON to create a policy record:
 
--spec statement_from_pairs(list(), #statement{})-> #statement{}.
 statement_from_pairs([], Stmt) ->
     case Stmt#statement.principal of
         [] ->
@@ -625,22 +615,22 @@ statement_from_pairs([], Stmt) ->
             Stmt
     end;
 
-statement_from_pairs([{<<"Sid">>, <<>>}      |_], _) ->
+statement_from_pairs([{<<"Sid">>, <<>>} |_], _) ->
     throw({error, malformed_policy_resource});
 
-statement_from_pairs([{<<"Sid">>,Sid}      |T], Stmt) ->
-    statement_from_pairs(T, Stmt#statement{sid=Sid});
+statement_from_pairs([{<<"Sid">>, Sid} | T], Stmt) ->
+    statement_from_pairs(T, Stmt#statement{sid = Sid});
 
-statement_from_pairs([{<<"Effect">>,<<"Allow">>}|T], Stmt) ->
-    statement_from_pairs(T, Stmt#statement{effect=allow});
-statement_from_pairs([{<<"Effect">>,<<"Deny">>}|T], Stmt) ->
-    statement_from_pairs(T, Stmt#statement{effect=deny});
+statement_from_pairs([{<<"Effect">>, <<"Allow">>} | T], Stmt) ->
+    statement_from_pairs(T, Stmt#statement{effect = allow});
+statement_from_pairs([{<<"Effect">>, <<"Deny">>} | T], Stmt) ->
+    statement_from_pairs(T, Stmt#statement{effect = deny});
 
-statement_from_pairs([{<<"Principal">>,P}  |T], Stmt) ->
+statement_from_pairs([{<<"Principal">>, P} | T], Stmt) ->
     Principal = parse_principal(P),
     statement_from_pairs(T, Stmt#statement{principal=Principal});
 
-statement_from_pairs([{<<"Action">>,As}    |T], Stmt) ->
+statement_from_pairs([{<<"Action">>, As} | T], Stmt) ->
     Atoms = case As of
                 As when is_list(As) ->
                     lists:map(fun binary_to_action/1, As);
@@ -648,44 +638,41 @@ statement_from_pairs([{<<"Action">>,As}    |T], Stmt) ->
                     binary_to_existing_atom(Bin, latin1)
             end,
     statement_from_pairs(T, Stmt#statement{action=Atoms});
-statement_from_pairs([{<<"NotAction">>,As}  |T], Stmt) when is_list(As) ->
+statement_from_pairs([{<<"NotAction">>, As} | T], Stmt) when is_list(As) ->
     Atoms = lists:map(fun binary_to_action/1, As),
-    statement_from_pairs(T, Stmt#statement{not_action=Atoms});
+    statement_from_pairs(T, Stmt#statement{not_action = Atoms});
 
-statement_from_pairs([{<<"Resource">>,R}   |T], Stmt) ->
+statement_from_pairs([{<<"Resource">>, R} | T], Stmt) ->
     case parse_arns(R) of
         {ok, ARN} ->
-            statement_from_pairs(T, Stmt#statement{resource=ARN});
+            statement_from_pairs(T, Stmt#statement{resource = ARN});
         {error, _} ->
             throw({error, malformed_policy_resource})
     end;
 
-statement_from_pairs([{<<"Condition">>,[]}  |T], Stmt) ->
+statement_from_pairs([{<<"Condition">>, []} | T], Stmt) ->
     %% empty conditions
     statement_from_pairs(T, Stmt#statement{condition_block=[]});
 
-statement_from_pairs([{<<"Condition">>,{struct, Cs}}  |T], Stmt) ->
-    Conditions = lists:map(fun condition_block_to_condition_pair/1, Cs),
-    statement_from_pairs(T, Stmt#statement{condition_block=Conditions}).
+statement_from_pairs([{<<"Condition">>, Cs} | T], Stmt) ->
+    Conditions = lists:map(fun condition_block_to_condition_pair/1, maps:to_list(Cs)),
+    statement_from_pairs(T, Stmt#statement{condition_block = Conditions}).
 
--spec binary_to_action(binary()) -> s3_object_action() | s3_bucket_action().
-binary_to_action(Bin)->
+binary_to_action(Bin) ->
     binary_to_existing_atom(Bin, latin1).
 
-% @TODO: error processing
--spec parse_principal(binary() | [binary()]) -> principal().
 parse_principal(<<"*">>) -> '*';
-parse_principal({struct, List}) when is_list(List) ->
+parse_principal(List) when is_list(List) ->
     parse_principals(List, []);
-parse_principal([{struct, List}]) when is_list(List) ->
+parse_principal([List]) when is_list(List) ->
     parse_principals(List, []).
 
 
 parse_principals([], Principal) -> Principal;
-parse_principals([{<<"AWS">>,[<<"*">>]}|TL], Principal) ->
-    parse_principals(TL, [{aws, '*'}|Principal]);
-parse_principals([{<<"AWS">>,<<"*">>}|TL], Principal) ->
-    parse_principals(TL, [{aws, '*'}|Principal]).
+parse_principals([{<<"AWS">>, [<<"*">>]} | TL], Principal) ->
+    parse_principals(TL, [{aws, '*'} | Principal]);
+parse_principals([{<<"AWS">>,<<"*">>} | TL], Principal) ->
+    parse_principals(TL, [{aws, '*'} | Principal]).
 %% TODO: CanonicalUser as principal is not yet supported,
 %%  Because to use at Riak CS, key_id is better to specify user, because
 %%  getting canonical ID from Riak is not enough efficient
@@ -759,7 +746,7 @@ my_split(Ch, [Ch0|TL], Acc, L) ->
 
 -spec print_arns( '*'|[arn()]) -> [binary()] | binary().
 print_arns('*') -> <<"*">>;
-print_arns(#arn_v1{region=R, id=ID, path=Path} = _ARN) ->
+print_arns(#arn_v1{region = R, id = ID, path = Path} = _ARN) ->
     StringPath = unicode:characters_to_list(Path),
     StringID   = binary_to_list(ID),
     list_to_binary(string:join(["arn", "aws", "s3", R, StringID, StringPath], ":"));
@@ -768,11 +755,10 @@ print_arns(ARNs) when is_list(ARNs)->
     PrintARN = fun(ARN) -> print_arns(ARN) end,
     lists:map(PrintARN, ARNs).
 
--spec condition_block_to_condition_pair({binary(), {struct, json_term()}}) -> condition_pair().
-condition_block_to_condition_pair({Key,{struct,Cond}}) ->
+condition_block_to_condition_pair({Key, Cond}) ->
     % all key should be defined in stanchion.hrl
     AtomKey = binary_to_existing_atom(Key, latin1),
-    {AtomKey, lists:map(fun condition_/1, Cond)}.
+    {AtomKey, lists:map(fun condition_/1, maps:to_list(Cond))}.
 
 % TODO: more strict condition - currenttime only for date_condition, and so on
 condition_({<<"aws:CurrentTime">>, Bin}) when is_binary(Bin) ->

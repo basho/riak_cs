@@ -97,11 +97,11 @@ to_xml(Resp) when is_record(Resp, list_objects_response);
                   is_record(Resp, list_object_versions_response) ->
     SimpleForm = list_objects_response_to_simple_form(Resp),
     to_xml(SimpleForm);
-to_xml(?RCS_USER{}=User) ->
+to_xml(?RCS_USER{} = User) ->
     user_record_to_xml(User);
 to_xml({users, Users}) ->
     user_records_to_xml(Users);
-to_xml(?IAM_ROLE{}=Role) ->
+to_xml(?IAM_ROLE{} = Role) ->
     role_record_to_xml(Role);
 to_xml({roles, RR}) ->
     role_records_to_xml(RR);

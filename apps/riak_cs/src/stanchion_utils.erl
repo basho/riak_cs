@@ -318,15 +318,10 @@ set_bucket_acl(Bucket, #{requester := OwnerId,
 
 %% @doc add bucket policy in the global namespace
 %% FieldList.policy has JSON-encoded policy from user
--spec set_bucket_policy(binary(), term()) -> ok | {error, term()}.
-set_bucket_policy(Bucket, FieldList) ->
-    OwnerId = proplists:get_value(requester, FieldList, <<>>),
-    PolicyJson = proplists:get_value(policy, FieldList, []),
-
-    % @TODO: Already Checked at Riak CS, so store as it is JSON here
-    % if overhead of parsing JSON were expensive, need to import
-    % code of JSON parse from riak_cs_s3_policy
-    do_bucket_op(Bucket, OwnerId, [{policy, PolicyJson}], update_policy).
+-spec set_bucket_policy(binary(), maps:map()) -> ok | {error, term()}.
+set_bucket_policy(Bucket, #{requester := Requester,
+                            policy := PolicyJson}) ->
+    do_bucket_op(Bucket, Requester, [{policy, base64:decode(PolicyJson)}], update_policy).
 
 %% @doc set bucket versioning option
 -spec set_bucket_versioning(binary(), term()) -> ok | {error, term()}.

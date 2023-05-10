@@ -434,7 +434,6 @@ prepare(#state{bucket = Bucket,
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn, RcPid),
     case riak_cs_manifest_fsm:get_active_manifest(ManiPid) of
         {ok, Manifest} ->
-            ?LOG_DEBUG("Manifest: ~p", [Manifest]),
             case riak_cs_mp_utils:clean_multipart_unused_parts(Manifest, RcPid) of
                 same ->
                     State#state{manifest = Manifest,

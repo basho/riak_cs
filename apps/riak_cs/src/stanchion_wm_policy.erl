@@ -47,6 +47,7 @@
 
 -include("stanchion.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 init(Config) ->
     %% Check if authentication is disabled and
@@ -104,10 +105,9 @@ accept_body(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     Body = wrq:req_body(RD),
     %% @TODO Handle json decoding exceptions
-    ParsedBody = mochijson2:decode(Body),
-    FieldList = stanchion_wm_utils:json_to_proplist(ParsedBody),
+    ParsedBody = jsx:decode(Body, [{labels, atom}]),
     case stanchion_server:set_bucket_policy(Bucket,
-                                           FieldList) of
+                                            ParsedBody) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->
