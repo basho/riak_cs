@@ -52,6 +52,9 @@ duration_metrics() ->
      [role, create],
      [role, delete],
 
+     [saml_provider, create],
+     [saml_provider, delete],
+
      %% Riak PB client, per key operations
      [riakc, get_cs_bucket],
      [riakc, put_cs_bucket], %% Always strong put

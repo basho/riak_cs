@@ -201,8 +201,7 @@ create_role(Fields) ->
 -spec create_saml_provider(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
 create_saml_provider(#{name := Name} = Fields) ->
     P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
-        riak_cs_iam:exprec_role(
-          riak_cs_iam:fix_permissions_boundary(Fields)),
+        riak_cs_iam:exprec_saml_provider(Fields),
     P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
     case riak_connection() of
         {ok, RiakPid} ->
@@ -541,7 +540,7 @@ put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
              [MD0] -> MD0;
              _E ->
                  MsgData = {siblings, riakc_obj:key(BucketObj)},
-                 logger:error("bucket has siblings: ~p", [MsgData]),
+                 logger:warning("bucket has siblings: ~p", [MsgData]),
                  throw(MsgData) % @TODO: data broken; handle this
            end,
     MetaData = make_new_metadata(MD, Opts),
@@ -925,7 +924,7 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_samlprovider], TAT),
-            {ok, {Arn, Tags}};
+            {ok, {list_to_binary(Arn), Tags}};
         {error, Reason} ->
             logger:error("Failed to save SAML provider \"~s\": ~p", [Reason]),
             Res

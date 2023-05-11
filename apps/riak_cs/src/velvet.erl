@@ -334,10 +334,10 @@ delete_role(Id, Options) ->
 
 
 -spec create_saml_provider(string(), string(), proplists:proplist()) ->
-          {ok, {string(), [tag()]}} | {error, term()}.
+          {ok, {binary(), [tag()]}} | {error, term()}.
 create_saml_provider(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
-    Path = "/samlprovider",
+    Path = "/samlproviders",
     Headers0 = [{"Content-Md5", content_md5(Doc)},
                 {"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
@@ -354,8 +354,8 @@ create_saml_provider(ContentType, Doc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
-            RoleId = RespBody,
-            {ok, RoleId};
+            #{arn := Arn, tags := Tags_} = jason:decode(RespBody, [{mode, map}, {binary, v}]),
+            {ok, {Arn, [#tag{key = K, value = V} || #{key := K, value := V} <- Tags_]}};
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->

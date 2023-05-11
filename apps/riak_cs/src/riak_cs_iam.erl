@@ -23,9 +23,10 @@
 -export([create_role/1,
          delete_role/1,
          get_role/2,
-         exprec_role/1,
          fix_permissions_boundary/1,
-         create_saml_provider/1
+         create_saml_provider/1,
+         exprec_role/1,
+         exprec_saml_provider/1
         ]).
 
 -include("riak_cs.hrl").
@@ -98,6 +99,12 @@ exprec_role(Map) ->
     Role0?IAM_ROLE{permissions_boundary = PB,
                    role_last_used = LU,
                    tags = TT}.
+
+-spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
+exprec_saml_provider(Map) ->
+    P0 = ?IAM_SAML_PROVIDER{tags = TT0} = exprec:frommap_saml_provider_v1(Map),
+    TT = [exprec:frommap_tag(T) || T <- TT0],
+    P0?IAM_SAML_PROVIDER{tags = TT}.
 
 %% CreateRole takes a string for PermissionsBoundary parameter, which
 %% needs to become part of a structure (and handled and exported thus), so:

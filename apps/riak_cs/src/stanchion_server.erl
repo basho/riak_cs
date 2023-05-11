@@ -38,6 +38,8 @@
          update_user/2,
          create_role/1,
          delete_role/1,
+         create_saml_provider/1,
+         delete_saml_provider/1,
          msgq_len/0]).
 
 %% gen_server callbacks
@@ -143,18 +145,32 @@ delete_bucket_policy(Bucket, RequesterId) ->
                              {delete_policy, Bucket, RequesterId},
                              infinity)).
 
--spec create_role([{term(), term()}]) -> ok | {error, term()}.
-create_role(RoleData) ->
+-spec create_role(maps:map()) -> {ok, string()} | {error, term()}.
+create_role(A) ->
     ?MEASURE([role, create],
              gen_server:call(?MODULE,
-                             {create_role, RoleData},
+                             {create_role, A},
                              infinity)).
 
 -spec delete_role(string()) -> ok | {error, term()}.
-delete_role(RoleName) ->
+delete_role(A) ->
     ?MEASURE([role, delete],
              gen_server:call(?MODULE,
-                             {delete_role, RoleName},
+                             {delete_role, A},
+                             infinity)).
+
+-spec create_saml_provider(maps:map()) -> ok | {error, term()}.
+create_saml_provider(A) ->
+    ?MEASURE([saml_provider, create],
+             gen_server:call(?MODULE,
+                             {create_saml_provider, A},
+                             infinity)).
+
+-spec delete_saml_provider(string()) -> ok | {error, term()}.
+delete_saml_provider(A) ->
+    ?MEASURE([saml_provider, delete],
+             gen_server:call(?MODULE,
+                             {delete_saml_provider, A},
                              infinity)).
 
 stop(Pid) ->
@@ -240,6 +256,16 @@ handle_call({delete_role, RoleName},
             _From,
             State=#state{}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:delete_role(RoleName)),
+    {reply, Result, State};
+handle_call({create_saml_provider, A},
+            _From,
+            State=#state{}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_saml_provider(A)),
+    {reply, Result, State};
+handle_call({delete_saml_provider, A},
+            _From,
+            State=#state{}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_saml_provider(A)),
     {reply, Result, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.

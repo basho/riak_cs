@@ -92,8 +92,9 @@ content_types_accepted(RD, Ctx) ->
 accept_json(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_saml_provider(FF) of
-        {ok, RoleId} ->
-            {true, wrq:set_resp_body(RoleId, RD), Ctx};
+        {ok, {Arn, Tags}} ->
+            Resp = jason:encode(#{arn => Arn, tags => Tags}, [{records, [{tag, record_info(fields, tag)}]}]),
+            {true, wrq:set_resp_body(Resp, RD), Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)
     end.

@@ -375,9 +375,9 @@ role_fields_filter({ItemKey, ItemValue}, Acc) ->
 create_saml_provider_fields_filter({ItemKey, ItemValue}, Acc) ->
     case ItemKey of
         "Name" ->
-            maps:put(name, ItemValue, Acc);
+            maps:put(name, list_to_binary(ItemValue), Acc);
         "SAMLMetadataDocument" ->
-            maps:put(saml_metadata_documet, ItemValue, Acc);
+            maps:put(saml_metadata_document, list_to_binary(ItemValue), Acc);
         "Tags.member." ++ TagMember ->
             add_tag(TagMember, ItemValue, Acc);
         CommonParameter when CommonParameter == "Action";
@@ -393,9 +393,9 @@ add_tag(A, V, Acc) ->
     Tags =
         case string:tokens(A, ".") of
             [N, "Key"] ->
-                lists:keystore({k, N}, 1, Tags0, {{k, N}, V});
+                lists:keystore({k, N}, 1, Tags0, {{k, N}, list_to_binary(V)});
             [N, "Value"] ->
-                lists:keystore({v, N}, 1, Tags0, {{v, N}, V});
+                lists:keystore({v, N}, 1, Tags0, {{v, N}, list_to_binary(V)});
             _ ->
                 logger:warning("Malformed Tags item", [])
         end,
