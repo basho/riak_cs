@@ -26,7 +26,7 @@
 -export([create_bucket/3,
          create_user/3,
          delete_bucket/3,
-         set_bucket_acl/4,
+%%         set_bucket_acl/4,
          set_bucket_policy/4,
          set_bucket_versioning/4,
          delete_bucket_policy/3,
@@ -136,14 +136,14 @@ delete_bucket(Bucket, Requester, Options) ->
             {error, Error}
     end.
 
-%% @doc Create a bucket for a requesting party.
--spec set_bucket_acl(binary(),
-                     string(),
-                     string(),
-                     [{atom(), term()}]) -> ok | {error, term()}.
-set_bucket_acl(Bucket, ContentType, AclDoc, Options) ->
-    Path = buckets_path(Bucket, acl),
-    update_bucket(Path, ContentType, AclDoc, Options, 204).
+%% %% @doc Create a bucket for a requesting party.
+%% -spec set_bucket_acl(binary(),
+%%                      string(),
+%%                      string(),
+%%                      [{atom(), term()}]) -> ok | {error, term()}.
+%% set_bucket_acl(Bucket, ContentType, AclDoc, Options) ->
+%%     Path = buckets_path(Bucket, acl),
+%%     update_bucket(Path, ContentType, AclDoc, Options, 204).
 
 %% @doc Set bucket policy
 -spec set_bucket_policy(binary(),
