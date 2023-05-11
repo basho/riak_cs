@@ -918,7 +918,7 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
-            riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, iolist_to_binary(Name), term_to_binary(P1)),
+            riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, iolist_to_binary(Arn), term_to_binary(P1)),
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
     case Res of

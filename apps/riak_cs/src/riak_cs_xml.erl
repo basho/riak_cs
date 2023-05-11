@@ -361,6 +361,7 @@ role_node(?IAM_ROLE{arn = Arn,
                     permissions_boundary = PermissionsBoundary,
                     role_id = RoleId,
                     role_last_used = RoleLastUsed,
+                    tags = Tags,
                     role_name = RoleName}) ->
     C = lists:flatten(
           [[{'Arn', make_arn(Arn)} || Arn /= undefined],
@@ -376,7 +377,8 @@ role_node(?IAM_ROLE{arn = Arn,
            [{'RoleLastUsed', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                               {'xsi:type', "RoleLastUsed"}],
              make_role_last_used(RoleLastUsed)} || RoleLastUsed /= undefined],
-           [{'RoleName', RoleName} || RoleName /= undefined]
+           [{'RoleName', RoleName} || RoleName /= undefined],
+           [{'Tags', [tag_node(T) || T <- Tags]} || Tags /= []]
           ]),
     {'Role', [make_external_node(K, V) || {K, V} <- C]}.
 
@@ -474,9 +476,9 @@ saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
 saml_provider_node_lite(Arn, Tags) ->
     C = lists:flatten(
           [{'SAMLProviderArn', [binary_to_list(Arn)]},
-           {'Tags', [[tag_node(T) || T <- Tags]]}
+           {'Tags', [tag_node(T) || T <- Tags]}
           ]),
-    {'CreateSAMLProviderResult', [make_external_node(K, V) || {K, V} <- C]}.
+    {'CreateSAMLProviderResult', C}.
 
 create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provider_arn = BareArn,
                                                                     tags = Tags,
@@ -489,10 +491,22 @@ create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provide
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
 
+get_saml_provider_response_to_xml(#get_saml_provider_response{create_date = CreateDate,
+                                                              valid_until = ValidUntil,
+                                                              saml_metadata_document = SAMLMetadataDocument,
+                                                              request_id = RequestId}) ->
+    CreateSAMLProviderResult = saml_provider_node_lite(BareArn, Tags),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [CreateSAMLProviderResult,
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('CreateSAMLProviderResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
 tag_node(?IAM_TAG{key = Key,
                   value = Value}) ->
-    [make_external_node('Key', Key),
-     make_external_node('Value', Value)].
+    {'Tag', [{'Key', [binary_to_list(Key)]},
+             {'Value', [binary_to_list(Value)]}]}.
 
 
 make_internal_node(Name, Content) ->

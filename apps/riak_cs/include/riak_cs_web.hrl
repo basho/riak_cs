@@ -269,31 +269,25 @@
 -define(LBRESP, #list_buckets_response).
 
 
-%% === roles ===
+%% === IAM ===
 
 -record(create_role_response, { role :: role()
                               , request_id :: string()
                               }
        ).
-
 -record(get_role_response, { role :: role()
                            , request_id :: string()
                            }
        ).
-
 -record(delete_role_response, { request_id :: string()
                               }
        ).
-
 -record(list_roles_request, { max_items = 1000 :: non_neg_integer()
                             , path_prefix :: binary() | undefined
                             , marker :: binary() | undefined
                             , request_id :: string()
                             }
        ).
--type list_roles_request() :: #list_roles_request{}.
--define(LRREQ, #list_roles_request).
-
 -record(list_roles_response, { marker :: binary() | undefined
                              , is_truncated :: boolean()
                              , roles :: [role()]
@@ -301,13 +295,34 @@
                              }
        ).
 
--type list_roles_response() :: #list_roles_response{}.
--define(LRRESP, #list_objects_response).
 
 -record(create_saml_provider_response, { saml_provider_arn :: arn()
                                        , tags :: [tag()]
                                        , request_id :: string()
                                        }
        ).
+-record(get_saml_provider_response, { create_date :: non_neg_integer()
+                                    , valid_until :: non_neg_integer()
+                                    , saml_metadata_document :: binary()
+                                    , request_id :: string()
+                                    , tags :: [tag()]
+                                    }
+       ).
+-record(delete_role_response, { request_id :: string()
+                              }
+       ).
+-record(list_saml_providers_request, { request_id :: string()
+                                     }
+       ).
+-record(saml_provider_list_entry, { create_date :: non_neg_integer()
+                                  , valid_until :: non_neg_integer()
+                                  , arn :: arn()
+                                  }
+       ).
+-record(list_saml_providers_response, { saml_provider_list :: [#saml_provider_list_entry{}()]
+                                      , request_id :: string()
+                                      }
+       ).
+
 
 -endif.

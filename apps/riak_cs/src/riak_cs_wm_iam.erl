@@ -305,9 +305,9 @@ do_action("ListRoles",
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_roles(
-           RcPid, ?LRREQ{path_prefix = PathPrefix,
-                         max_items = MaxItems,
-                         marker = Marker}) of
+           RcPid, #list_roles_request{path_prefix = PathPrefix,
+                                      max_items = MaxItems,
+                                      marker = Marker}) of
         {ok, #{roles := Roles,
                marker := NewMarker,
                is_truncated := IsTruncated}} ->
@@ -330,7 +330,7 @@ do_action("CreateSAMLProvider",
     case riak_cs_iam:create_saml_provider(Specs) of
         {ok, {Arn, Tags}} ->
             RequestId = make_request_id(),
-            logger:info("Created SAML provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
+            logger:info("Created SAML Provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_saml_provider_response{saml_provider_arn = Arn,
                                                    tags = Tags,
@@ -340,6 +340,58 @@ do_action("CreateSAMLProvider",
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
             ?LOG_DEBUG("deal with me ~p", [Reason]),
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("GetSAMLProvider",
+          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    Arn = proplists:get_value("SAMLProviderArn", Form),
+    case riak_cs_iam:get_saml_provider(Arn, RcPid) of
+        {ok, {CreateDate, SAMLMetadataDocument, ValidUntil, Tags}} ->
+            RequestId = make_request_id(),
+            Doc = riak_cs_xml:to_xml(
+                    #get_saml_provider_response{create_date = CreateDate,
+                                                saml_metadata_document = SAMLMetadataDocument,
+                                                valid_until = ValidUntil,
+                                                tags = Tags,
+                                                request_id = RequestId}),
+            {true, make_final_rd(Doc, RD), Ctx};
+        {error, not_found} ->
+            ResponseMod:api_error(no_such_role, RD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("DeleteSAMLProvider",
+          Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
+    Arn = proplists:get_value("SAMLProviderArn", Form),
+    case riak_cs_iam:delete_saml_provider(Arn) of
+        ok ->
+            RequestId = make_request_id(),
+            logger:info("Deleted SAML Provider \"~s\" on request_id ~s", [RoleName, RequestId]),
+            Doc = riak_cs_xml:to_xml(
+                    #delete_saml_provider_response{request_id = RequestId}),
+            {true, make_final_rd(Doc, RD), Ctx};
+        {error, not_found} ->
+            ResponseMod:api_error(no_such_role, RD, Ctx);
+        {error, Reason} ->
+            ?LOG_DEBUG("deal with me ~p", [Reason]),
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("ListSAMLProviders",
+          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    case riak_cs_api:list_roles(
+           RcPid, #list_saml_providers_request{}) of
+        {ok, PP} ->
+            RequestId = make_request_id(),
+            Doc = riak_cs_xml:to_xml(
+                    #list_saml_providers_response{saml_provider_list = PP,
+                                                  request_id = RequestId}),
+            {true, make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
 

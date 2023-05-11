@@ -25,6 +25,8 @@
          get_role/2,
          fix_permissions_boundary/1,
          create_saml_provider/1,
+         delete_saml_provider/1,
+         get_saml_provider/2,
          exprec_role/1,
          exprec_saml_provider/1
         ]).
@@ -72,8 +74,8 @@ from_riakc_obj(Obj) ->
                          Value /= <<>>  % tombstone
                      ],
             Role = hd(Values),
-            logger:warning("Role object (RoleId: ~s, RoleName: \"~s\") has ~b siblings",
-                           [Role?IAM_ROLE.role_id, Role?IAM_ROLE.role_name, N]),
+            logger:warning("object with key ~p has ~b siblings",
+                           [riakc_obj:key(Obj), N]),
             Role
     end.
 
@@ -124,6 +126,22 @@ create_saml_provider(Specs) ->
                Encoded,
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
+
+-spec delete_saml_provider(string()) -> ok | {error, term()}.
+delete_saml_provider(Arn) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:delete_saml_provider(Arn, [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+-spec get_saml_provider(string(), pid()) -> {ok, ?IAM_SAML_PROVIDER{}} | {error, term()}.
+get_saml_provider(Arn, RcPid) ->
+    BinKey = list_to_binary(Arn),
+    case riak_cs_riak_client:get_saml_provider(RcPid, BinKey) of
+        {ok, Obj} ->
+            {ok, from_riakc_obj(Obj)};
+        Error ->
+            Error
+    end.
 
 
 handle_response({ok, Returnable}) ->
