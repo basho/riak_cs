@@ -410,20 +410,10 @@ bucket_policy_json(PolicyJson, KeyId)  ->
 
 %% @doc Generate a JSON document to use in setting bucket versioning option
 -spec bucket_versioning_json(bucket_versioning(), string()) -> string().
-bucket_versioning_json(#bucket_versioning{status = Status,
-                                          mfa_delete = MfaDelete,
-                                          can_update_versions = CanUpdateVersions,
-                                          use_subversioning = UseSubversioning,
-                                          repl_siblings = ReplSiblings}, KeyId)  ->
-    binary_to_list(
-      iolist_to_binary(
-        mochijson2:encode({struct, [{<<"requester">>, list_to_binary(KeyId)},
-                                    {<<"versioning">>, [{<<"Status">>, Status},
-                                                        {<<"MFADelete">>, MfaDelete},
-                                                        {<<"CanUpdateVersions">>, CanUpdateVersions},
-                                                        {<<"UseSubversioning">>, UseSubversioning},
-                                                        {<<"ReplSiblings">>, ReplSiblings}]}]
-                          }))).
+bucket_versioning_json(BV, KeyId)  ->
+    jason:encode([{requester, KeyId},
+                  {versioning, BV}],
+                 [{records, [{bucket_versioning, record_info(fields, bucket_versioning)}]}]).
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), riak_client()) -> {ok, boolean()} | {error, term()}.

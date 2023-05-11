@@ -94,6 +94,7 @@
         , multipart_descr_v1
         , part_descr_v1
         , access_v1
+        , bucket_versioning
           %% S3 records
         , arn_v1
         , policy_v1

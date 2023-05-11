@@ -324,11 +324,10 @@ set_bucket_policy(Bucket, #{requester := Requester,
     do_bucket_op(Bucket, Requester, [{policy, base64:decode(PolicyJson)}], update_policy).
 
 %% @doc set bucket versioning option
--spec set_bucket_versioning(binary(), term()) -> ok | {error, term()}.
-set_bucket_versioning(Bucket, FieldList) ->
-    OwnerId = proplists:get_value(<<"requester">>, FieldList, <<>>),
-    Json = proplists:get_value(<<"versioning">>, FieldList, []),
-    do_bucket_op(Bucket, OwnerId, [{versioning, Json}], update_versioning).
+-spec set_bucket_versioning(binary(), maps:map()) -> ok | {error, term()}.
+set_bucket_versioning(Bucket, #{requester := Requester,
+                                versioning := Versioning}) ->
+    do_bucket_op(Bucket, Requester, [{versioning, Versioning}], update_versioning).
 
 
 %% @doc Delete a bucket
