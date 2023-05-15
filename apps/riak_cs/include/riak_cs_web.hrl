@@ -303,13 +303,12 @@
        ).
 -record(get_saml_provider_response, { create_date :: non_neg_integer()
                                     , valid_until :: non_neg_integer()
-                                    , saml_metadata_document :: binary()
-                                    , request_id :: string()
                                     , tags :: [tag()]
+                                    , request_id :: string()
                                     }
        ).
--record(delete_role_response, { request_id :: string()
-                              }
+-record(delete_saml_provider_response, { request_id :: string()
+                                       }
        ).
 -record(list_saml_providers_request, { request_id :: string()
                                      }
@@ -319,7 +318,7 @@
                                   , arn :: arn()
                                   }
        ).
--record(list_saml_providers_response, { saml_provider_list :: [#saml_provider_list_entry{}()]
+-record(list_saml_providers_response, { saml_provider_list :: [#saml_provider_list_entry{}]
                                       , request_id :: string()
                                       }
        ).

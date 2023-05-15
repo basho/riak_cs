@@ -36,7 +36,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--spec create_role(proplist:proplist()) -> {ok, RoleId::string()} | {error, already_exists | term()}.
+-spec create_role(proplist:proplist()) -> {ok, role()} | {error, already_exists | term()}.
 create_role(Specs) ->
     Encoded = jsx:encode(Specs),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -87,13 +87,15 @@ exprec_role(Map) ->
                       tags = TT0} = exprec:frommap_role_v1(Map),
     TT = [exprec:frommap_tag(T) || T <- TT0],
     LU = case LU0 of
-             undefined ->
+             Undefined1 when Undefined1 =:= null;
+                             Undefined1 =:= undefined ->
                  undefined;
              _ ->
                  exprec:frommap_role_last_used(LU0)
          end,
     PB = case PB0 of
-             undefined ->
+             Undefined2 when Undefined2 =:= null;
+                             Undefined2 =:= undefined ->
                  undefined;
              _ ->
                  exprec:frommap_permissions_boundary(PB0)
@@ -119,13 +121,19 @@ fix_permissions_boundary(Map) ->
 
 -spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
 create_saml_provider(Specs) ->
-    Encoded = jsx:encode(Specs),
+    Encoded = jsx:encode(
+                enrich_with_valid_until(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_saml_provider(
                "application/json",
                Encoded,
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
+
+enrich_with_valid_until(#{saml_metadata_document := _D} = Specs) ->
+    ?LOG_WARNING("STUB need to extract ValidUntil here from SAMLMetadataDocument", []),
+    TS = calendar:system_time_to_local_time(os:system_time(second) + 3600*24, second),
+    maps:put(valid_until, rts:iso8601(TS), Specs).
 
 -spec delete_saml_provider(string()) -> ok | {error, term()}.
 delete_saml_provider(Arn) ->

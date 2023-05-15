@@ -63,7 +63,6 @@
                    iodata() |
                    integer() |
                    float().         % Really Needed?
--type simple_form() :: xml_content().
 
 %% ===================================================================
 %% Public API
@@ -120,7 +119,9 @@ to_xml(#delete_role_response{} = R) ->
 to_xml(#list_roles_response{} = R) ->
     list_roles_response_to_xml(R);
 to_xml(#create_saml_provider_response{} = R) ->
-    create_saml_provider_response_to_xml(R).
+    create_saml_provider_response_to_xml(R);
+to_xml(#get_saml_provider_response{} = R) ->
+    get_saml_provider_response_to_xml(R).
 
 
 
@@ -134,7 +135,6 @@ export_xml(XmlDoc, Opts) ->
     list_to_binary(xmerl:export_simple(XmlDoc, xmerl_xml, Opts)).
 
 %% @doc Convert simple form into XML.
--spec simple_form_to_xml(simple_form()) -> iodata().
 simple_form_to_xml(Elements) ->
     XmlDoc = format_elements(Elements),
     export_xml(XmlDoc).
@@ -350,7 +350,7 @@ role_record_to_xml(Role) ->
 
 role_records_to_xml(Roles) ->
     NN = [role_node(R) || R <- Roles],
-    export_xml([make_internal_node('Roles', NN)]).
+    export_xml([{'Roles', NN}]).
 
 role_node(?IAM_ROLE{arn = Arn,
                     assume_role_policy_document = AssumeRolePolicyDocument,
@@ -363,49 +363,49 @@ role_node(?IAM_ROLE{arn = Arn,
                     role_last_used = RoleLastUsed,
                     tags = Tags,
                     role_name = RoleName}) ->
+    ?LOG_DEBUG("DO we have RoleC? ~p", [is_binary(Description)]),
     C = lists:flatten(
-          [[{'Arn', make_arn(Arn)} || Arn /= undefined],
-           [{'AssumeRolePolicyDocument', AssumeRolePolicyDocument} || AssumeRolePolicyDocument /= undefined],
-           {'CreateDate', binary_to_list(CreateDate)},
-           [{'Description', Description} || Description /= undefined],
-           [{'MaxSessionDuration', list_to_integer(MaxSessionDuration)} || MaxSessionDuration /= undefined],
-           {'Path', Path},
-           [{'PermissionsBoundary', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+          [{'Arn', [make_arn(Arn)]},
+           [{'AssumeRolePolicyDocument', [binary_to_list(AssumeRolePolicyDocument)]} || AssumeRolePolicyDocument /= undefined],
+           {'CreateDate', [binary_to_list(CreateDate)]},
+           [{'Description', [binary_to_list(Description)]} || Description /= undefined],
+           [{'MaxSessionDuration', [integer_to_list(MaxSessionDuration)]} || MaxSessionDuration /= undefined],
+           {'Path', [binary_to_list(Path)]},
+           {'PermissionsBoundary', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                                      {'xsi:type', "PermissionsBoundary"}],
-             make_permission_boundary(PermissionsBoundary)} || PermissionsBoundary /= undefined],
-           {'RoleId', RoleId},
+            make_permissions_boundary(PermissionsBoundary)},
+           {'RoleId', [binary_to_list(RoleId)]},
            [{'RoleLastUsed', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                               {'xsi:type', "RoleLastUsed"}],
              make_role_last_used(RoleLastUsed)} || RoleLastUsed /= undefined],
-           [{'RoleName', RoleName} || RoleName /= undefined],
-           [{'Tags', [tag_node(T) || T <- Tags]} || Tags /= []]
+           [{'RoleName', [binary_to_list(RoleName)]} || RoleName /= undefined],
+           {'Tags', [tag_node(T) || T <- Tags]}
           ]),
-    {'Role', [make_external_node(K, V) || {K, V} <- C]}.
+    {'Role', C}.
 
-make_arn(BareArn) when is_list(BareArn) ->
-    BareArn;
+make_arn(BareArn) when is_binary(BareArn) ->
+    binary_to_list(BareArn);
 make_arn(?S3_ARN{provider = Provider,
                  service = Service,
                  region = Region,
                  id = Id,
                  path = Path}) ->
-    lists:flatten([Provider, Service, Region, Id, Path]).
+    binary_to_list(
+      iolist_to_binary(
+        [atom_to_list(Provider), $:, atom_to_list(Service), $:, Region, $:, Id, $/, Path])).
 
 make_role_last_used(?IAM_ROLE_LAST_USED{last_used_date = LastUsedDate,
                                         region = Region}) ->
-    [{'LastUsedDate', LastUsedDate} || LastUsedDate =/= undefined ]
-        ++ [{'Region', Region} || Region =/= undefined].
+    [{'LastUsedDate', [binary_to_list(rts:iso8601(LastUsedDate))]} || LastUsedDate =/= undefined ]
+        ++ [{'Region', [binary_to_list(Region)]} || Region =/= undefined].
 
-make_permission_boundary(BareArn) when is_list(BareArn);
-                                       is_binary(BareArn) ->
-    make_permission_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = BareArn,
-                                                      permissions_boundary_type = "Policy"});
-make_permission_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = PermissionsBoundaryArn,
-                                                  permissions_boundary_type = PermissionsBoundaryType}) ->
-    C = [{'PermissionsBoundaryArn', make_arn(PermissionsBoundaryArn)},
-         {'PermissionsBoundaryType', PermissionsBoundaryType}
-        ],
-    C.
+make_permissions_boundary(BareArn) when is_binary(BareArn) ->
+    make_permissions_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = BareArn});
+make_permissions_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = PermissionsBoundaryArn,
+                                                   permissions_boundary_type = PermissionsBoundaryType}) ->
+    [{'PermissionsBoundaryArn', [make_arn(PermissionsBoundaryArn)]},
+     {'PermissionsBoundaryType', [binary_to_list(PermissionsBoundaryType)]}
+    ].
 
 
 create_role_response_to_xml(#create_role_response{role = Role, request_id = RequestId}) ->
@@ -466,24 +466,32 @@ saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
                                       valid_until = ValidUntil}) ->
     C = lists:flatten(
           [{'Arn', [binary_to_list(Arn)]},
-           {'SAMLMetadataDocument', [SAMLMetadataDocument]},
+           {'SAMLMetadataDocument', [binary_to_list(SAMLMetadataDocument)]},
            {'CreateDate', [binary_to_list(CreateDate)]},
            {'ValidUntil', [binary_to_list(ValidUntil)]},
            {'Tags', [tag_node(T) || T <- Tags]}
           ]),
-    {'SAMLProvider', [make_external_node(K, V) || {K, V} <- C]}.
+    {'SAMLProvider', C}.
 
-saml_provider_node_lite(Arn, Tags) ->
+saml_provider_node_for_create(Arn, Tags) ->
     C = lists:flatten(
           [{'SAMLProviderArn', [binary_to_list(Arn)]},
-           {'Tags', [tag_node(T) || T <- Tags]}
+           {'Tags', [], [tag_node(T) || T <- Tags]}
           ]),
     {'CreateSAMLProviderResult', C}.
+
+saml_provider_node_for_get(CreateDate, ValidUntil, Tags) ->
+    C = lists:flatten(
+          [{'CreateDate', [binary_to_list(CreateDate)]},
+           {'ValidUntil', [binary_to_list(ValidUntil)]},
+           {'Tags', [], [tag_node(T) || T <- Tags]}
+          ]),
+    {'GetSAMLProviderResult', C}.
 
 create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provider_arn = BareArn,
                                                                     tags = Tags,
                                                                     request_id = RequestId}) ->
-    CreateSAMLProviderResult = saml_provider_node_lite(BareArn, Tags),
+    CreateSAMLProviderResult = saml_provider_node_for_create(BareArn, Tags),
     ResponseMetadata = make_internal_node('RequestId', [RequestId]),
     C = [CreateSAMLProviderResult,
          {'ResponseMetadata', [ResponseMetadata]}],
@@ -493,13 +501,13 @@ create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provide
 
 get_saml_provider_response_to_xml(#get_saml_provider_response{create_date = CreateDate,
                                                               valid_until = ValidUntil,
-                                                              saml_metadata_document = SAMLMetadataDocument,
+                                                              tags = Tags,
                                                               request_id = RequestId}) ->
-    CreateSAMLProviderResult = saml_provider_node_lite(BareArn, Tags),
+    GetSAMLProviderResult = saml_provider_node_for_get(CreateDate, ValidUntil, Tags),
     ResponseMetadata = make_internal_node('RequestId', [RequestId]),
-    C = [CreateSAMLProviderResult,
+    C = [GetSAMLProviderResult,
          {'ResponseMetadata', [ResponseMetadata]}],
-    export_xml([make_internal_node('CreateSAMLProviderResponse',
+    export_xml([make_internal_node('GetSAMLProviderResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
 

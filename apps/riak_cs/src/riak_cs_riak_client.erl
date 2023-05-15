@@ -33,6 +33,7 @@
          get_bucket/2,
          set_bucket_name/2,
          get_role/2,
+         get_saml_provider/2,
          get_user/2,
          get_user_with_pbc/2,
          save_user/3,
@@ -149,10 +150,6 @@ rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
 get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
     gen_server:call(RcPid, {get_bucket, BucketName}, infinity).
 
--spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_role(RcPid, BucketName) when is_binary(BucketName) ->
-    gen_server:call(RcPid, {get_role, BucketName}, infinity).
-
 -spec set_bucket_name(riak_client(), binary()) -> ok | {error, term()}.
 set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
     gen_server:call(RcPid, {set_bucket_name, BucketName}, infinity).
@@ -184,6 +181,14 @@ set_manifest_bag(RcPid, ManifestBagId) ->
 -spec get_manifest_bag(riak_client()) -> {ok, binary()} | {error, term()}.
 get_manifest_bag(RcPid) ->
     gen_server:call(RcPid, get_manifest_bag).
+
+-spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+get_role(RcPid, BucketName) when is_binary(BucketName) ->
+    gen_server:call(RcPid, {get_role, BucketName}, infinity).
+
+-spec get_saml_provider(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+get_saml_provider(RcPid, Arn) when is_binary(Arn) ->
+    gen_server:call(RcPid, {get_saml_provider, Arn}, infinity).
 
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
@@ -221,13 +226,6 @@ handle_call({get_bucket, BucketName}, _From, State0) ->
     end;
 handle_call({set_bucket_name, _BucketName}, _From, State) ->
     {reply, ok, State};
-handle_call({get_role, Id}, _From, State0) ->
-    case do_get_from_bucket(?IAM_ROLE_BUCKET, Id, get_cs_role, State0) of
-        {ok, Obj, State9} ->
-            {reply, {ok, Obj}, State9};
-        {error, Reason, State9} ->
-            {reply, {error, Reason}, State9}
-    end;
 handle_call({get_user, UserKey}, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc = MasterPbc} = NewState} ->
@@ -243,6 +241,20 @@ handle_call({save_user, User, OldUserObj}, _From, State) ->
             {reply, Res, NewState};
         {error, Reason} ->
             {reply, {error, Reason}, State}
+    end;
+handle_call({get_role, Id}, _From, State0) ->
+    case do_get_from_bucket(?IAM_ROLE_BUCKET, Id, get_cs_role, State0) of
+        {ok, Obj, State9} ->
+            {reply, {ok, Obj}, State9};
+        {error, Reason, State9} ->
+            {reply, {error, Reason}, State9}
+    end;
+handle_call({get_saml_provider, Id}, _From, State0) ->
+    case do_get_from_bucket(?IAM_SAMLPROVIDER_BUCKET, Id, get_cs_saml_provider, State0) of
+        {ok, Obj, State9} ->
+            {reply, {ok, Obj}, State9};
+        {error, Reason, State9} ->
+            {reply, {error, Reason}, State9}
     end;
 handle_call(master_pbc, _From, State) ->
     case ensure_master_pbc(State) of

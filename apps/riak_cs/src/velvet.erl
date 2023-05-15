@@ -278,7 +278,7 @@ buckets_path(Bucket, versioning) ->
 
 
 
--spec create_role(string(), string(), proplists:proplist()) -> {ok, string()} | {error, term()}.
+-spec create_role(string(), string(), proplists:proplist()) -> {ok, role()} | {error, term()}.
 create_role(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path([]),
@@ -298,8 +298,8 @@ create_role(ContentType, Doc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
-            RoleId = RespBody,
-            {ok, RoleId};
+            Role = riak_cs_iam:exprec_role(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            {ok, Role};
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->

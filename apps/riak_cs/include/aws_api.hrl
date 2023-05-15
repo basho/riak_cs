@@ -174,7 +174,7 @@
 
 
 -record(permissions_boundary, { permissions_boundary_arn :: arn()
-                              , permissions_boundary_type = "Policy" :: string()
+                              , permissions_boundary_type = <<"Policy">> :: binary()
                               }
 ).
 -type permissions_boundary() :: #permissions_boundary{}.
@@ -189,23 +189,23 @@
 -define(IAM_TAG, #tag).
 
 
--record(role_last_used, { last_used_date :: string()
-                        , region :: string()
+-record(role_last_used, { last_used_date :: non_neg_integer()
+                        , region :: binary()
                         }
        ).
 -type role_last_used() :: #role_last_used{}.
 -define(IAM_ROLE_LAST_USED, #role_last_used).
 
 -record(role_v1, { arn :: arn()
-                 , assume_role_policy_document :: policy()
+                 , assume_role_policy_document :: binary()
                  , create_date = rts:iso8601(os:system_time(millisecond)) :: non_neg_integer()
-                 , description :: string()
+                 , description :: binary()
                  , max_session_duration :: non_neg_integer()
-                 , path :: string()
+                 , path :: binary()
                  , permissions_boundary :: permissions_boundary()
-                 , role_id :: string()
+                 , role_id :: binary()
                  , role_last_used :: role_last_used()
-                 , role_name :: string()
+                 , role_name :: binary()
                  , tags :: [tag()]
                  }
        ).

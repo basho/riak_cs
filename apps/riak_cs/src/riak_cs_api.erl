@@ -53,7 +53,7 @@ list_objects(ReqType, _UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
             Error
     end.
 
--spec list_roles(riak_client(), list_roles_request()) ->
+-spec list_roles(riak_client(), #list_roles_request{}) ->
           {ok, maps:map()} | {error, term()}.
 list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
                                       max_items = MaxItems,

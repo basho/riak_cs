@@ -239,7 +239,7 @@ map_roles(Object, _2, Args) ->
             [];
         _ ->
             ?IAM_ROLE{path = Path} = Role = binary_to_term(RoleBin),
-            case string:str(Path, PathPrefix) of
+            case binary:longest_common_prefix([Path, PathPrefix]) of
                 0 ->
                     [];
                 _ ->

@@ -93,11 +93,19 @@ content_types_accepted(RD, Ctx) ->
 accept_json(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_role(FF) of
-        {ok, RoleId} ->
-            {true, wrq:set_resp_body(RoleId, RD), Ctx};
+        {ok, Role} ->
+            Doc = jason:encode(armor_json_in_arpd(Role),
+                               [{records, [{role_v1, record_info(fields, role_v1)},
+                                           {permissions_boundary, record_info(fields, permissions_boundary)},
+                                           {role_last_used, record_info(fields, role_last_used)},
+                                           {arn_v1, record_info(fields, arn_v1)},
+                                           {tag, record_info(fields, tag)}]}]),
+            {true, wrq:set_resp_body(Doc, RD), Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)
     end.
+armor_json_in_arpd(Role = ?IAM_ROLE{assume_role_policy_document = ARP}) ->
+    Role?IAM_ROLE{assume_role_policy_document = base64:encode(ARP)}.
 
 -spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.

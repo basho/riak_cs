@@ -248,12 +248,7 @@ do_action("CreateRole",
     Specs = finish_tags(
               lists:foldl(fun role_fields_filter/2, #{}, Form)),
     case riak_cs_iam:create_role(Specs) of
-        {ok, RoleId} ->
-            Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-                riak_cs_iam:exprec_role(
-                  riak_cs_iam:fix_permissions_boundary(Specs)),
-            Role = Role_?IAM_ROLE{assume_role_policy_document = binary_to_list(base64:decode(A)),
-                                  role_id = RoleId},
+        {ok, Role} ->
             RequestId = make_request_id(),
             logger:info("Created role \"~s\" on request_id ~s", [Role?IAM_ROLE.role_id, RequestId]),
             Doc = riak_cs_xml:to_xml(
@@ -305,7 +300,7 @@ do_action("ListRoles",
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_roles(
-           RcPid, #list_roles_request{path_prefix = PathPrefix,
+           RcPid, #list_roles_request{path_prefix = list_to_binary(PathPrefix),
                                       max_items = MaxItems,
                                       marker = Marker}) of
         {ok, #{roles := Roles,
@@ -348,11 +343,12 @@ do_action("GetSAMLProvider",
                                            response_module = ResponseMod}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
     case riak_cs_iam:get_saml_provider(Arn, RcPid) of
-        {ok, {CreateDate, SAMLMetadataDocument, ValidUntil, Tags}} ->
+        {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
+                                valid_until = ValidUntil,
+                                tags = Tags}} ->
             RequestId = make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_saml_provider_response{create_date = CreateDate,
-                                                saml_metadata_document = SAMLMetadataDocument,
                                                 valid_until = ValidUntil,
                                                 tags = Tags,
                                                 request_id = RequestId}),
@@ -369,7 +365,7 @@ do_action("DeleteSAMLProvider",
     case riak_cs_iam:delete_saml_provider(Arn) of
         ok ->
             RequestId = make_request_id(),
-            logger:info("Deleted SAML Provider \"~s\" on request_id ~s", [RoleName, RequestId]),
+            logger:info("Deleted SAML Provider with arn \"~s\" on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_saml_provider_response{request_id = RequestId}),
             {true, make_final_rd(Doc, RD), Ctx};
@@ -381,9 +377,9 @@ do_action("DeleteSAMLProvider",
     end;
 
 do_action("ListSAMLProviders",
-          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
-    case riak_cs_api:list_roles(
+          _Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                            response_module = ResponseMod}) ->
+    case riak_cs_api:list_saml_providers(
            RcPid, #list_saml_providers_request{}) of
         {ok, PP} ->
             RequestId = make_request_id(),
@@ -405,15 +401,15 @@ role_fields_filter({ItemKey, ItemValue}, Acc) ->
         "AssumeRolePolicyDocument" ->
             maps:put(assume_role_policy_document, base64:encode(ItemValue), Acc);
         "Description" ->
-            maps:put(description, ItemValue, Acc);
+            maps:put(description, list_to_binary(ItemValue), Acc);
         "MaxSessionDuration" ->
-            maps:put(max_session_duration, ItemValue, Acc);
+            maps:put(max_session_duration, list_to_integer(ItemValue), Acc);
         "Path" ->
-            maps:put(path, ItemValue, Acc);
+            maps:put(path, list_to_binary(ItemValue), Acc);
         "PermissionsBoundary" ->
-            maps:put(permissions_boundary, ItemValue, Acc);
+            maps:put(permissions_boundary, list_to_binary(ItemValue), Acc);
         "RoleName" ->
-            maps:put(role_name, ItemValue, Acc);
+            maps:put(role_name, list_to_binary(ItemValue), Acc);
         "Tags.member." ++ TagMember ->
             add_tag(TagMember, ItemValue, Acc);
         CommonParameter when CommonParameter == "Action";

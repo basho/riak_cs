@@ -180,7 +180,7 @@ delete_bucket(Bucket, OwnerId) ->
             Error
     end.
 
--spec create_role(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
+-spec create_role(proplists:proplist()) -> {ok, role()} | {error, riak_connect_failed() | term()}.
 create_role(Fields) ->
     Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
         riak_cs_iam:exprec_role(
@@ -849,13 +849,13 @@ role_from_riakc_obj(Obj) ->
     end.
 
 
--spec save_role(role(), pid()) -> {ok, string()} | {error, term()}.
+-spec save_role(role(), pid()) -> {ok, role()} | {error, term()}.
 save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
                             path = Path}, RiakPid) ->
     RoleId = ensure_unique_role_id(RiakPid),
 
-    ?LOG_INFO("Saving new role \"~s\" with id ~s", [RoleName, RoleId]),
-    Role1 = Role0?IAM_ROLE{role_id = RoleId},
+    Role1 = Role0?IAM_ROLE{arn = make_role_arn(RoleName, Path),
+                           role_id = RoleId},
 
     Indexes = [{?ROLE_PATH_INDEX, Path}
               ],
@@ -866,8 +866,9 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
     case Res of
         ok ->
+            ?LOG_INFO("Saved new role \"~s\" with id ~s", [RoleName, RoleId]),
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
-            {ok, RoleId};
+            {ok, Role1};
         {error, Reason} ->
             logger:error("Failed to save role \"~s\": ~p", [RoleName, Reason]),
             Res
@@ -883,8 +884,10 @@ ensure_unique_role_id(RcPid) ->
     end.
 
 make_role_id() ->
-    fill(?ROLE_ID_LENGTH - 4, "AROA", ?ROLE_ID_CHARSET).
+    list_to_binary(fill(?ROLE_ID_LENGTH - 4, "AROA", ?ROLE_ID_CHARSET)).
 
+make_role_arn(Name, Path) ->
+    iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":role", Path, $/, Name]).
 
 -spec delete_role(string()) -> ok.
 delete_role(RoleName) ->
@@ -918,19 +921,19 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
-            riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, iolist_to_binary(Arn), term_to_binary(P1)),
+            riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_samlprovider], TAT),
-            {ok, {list_to_binary(Arn), Tags}};
+            {ok, {Arn, Tags}};
         {error, Reason} ->
             logger:error("Failed to save SAML provider \"~s\": ~p", [Reason]),
             Res
     end.
 make_provider_arn(Name) ->
-    "arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name.
+    iolist_to_binary("arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name).
 
 
 
