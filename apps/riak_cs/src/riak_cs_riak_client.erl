@@ -183,11 +183,11 @@ get_manifest_bag(RcPid) ->
     gen_server:call(RcPid, get_manifest_bag).
 
 -spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_role(RcPid, BucketName) when is_binary(BucketName) ->
+get_role(RcPid, BucketName) ->
     gen_server:call(RcPid, {get_role, BucketName}, infinity).
 
 -spec get_saml_provider(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_saml_provider(RcPid, Arn) when is_binary(Arn) ->
+get_saml_provider(RcPid, Arn) ->
     gen_server:call(RcPid, {get_saml_provider, Arn}, infinity).
 
 %% TODO: Using this function is more or less a cheat.

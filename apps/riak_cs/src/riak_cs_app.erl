@@ -143,7 +143,9 @@ check_bucket_props() ->
     Buckets = [?USER_BUCKET,
                ?ACCESS_BUCKET,
                ?STORAGE_BUCKET,
-               ?BUCKETS_BUCKET],
+               ?BUCKETS_BUCKET,
+               ?IAM_ROLE_BUCKET,
+               ?IAM_SAMLPROVIDER_BUCKET],
     {ok, MasterPbc} = riak_connection(),
     try
         Results = [check_bucket_props(Bucket, MasterPbc) ||

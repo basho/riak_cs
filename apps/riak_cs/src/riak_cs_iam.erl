@@ -52,12 +52,11 @@ delete_role(RoleId) ->
     Result = velvet:delete_role(RoleId, [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
--spec get_role(string(), pid()) -> {ok, ?IAM_ROLE{}} | {error, term()}.
+-spec get_role(binary(), pid()) -> {ok, ?IAM_ROLE{}} | {error, term()}.
 get_role(RoleName, RcPid) ->
-    BinKey = list_to_binary(RoleName),
-    case riak_cs_riak_client:get_role(RcPid, BinKey) of
+    case riak_cs_riak_client:get_role(RcPid, RoleName) of
         {ok, Obj} ->
-            {ok, from_riakc_obj(Obj)};
+            from_riakc_obj(Obj);
         Error ->
             Error
     end.
@@ -65,18 +64,25 @@ get_role(RoleName, RcPid) ->
 from_riakc_obj(Obj) ->
     case riakc_obj:value_count(Obj) of
         1 ->
-            binary_to_term(riakc_obj:get_value(Obj));
+            case riakc_obj:get_value(Obj) of
+                ?DELETED_MARKER ->
+                    {error, not_found};
+                V ->
+                    {ok, binary_to_term(V)}
+            end;
         0 ->
             error(no_value);
         N ->
-            Values = [binary_to_term(Value) ||
-                         Value <- riakc_obj:get_values(Obj),
-                         Value /= <<>>  % tombstone
-                     ],
-            Role = hd(Values),
-            logger:warning("object with key ~p has ~b siblings",
-                           [riakc_obj:key(Obj), N]),
-            Role
+            logger:warning("object with key ~p has ~b siblings", [riakc_obj:key(Obj), N]),
+            Values = [V || V <- riakc_obj:get_values(Obj),
+                           V /= <<>>,   %% tombstone
+                           V /= ?DELETED_MARKER],
+            case length(Values) of
+                0 ->
+                    {error, not_found};
+                _ ->
+                    {ok, binary_to_term(hd(Values))}
+            end
     end.
 
 
@@ -146,7 +152,7 @@ get_saml_provider(Arn, RcPid) ->
     BinKey = list_to_binary(Arn),
     case riak_cs_riak_client:get_saml_provider(RcPid, BinKey) of
         {ok, Obj} ->
-            {ok, from_riakc_obj(Obj)};
+            from_riakc_obj(Obj);
         Error ->
             Error
     end.

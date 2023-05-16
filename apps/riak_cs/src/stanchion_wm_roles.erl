@@ -110,7 +110,7 @@ armor_json_in_arpd(Role = ?IAM_ROLE{assume_role_policy_document = ARP}) ->
 -spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.
 delete_resource(RD, Ctx = #stanchion_context{}) ->
-    RoleName = wrq:path(RD),
+    RoleName = wrq:path_info(role_name, RD),
     case stanchion_server:delete_role(RoleName) of
         ok ->
             {true, RD, Ctx};

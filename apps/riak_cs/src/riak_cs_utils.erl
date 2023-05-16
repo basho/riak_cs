@@ -235,7 +235,7 @@ map_roles(Object, _2, Args) ->
     #{path_prefix := PathPrefix} = Args,
     [RoleBin|_] = riak_object:get_values(Object),
     case RoleBin of
-        ?FREE_ROLE_MARKER ->
+        ?DELETED_MARKER ->
             [];
         _ ->
             ?IAM_ROLE{path = Path} = Role = binary_to_term(RoleBin),

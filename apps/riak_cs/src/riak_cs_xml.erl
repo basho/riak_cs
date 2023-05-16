@@ -363,7 +363,6 @@ role_node(?IAM_ROLE{arn = Arn,
                     role_last_used = RoleLastUsed,
                     tags = Tags,
                     role_name = RoleName}) ->
-    ?LOG_DEBUG("DO we have RoleC? ~p", [is_binary(Description)]),
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
            [{'AssumeRolePolicyDocument', [binary_to_list(AssumeRolePolicyDocument)]} || AssumeRolePolicyDocument /= undefined],
