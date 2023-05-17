@@ -61,8 +61,7 @@
 
 -endif.
 
--record(state, {riak_ip :: undefined | string(),
-                riak_port :: undefined | pos_integer()}).
+-record(state, {pbc :: pid()}).
 -type state() :: #state{}.
 
 %% This ?TURNAROUND_TIME has another ?TURNAROUND_TIME at gen_server
@@ -200,7 +199,8 @@ msgq_len() ->
 %% @doc Initialize the server.
 -spec init([] | test) -> {ok, state()}.
 init([]) ->
-    {ok, #state{}};
+    {ok, Pbc} = riak_cs_utils:riak_connection(),
+    {ok, #state{pbc = Pbc}};
 init(test) ->
     {ok, #state{}}.
 
@@ -209,89 +209,90 @@ init(test) ->
                          {reply, ok, state()}.
 handle_call({create_bucket, BucketData},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:create_bucket(BucketData)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_bucket(BucketData, Pbc)),
     {reply, Result, State};
 handle_call({create_user, UserData},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:create_user(UserData)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_user(UserData, Pbc)),
     {reply, Result, State};
 handle_call({update_user, KeyId, UserData},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:update_user(KeyId, UserData)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:update_user(KeyId, UserData, Pbc)),
     {reply, Result, State};
 handle_call({delete_bucket, Bucket, OwnerId},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:delete_bucket(Bucket, OwnerId)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_bucket(Bucket, OwnerId, Pbc)),
     {reply, Result, State};
 handle_call({set_acl, Bucket, FieldList},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_acl(Bucket, FieldList)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_acl(Bucket, FieldList, Pbc)),
     {reply, Result, State};
 handle_call({set_policy, Bucket, FieldList},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_policy(Bucket, FieldList)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_policy(Bucket, FieldList, Pbc)),
     {reply, Result, State};
 handle_call({set_versioning, Bucket, FieldList},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_versioning(Bucket, FieldList)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:set_bucket_versioning(Bucket, FieldList, Pbc)),
     {reply, Result, State};
 handle_call({delete_policy, Bucket, RequesterId},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:delete_bucket_policy(Bucket, RequesterId)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_bucket_policy(Bucket, RequesterId, Pbc)),
     {reply, Result, State};
 handle_call({create_role, RoleData},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:create_role(RoleData)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_role(RoleData, Pbc)),
     {reply, Result, State};
 handle_call({delete_role, RoleName},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:delete_role(RoleName)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_role(RoleName, Pbc)),
     {reply, Result, State};
 handle_call({create_saml_provider, A},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:create_saml_provider(A)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:create_saml_provider(A, Pbc)),
     {reply, Result, State};
 handle_call({delete_saml_provider, A},
             _From,
-            State=#state{}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:delete_saml_provider(A)),
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_saml_provider(A, Pbc)),
     {reply, Result, State};
 handle_call(_Msg, _From, State) ->
+    ?LOG_WARNING("Unhandled call ~p", [_Msg]),
     {reply, ok, State}.
 
 %% @doc Handle asynchronous commands issued via
 %% the exported functions.
--spec handle_cast(term(), state()) ->
-                         {noreply, state()}.
+-spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast(list_buckets, State) ->
     %% @TODO Handle bucket listing and reply
     {noreply, State};
-handle_cast(stop, State) ->
-    {stop, normal, State};
+handle_cast(stop, State = #state{pbc = Pbc}) ->
+    riak_cs_utils:close_riak_connection(Pbc),
+    {stop, normal, State#state{pbc = undefined}};
 handle_cast(Event, State) ->
     logger:warning("Received unknown cast event: ~p", [Event]),
     {noreply, State}.
 
 %% @doc @TODO
--spec handle_info(term(), state()) ->
-                         {noreply, state()}.
+-spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @doc Unused.
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{pbc = Pbc}) ->
+    riak_cs_utils:close_riak_connection(Pbc),
     ok.
 
 %% @doc Unused.

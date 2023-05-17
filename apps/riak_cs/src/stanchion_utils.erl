@@ -24,18 +24,18 @@
 -module(stanchion_utils).
 
 %% Public API
--export([create_bucket/1,
-         delete_bucket/2,
-         create_user/1,
-         update_user/2,
-         create_role/1,
-         delete_role/1,
-         create_saml_provider/1,
-         delete_saml_provider/1,
-         set_bucket_acl/2,
-         set_bucket_policy/2,
-         set_bucket_versioning/2,
-         delete_bucket_policy/2
+-export([create_bucket/2,
+         delete_bucket/3,
+         create_user/2,
+         update_user/3,
+         create_role/2,
+         delete_role/2,
+         create_saml_provider/2,
+         delete_saml_provider/2,
+         set_bucket_acl/3,
+         set_bucket_policy/3,
+         set_bucket_versioning/3,
+         delete_bucket_policy/3
         ]).
 -export([get_admin_creds/0,
          get_manifests_raw/4,
@@ -59,8 +59,8 @@
 -define(ROLE_ID_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
 
 
--type riak_connect_failed() :: {riak_connect_failed, tuple()}.
-
+%% this riak connection is separate, potentially to a different riak
+%% endpoint, from the standard one obtained via riak_cs_utils
 -spec make_pbc() -> pid().
 make_pbc() ->
     {Host, Port} =
@@ -96,30 +96,22 @@ get_pbc() ->
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(maps:map()) -> ok | {error, term()}.
+-spec create_bucket(maps:map(), pid()) -> ok | {error, term()}.
 create_bucket(#{bucket := Bucket,
                 requester := OwnerId,
-                acl := Acl_} = FF) ->
+                acl := Acl_} = FF, Pbc) ->
     Acl = riak_cs_acl:exprec_acl(Acl_),
     BagId = maps:get(bag, FF, undefined),
-    case riak_connection() of
-        {ok, Pbc} ->
-            OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, Acl}, {bag, BagId}], create, Pbc),
-            OpResult2 =
-                case OpResult1 of
-                    ok ->
-                        BucketRecord = bucket_record(Bucket, create),
-                        {ok, {UserObj, KeepDeletedBuckets}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
-                        User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
-                        UpdUser = update_user_buckets(add, User, BucketRecord),
-                        save_user(false, UpdUser, UserObj, Pbc);
-                    {error, _} ->
-                        OpResult1
-                end,
-            _ = close_riak_connection(Pbc),
-            OpResult2;
-        Error ->
-            Error
+    OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, Acl}, {bag, BagId}], create, Pbc),
+    case OpResult1 of
+        ok ->
+            BucketRecord = bucket_record(Bucket, create),
+            {ok, {UserObj, KeepDeletedBuckets}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
+            User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
+            UpdUser = update_user_buckets(add, User, BucketRecord),
+            save_user(false, UpdUser, UserObj, Pbc);
+        {error, _} ->
+            OpResult1
     end.
 
 bucket_record(Name, Operation) ->
@@ -134,86 +126,54 @@ bucket_record(Name, Operation) ->
 
 
 %% @doc Delete a bucket
--spec delete_bucket(binary(), binary()) -> ok | {error, term()}.
-delete_bucket(Bucket, OwnerId) ->
-    case riak_connection() of
-        {ok, Pbc} ->
-            OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete, Pbc),
-            OpResult2 =
-                case OpResult1 of
-                    ok ->
-                        BucketRecord = bucket_record(Bucket, delete),
-                        {ok, {UserObj, KDB}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
-                        User = riak_cs_user:from_riakc_obj(UserObj, KDB),
-                        UpdUser = update_user_buckets(delete, User, BucketRecord),
-                        save_user(false, UpdUser, UserObj, Pbc);
-                    {error, _} ->
-                        OpResult1
-                end,
-            _ = close_riak_connection(Pbc),
-            OpResult2;
-        Error ->
-            Error
+-spec delete_bucket(binary(), binary(), pid()) -> ok | {error, term()}.
+delete_bucket(Bucket, OwnerId, Pbc) ->
+    OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete, Pbc),
+    case OpResult1 of
+        ok ->
+            BucketRecord = bucket_record(Bucket, delete),
+            {ok, {UserObj, KDB}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
+            User = riak_cs_user:from_riakc_obj(UserObj, KDB),
+            UpdUser = update_user_buckets(delete, User, BucketRecord),
+            save_user(false, UpdUser, UserObj, Pbc);
+        {error, _} ->
+            OpResult1
     end.
 
 
 %% @doc Attempt to create a new user
--spec create_user(maps:map()) -> ok | {error, riak_connect_failed() | term()}.
-create_user(FF = #{email := Email, key_id := KeyId}) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                case email_available(Email, RiakPid) of
-                    true ->
-                        User = exprec:frommap_rcs_user_v2(FF#{status => enabled, buckets => []}),
-                        save_user(User, RiakPid);
-                    {false, _} ->
-                        logger:info("Refusing to create an existing user with email ~s", [Email]),
-                        {error, user_already_exists}
-                end
-            catch T:E ->
-                    logger:error("Error on creating user ~s (key_id: ~s): ~p",
-                                 [Email, KeyId, {T, E}]),
-                    {error, {T, E}}
-            after
-                close_riak_connection(RiakPid)
-            end;
-        {error, _} = Else ->
-            Else
+-spec create_user(maps:map(), pid()) -> ok | {error, term()}.
+create_user(FF = #{email := Email}, Pbc) ->
+    case email_available(Email, Pbc) of
+        true ->
+            User = exprec:frommap_rcs_user_v2(FF#{status => enabled, buckets => []}),
+            save_user(User, Pbc);
+        {false, _} ->
+            logger:info("Refusing to create an existing user with email ~s", [Email]),
+            {error, user_already_exists}
     end.
 
-
--spec create_role(proplists:proplist()) -> {ok, role()} | {error, riak_connect_failed() | term()}.
-create_role(Fields) ->
+-spec create_role(maps:map(), pid()) -> {ok, role()} | {error, term()}.
+create_role(Fields, Pbc) ->
     Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
         riak_cs_iam:exprec_role(
           riak_cs_iam:fix_permissions_boundary(Fields)),
     Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                save_role(Role, RiakPid)
-            after
-                close_riak_connection(RiakPid)
-            end;
-        {error, _} = Else ->
-            Else
-    end.
+    save_role(Role, Pbc).
 
 save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
-                            path = Path}, RiakPid) ->
-    RoleId = ensure_unique_role_id(RiakPid),
+                            path = Path}, Pbc) ->
+    RoleId = ensure_unique_role_id(Pbc),
 
     Role1 = Role0?IAM_ROLE{arn = make_role_arn(RoleName, Path),
                            role_id = RoleId},
 
-    Indexes = [{?ROLE_PATH_INDEX, Path}
-              ],
+    Indexes = [{?ROLE_PATH_INDEX, Path}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_ROLE_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
         ok ->
             ?LOG_INFO("Saved new role \"~s\" with id ~s", [RoleName, RoleId]),
@@ -239,53 +199,33 @@ make_role_id() ->
 make_role_arn(Name, Path) ->
     iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":role", Path, $/, Name]).
 
--spec delete_role(string()) -> ok | {error, term()}.
-delete_role(RoleName) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                case riakc_pb_socket:get(RiakPid, ?IAM_ROLE_BUCKET, list_to_binary(RoleName)) of
-                    {ok, Obj0} ->
-                        Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
-                        {Res, TAT} = ?TURNAROUND_TIME(
-                                        riakc_pb_socket:put(RiakPid, Obj1,
-                                                            [{w, all}, {pw, all}])),
-                        case Res of
-                            ok ->
-                                stanchion_stats:update([riakc, put_cs_role], TAT);
-                            {error, Reason} ->
-                                logger:error("Failed to delete role object \"~s\": ~p", [RoleName, Reason]),
-                                Res
-                        end;
-                    {error, _} = ER ->
-                        ER
-                end
-            after
-                close_riak_connection(RiakPid)
+-spec delete_role(string(), pid()) -> ok | {error, term()}.
+delete_role(RoleName, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, list_to_binary(RoleName)) of
+        {ok, Obj0} ->
+            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
+            {Res, TAT} = ?TURNAROUND_TIME(
+                            riakc_pb_socket:put(Pbc, Obj1, [{dw, all}])),
+            case Res of
+                ok ->
+                    stanchion_stats:update([riakc, put_cs_role], TAT);
+                {error, Reason} ->
+                    logger:error("Failed to delete role object \"~s\": ~p", [RoleName, Reason]),
+                    Res
             end;
-        {error, _} = Else ->
-            Else
+        {error, _} = ER ->
+            ER
     end.
 
 
--spec create_saml_provider(proplists:proplist()) -> {ok, string()} | {error, riak_connect_failed() | term()}.
-create_saml_provider(#{name := Name} = Fields) ->
+-spec create_saml_provider(maps:map(), pid()) -> {ok, string()} | {error, term()}.
+create_saml_provider(#{name := Name} = Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
         riak_cs_iam:exprec_saml_provider(Fields),
     P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                save_saml_provider(Name, P1, RiakPid)
-            after
-                close_riak_connection(RiakPid)
-            end;
-        {error, _} = Else ->
-            Else
-    end.
+    save_saml_provider(Name, P1, Pbc).
 
--spec save_saml_provider(string(), saml_provider(), pid()) -> {ok, string()} | {error, term()}.
-save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
+save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
     Arn = make_provider_arn(Name),
 
     ?LOG_INFO("Saving new SAML Provider \"~s\" with ARN ~s", [Name, Arn]),
@@ -296,7 +236,7 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, Obj)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_samlprovider], TAT),
@@ -309,27 +249,24 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, RiakPid) ->
 make_provider_arn(Name) ->
     iolist_to_binary("arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name).
 
--spec delete_saml_provider(binary()) -> ok | {error, term()}.
-delete_saml_provider(Arn) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, ?IAM_SAMLPROVIDER_BUCKET, list_to_binary(Arn))),
-                case Res of
-                    ok ->
-                        stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
-                    {error, Reason} ->
-                        logger:error("Failed to delete SAML Provider object ~s: ~p", [Arn, Reason]),
-                        Res
-                end
-            after
-                close_riak_connection(RiakPid)
+
+-spec delete_saml_provider(binary(), pid()) -> ok | {error, term()}.
+delete_saml_provider(Arn, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn) of
+        {ok, Obj0} ->
+            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
+            {Res, TAT} = ?TURNAROUND_TIME(
+                            riakc_pb_socket:put(Pbc, Obj1, [{dw, all}])),
+            case Res of
+                ok ->
+                    stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
+                {error, Reason} ->
+                    logger:error("Failed to delete saml_provider object ~s: ~p", [Arn, Reason]),
+                    Res
             end;
-        {error, _} = Else ->
-            Else
+        {error, _} = ER ->
+            ER
     end.
-
-
 
 
 
@@ -389,8 +326,8 @@ has_tombstone({MD, _V}) ->
     dict:is_key(<<"X-Riak-Deleted">>, MD) =:= true.
 
 %% @doc List the keys from a bucket
-list_keys(BucketName, RiakPid) ->
-    case ?TURNAROUND_TIME(riakc_pb_socket:list_keys(RiakPid, BucketName)) of
+list_keys(BucketName, Pbc) ->
+    case ?TURNAROUND_TIME(riakc_pb_socket:list_keys(Pbc, BucketName)) of
         {{ok, Keys}, TAT} ->
             stanchion_stats:update([riakc, list_all_manifest_keys], TAT),
             {ok, lists:sort(Keys)};
@@ -399,57 +336,30 @@ list_keys(BucketName, RiakPid) ->
             ER
     end.
 
-%% @doc Get a protobufs connection to the riak cluster
-%% using information from the application environment.
-riak_connection() ->
-    {ok, {Host, Port}} = application:get_env(riak_cs, riak_host),
-    riak_connection(Host, Port).
-
-%% @doc Get a protobufs connection to the riak cluster.
-riak_connection(Host, Port) ->
-    %% We use start() here instead of start_link() because if we can't
-    %% connect to Host & Port for whatever reason (e.g. service down,
-    %% host down, host unreachable, ...), then we'll be crashed by the
-    %% newly-spawned-gen_server-proc's link to us.
-    %%
-    %% There is still a race condition if the PB socket proc's init()
-    %% is successful but then dies immediately *before* we call the
-    %% link() BIF.  That's life in the big city.
-    case riakc_pb_socket:start(Host, Port) of
-        {ok, Pid} = Good ->
-            true = link(Pid),
-            Good;
-        {error, Else} ->
-            {error, {riak_connect_failed, {Else, Host, Port}}}
-    end.
-
-close_riak_connection(Pid) ->
-    riakc_pb_socket:stop(Pid).
-
 %% @doc Set the ACL for a bucket
--spec set_bucket_acl(binary(), term()) -> ok | {error, term()}.
+-spec set_bucket_acl(binary(), maps:map(), pid()) -> ok | {error, term()}.
 set_bucket_acl(Bucket, #{requester := OwnerId,
-                         acl := Acl}) ->
-    do_bucket_op(Bucket, OwnerId, [{acl, Acl}], update_acl).
+                         acl := Acl}, Pbc) ->
+    do_bucket_op(Bucket, OwnerId, [{acl, Acl}], update_acl, Pbc).
 
 %% @doc add bucket policy in the global namespace
 %% FieldList.policy has JSON-encoded policy from user
--spec set_bucket_policy(binary(), maps:map()) -> ok | {error, term()}.
+-spec set_bucket_policy(binary(), maps:map(), pid()) -> ok | {error, term()}.
 set_bucket_policy(Bucket, #{requester := Requester,
-                            policy := PolicyJson}) ->
-    do_bucket_op(Bucket, Requester, [{policy, base64:decode(PolicyJson)}], update_policy).
+                            policy := PolicyJson}, Pbc) ->
+    do_bucket_op(Bucket, Requester, [{policy, base64:decode(PolicyJson)}], update_policy, Pbc).
 
 %% @doc set bucket versioning option
--spec set_bucket_versioning(binary(), maps:map()) -> ok | {error, term()}.
+-spec set_bucket_versioning(binary(), maps:map(), pid()) -> ok | {error, term()}.
 set_bucket_versioning(Bucket, #{requester := Requester,
-                                versioning := Versioning}) ->
-    do_bucket_op(Bucket, Requester, [{versioning, Versioning}], update_versioning).
+                                versioning := Versioning}, Pbc) ->
+    do_bucket_op(Bucket, Requester, [{versioning, Versioning}], update_versioning, Pbc).
 
 
 %% @doc Delete a bucket
--spec delete_bucket_policy(binary(), binary()) -> ok | {error, term()}.
-delete_bucket_policy(Bucket, OwnerId) ->
-    do_bucket_op(Bucket, OwnerId, [delete_policy], delete_policy).
+-spec delete_bucket_policy(binary(), binary(), pid()) -> ok | {error, term()}.
+delete_bucket_policy(Bucket, OwnerId, Pbc) ->
+    do_bucket_op(Bucket, OwnerId, [delete_policy], delete_policy, Pbc).
 
 %% Get the proper bucket name for either the MOSS object
 %% bucket or the data block bucket.
@@ -465,32 +375,19 @@ to_bucket_name(Type, Bucket) ->
     <<Prefix/binary, BucketHash/binary>>.
 
 %% @doc Attmpt to create a new user
--spec update_user(string(), [{term(), term()}]) ->
-                         ok | {error, riak_connect_failed() | term()}.
-update_user(KeyId, UserFields) ->
-    case riak_connection() of
-        {ok, RiakPid} ->
-            try
-                case riak_cs_riak_client:get_user_with_pbc(RiakPid, KeyId) of
-                    {ok, {UserObj, KDB}} ->
-                        User = riak_cs_user:from_riakc_obj(UserObj, KDB),
-                        {UpdUser, EmailUpdated} =
-                            update_user_record(UserFields, User, false),
-                        save_user(EmailUpdated,
-                                  UpdUser,
-                                  UserObj,
-                                  RiakPid);
-                    {error, _}=Error ->
-                        Error
-                end
-            catch T:E:_ST ->
-                    logger:error("Error on updating user ~s: ~p", [KeyId, {T, E}]),
-                    {error, {T, E}}
-            after
-                close_riak_connection(RiakPid)
-            end;
-        {error, _} = Else ->
-            Else
+-spec update_user(string(), proplists:proplist(), pid()) -> ok | {error, term()}.
+update_user(KeyId, UserFields, Pbc) ->
+    case riak_cs_riak_client:get_user_with_pbc(Pbc, KeyId) of
+        {ok, {UserObj, KDB}} ->
+            User = riak_cs_user:from_riakc_obj(UserObj, KDB),
+            {UpdUser, EmailUpdated} =
+                update_user_record(UserFields, User, false),
+            save_user(EmailUpdated,
+                      UpdUser,
+                      UserObj,
+                      Pbc);
+        {error, _}=Error ->
+            Error
     end.
 
 
@@ -506,30 +403,26 @@ md5(Bin) ->
 
 %% @doc Check if a bucket is empty
 -spec bucket_empty(binary(), pid()) -> boolean().
-bucket_empty(Bucket, RiakcPid) ->
+bucket_empty(Bucket, Pbc) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead and
-    ListKeysResult = list_keys(ManifestBucket, RiakcPid),
-    bucket_empty_handle_list_keys(RiakcPid,
+    ListKeysResult = list_keys(ManifestBucket, Pbc),
+    bucket_empty_handle_list_keys(Pbc,
                                   Bucket,
                                   ListKeysResult).
 
-bucket_empty_handle_list_keys(RiakcPid, Bucket, {ok, Keys}) ->
-    AnyPred = bucket_empty_any_pred(RiakcPid, Bucket),
+bucket_empty_handle_list_keys(Pbc, Bucket, {ok, Keys}) ->
     %% `lists:any/2' will break out early as soon
     %% as something returns `true'
-    not lists:any(AnyPred, Keys);
+    not lists:any(
+         fun (Key) -> key_exists(Pbc, Bucket, Key) end,
+          Keys);
 bucket_empty_handle_list_keys(_RiakcPid, _Bucket, _Error) ->
     false.
 
-bucket_empty_any_pred(RiakcPid, Bucket) ->
-    fun (Key) ->
-            key_exists(RiakcPid, Bucket, Key)
-    end.
-
-key_exists(RiakcPid, Bucket, Key) ->
+key_exists(Pbc, Bucket, Key) ->
     key_exists_handle_get_manifests(
-      get_manifests(RiakcPid, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION)).
+      get_manifests(Pbc, Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION)).
 
 key_exists_handle_get_manifests({ok, _Object, Manifests}) ->
     active_to_bool(active_manifest_from_response({ok, Manifests}));
@@ -552,20 +445,20 @@ handle_active_manifests({ok, _Active}=ActiveReply) ->
 handle_active_manifests({error, no_active_manifest}) ->
     {error, notfound}.
 
-bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
+bucket_available(Bucket, RequesterId, BucketOp, Pbc) ->
     GetOptions = [{pr, all}],
-    case ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, ?BUCKETS_BUCKET, Bucket, GetOptions)) of
+    case ?TURNAROUND_TIME(riakc_pb_socket:get(Pbc, ?BUCKETS_BUCKET, Bucket, GetOptions)) of
         {{ok, BucketObj}, TAT} ->
             stanchion_stats:update([riakc, get_cs_bucket], TAT),
             OwnerId = riakc_obj:get_value(BucketObj),
             case {OwnerId, BucketOp} of
                 {?FREE_BUCKET_MARKER, create} ->
-                    is_bucket_ready_to_create(Bucket, RiakPid, BucketObj);
+                    is_bucket_ready_to_create(Bucket, Pbc, BucketObj);
                 {?FREE_BUCKET_MARKER, _} ->
                     {false, no_such_bucket};
 
                 {RequesterId, delete} ->
-                    is_bucket_ready_to_delete(Bucket, RiakPid, BucketObj);
+                    is_bucket_ready_to_delete(Bucket, Pbc, BucketObj);
                 {RequesterId, _} ->
                     {true, BucketObj};
                 _ ->
@@ -587,6 +480,7 @@ bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
                 delete ->
                     {false, no_such_bucket}
             end;
+
         {{error, Reason}, TAT} ->
             stanchion_stats:update([riakc, get_cs_bucket], TAT),
             %% @TODO Maybe bubble up this error info
@@ -596,38 +490,11 @@ bucket_available(Bucket, RequesterId, BucketOp, RiakPid) ->
     end.
 
 
-do_bucket_op(Bucket, OwnerId, Opts, BucketOp) ->
-    do_bucket_op(Bucket, OwnerId, Opts, BucketOp, undefined).
-do_bucket_op(<<"riak-cs">>, _OwnerId, _Opts, _BucketOp, _) ->
+do_bucket_op(<<"riak-cs">>, _OwnerId, _Opts, _BucketOp, _Pbc) ->
     {error, access_denied};
-do_bucket_op(Bucket, OwnerId, Opts, BucketOp, undefined) ->
-    case riak_connection() of
-        {ok, Pbc} ->
-            %% Buckets operations can only be completed if the bucket exists
-            %% and the requesting party owns the bucket.
-            try
-                do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc)
-            catch T:E:ST ->
-                    logger:error("Error on updating bucket ~s: ~p. Stacktrace: ~p",
-                                 [Bucket, {T, E}, ST]),
-                    {error, {T, E}}
-            after
-                close_riak_connection(Pbc)
-            end;
-        {error, _} = Else ->
-            Else
-    end;
 do_bucket_op(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
-    try
-        do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc)
-    catch
-        T:E:ST ->
-            logger:error("Error on updating bucket ~s: ~p. Stacktrace: ~p",
-                         [Bucket, {T, E}, ST]),
-            {error, {T, E}}
-    end.
-
-do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
+    %% Buckets operations can only be completed if the bucket exists
+    %% and the requesting party owns the bucket.
     case bucket_available(Bucket, OwnerId, BucketOp, Pbc) of
         {true, BucketObj} ->
             Value = case BucketOp of
@@ -648,7 +515,7 @@ do_bucket_op2(Bucket, OwnerId, Opts, BucketOp, Pbc) ->
 %% proplists of {?MD_ACL, ACL::binary()}|{?MD_POLICY, PolicyBin::binary()}|
 %%  {?MD_BAG, BagId::binary()}, {?MD_VERSIONING, bucket_versioning_option()}}.
 %% should preserve other metadata. ACL and Policy can be overwritten.
-put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
+put_bucket(BucketObj, OwnerId, Opts, Pbc) ->
     PutOptions = [{w, all}, {pw, all}],
     UpdBucketObj0 = riakc_obj:update_value(BucketObj, OwnerId),
     MD = case riakc_obj:get_metadatas(UpdBucketObj0) of
@@ -662,7 +529,7 @@ put_bucket(BucketObj, OwnerId, Opts, RiakPid) ->
            end,
     MetaData = make_new_metadata(MD, Opts),
     UpdBucketObj = riakc_obj:update_metadata(UpdBucketObj0, MetaData),
-    {Result, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UpdBucketObj, PutOptions)),
+    {Result, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UpdBucketObj, PutOptions)),
     stanchion_stats:update([riakc, put_cs_bucket], TAT),
     Result.
 
@@ -702,8 +569,8 @@ replace_meta(Key, NewValue, MetaVals) ->
 -spec is_bucket_ready_to_delete(binary(), pid(), riakc_obj()) ->
                                        {false, multipart_upload_remains|bucket_not_empty} |
                                        {true, riakc_obj()}.
-is_bucket_ready_to_delete(Bucket, RiakPid, BucketObj) ->
-    is_bucket_clean(Bucket, RiakPid, BucketObj).
+is_bucket_ready_to_delete(Bucket, Pbc, BucketObj) ->
+    is_bucket_clean(Bucket, Pbc, BucketObj).
 
 %% @doc ensure there are no multipart uploads in creation time because
 %% multipart uploads remains in deleted buckets in former versions
@@ -711,8 +578,8 @@ is_bucket_ready_to_delete(Bucket, RiakPid, BucketObj) ->
 -spec is_bucket_ready_to_create(binary(), pid(), riakc_obj()) ->
                                        {false, multipart_upload_remains|bucket_not_empty} |
                                        {true, riakc_obj()}.
-is_bucket_ready_to_create(Bucket, RiakPid, BucketObj) ->
-    is_bucket_clean(Bucket, RiakPid, BucketObj).
+is_bucket_ready_to_create(Bucket, Pbc, BucketObj) ->
+    is_bucket_clean(Bucket, Pbc, BucketObj).
 
 %% @doc here runs two list_keys, one in bucket_empty/2, another in
 %% stanchion_multipart:check_no_multipart_uploads/2. If there are
@@ -720,17 +587,14 @@ is_bucket_ready_to_create(Bucket, RiakPid, BucketObj) ->
 %% #475 fix). If there are bunch of scheduled_delete manifests, this
 %% may also slow, but wait for Garbage Collection to collect those
 %% trashes may improve the speed. => TODO.
--spec is_bucket_clean(binary(), pid(), riakc_obj()) ->
-                                       {false, multipart_upload_remains|bucket_not_empty} |
-                                       {true, riakc_obj()}.
-is_bucket_clean(Bucket, RiakPid, BucketObj) ->
-    {ok, ManifestRiakPid} = manifest_connection(RiakPid, BucketObj),
+is_bucket_clean(Bucket, Pbc, BucketObj) ->
+    {ok, ManifestPbc} = manifest_connection(Pbc, BucketObj),
     try
-        case bucket_empty(Bucket, ManifestRiakPid) of
+        case bucket_empty(Bucket, ManifestPbc) of
             false ->
                 {false, bucket_not_empty};
             true ->
-                case stanchion_multipart:check_no_multipart_uploads(Bucket, ManifestRiakPid) of
+                case stanchion_multipart:check_no_multipart_uploads(Bucket, ManifestPbc) of
                     false ->
                         {false, multipart_upload_remains};
                     true ->
@@ -742,20 +606,23 @@ is_bucket_clean(Bucket, RiakPid, BucketObj) ->
                          [T, E, ST]),
             error({T, E})
     after
-        close_manifest_connection(RiakPid, ManifestRiakPid)
+        close_manifest_connection(Pbc, ManifestPbc)
     end.
 
--spec manifest_connection(pid(), riakc_obj:riakc_obj()) -> {ok, pid()} | {error, term()}.
-manifest_connection(RiakPid, BucketObj) ->
+manifest_connection(Pbc, BucketObj) ->
     case bag_id_from_bucket(BucketObj) of
-        undefined -> {ok, RiakPid};
+        undefined ->
+            {ok, Pbc};
         BagId ->
             case conn_info_from_bag(BagId, application:get_env(riak_cs, bags)) of
                 %% No connection information for the bag. Mis-configuration. Stop processing.
-                undefined -> {error, {no_bag, BagId}};
-                {Address, Port} -> riak_connection(Address, Port)
+                undefined ->
+                    {error, {no_bag, BagId}};
+                {Address, Port} ->
+                    riak_connection(Address, Port)
             end
     end.
+
 
 conn_info_from_bag(_BagId, undefined) ->
     undefined;
@@ -789,10 +656,32 @@ bag_id_from_meta([{?MD_BAG, Value} | _]) ->
 bag_id_from_meta([_MD | MDs]) ->
     bag_id_from_meta(MDs).
 
-close_manifest_connection(RiakPid, RiakPid) ->
+close_manifest_connection(Pbc, Pbc) ->
     ok;
-close_manifest_connection(_RiakPid, ManifestRiakPid) ->
-    close_riak_connection(ManifestRiakPid).
+close_manifest_connection(_Pbc, ManifestPbc) ->
+    close_riak_connection(ManifestPbc).
+
+riak_connection(Host, Port) ->
+    %% We use start() here instead of start_link() because if we can't
+    %% connect to Host & Port for whatever reason (e.g. service down,
+    %% host down, host unreachable, ...), then we'll be crashed by the
+    %% newly-spawned-gen_server-proc's link to us.
+    %%
+    %% There is still a race condition if the PB socket proc's init()
+    %% is successful but then dies immediately *before* we call the
+    %% link() BIF.  That's life in the big city.
+    case riakc_pb_socket:start(Host, Port) of
+        {ok, Pid} = Good ->
+            true = link(Pid),
+            Good;
+        {error, Else} ->
+            {error, {riak_connect_failed, {Else, Host, Port}}}
+    end.
+
+close_riak_connection(Pid) ->
+    riakc_pb_socket:stop(Pid).
+
+
 
 %% @doc Determine if a user with the specified email
 %% address already exists. There could be consistency
@@ -801,8 +690,7 @@ close_manifest_connection(_RiakPid, ManifestRiakPid) ->
 %% for a particular key.
 %% @TODO Consider other options that would give more
 %% assurance that a particular email address is available.
--spec email_available(string() | binary(), pid()) -> true | {false, user_already_exists | term()}.
-email_available(Email_, RiakPid) ->
+email_available(Email_, Pbc) ->
 
     %% this is to pacify dialyzer, which makes an issue of
     %% Email::string() (coming from #rcs_user_v2.email type) as
@@ -810,7 +698,7 @@ email_available(Email_, RiakPid) ->
     %% in get_index_eq
     Email = iolist_to_binary([Email_]),
 
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get_index_eq(RiakPid, ?USER_BUCKET, ?EMAIL_INDEX, Email)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?EMAIL_INDEX, Email)),
     riak_cs_stats:update([riakc, get_user_by_index], TAT),
     case Res of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
@@ -828,21 +716,21 @@ email_available(Email_, RiakPid) ->
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary(), binary()) ->
     {ok, riakc_obj:riakc_obj()} | {error, notfound}.
-get_manifests_raw(RiakcPid, Bucket, Key, Vsn) ->
+get_manifests_raw(Pbc, Bucket, Key, Vsn) ->
     ManifestBucket = to_bucket_name(objects, Bucket),
     {Res, TAT} = ?TURNAROUND_TIME(
-                    riakc_pb_socket:get(RiakcPid, ManifestBucket,
+                    riakc_pb_socket:get(Pbc, ManifestBucket,
                                         rcs_common_manifest:make_versioned_key(Key, Vsn))),
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
 
-save_user(User, RiakPid) ->
+save_user(User, Pbc) ->
     Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
                {?ID_INDEX, User?MOSS_USER.canonical_id}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:new(?USER_BUCKET, iolist_to_binary(User?MOSS_USER.key_id), term_to_binary(User)),
     UserObj = riakc_obj:update_metadata(Obj, Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UserObj)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UserObj)),
     case Res of
         ok ->
             stanchion_stats:update([riakc, put_cs_user], TAT);
@@ -851,8 +739,8 @@ save_user(User, RiakPid) ->
             Res
     end.
 
-save_user(true, User=?RCS_USER{email=Email}, UserObj, RiakPid) ->
-    case email_available(Email, RiakPid) of
+save_user(true, User=?RCS_USER{email=Email}, UserObj, Pbc) ->
+    case email_available(Email, Pbc) of
         true ->
             Indexes = [{?EMAIL_INDEX, Email},
                        {?ID_INDEX, User?RCS_USER.canonical_id}],
@@ -861,13 +749,13 @@ save_user(true, User=?RCS_USER{email=Email}, UserObj, RiakPid) ->
                            riakc_obj:update_value(UserObj,
                                                   term_to_binary(User)),
                            MD),
-            {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UpdUserObj)),
+            {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UpdUserObj)),
             stanchion_stats:update([riakc, put_cs_user], TAT),
             Res;
         {false, Reason} ->
             {error, Reason}
     end;
-save_user(false, User, UserObj, RiakPid) ->
+save_user(false, User, UserObj, Pbc) ->
     Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
                {?ID_INDEX, User?RCS_USER.canonical_id}],
     MD = dict:store(?MD_INDEX, Indexes, dict:new()),
@@ -875,7 +763,7 @@ save_user(false, User, UserObj, RiakPid) ->
                    riakc_obj:update_value(UserObj,
                                           term_to_binary(User)),
                    MD),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(RiakPid, UpdUserObj)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UpdUserObj)),
     stanchion_stats:update([riakc, put_cs_user], TAT),
     Res.
 
@@ -944,20 +832,20 @@ update_user_buckets(delete, User, Bucket) ->
 %% If the initial read fails retry using
 %% R=quorum and PR=1, but indicate that bucket deletion
 %% indicators should not be cleaned up.
-fetch_object(Bucket, Key, RiakPid) ->
+fetch_object(Bucket, Key, Pbc) ->
     StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, Bucket, Key, StrongOptions)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(Pbc, Bucket, Key, StrongOptions)),
     stanchion_stats:update([riakc, metric_for(Bucket, strong)], TAT),
     case Res of
         {ok, Obj} ->
             {ok, {Obj, true}};
         {error, _} ->
-            weak_fetch_object(Bucket, Key, RiakPid)
+            weak_fetch_object(Bucket, Key, Pbc)
     end.
 
-weak_fetch_object(Bucket, Key, RiakPid) ->
+weak_fetch_object(Bucket, Key, Pbc) ->
     WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(RiakPid, Bucket, Key, WeakOptions)),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(Pbc, Bucket, Key, WeakOptions)),
     stanchion_stats:update([riakc, metric_for(Bucket, weak)], TAT),
     case Res of
         {ok, Obj} ->
