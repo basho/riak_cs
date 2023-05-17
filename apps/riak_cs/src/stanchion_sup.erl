@@ -35,16 +35,9 @@
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
     stanchion_stats:init(),
-
     ets:new(?STANCHION_OWN_PBC_TABLE, [named_table]),
-
-    Pbc = stanchion_utils:make_pbc(),
-    ok = ensure_service_bucket_props(Pbc),
-
+    _Pbc = stanchion_utils:make_pbc(),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-ensure_service_bucket_props(Pbc) ->
-    riakc_pb_socket:set_bucket(Pbc, ?SERVICE_BUCKET, [{allow_mult, false}]).
 
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.

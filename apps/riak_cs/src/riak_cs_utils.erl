@@ -414,7 +414,7 @@ riak_connection(Pool) ->
 %% @doc Set the ACL for an object. Existing ACLs are only
 %% replaced, they cannot be updated.
 -spec set_object_acl(binary(), binary(), binary(), lfs_manifest(), acl(), riak_client()) ->
-                            ok | {error, term()}.
+          ok | {error, term()}.
 set_object_acl(Bucket, Key, Vsn, Manifest, Acl, RcPid) ->
     {ok, ManiPid} = riak_cs_manifest_fsm:start_link(Bucket, Key, Vsn, RcPid),
     try

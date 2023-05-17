@@ -237,7 +237,6 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
                     pos_integer()) ->
                            ok | {error, term()}.
 update_bucket(Path, ContentType, Doc, Options, Expect) ->
-    ?LOG_DEBUG("Doc: ~p", [Doc]),
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Headers0 = [{"Content-Md5", content_md5(Doc)},
                 {"Date", httpd_util:rfc1123_date()}],

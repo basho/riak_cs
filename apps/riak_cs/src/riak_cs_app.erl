@@ -27,9 +27,7 @@
 
 %% application API
 -export([start/2,
-         stop/1,
-         check_bucket_props/2,
-         atoms_for_check_bucket_props/0]).
+         stop/1]).
 
 -include("riak_cs.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -48,7 +46,7 @@ start(_Type, _StartArgs) ->
     riak_cs_config:warnings(),
     sanity_check(is_config_valid(),
                  check_admin_creds(),
-                 check_bucket_props()).
+                 ensure_bucket_props()).
 
 %% @doc application stop callback for riak_cs.
 -spec stop(term()) -> ok.
@@ -107,83 +105,41 @@ fetch_and_cache_admin_creds(Key, Attempt, _Error) ->
         riakc_pb_socket:stop(MasterPbc)
     end.
 
--spec sanity_check(boolean(),
-                   ok | {error, term()},
-                   {ok, boolean()} | {error, term()}) ->
-                          {ok, pid()} | {error, term()}.
-sanity_check(true, ok, {ok, true}) ->
+sanity_check(true, ok, ok) ->
     riak_cs_sup:start_link();
 sanity_check(false, _, _) ->
     logger:error("You must update your Riak CS app.config. Please see the"
                  "release notes for more information on updating you configuration."),
     {error, bad_config};
-sanity_check(true, _, {ok, false}) ->
-    logger:error("Invalid Riak bucket properties detected. Please "
-                 "verify that allow_mult is set to true for all buckets."),
-    {error, invalid_bucket_props};
-sanity_check(true, _, {error, Reason}) ->
-    logger:error("Could not verify bucket properties. Error was ~p.", [Reason]),
-    {error, error_verifying_props};
 sanity_check(_, {error, Reason}, _) ->
     logger:error("Admin credentials are not properly set: ~p.", [Reason]),
     {error, Reason}.
 
--spec is_config_valid() -> boolean().
 is_config_valid() ->
     get_env_response_to_bool(application:get_env(riak_cs, connection_pools)).
 
--spec get_env_response_to_bool(term())  -> boolean().
 get_env_response_to_bool({ok, _}) ->
     true;
 get_env_response_to_bool(_) ->
     false.
 
--spec check_bucket_props() -> {ok, boolean()} | {error, term()}.
-check_bucket_props() ->
-    Buckets = [?USER_BUCKET,
-               ?ACCESS_BUCKET,
-               ?STORAGE_BUCKET,
-               ?BUCKETS_BUCKET,
-               ?IAM_ROLE_BUCKET,
-               ?IAM_SAMLPROVIDER_BUCKET],
-    {ok, MasterPbc} = riak_connection(),
-    try
-        Results = [check_bucket_props(Bucket, MasterPbc) ||
-                   Bucket <- Buckets],
-        lists:foldl(fun promote_errors/2, {ok, true}, Results)
-    after
-        riakc_pb_socket:stop(MasterPbc)
-    end.
+ensure_bucket_props() ->
+    BucketsWithMultiTrue = [?USER_BUCKET,
+                            ?ACCESS_BUCKET,
+                            ?STORAGE_BUCKET,
+                            ?BUCKETS_BUCKET],
+    BucketsWithMultiFalse = [?SERVICE_BUCKET,
+                             ?IAM_ROLE_BUCKET,
+                             ?IAM_SAMLPROVIDER_BUCKET],
+    %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
+    %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
+    %%                   riak_kv_wm_link_walker, mapreduce_linkfun],
+    {ok, Pbc} = riak_connection(),
+    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
+    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
+    riakc_pb_socket:stop(Pbc).
 
-%% Put atoms into atom table to suppress warning logs in `check_bucket_props'
-atoms_for_check_bucket_props() ->
-    [riak_core_util, chash_std_keyfun,
-     riak_kv_wm_link_walker, mapreduce_linkfun].
 
-promote_errors(_Elem, {error, _Reason}=E) ->
-    E;
-promote_errors({error, _Reason}=E, _Acc) ->
-    E;
-promote_errors({ok, false}=F, _Acc) ->
-    F;
-promote_errors({ok, true}, Acc) ->
-    Acc.
-
--spec check_bucket_props(binary(), pid()) -> {ok, boolean()} | {error, term()}.
-check_bucket_props(Bucket, MasterPbc) ->
-    case catch riakc_pb_socket:get_bucket(MasterPbc, Bucket) of
-        {ok, Props} ->
-            case lists:keyfind(allow_mult, 1, Props) of
-                {allow_mult, true} ->
-                    {ok, true};
-                _ ->
-                    logger:warning("~p is misconfigured", [Bucket]),
-                    {ok, false}
-            end;
-        {error, Reason}=E ->
-            logger:warning("Unable to verify ~s bucket settings (~p).", [Bucket, Reason]),
-            E
-    end.
 
 riak_connection() ->
     {Host, Port} = riak_cs_config:riak_host_port(),
