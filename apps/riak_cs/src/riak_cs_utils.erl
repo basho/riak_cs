@@ -77,7 +77,9 @@
          maybe_process_resolved/3,
          reduce_keys_and_manifests/2,
          map_roles/3,
-         reduce_roles/2
+         reduce_roles/2,
+         map_saml_providers/3,
+         reduce_saml_providers/2
         ]).
 
 
@@ -248,6 +250,21 @@ map_roles(Object, _2, Args) ->
     end.
 
 reduce_roles(Acc, _) ->
+    Acc.
+
+map_saml_providers({error, notfound}, _, _) ->
+    [];
+map_saml_providers(Object, _2, _Args) ->
+    [RoleBin|_] = riak_object:get_values(Object),
+    case RoleBin of
+        ?DELETED_MARKER ->
+            [];
+        _ ->
+            ?IAM_SAML_PROVIDER{} = A = binary_to_term(RoleBin),
+            [A]
+    end.
+
+reduce_saml_providers(Acc, _) ->
     Acc.
 
 

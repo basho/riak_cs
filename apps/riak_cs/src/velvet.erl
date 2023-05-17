@@ -33,7 +33,8 @@
          update_user/4,
          create_role/3,
          delete_role/2,
-         create_saml_provider/3
+         create_saml_provider/3,
+         delete_saml_provider/2
         ]).
 
 -include("aws_api.hrl").
@@ -361,6 +362,32 @@ create_saml_provider(ContentType, Doc, Options) ->
             {error, Error}
     end.
 
+-spec delete_saml_provider(string(), proplists:proplist()) -> ok | {error, term()}.
+delete_saml_provider(Id, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = saml_provider_path(Id),
+    Headers0 = [{"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('DELETE',
+                                               "",
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(delete, Path, [204], Headers) of
+        {ok, {{_, 204, _}, _RespHeaders, _}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 
 
 %% -------------------------------------
@@ -445,6 +472,11 @@ users_path(User) ->
 roles_path(Role) ->
     stringy(["/roles",
              ["/" ++ Role || Role /= []]
+            ]).
+
+saml_provider_path(A) ->
+    stringy(["/samlproviders",
+             ["/" ++ A || A /= []]
             ]).
 
 stringy(List) ->

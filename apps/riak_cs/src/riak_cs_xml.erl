@@ -121,7 +121,11 @@ to_xml(#list_roles_response{} = R) ->
 to_xml(#create_saml_provider_response{} = R) ->
     create_saml_provider_response_to_xml(R);
 to_xml(#get_saml_provider_response{} = R) ->
-    get_saml_provider_response_to_xml(R).
+    get_saml_provider_response_to_xml(R);
+to_xml(#delete_saml_provider_response{} = R) ->
+    delete_saml_provider_response_to_xml(R);
+to_xml(#list_saml_providers_response{} = R) ->
+    list_saml_providers_response_to_xml(R).
 
 
 
@@ -487,6 +491,13 @@ saml_provider_node_for_get(CreateDate, ValidUntil, Tags) ->
           ]),
     {'GetSAMLProviderResult', C}.
 
+saml_provider_node_for_list(Arn, CreateDate, ValidUntil) ->
+    C = [{'Arn', [make_arn(Arn)]},
+         {'CreateDate', [binary_to_list(CreateDate)]},
+         {'ValidUntil', [binary_to_list(ValidUntil)]}
+        ],
+    {'GetSAMLProviderResult', C}.
+
 create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provider_arn = BareArn,
                                                                     tags = Tags,
                                                                     request_id = RequestId}) ->
@@ -509,6 +520,27 @@ get_saml_provider_response_to_xml(#get_saml_provider_response{create_date = Crea
     export_xml([make_internal_node('GetSAMLProviderResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
+
+delete_saml_provider_response_to_xml(#delete_saml_provider_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('DeleteSAMLProviderResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+list_saml_providers_response_to_xml(#list_saml_providers_response{saml_provider_list = RR,
+                                                                  request_id = RequestId}) ->
+    ListSAMLProvidersResult =
+        [{'SAMLProviderList', [saml_provider_node_for_list(Arn, CreateDate, ValidUntil)
+                               || #saml_provider_v1{arn = Arn,
+                                                    create_date = CreateDate,
+                                                    valid_until = ValidUntil} <- RR]}],
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ListSAMLProvidersResult', ListSAMLProvidersResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListRolesResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
 
 tag_node(?IAM_TAG{key = Key,
                   value = Value}) ->

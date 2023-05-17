@@ -354,7 +354,7 @@ do_action("GetSAMLProvider",
                                                 request_id = RequestId}),
             {true, make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
-            ResponseMod:api_error(no_such_role, RD, Ctx);
+            ResponseMod:api_error(no_such_saml_provider, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
@@ -381,7 +381,7 @@ do_action("ListSAMLProviders",
                                             response_module = ResponseMod}) ->
     case riak_cs_api:list_saml_providers(
            RcPid, #list_saml_providers_request{}) of
-        {ok, PP} ->
+        {ok, #{saml_providers := PP}} ->
             RequestId = make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_saml_providers_response{saml_provider_list = PP,

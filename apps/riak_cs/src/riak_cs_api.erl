@@ -23,7 +23,8 @@
 
 -export([list_buckets/1,
          list_objects/6,
-         list_roles/2
+         list_roles/2,
+         list_saml_providers/2
         ]).
 
 -include("riak_cs.hrl").
@@ -62,22 +63,43 @@ list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
             max_items => MaxItems,
             marker => Marker},
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riakc_pb_socket:mapred_bucket(MasterPbc, ?IAM_ROLE_BUCKET, mapred_query(Arg)) of
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_ROLE_BUCKET, mapred_query(roles, Arg)) of
         {ok, Batches} ->
-            Roles = extract_roles(Batches, []),
-            {ok, #{roles => Roles,
+            {ok, #{roles => extract_objects(Batches, []),
                    marker => undefined,
                    is_truncated => false}};
         {error, _} = ER ->
             ER
     end.
-extract_roles([], Q) ->
-    Q;
-extract_roles([{_N, RR}|Rest], Q) ->
-    extract_roles(Rest, Q ++ RR).
 
-mapred_query(Arg) ->
+
+-spec list_saml_providers(riak_client(), #list_saml_providers_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_saml_providers(RcPid, #list_saml_providers_request{}) ->
+    Arg = #{},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_SAMLPROVIDER_BUCKET, mapred_query(saml_providers, Arg)) of
+        {ok, Batches} ->
+            {ok, #{saml_providers => extract_objects(Batches, [])}};
+        {error, _} = ER ->
+            ER
+    end.
+
+
+extract_objects([], Q) ->
+    Q;
+extract_objects([{_N, RR}|Rest], Q) ->
+    extract_objects(Rest, Q ++ RR).
+
+mapred_query(roles, Arg) ->
     [{map, {modfun, riak_cs_utils, map_roles},
       Arg, false},
      {reduce, {modfun, riak_cs_utils, reduce_roles},
+      Arg, true}];
+mapred_query(saml_providers, Arg) ->
+    [{map, {modfun, riak_cs_utils, map_saml_providers},
+      Arg, false},
+     {reduce, {modfun, riak_cs_utils, reduce_saml_providers},
       Arg, true}].
