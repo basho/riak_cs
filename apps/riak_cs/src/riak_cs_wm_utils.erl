@@ -1133,6 +1133,24 @@ role_access_authorize_helper(RD, Ctx) ->
 eval_role_for_action(_RD, _Role) ->
     ?LOG_DEBUG("STUB eval_role_for_action"),
     true.
+
+
+make_final_rd(Body, RD) ->
+    wrq:set_resp_body(
+      Body, wrq:set_resp_header(
+              "ETag", etag(Body),
+              wrq:set_resp_header(
+                "Content-Type", ?XML_TYPE, RD))).
+
+make_request_id() ->
+    uuid:uuid_to_string(uuid:get_v4()).
+
+etag(Body) ->
+        riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
+
+
+
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -1161,3 +1179,4 @@ iso_8601_format(Year, Month, Day, Hour, Min, Sec) ->
 
 b2i(Bin) ->
     list_to_integer(binary_to_list(Bin)).
+

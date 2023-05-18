@@ -74,6 +74,7 @@ service_from_host(Host) ->
 
 aws_service_submodule("s3") -> riak_cs_aws_s3_rewrite;
 aws_service_submodule("iam") -> riak_cs_aws_iam_rewrite;
+aws_service_submodule("sts") -> riak_cs_aws_sts_rewrite;
 aws_service_submodule(A) ->  {unsupported, A}.
 
 

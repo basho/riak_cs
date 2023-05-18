@@ -249,12 +249,12 @@ do_action("CreateRole",
               lists:foldl(fun role_fields_filter/2, #{}, Form)),
     case riak_cs_iam:create_role(Specs) of
         {ok, Role} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Created role \"~s\" on request_id ~s", [Role?IAM_ROLE.role_id, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_role_response{role = Role,
                                           request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
@@ -265,11 +265,11 @@ do_action("GetRole",
     RoleName = proplists:get_value("RoleName", Form),
     case riak_cs_iam:get_role(RoleName, RcPid) of
         {ok, Role} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_role_response{role = Role,
                                        request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
@@ -281,11 +281,11 @@ do_action("DeleteRole",
     RoleName = proplists:get_value("RoleName", Form),
     case riak_cs_iam:delete_role(RoleName) of
         ok ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Deleted role \"~s\" on request_id ~s", [RoleName, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_role_response{request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
@@ -306,13 +306,13 @@ do_action("ListRoles",
         {ok, #{roles := Roles,
                marker := NewMarker,
                is_truncated := IsTruncated}} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_roles_response{roles = Roles,
                                          request_id = RequestId,
                                          marker = NewMarker,
                                          is_truncated = IsTruncated}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
@@ -324,13 +324,13 @@ do_action("CreateSAMLProvider",
 
     case riak_cs_iam:create_saml_provider(Specs) of
         {ok, {Arn, Tags}} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Created SAML Provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_saml_provider_response{saml_provider_arn = Arn,
                                                    tags = Tags,
                                                    request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
@@ -346,13 +346,13 @@ do_action("GetSAMLProvider",
         {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
                                 valid_until = ValidUntil,
                                 tags = Tags}} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_saml_provider_response{create_date = CreateDate,
                                                 valid_until = ValidUntil,
                                                 tags = Tags,
                                                 request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
             ResponseMod:api_error(no_such_saml_provider, RD, Ctx);
         {error, Reason} ->
@@ -364,11 +364,11 @@ do_action("DeleteSAMLProvider",
     Arn = proplists:get_value("SAMLProviderArn", Form),
     case riak_cs_iam:delete_saml_provider(Arn) of
         ok ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Deleted SAML Provider with arn \"~s\" on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_saml_provider_response{request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, not_found} ->
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
@@ -382,11 +382,11 @@ do_action("ListSAMLProviders",
     case riak_cs_api:list_saml_providers(
            RcPid, #list_saml_providers_request{}) of
         {ok, #{saml_providers := PP}} ->
-            RequestId = make_request_id(),
+            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_saml_providers_response{saml_provider_list = PP,
                                                   request_id = RequestId}),
-            {true, make_final_rd(Doc, RD), Ctx};
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
@@ -432,7 +432,7 @@ create_saml_provider_fields_filter({ItemKey, ItemValue}, Acc) ->
                              CommonParameter == "Version" ->
             Acc;
         Unrecognized ->
-            logger:warning("Unrecognized parameter for CreateSAMLProvider: ~s", [Unrecognized]),
+            logger:warning("Unrecognized parameter in call to CreateSAMLProvider: ~s", [Unrecognized]),
             Acc
     end.
 
@@ -461,17 +461,3 @@ finish_tags(Acc) ->
               [], Tags0),
     Tags2 = [#{key => K, value => V} || {K, V} <- Tags1],
     maps:put(tags, Tags2, Acc).
-
-make_final_rd(Body, RD) ->
-    wrq:set_resp_body(
-      Body, wrq:set_resp_header(
-              "ETag", etag(Body),
-              wrq:set_resp_header(
-                "Content-Type", ?XML_TYPE, RD))).
-
-make_request_id() ->
-    uuid:uuid_to_string(uuid:get_v4()).
-
-etag(Body) ->
-        riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
-

@@ -86,6 +86,22 @@
                           api :: atom()
                          }).
 
+-record(rcs_sts_context, {start_time = os:system_time(millisecond) :: non_neg_integer(),
+                          auth_bypass :: atom(),
+                          user :: undefined | moss_user(),
+                          role :: undefined | role(),
+                          riak_client :: undefined | pid(),
+                          rc_pool :: atom(),    % pool name which riak_client belongs to
+                          auto_rc_close = true :: boolean(),
+                          auth_module :: module(),
+                          response_module :: module(),
+                          stats_prefix = no_stats :: atom(),
+                          stats_key = prefix_and_method :: prefix_and_method |
+                                                           no_stats |
+                                                           riak_cs_stats:key(),
+                          api :: atom()
+                         }).
+
 
 -record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
                       upload_id :: undefined | binary(),

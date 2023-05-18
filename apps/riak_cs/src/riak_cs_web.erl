@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -85,8 +85,9 @@ base_resources() ->
      {["buckets", bucket, "objects", object, "versions", versionId, "uploads", uploadId], riak_cs_wm_s3_common, props(riak_cs_wm_object_upload_part)},
      {["buckets", bucket, "objects", object, "versions", versionId, "uploads"], riak_cs_wm_s3_common, props(riak_cs_wm_object_upload)},
      {["buckets", bucket, "objects", object, "versions", versionId, "acl"], riak_cs_wm_s3_common, props(riak_cs_wm_object_acl)},
-     %% IAM catch-all
-     {["iam"], riak_cs_wm_iam, props(no_submodule)}
+     %% catch-all modules for services using POSTs for all their requests
+     {["iam"], riak_cs_wm_iam, props(no_submodule)},
+     {["sts"], riak_cs_wm_sts, props(no_submodule)}
     ].
 
 -spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].

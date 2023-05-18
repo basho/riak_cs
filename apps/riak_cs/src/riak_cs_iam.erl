@@ -36,7 +36,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--spec create_role(proplist:proplist()) -> {ok, role()} | {error, already_exists | term()}.
+-spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
 create_role(Specs) ->
     Encoded = jsx:encode(Specs),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
