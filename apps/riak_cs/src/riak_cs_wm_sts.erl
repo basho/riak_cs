@@ -40,8 +40,6 @@
          finish_request/2
         ]).
 
--export([finish_tags/1,
-         add_tag/3]).
 -ignore_xref([init/1,
               service_available/2,
               malformed_request/2,
@@ -273,6 +271,11 @@ do_action("AssumeRoleWithSAML",
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
+
+do_action(Unsupported, _Form, RD, Ctx = #rcs_sts_context{response_module = ResponseMod}) ->
+    logger:warning("IAM action ~s not supported yet; ignoring request", [Unsupported]),
+    ResponseMod:api_error(unsupported_iam_action, RD, Ctx).
+
 
 assume_role_with_saml_fields_filter({K, V}, Acc) ->
     case K of

@@ -40,4 +40,4 @@ allowed_methods() ->
 -spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) ->
           {false | {halt, _}, #wm_reqdata{}, #rcs_s3_context{}}.
 malformed_request(RD, Ctx) ->
-    riak_cs_s3_response:api_error(not_implemented, RD, Ctx).
+    riak_cs_aws_response:api_error(not_implemented, RD, Ctx).

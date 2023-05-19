@@ -158,8 +158,8 @@ handle_key(_RcPid, _Bucket, {Key, Vsn}, {error, Error}) ->
     {'Error',
      [{'Key', [Key]},
       {'VersionId', [Vsn]},
-      {'Code', [riak_cs_s3_response:error_code(Error)]},
-      {'Message', [riak_cs_s3_response:error_message(Error)]}]};
+      {'Code', [riak_cs_aws_response:error_code(Error)]},
+      {'Message', [riak_cs_aws_response:error_message(Error)]}]};
 handle_key(RcPid, Bucket, {Key, Vsn}, ok) ->
     case riak_cs_utils:delete_object(Bucket, Key, Vsn, RcPid) of
         {ok, _UUIDsMarkedforDelete} ->

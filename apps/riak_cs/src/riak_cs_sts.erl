@@ -47,7 +47,7 @@ assume_role_with_saml(Specs) ->
 
 validate_args(Specs, #{}) ->
     ?LOG_DEBUG("STUB"),
-    ValidatedSpecs = Specs
+    ValidatedSpecs = Specs,
     {ValidatedSpecs, #{}}.
 
 check_with_saml_provider({error, _} = PreviousStepFailed, #{}) ->
@@ -55,13 +55,13 @@ check_with_saml_provider({error, _} = PreviousStepFailed, #{}) ->
 check_with_saml_provider(Specs, #{principal_arn := PrincipalArn,
                                   saml_assertion := SAMLAssertion,
                                   role_arn := RoleArn}) ->
-    ?LOG_DEBUG("STUB"),
+    ?LOG_DEBUG("STUB PrincipalArn ~p, SAMLAssertion ~p, RoleArn ~p", [PrincipalArn, SAMLAssertion, RoleArn]),
     {Specs, #{}}.
 
 create_session_and_issue_temp_creds({error, _} = PreviousStepFailed, #{}) ->
     PreviousStepFailed;
 create_session_and_issue_temp_creds(Specs, #{duration_seconds := DurationSeconds}) ->
-    ?LOG_DEBUG("STUB"),
+    ?LOG_DEBUG("STUB DurationSeconds ~p", [DurationSeconds]),
     
     {Specs, #{assumed_role_user => "AssumedRoleUser",
               audience => "Audience",

@@ -59,8 +59,7 @@ allowed_methods() ->
 malformed_request(RD, Ctx) ->
     case riak_cs_wm_utils:has_canned_acl_and_header_grant(RD) of
         true ->
-            riak_cs_s3_response:api_error(canned_acl_and_header_grant,
-                                          RD, Ctx);
+            riak_cs_aws_response:api_error(canned_acl_and_header_grant, RD, Ctx);
         false ->
             {false, RD, Ctx}
     end.

@@ -143,7 +143,7 @@ accept_json(RD, Ctx) ->
                           RD,
                           Ctx);
         {'EXIT', _} ->
-            riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx)
+            riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx)
     end.
 
 -spec accept_xml(term(), term()) ->
@@ -153,7 +153,7 @@ accept_xml(RD, Ctx=#rcs_s3_context{user=undefined}) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
-            riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx);
+            riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx);
         {ok, ParsedData} ->
             ValidItems = lists:foldl(fun user_xml_filter/2,
                                      [],
@@ -170,7 +170,7 @@ accept_xml(RD, Ctx) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
-            riak_cs_s3_response:api_error(invalid_user_update, RD, Ctx);
+            riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx);
         {ok, ParsedData} ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
@@ -254,7 +254,7 @@ handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
 handle_get_user_result({error, Reason}, RD, Ctx) ->
     logger:warning("Failed to fetch user record. KeyId: ~p"
                    " Reason: ~p", [user_key(RD), Reason]),
-    riak_cs_s3_response:api_error(invalid_access_key_id, RD, Ctx).
+    riak_cs_aws_response:api_error(invalid_access_key_id, RD, Ctx).
 
 update_user(UpdateItems, RD, Ctx = #rcs_s3_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
@@ -361,7 +361,7 @@ user_response({ok, User}, ContentType, RD, Ctx) ->
 user_response({halt, 200}, ContentType, RD, Ctx) ->
     {{halt, 200}, set_resp_data(ContentType, RD, Ctx), Ctx};
 user_response({error, Reason}, _, RD, Ctx) ->
-    riak_cs_s3_response:api_error(Reason, RD, Ctx).
+    riak_cs_aws_response:api_error(Reason, RD, Ctx).
 
 format_user_record(User, ?JSON_TYPE) ->
     iolist_to_binary(riak_cs_json:to_json(User));

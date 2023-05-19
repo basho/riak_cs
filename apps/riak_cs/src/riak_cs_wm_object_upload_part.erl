@@ -141,7 +141,7 @@ process_post(RD, Ctx = #rcs_s3_context{riak_client = RcPid,
         %% when there is a multipart upload without any parts in the upload
         %% complete message
         {[], _UploadId} ->
-            riak_cs_s3_response:api_error(malformed_xml, RD, Ctx);
+            riak_cs_aws_response:api_error(malformed_xml, RD, Ctx);
         {PartETags, UploadId} ->
             case riak_cs_mp_utils:complete_multipart_upload(
                    Bucket, Key, ObjVsn, UploadId, PartETags, User,
@@ -162,9 +162,9 @@ process_post(RD, Ctx = #rcs_s3_context{riak_client = RcPid,
                     RD2 = wrq:set_resp_body(XmlBody, RD),
                     {true, RD2, Ctx};
                 {error, notfound} ->
-                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
+                    riak_cs_aws_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end
     end.
 
@@ -183,7 +183,7 @@ delete_resource(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
     ReqUploadId = wrq:path_info('uploadId', RD),
     case (catch base64url:decode(ReqUploadId)) of
         {'EXIT', _Reason} ->
-            riak_cs_s3_response:no_such_upload_response({raw, ReqUploadId}, RD, Ctx);
+            riak_cs_aws_response:no_such_upload_response({raw, ReqUploadId}, RD, Ctx);
         UploadId ->
             #key_context{bucket = Bucket,
                          key = Key,
@@ -195,9 +195,9 @@ delete_resource(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
                 ok ->
                     {true, RD, Ctx};
                 {error, notfound} ->
-                    riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
+                    riak_cs_aws_response:no_such_upload_response(UploadId, RD, Ctx);
                 {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end
     end.
 
@@ -261,7 +261,7 @@ validate_copy_header(RD, #rcs_s3_context{response_module=ResponseMod,
                                          local_context=LocalCtx} = Ctx) ->
     case riak_cs_copy_object:get_copy_source(RD) of
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx);
+            riak_cs_aws_response:api_error(Reason, RD, Ctx);
         undefined ->
             validate_part_size(RD, Ctx, LocalCtx#key_context.size,
                                undefined, undefined);
@@ -301,9 +301,9 @@ prepare_part_upload(RD, #rcs_s3_context{riak_client = RcPid,
     case riak_cs_mp_utils:upload_part(DstBucket, Key, ObjVsn, UploadId, PartNumber,
                                       ExactSize, Caller, RcPid) of
         {error, notfound} ->
-            riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx0);
+            riak_cs_aws_response:no_such_upload_response(UploadId, RD, Ctx0);
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx0);
+            riak_cs_aws_response:api_error(Reason, RD, Ctx0);
         {upload_part_ready, PartUUID, PutPid} ->
             LocalCtx = LocalCtx0#key_context{part_uuid = PartUUID},
             Ctx = Ctx0#rcs_s3_context{local_context = LocalCtx},
@@ -388,9 +388,9 @@ to_xml(RD, Ctx = #rcs_s3_context{local_context = #key_context{bucket = Bucket, k
             Body = riak_cs_xml:to_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, notfound} ->
-            riak_cs_s3_response:no_such_upload_response(UploadId, RD, Ctx);
+            riak_cs_aws_response:no_such_upload_response(UploadId, RD, Ctx);
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason, RD, Ctx)
     end.
 
 
@@ -415,12 +415,12 @@ finalize_request(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
                     RD2 = wrq:set_resp_header("ETag", ETag, RD),
                     {{halt, 200}, RD2, Ctx};
                 {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
         {error, invalid_digest} ->
             ResponseMod:invalid_digest_response(ContentMD5, RD, Ctx);
         {error, Reason1} ->
-            riak_cs_s3_response:api_error(Reason1, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason1, RD, Ctx)
     end.
 
 maybe_copy_part(PutPid,
@@ -457,13 +457,13 @@ maybe_copy_part(PutPid,
                         ok ->
                             ETag = riak_cs_manifest:etag(DstManifest),
                             RD2 = wrq:set_resp_header("ETag", ETag, RD),
-                            riak_cs_s3_response:copy_part_response(DstManifest, RD2, Ctx);
+                            riak_cs_aws_response:copy_part_response(DstManifest, RD2, Ctx);
 
                         {error, Reason0} ->
-                            riak_cs_s3_response:api_error(Reason0, RD, Ctx)
+                            riak_cs_aws_response:api_error(Reason0, RD, Ctx)
                     end;
                 {error, Reason} ->
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
 
         {true, _RD, _OtherCtx} ->

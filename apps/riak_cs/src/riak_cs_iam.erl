@@ -164,7 +164,7 @@ handle_response({ok, Returnable}) ->
 handle_response(ok) ->
     ok;
 handle_response({error, {error_status, _, _, ErrorDoc}}) ->
-    riak_cs_s3_response:error_response(ErrorDoc);
+    riak_cs_aws_response:error_response(ErrorDoc);
 handle_response({error, _} = Error) ->
     Error.
 

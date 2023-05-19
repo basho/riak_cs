@@ -63,7 +63,7 @@ to_xml(RD, Ctx=#rcs_s3_context{user = User,
     case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            riak_cs_s3_response:api_error(no_such_bucket, RD, Ctx);
+            riak_cs_aws_response:api_error(no_such_bucket, RD, Ctx);
         [_BucketRecord] ->
             Doc = [{'RequestPaymentConfiguration',
                     [{xmlns, "http://s3.amazonaws.com/doc/2006-03-01/"}],

@@ -127,7 +127,7 @@ to_xml(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
             Body = riak_cs_xml:to_xml([XmlDoc]),
             {Body, RD, Ctx};
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason, RD, Ctx)
     end.
 
 finish_request(RD, Ctx) ->

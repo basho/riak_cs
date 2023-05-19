@@ -85,7 +85,7 @@ handle_create_user(ok, User) ->
 handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
     case riak_cs_config:api() of
         s3 ->
-            riak_cs_s3_response:error_response(ErrorDoc);
+            riak_cs_aws_response:error_response(ErrorDoc);
         oos ->
             {error, ErrorDoc}
     end;
@@ -98,7 +98,7 @@ handle_update_user(ok, User, UserObj, RcPid) ->
 handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
     case riak_cs_config:api() of
         s3 ->
-            riak_cs_s3_response:error_response(ErrorDoc);
+            riak_cs_aws_response:error_response(ErrorDoc);
         oos ->
             {error, ErrorDoc}
     end;

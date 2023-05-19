@@ -70,7 +70,9 @@
          content_length/1,
          valid_entity_length/3,
          role_access_authorize_helper/2,
-         eval_role_for_action/2
+         eval_role_for_action/2,
+         make_final_rd/2,
+         make_request_id/0
         ]).
 
 -include("riak_cs.hrl").
@@ -310,7 +312,7 @@ maybe_log_user(RD, Context) ->
 deny_access(RD, Ctx=#rcs_s3_context{response_module=ResponseMod}) ->
     ResponseMod:api_error(access_denied, RD, Ctx);
 deny_access(RD, Ctx) ->
-    riak_cs_s3_response:api_error(access_denied, RD, Ctx).
+    riak_cs_aws_response:api_error(access_denied, RD, Ctx).
 
 
 
@@ -485,7 +487,7 @@ maybe_update_context_with_acl_from_headers(RD,
         {ok, BucketObject} ->
             case maybe_acl_from_context_and_request(RD, Ctx, BucketObject) of
                 {ok, {error, BadAclReason}} ->
-                    {error, riak_cs_s3_response:api_error(BadAclReason, RD, Ctx)};
+                    {error, riak_cs_aws_response:api_error(BadAclReason, RD, Ctx)};
                 %% pattern match on the ACL record type for a data-type
                 %% sanity-check
                 {ok, {ok, Acl=?ACL{}}} ->

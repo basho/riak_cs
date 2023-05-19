@@ -60,8 +60,7 @@ allowed_methods() ->
 malformed_request(RD, Ctx) ->
     case riak_cs_wm_utils:has_acl_header_and_body(RD) of
         true ->
-            riak_cs_s3_response:api_error(unexpected_content,
-                                          RD, Ctx);
+            riak_cs_aws_response:api_error(unexpected_content, RD, Ctx);
         false ->
             {false, RD, Ctx}
     end.
@@ -100,8 +99,8 @@ to_xml(RD, Ctx=#rcs_s3_context{user=User,
                                                [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X;
         {error, Reason} ->
-            Code = riak_cs_s3_response:status_code(Reason),
-            X = riak_cs_s3_response:api_error(Reason, RD, Ctx),
+            Code = riak_cs_aws_response:status_code(Reason),
+            X = riak_cs_aws_response:api_error(Reason, RD, Ctx),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_acl">>,
                                                [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             X
@@ -139,14 +138,14 @@ accept_body(RD, Ctx=#rcs_s3_context{user=User,
                                                     [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->
-                    Code = riak_cs_s3_response:status_code(Reason),
+                    Code = riak_cs_aws_response:status_code(Reason),
                     riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
                                                     [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
         {error, Reason2} ->
-            Code = riak_cs_s3_response:status_code(Reason2),
+            Code = riak_cs_aws_response:status_code(Reason2),
             riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
                                             [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            riak_cs_s3_response:api_error(Reason2, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason2, RD, Ctx)
     end.

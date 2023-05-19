@@ -339,5 +339,17 @@
                                       }
        ).
 
+-record(assume_role_with_saml_response, { assumed_role_user :: assumed_role_user()
+                                        , audience :: binary()
+                                        , credentials :: credentials()
+                                        , issuer :: binary()
+                                        , name_qualifier :: binary()
+                                        , packed_policy_size :: non_neg_integer()
+                                        , source_identity :: binary()
+                                        , subject :: binary()
+                                        , subject_type :: binary()
+                                        , request_id :: string()
+                                        }
+       ).
 
 -endif.

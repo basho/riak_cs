@@ -137,7 +137,7 @@ process_post_helper(RD, Ctx = #rcs_s3_context{riak_client = RcPid,
             RD2 = wrq:set_resp_body(Body, RD),
             {true, RD2, Ctx};
         {error, Reason} ->
-            riak_cs_s3_response:api_error(Reason, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason, RD, Ctx)
     end.
 
 -spec valid_entity_length(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
@@ -150,7 +150,7 @@ valid_entity_length(RD, Ctx=#rcs_s3_context{local_context=LocalCtx}) ->
                 Length when is_integer(Length) ->
                     case Length =< riak_cs_lfs_utils:max_content_len() of
                         false ->
-                            riak_cs_s3_response:api_error(
+                            riak_cs_aws_response:api_error(
                               entity_too_large, RD, Ctx);
                         true ->
                             UpdLocalCtx = LocalCtx#key_context{size=Length},

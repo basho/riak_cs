@@ -223,6 +223,21 @@
 -define(IAM_SAML_PROVIDER, #saml_provider_v1).
 
 
+-record(assumed_role_user, { arn :: arn()
+                           , assumed_role_id :: binary()
+                           }
+       ).
+-type assumed_role_user() :: #assumed_role_user{}.
+
+-record(credentials, { access_key_id :: binary()
+                     , expiration :: non_neg_integer()
+                     , secret_access_key :: binary()
+                     , session_token :: binary()
+                     }
+       ).
+-type credentials() :: #credentials{}.
+
+
 -define(DEFAULT_REGION, "us-east-1").
 
 -define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").

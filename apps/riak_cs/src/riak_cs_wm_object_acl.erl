@@ -217,16 +217,16 @@ accept_body(RD, Ctx = #rcs_s3_context{local_context = #key_context{get_fsm_pid =
                                                     [200], [UserName, BFile_str]),
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->
-                    Code = riak_cs_s3_response:status_code(Reason),
+                    Code = riak_cs_aws_response:status_code(Reason),
                     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
                                                     [Code], [UserName, BFile_str]),
-                    riak_cs_s3_response:api_error(Reason, RD, Ctx)
+                    riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
         {error, Reason2} ->
-            Code = riak_cs_s3_response:status_code(Reason2),
+            Code = riak_cs_aws_response:status_code(Reason2),
             riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
                                             [Code], [UserName, BFile_str]),
-            riak_cs_s3_response:api_error(Reason2, RD, Ctx)
+            riak_cs_aws_response:api_error(Reason2, RD, Ctx)
     end.
 
 bfile_str(B, K, ?LFS_DEFAULT_OBJECT_VERSION) ->
