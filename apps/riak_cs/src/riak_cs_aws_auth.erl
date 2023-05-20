@@ -68,7 +68,7 @@ identify(RD, _Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_s3_context{}) ->
+-spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, #wm_reqdata{}, rcs_aws_context()) ->
           ok | {error, atom()}.
 authenticate(User, Signature, RD, Ctx) ->
     case wrq:get_req_header("authorization", RD) of
@@ -84,7 +84,7 @@ authenticate(User, Signature, RD, Ctx) ->
             end
     end.
 
--spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_s3_context{}) ->
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), rcs_aws_context()) ->
           ok | {error, atom()}.
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
@@ -243,10 +243,9 @@ drop_slash(A) ->
             A
     end.
 
--spec authenticate_v4(rcs_user(), v4_attrs(), RD::term()) ->
-                             ok |
-                             {error, {unmatched_signature,
-                                      Presented::string(), Calculated::string()}}.
+-spec authenticate_v4(rcs_user(), v4_attrs(), #wm_reqdata{}) ->
+          ok |
+          {error, {unmatched_signature, Presented::string(), Calculated::string()}}.
 authenticate_v4(?RCS_USER{key_secret = SecretAccessKey} = _User, AuthAttrs, RD) ->
     Method = wrq:method(RD),
     {Path, Qs} = riak_cs_aws_s3_rewrite:raw_url(RD),

@@ -102,6 +102,10 @@
                           api :: atom()
                          }).
 
+-type rcs_aws_context() :: #rcs_s3_context{}
+                         | #rcs_iam_context{}
+                         | #rcs_sts_context{}.
+
 
 -record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
                       upload_id :: undefined | binary(),
