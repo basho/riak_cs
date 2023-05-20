@@ -64,6 +64,8 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+-define(UNSIGNED_API_CALLS, ["AssumeRoleWithSAML"]).
+
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
 %% -------------------------------------------------------------------
@@ -109,24 +111,35 @@ valid_entity_length(RD, Ctx) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_sts_context{}}.
 forbidden(RD, Ctx=#rcs_sts_context{auth_module = AuthMod,
                                    riak_client = RcPid}) ->
-    AuthResult =
-        case AuthMod:identify(RD, Ctx) of
-            failed ->
-                %% Identification failed, deny access
-                {error, no_such_key};
-            {failed, Reason} ->
-                {error, Reason};
-            {UserKey, AuthData} ->
-                case riak_cs_user:get_user(UserKey, RcPid) of
-                    {ok, {User, Obj}} = _LookupResult ->
-                        authenticate(User, Obj, RD, Ctx, AuthData);
-                    Error ->
-                        Error
-                end;
-            Role ->
-                riak_cs_wm_utils:eval_role_for_action(RD, Role)
-        end,
-    post_authentication(AuthResult, RD, Ctx, fun authorize/2).
+    case unsigned_call_allowed(RD) of
+        true ->
+            true;
+        false ->
+            AuthResult =
+                case AuthMod:identify(RD, Ctx) of
+                    failed ->
+                        %% Identification failed, deny access
+                        {error, no_such_key};
+                    {failed, Reason} ->
+                        {error, Reason};
+                    {UserKey, AuthData} ->
+                        case riak_cs_user:get_user(UserKey, RcPid) of
+                            {ok, {User, Obj}} = _LookupResult ->
+                                authenticate(User, Obj, RD, Ctx, AuthData);
+                            Error ->
+                                Error
+                        end;
+                    Role ->
+                        riak_cs_wm_utils:eval_role_for_action(RD, Role)
+                end,
+            post_authentication(AuthResult, RD, Ctx, fun authorize/2)
+
+    end.
+unsigned_call_allowed(RD) ->
+    Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
+    lists:member(proplists:get_value("Action", Form),
+                 ?UNSIGNED_API_CALLS).
+
 
 post_authentication({ok, User, _UserObj}, RD, Ctx, Authorize) ->
     %% given keyid and signature matched, proceed
