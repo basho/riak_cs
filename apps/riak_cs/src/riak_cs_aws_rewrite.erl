@@ -44,7 +44,7 @@ rewrite(Method, Scheme, Vsn, Headers, Url) ->
             logger:warning("Service ~s is not supported", [A]),
             {Headers, Url};
         Mod ->
-            logger:debug("rewriting url for service ~s", [Mod]),
+            logger:debug("rewriting url ~s for service ~s", [Url, Mod]),
             Mod:rewrite(Method, Scheme, Vsn, Headers, Url)
     end.
 

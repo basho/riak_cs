@@ -38,40 +38,56 @@
 -spec assume_role_with_saml(proplist:proplist()) -> {ok, maps:map()} | {error, assume_role_with_saml_error()}.
 assume_role_with_saml(Specs) ->
     ?LOG_DEBUG("STUB assume_role_with_saml(~p)", [Specs]),
-    lists:foldl(
-      fun(StepF, {Args, State}) -> StepF(Args, State) end,
-      {Specs, #{}},
-      [fun validate_args/2,
-       fun check_with_saml_provider/2,
-       fun create_session_and_issue_temp_creds/2]).
+    Res = lists:foldl(
+            fun(StepF, State) -> StepF(State) end,
+            #{specs => Specs},
+            [fun validate_args/1,
+             fun check_with_saml_provider/1,
+             fun create_session_and_issue_temp_creds/1]),
+    case Res of
+        #{status := ok} ->
+            {ok, Res};
+        #{status := NotOk} ->
+            NotOk
+    end.
 
-validate_args(Specs, #{}) ->
+validate_args(#{specs := Specs} = State) ->
     ?LOG_DEBUG("STUB"),
     ValidatedSpecs = Specs,
-    {ValidatedSpecs, #{}}.
+    State#{specs => ValidatedSpecs,
+           status => ok}.
 
-check_with_saml_provider({error, _} = PreviousStepFailed, #{}) ->
+check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-check_with_saml_provider(Specs, #{principal_arn := PrincipalArn,
-                                  saml_assertion := SAMLAssertion,
-                                  role_arn := RoleArn}) ->
+check_with_saml_provider(#{specs := #{principal_arn := PrincipalArn,
+                                      saml_assertion := SAMLAssertion,
+                                      role_arn := RoleArn}} = State) ->
     ?LOG_DEBUG("STUB PrincipalArn ~p, SAMLAssertion ~p, RoleArn ~p", [PrincipalArn, SAMLAssertion, RoleArn]),
-    {Specs, #{}}.
+    State.
 
-create_session_and_issue_temp_creds({error, _} = PreviousStepFailed, #{}) ->
+create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-create_session_and_issue_temp_creds(Specs, #{duration_seconds := DurationSeconds}) ->
+create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSeconds}} = State) ->
     ?LOG_DEBUG("STUB DurationSeconds ~p", [DurationSeconds]),
     
-    {Specs, #{assumed_role_user => "AssumedRoleUser",
-              audience => "Audience",
-              credentials => "Credentials",
-              issuer => "Issuer",
-              name_qualifier => "NameQualifier",
-              packed_policy_size => "PackedPolicySize",
-              source_identity => "SourceIdentity",
-              subject => "Subject",
-              subject_type => "SubjectType"}}.
+    Tomorrow = calendar:system_time_to_local_time(os:system_time(second) + 3600*24, second),
+    State#{assumed_role_user => #{arn => <<"arn:aws:sts::123456789012:assumed-role/TestSaml">>,
+                                  assumed_role_id => <<"ARO456EXAMPLE789:TestSaml">>},
+           audience => <<"https://signin.aws.amazon.com/saml">>,
+           credentials => #{access_key_id => <<"ASIAV3ZUEFP6EXAMPLE">>,
+                            secret_access_key => <<"8P+SQvWIuLnKhh8d++jpw0nNmQRBZvNEXAMPLEKEY">>,
+                            session_token => <<"IQoJb3JpZ2luX2VjEOz////////////////////wEXAMPLEtMSJHMEUCIDoKK3JH9uG"
+                            "QE1z0sINr5M4jk+Na8KHDcCYRVjJCZEvOAiEA3OvJGtw1EcViOleS2vhs8VdCKFJQWP"
+                            "QrmGdeehM4IC1NtBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU"
+                            "9HFvlRd8Tx6q6fE8YQcHNVXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz"
+                            "+scqKmlzm8FDrypNC9Yjc8fPOLn9FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA==">>,
+                            expiration => Tomorrow},
+           issuer => <<"https://samltest.id/saml/idp">>,
+           name_qualifier => <<"SbdGOnUkh1i4+EXAMPLExL/jEvs=">>,
+           packed_policy_size => 6,
+           source_identity => <<"SomeSourceIdentity">>,
+           subject => <<"ThatUsersNameID">>,
+           subject_type => <<"transient">>}.
 
 
 -ifdef(TEST).

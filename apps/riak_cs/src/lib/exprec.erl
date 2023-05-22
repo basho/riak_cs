@@ -95,7 +95,7 @@
         , part_descr_v1
         , access_v1
         , bucket_versioning
-          %% S3 records
+          %% AWS records
         , arn_v1
         , policy_v1
         , statement
@@ -104,6 +104,8 @@
         , permissions_boundary
         , role_v1
         , saml_provider_v1
+        , assumed_role_user
+        , credentials
         ]
        ).
 

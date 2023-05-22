@@ -125,7 +125,9 @@ to_xml(#get_saml_provider_response{} = R) ->
 to_xml(#delete_saml_provider_response{} = R) ->
     delete_saml_provider_response_to_xml(R);
 to_xml(#list_saml_providers_response{} = R) ->
-    list_saml_providers_response_to_xml(R).
+    list_saml_providers_response_to_xml(R);
+to_xml(#assume_role_with_saml_response{} = R) ->
+    assume_role_with_saml_response_to_xml(R).
 
 
 
@@ -467,28 +469,25 @@ saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
                                       saml_metadata_document = SAMLMetadataDocument,
                                       tags = Tags,
                                       valid_until = ValidUntil}) ->
-    C = lists:flatten(
-          [{'Arn', [binary_to_list(Arn)]},
-           {'SAMLMetadataDocument', [binary_to_list(SAMLMetadataDocument)]},
-           {'CreateDate', [binary_to_list(CreateDate)]},
-           {'ValidUntil', [binary_to_list(ValidUntil)]},
-           {'Tags', [tag_node(T) || T <- Tags]}
-          ]),
+    C = [{'Arn', [binary_to_list(Arn)]},
+         {'SAMLMetadataDocument', [binary_to_list(SAMLMetadataDocument)]},
+         {'CreateDate', [binary_to_list(CreateDate)]},
+         {'ValidUntil', [binary_to_list(ValidUntil)]},
+         {'Tags', [tag_node(T) || T <- Tags]}
+        ],
     {'SAMLProvider', C}.
 
 saml_provider_node_for_create(Arn, Tags) ->
-    C = lists:flatten(
-          [{'SAMLProviderArn', [binary_to_list(Arn)]},
-           {'Tags', [], [tag_node(T) || T <- Tags]}
-          ]),
+    C = [{'SAMLProviderArn', [binary_to_list(Arn)]},
+         {'Tags', [], [tag_node(T) || T <- Tags]}
+        ],
     {'CreateSAMLProviderResult', C}.
 
 saml_provider_node_for_get(CreateDate, ValidUntil, Tags) ->
-    C = lists:flatten(
-          [{'CreateDate', [binary_to_list(CreateDate)]},
-           {'ValidUntil', [binary_to_list(ValidUntil)]},
-           {'Tags', [], [tag_node(T) || T <- Tags]}
-          ]),
+    C = [{'CreateDate', [binary_to_list(CreateDate)]},
+         {'ValidUntil', [binary_to_list(ValidUntil)]},
+         {'Tags', [], [tag_node(T) || T <- Tags]}
+        ],
     {'GetSAMLProviderResult', C}.
 
 saml_provider_node_for_list(Arn, CreateDate, ValidUntil) ->
@@ -541,6 +540,48 @@ list_saml_providers_response_to_xml(#list_saml_providers_response{saml_provider_
     export_xml([make_internal_node('ListRolesResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    lists:flatten(C))], []).
+
+assume_role_with_saml_response_to_xml(#assume_role_with_saml_response{assumed_role_user = AssumedRoleUser,
+                                                                      audience = Audience,
+                                                                      credentials = Credentials,
+                                                                      issuer = Issuer,
+                                                                      name_qualifier = NameQualifier,
+                                                                      packed_policy_size = PackedPolicySize,
+                                                                      source_identity = SourceIdentity,
+                                                                      subject = Subject,
+                                                                      subject_type = SubjectType,
+                                                                      request_id = RequestId}) ->
+    AssumeRoleWithSAMLResult =
+        [{'AssumedRoleUser', make_assumed_role_user(AssumedRoleUser)},
+         {'Audience', [binary_to_list(Audience)]},
+         {'Credentials', make_credentials(Credentials)},
+         {'Issuer', [binary_to_list(Issuer)]},
+         {'NameQualifier', [binary_to_list(NameQualifier)]},
+         {'PackedPolicySize', [integer_to_list(PackedPolicySize)]},
+         {'SourceIdentity', [binary_to_list(SourceIdentity)]},
+         {'Subject', [binary_to_list(Subject)]},
+         {'SubjectType', [binary_to_list(SubjectType)]}
+        ],
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'AssumeRoleWithSAMLResult', AssumeRoleWithSAMLResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('AssumeRoleWithSAMLResponse',
+                                   [{'xmlns', ?STS_XMLNS}],
+                                   C)], []).
+make_assumed_role_user(#assumed_role_user{arn = Arn,
+                                          assumed_role_id = AssumedRoleId}) ->
+    [{'Arn', [binary_to_list(Arn)]},
+     {'AssumedRoleId', [binary_to_list(AssumedRoleId)]}].
+
+make_credentials(#credentials{access_key_id = AccessKeyId,
+                              secret_access_key = SecretAccessKey,
+                              session_token = SessioToken,
+                              expiration = Expiration}) ->
+    [{'AccessKeyId', [binary_to_list(AccessKeyId)]},
+     {'SecretAccessKey', [binary_to_list(SecretAccessKey)]},
+     {'SessioToken', [binary_to_list(SessioToken)]},
+     {'Expiration', [binary_to_list(rts:iso8601(Expiration))]}
+    ].
 
 tag_node(?IAM_TAG{key = Key,
                   value = Value}) ->

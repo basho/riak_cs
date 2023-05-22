@@ -113,7 +113,7 @@ forbidden(RD, Ctx=#rcs_sts_context{auth_module = AuthMod,
                                    riak_client = RcPid}) ->
     case unsigned_call_allowed(RD) of
         true ->
-            true;
+            {false, RD, Ctx};
         false ->
             AuthResult =
                 case AuthMod:identify(RD, Ctx) of
@@ -133,7 +133,6 @@ forbidden(RD, Ctx=#rcs_sts_context{auth_module = AuthMod,
                         riak_cs_wm_utils:eval_role_for_action(RD, Role)
                 end,
             post_authentication(AuthResult, RD, Ctx, fun authorize/2)
-
     end.
 unsigned_call_allowed(RD) ->
     Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
@@ -258,7 +257,7 @@ do_action("AssumeRoleWithSAML",
           Form, RD, Ctx = #rcs_sts_context{response_module = ResponseMod}) ->
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2, #{}, Form),
     case riak_cs_sts:assume_role_with_saml(Specs) of
-        {ok, #{assumed_role_user := AssumedRoleUser,
+        {ok, #{assumed_role_user := #{assumed_role_id := AssumedRoleId} = AssumedRoleUser,
                audience := Audience,
                credentials := Credentials,
                issuer := Issuer,
@@ -268,11 +267,11 @@ do_action("AssumeRoleWithSAML",
                subject := Subject,
                subject_type := SubjectType}} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("AssumeRoleWithSAML completed for user \"~s\" on request_id ~s", [AssumedRoleUser, RequestId]),
+            logger:info("AssumeRoleWithSAML completed for user \"~s\" on request_id ~s", [AssumedRoleId, RequestId]),
             Doc = riak_cs_xml:to_xml(
-                    #assume_role_with_saml_response{assumed_role_user = AssumedRoleUser,
+                    #assume_role_with_saml_response{assumed_role_user = exprec:frommap_assumed_role_user(AssumedRoleUser),
                                                     audience = Audience,
-                                                    credentials = Credentials,
+                                                    credentials = exprec:frommap_credentials(Credentials),
                                                     issuer = Issuer,
                                                     name_qualifier = NameQualifier,
                                                     packed_policy_size = PackedPolicySize,
