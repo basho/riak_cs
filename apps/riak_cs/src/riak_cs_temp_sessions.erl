@@ -42,13 +42,12 @@ create(DurationSeconds, Pbc) ->
                                                        expiration = os:system_time(second) + DurationSeconds,
                                                        session_token = make_session_token()},
                             duration_seconds = DurationSeconds},
-
     Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, UserId, term_to_binary(Session)),
     case riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}]) of
         ok ->
             logger:info("Opened new temp session for user ~s", [UserId]),
-            {ok, _Tref} = erlang:apply_after(DurationSeconds * 1000,
-                                             ?MODULE, close_session, [UserId]),
+            {ok, _Tref} = timer:apply_after(DurationSeconds * 1000,
+                                            ?MODULE, close_session, [UserId]),
             {ok, Session};
         {error, Reason} = ER ->
             logger:error("Failed to save temp session: ~p", [Reason]),

@@ -198,7 +198,7 @@ delete_role(RoleName, Pbc) ->
         {ok, Obj0} ->
             Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
             {Res, TAT} = ?TURNAROUND_TIME(
-                            riakc_pb_socket:put(Pbc, Obj1, [{dw, all}])),
+                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
             case Res of
                 ok ->
                     stanchion_stats:update([riakc, put_cs_role], TAT);
@@ -246,7 +246,7 @@ delete_saml_provider(Arn, Pbc) ->
         {ok, Obj0} ->
             Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
             {Res, TAT} = ?TURNAROUND_TIME(
-                            riakc_pb_socket:put(Pbc, Obj1, [{dw, all}])),
+                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
             case Res of
                 ok ->
                     stanchion_stats:update([riakc, put_cs_samlprovider], TAT);

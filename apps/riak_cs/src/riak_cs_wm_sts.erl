@@ -244,7 +244,7 @@ accept_wwwform(RD, Ctx) ->
           {boolean() | {halt, term()}, term(), term()}.
 finish_request(RD, Ctx=#rcs_sts_context{riak_client = undefined}) ->
     {true, RD, Ctx};
-finish_request(RD, Ctx=#rcs_sts_context{riak_client=RcPid}) ->
+finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
     riak_cs_riak_client:checkin(RcPid),
     {true, RD, Ctx#rcs_sts_context{riak_client = undefined}}.
 
@@ -254,9 +254,10 @@ finish_request(RD, Ctx=#rcs_sts_context{riak_client=RcPid}) ->
 %% -------------------------------------------------------------------
 
 do_action("AssumeRoleWithSAML",
-          Form, RD, Ctx = #rcs_sts_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_sts_context{riak_client = Pbc,
+                                           response_module = ResponseMod}) ->
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2, #{}, Form),
-    case riak_cs_sts:assume_role_with_saml(Specs) of
+    case riak_cs_sts:assume_role_with_saml(Specs, Pbc) of
         {ok, #{assumed_role_user := #{assumed_role_id := AssumedRoleId} = AssumedRoleUser,
                audience := Audience,
                credentials := Credentials,
