@@ -114,10 +114,11 @@ error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and H
 error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
 error_message(no_such_role) -> "No such role";
 error_message(no_such_saml_provider) -> "No such SAML provider";
-error_message(unsupported_iam_action) -> "Action not supported";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(disconnected) -> "Please contact administrator.";
 error_message(stanchion_recovery_failure) -> "Bucket and user operations are temporarily unavailable because the node running stanchion is currently unreachable. Please report this to your administrator.";
+error_message(invalid_action) -> "This Action is invalid or not yet supported";
+error_message(invalid_parameter_value) -> "Unacceptable parameter value";
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -169,10 +170,11 @@ error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(malformed_xml) -> "MalformedXML";
 error_code(no_such_role) -> "NoSuchEntity";
 error_code(no_such_saml_provider) -> "NoSuchEntity";
-error_code(unsupported_iam_action) -> "InvalidAction";
 error_code(remaining_multipart_upload) -> "MultipartUploadRemaining";
 error_code(disconnected) -> "ServiceUnavailable";
 error_code(stanchion_recovery_failure) -> "ServiceDegraded";
+error_code(invalid_action) -> "InvalidAction";
+error_code(invalid_parameter_value) -> "InvalidParameterValue";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -231,9 +233,11 @@ status_code(canned_acl_and_header_grant)   -> 400;
 status_code(malformed_acl_error)           -> 400;
 status_code(malformed_xml)                 -> 400;
 status_code(no_such_role)                  -> 404;
-status_code(unsupported_iam_action)        -> 400;
+status_code(no_such_saml_provider)         -> 404;
 status_code(remaining_multipart_upload)    -> 409;
 status_code(disconnected)                  -> 500;
+status_code(invalid_action)                -> 400;
+status_code(invalid_parameter_value)       -> 400;
 status_code(not_implemented)               -> 501;
 status_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),

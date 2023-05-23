@@ -286,7 +286,7 @@ do_action("AssumeRoleWithSAML",
 
 do_action(Unsupported, _Form, RD, Ctx = #rcs_sts_context{response_module = ResponseMod}) ->
     logger:warning("IAM action ~s not supported yet; ignoring request", [Unsupported]),
-    ResponseMod:api_error(unsupported_iam_action, RD, Ctx).
+    ResponseMod:api_error(invalid_action, RD, Ctx).
 
 
 assume_role_with_saml_fields_filter({K, V}, Acc) ->

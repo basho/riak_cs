@@ -393,7 +393,7 @@ do_action("ListSAMLProviders",
 
 do_action(Unsupported, _Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
     logger:warning("IAM action ~s not supported yet; ignoring request", [Unsupported]),
-    ResponseMod:api_error(unsupported_iam_action, RD, Ctx).
+    ResponseMod:api_error(invalid_action, RD, Ctx).
 
 
 role_fields_filter({ItemKey, ItemValue}, Acc) ->
