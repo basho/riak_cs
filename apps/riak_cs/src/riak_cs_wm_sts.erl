@@ -87,15 +87,9 @@ init(Config) ->
 
 
 -spec service_available(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
-service_available(RD, Ctx = #rcs_sts_context{rc_pool = undefined}) ->
-    service_available(RD, Ctx#rcs_sts_context{rc_pool = request_pool});
-service_available(RD, Ctx = #rcs_sts_context{rc_pool = Pool}) ->
-    case riak_cs_riak_client:checkout(Pool) of
-        {ok, RcPid} ->
-            {true, RD, Ctx#rcs_sts_context{riak_client = RcPid}};
-        {error, _Reason} ->
-            {false, RD, Ctx}
-    end.
+service_available(RD, Ctx = #rcs_sts_context{riak_client = undefined}) ->
+    {ok, Pbc} = riak_cs_utils:riak_connection(),
+    {true, RD, Ctx#rcs_sts_context{riak_client = Pbc}}.
 
 -spec malformed_request(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
 malformed_request(RD, Ctx) ->
@@ -245,7 +239,7 @@ accept_wwwform(RD, Ctx) ->
 finish_request(RD, Ctx=#rcs_sts_context{riak_client = undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
-    riak_cs_riak_client:checkin(RcPid),
+    riak_cs_utils:close_riak_connection(RcPid),
     {true, RD, Ctx#rcs_sts_context{riak_client = undefined}}.
 
 
@@ -272,7 +266,7 @@ do_action("AssumeRoleWithSAML",
             Doc = riak_cs_xml:to_xml(
                     #assume_role_with_saml_response{assumed_role_user = exprec:frommap_assumed_role_user(AssumedRoleUser),
                                                     audience = Audience,
-                                                    credentials = exprec:frommap_credentials(Credentials),
+                                                    credentials = Credentials,
                                                     issuer = Issuer,
                                                     name_qualifier = NameQualifier,
                                                     packed_policy_size = PackedPolicySize,
