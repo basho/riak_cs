@@ -54,7 +54,7 @@
 %% @doc Create a new Riak CS user
 -spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email) ->
-    {KeyId, Secret} = generate_access_creds(Email),
+    {KeyId, Secret} = riak_cs_aws_utils:generate_access_creds(Email),
     create_user(Name, Email, KeyId, Secret).
 
 %% @doc Create a new Riak CS user
@@ -62,7 +62,7 @@ create_user(Name, Email) ->
 create_user(Name, Email, KeyId, Secret) ->
     case validate_email(Email) of
         ok ->
-            CanonicalId = generate_canonical_id(KeyId),
+            CanonicalId = riak_cs_aws_utils:generate_canonical_id(KeyId),
             User = user_record(Name, Email, KeyId, Secret, CanonicalId),
             create_credentialed_user(riak_cs_config:admin_creds(), User);
         {error, _Reason}=Error ->
@@ -211,7 +211,7 @@ save_user(User, UserObj, RcPid) ->
 update_key_secret(User=?RCS_USER{email=Email,
                                  key_id=KeyId}) ->
     EmailBin = list_to_binary(Email),
-    User?RCS_USER{key_secret=generate_secret(EmailBin, KeyId)}.
+    User?RCS_USER{key_secret = riak_cs_aws_utils:generate_secret(EmailBin, KeyId)}.
 
 %% @doc Strip off the user name portion of an email address
 -spec display_name(binary()) -> string().
@@ -229,45 +229,6 @@ fetch_user_keys(RcPid) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-
-%% @doc Generate a new set of access credentials for user.
--spec generate_access_creds(binary()) -> {iodata(), iodata()}.
-generate_access_creds(UserId) ->
-    KeyId = generate_key(UserId),
-    Secret = generate_secret(UserId, KeyId),
-    {KeyId, Secret}.
-
-%% @doc Generate the canonical id for a user.
--spec generate_canonical_id(string()) -> string().
-generate_canonical_id(KeyID) ->
-    Bytes = 16,
-    Id1 = riak_cs_utils:md5(KeyID),
-    Id2 = riak_cs_utils:md5(uuid:get_v4()),
-    riak_cs_utils:binary_to_hexlist(
-      iolist_to_binary(<< Id1:Bytes/binary,
-                          Id2:Bytes/binary >>)).
-
-%% @doc Generate an access key for a user
--spec generate_key(binary()) -> [byte()].
-generate_key(UserName) ->
-    Ctx = crypto:mac_init(hmac, sha, UserName),
-    Ctx1 = crypto:mac_update(Ctx, uuid:get_v4()),
-    Key = crypto:mac_finalN(Ctx1, 15),
-    string:to_upper(base64url:encode_to_string(Key)).
-
-%% @doc Generate a secret access token for a user
--spec generate_secret(binary(), string()) -> iodata().
-generate_secret(UserName, Key) ->
-    Bytes = 14,
-    Ctx = crypto:mac_init(hmac, sha, UserName),
-    Ctx1 = crypto:mac_update(Ctx, list_to_binary(Key)),
-    SecretPart1 = crypto:mac_finalN(Ctx1, Bytes),
-    Ctx2 = crypto:mac_init(hmac, sha, UserName),
-    Ctx3 = crypto:mac_update(Ctx2, uuid:get_v4()),
-    SecretPart2 = crypto:mac_finalN(Ctx3, Bytes),
-    base64url:encode_to_string(
-      iolist_to_binary(<< SecretPart1:Bytes/binary,
-                          SecretPart2:Bytes/binary >>)).
 
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user(), {ok, {string(), string()}} |

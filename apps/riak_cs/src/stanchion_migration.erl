@@ -41,7 +41,6 @@ validate_stanchion() ->
           when Host == ConfiguredIP,
                Port == ConfiguredPort,
                Node == node() ->
-            logger:debug("validate_stanchion: matching data read"),
             ok;
         {ok, {{Host, Port}, Node}} ->
             logger:info("stanchion details updated: ~s:~p on ~s", [Host, Port, Node]),

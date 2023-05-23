@@ -130,7 +130,8 @@ ensure_bucket_props() ->
                             ?BUCKETS_BUCKET],
     BucketsWithMultiFalse = [?SERVICE_BUCKET,
                              ?IAM_ROLE_BUCKET,
-                             ?IAM_SAMLPROVIDER_BUCKET],
+                             ?IAM_SAMLPROVIDER_BUCKET,
+                             ?TEMP_SESSIONS_BUCKET],
     %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
     %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
     %%                   riak_kv_wm_link_walker, mapreduce_linkfun],

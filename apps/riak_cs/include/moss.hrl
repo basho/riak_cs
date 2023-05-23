@@ -23,6 +23,7 @@
 -define(RCS_COMMON_MOSS_HRL, included).
 
 -include("acl.hrl").
+-include("aws_api.hrl").
 
 -define(RCS_BUCKET, #moss_bucket_v1).
 -define(MOSS_USER, #rcs_user_v2).
@@ -85,5 +86,14 @@
                            }).
 -type bucket_versioning() :: #bucket_versioning{}.
 
+
+%% federated users
+-record(temp_session, { user_id :: binary()
+                      , credentials :: credentials()
+                      , duration_seconds :: non_neg_integer()
+                      , created = os:system_time(millisecond) :: non_neg_integer()
+                      }
+       ).
+-type temp_session() :: #temp_session{}.
 
 -endif.

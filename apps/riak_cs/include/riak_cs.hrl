@@ -57,6 +57,7 @@
 -define(SERVICE_BUCKET, <<"moss.service">>).
 -define(IAM_ROLE_BUCKET, <<"moss.iam.roles">>).
 -define(IAM_SAMLPROVIDER_BUCKET, <<"moss.iam.samlproviders">>).
+-define(TEMP_SESSIONS_BUCKET, <<"moss.temp-sessions">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
 -define(DELETED_MARKER, <<"0">>).

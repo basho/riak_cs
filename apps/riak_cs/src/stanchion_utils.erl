@@ -56,7 +56,6 @@
 
 
 -define(ROLE_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
--define(ROLE_ID_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
 
 
 %% this riak connection is separate, potentially to a different riak
@@ -165,7 +164,7 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
                             path = Path}, Pbc) ->
     RoleId = ensure_unique_role_id(Pbc),
 
-    Role1 = Role0?IAM_ROLE{arn = make_role_arn(RoleName, Path),
+    Role1 = Role0?IAM_ROLE{arn = riak_cs_aws_utils:make_role_arn(RoleName, Path),
                            role_id = RoleId},
 
     Indexes = [{?ROLE_PATH_INDEX, Path}],
@@ -185,19 +184,13 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
     end.
 
 ensure_unique_role_id(RcPid) ->
-    Id = make_role_id(),
+    Id = riak_cs_aws_utils:make_id(?ROLE_ID_LENGTH, "AROA"),
     case fetch_object(?IAM_ROLE_BUCKET, Id, RcPid) of
         {ok, _} ->
             ensure_unique_role_id(RcPid);
         _ ->
             Id
     end.
-
-make_role_id() ->
-    list_to_binary(fill(?ROLE_ID_LENGTH - 4, "AROA", ?ROLE_ID_CHARSET)).
-
-make_role_arn(Name, Path) ->
-    iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":role", Path, $/, Name]).
 
 -spec delete_role(string(), pid()) -> ok | {error, term()}.
 delete_role(RoleName, Pbc) ->
@@ -226,7 +219,7 @@ create_saml_provider(#{name := Name} = Fields, Pbc) ->
     save_saml_provider(Name, P1, Pbc).
 
 save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
-    Arn = make_provider_arn(Name),
+    Arn = riak_cs_aws_utils:make_provider_arn(Name),
 
     ?LOG_INFO("Saving new SAML Provider \"~s\" with ARN ~s", [Name, Arn]),
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
@@ -245,9 +238,6 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
             logger:error("Failed to save SAML provider \"~s\": ~p", [Reason]),
             Res
     end.
-
-make_provider_arn(Name) ->
-    iolist_to_binary("arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name).
 
 
 -spec delete_saml_provider(binary(), pid()) -> ok | {error, term()}.
@@ -862,9 +852,3 @@ metric_for(?IAM_ROLE_BUCKET, weak) ->
     get_cs_role_strong;
 metric_for(?USER_BUCKET, weak) ->
     get_cs_user.
-
-
-fill(0, Q, _) ->
-    Q;
-fill(N, Q, CharSet) ->
-    fill(N-1, Q ++ [lists:nth(rand:uniform(length(CharSet)), CharSet)], CharSet).
