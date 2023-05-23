@@ -52,17 +52,99 @@ assume_role_with_saml(Specs) ->
     end.
 
 validate_args(#{specs := Specs} = State) ->
-    ?LOG_DEBUG("STUB"),
-    ValidatedSpecs = Specs,
-    State#{specs => ValidatedSpecs,
-           status => ok}.
+    case lists:foldl(fun(_Fun, {error, _} = E) -> E;
+                        (Fun, ok) -> Fun(Specs) end,
+                     ok,
+                     [fun validate_duration_seconds/1,
+                      fun validate_policy/1,
+                      fun validate_policy_arns/1,
+                      fun validate_principal_arn/1,
+                      fun validate_role_arn/1,
+                      fun validate_saml_assertion/1]) of
+        ok ->
+            State#{status => ok};
+        {error, Reason} ->
+            State#{status => {error, Reason}}
+    end.
+validate_duration_seconds(#{duration_seconds := A}) ->
+    case A >= 900 andalso A =< 43200 of
+        true ->
+            ok;
+        false ->
+            logger:warning("Unacceptable value for DurationSeconds: ~p", [A]),
+            {error, invalid_parameter_value}
+    end;
+validate_duration_seconds(#{}) ->
+   ok.
+
+validate_policy(#{policy := A}) ->
+    case nomatch /= re:run(A, "[\u0009\u000A\u000D\u0020-\u00FF]+")
+        andalso size(A) >= 1
+        andalso size(A) =< 2048 of
+        true ->
+            ok;
+        false ->
+            logger:warning("Unacceptable value for Policy: ~p", [A]),
+            {error, invalid_parameter_value}
+    end;
+validate_policy(#{}) ->
+    ok.
+
+validate_policy_arns(#{policy_arns := AA}) ->
+    case length(AA) =< 10 andalso
+        lists:all(fun is_valid_arn/1, AA) of
+        true ->
+            ok;
+        false ->
+            logger:warning("Invalid or too many PolicyArn members", []),
+            {error, invalid_parameter_value}
+    end;
+validate_policy_arns(#{}) ->
+    ok.
+
+validate_principal_arn(#{principal_arn := A}) ->
+    case is_valid_arn(A)
+        andalso size(A) >= 20
+        andalso size(A) =< 2048 of
+        true ->
+            ok;
+        false ->
+            logger:warning("Unacceptable value for PrincipalArn: ~p", [A]),
+            {error, invalid_parameter_value}
+    end;
+validate_principal_arn(#{}) ->
+    logger:warning("Missing PrincipalArn parameter"),
+    {error, missing_parameter}.
+
+validate_role_arn(#{role_arn := A}) ->
+    case is_valid_arn(A)
+        andalso size(A) >= 20
+        andalso size(A) =< 2048 of
+        true ->
+            ok;
+        false ->
+            logger:warning("Unacceptable value for RoleArn: ~p", [A]),
+            {error, invalid_parameter_value}
+    end.
+validate_saml_assertion(#{saml_assertion := A}) ->
+    case size(A) >= 4 andalso size(A) =< 100000 of
+        true ->
+            ok;
+        false ->
+            logger:warning("Unacceptable value for SAMLAssertion: ~p", [A]),
+            {error, invalid_parameter_value}
+    end;
+validate_saml_assertion(#{}) ->
+    logger:warning("Missing SAMLAssertion parameter"),
+    {error, missing_parameter}.
+
+
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{specs := #{principal_arn := PrincipalArn,
                                       saml_assertion := SAMLAssertion,
                                       role_arn := RoleArn}} = State) ->
-    ?LOG_DEBUG("STUB PrincipalArn ~p, SAMLAssertion ~p, RoleArn ~p", [PrincipalArn, SAMLAssertion, RoleArn]),
     State.
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
@@ -88,6 +170,10 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
            source_identity => <<"SomeSourceIdentity">>,
            subject => <<"ThatUsersNameID">>,
            subject_type => <<"transient">>}.
+
+
+is_valid_arn(A) ->
+    nomatch /= re:run(A, "[\u0009\u000A\u000D\u0020-\u007E\u0085\u00A0-\uD7FF\uE000-\uFFFD\u10000-\u10FFFF]+").
 
 
 -ifdef(TEST).
