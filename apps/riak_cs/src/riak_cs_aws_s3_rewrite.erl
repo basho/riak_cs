@@ -133,41 +133,27 @@ rcs_rewrite_header(RawPath, Bucket) ->
 
 %% @doc Extract the bucket name that may have been prepended to the
 %% host name in the Host header value.
--spec bucket_from_host(undefined | string()) -> undefined | string().
 bucket_from_host(undefined) ->
     undefined;
 bucket_from_host(HostHeader) ->
-    {ok, RootHost} = application:get_env(riak_cs, s3_root_host),
-    bucket_from_host(HostHeader, RootHost).
+    #{path := HostNoPort} = uri_string:parse(HostHeader),
+    extract_bucket_from_host(HostNoPort).
 
-bucket_from_host(HostHeader, RootHost) ->
-    HostNoPort = case string:tokens(HostHeader, ":") of
-                     []    -> HostHeader;
-                     [H|_] -> H
-                 end,
-    extract_bucket_from_host(HostNoPort, RootHost).
-
-extract_bucket_from_host(Host, RootHost) ->
+extract_bucket_from_host(Host) ->
     %% Take the substring of the everything up to
     %% the '.' preceding the root host
     Bucket =
-        case re:run(Host, "(.+\.|)(s3\.(?:(?:[a-z0-9-])+\.)?amazonaws\.com)",
+        case re:run(Host, "(.+\.|)s3\.(.+\.|)?amazonaws\.com",
                     [{capture, all_but_first, list}]) of
             {match, [M1, M2]} ->
-                if RootHost == M2 ->
-                        M1;
-                   el/=se ->
-                        logger:warning("accepting request sent to a (legitimate) AWS host"
-                                       " \"~s\" not matching cs_root_host (\"~s\")", [Host, RootHost]),
-                        M1
-                end;
+                M1;
+            {match, [M1]} ->
+                M1;
             _ ->
-                undefined
+                []
         end,
     case Bucket of
         [] ->
-            undefined;
-        undefined ->
             undefined;
         _ ->
             lists:droplast(Bucket)
