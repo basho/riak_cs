@@ -168,12 +168,6 @@
   {datatype, string}
 ]}.
 
-%% @doc Root host name which Riak CS accepts, for IAM requests.
-{mapping, "iam_root_host", "riak_cs.iam_root_host", [
-  {default, "iam.amazonaws.com"},
-  {datatype, string}
-]}.
-
 %% @doc Fixed pool size of primary connection pool which is used
 %% to service the majority of API requests related to the upload
 %%  or retrieval of objects.
