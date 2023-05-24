@@ -35,19 +35,20 @@
 -spec create(non_neg_integer(), pid()) -> {ok, temp_session()} | {error, term()}.
 create(DurationSeconds, Pbc) ->
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, "ARO"),
-    {KeyId, AccessKey} = riak_cs_aws_utils:generate_access_creds(UserId),
+    {KeyIdS, AccessKeyS} = riak_cs_aws_utils:generate_access_creds(UserId),
+    {KeyId, AccessKey} = {list_to_binary(KeyIdS), list_to_binary(AccessKeyS)},
     Session = #temp_session{user_id = UserId,
                             credentials = #credentials{access_key_id = KeyId,
                                                        secret_access_key = AccessKey,
                                                        expiration = os:system_time(second) + DurationSeconds,
                                                        session_token = make_session_token()},
                             duration_seconds = DurationSeconds},
-    Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, UserId, term_to_binary(Session)),
+    Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, KeyId, term_to_binary(Session)),
     case riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}]) of
         ok ->
-            logger:info("Opened new temp session for user ~s", [UserId]),
+            logger:info("Opened new temp session for user with key_id ~s", [KeyId]),
             {ok, _Tref} = timer:apply_after(DurationSeconds * 1000,
-                                            ?MODULE, close_session, [UserId]),
+                                            ?MODULE, close_session, [KeyId]),
             {ok, Session};
         {error, Reason} = ER ->
             logger:error("Failed to save temp session: ~p", [Reason]),
@@ -82,19 +83,20 @@ make_session_token() ->
     riak_cs_aws_utils:make_id(800).
 
 close_session(Id) ->
-    {ok, Pbc} = riak_cs_riak_client:checkout(),
+    {ok, Pbc} = riak_cs_utils:riak_connection(),
     _ = case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, Id) of
             {ok, Obj0} ->
                 Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
                 case riakc_pb_socket:put(Pbc, Obj1, [{dw, all}]) of
                     ok ->
+                        logger:info("Deleted temp session for user with key_id ~s", [Id]),
                         ok;
                     {error, Reason} ->
-                        logger:warning("Failed to delete temp session for user ~s: ~p", [Id, Reason]),
+                        logger:warning("Failed to delete temp session with key_id ~s: ~p", [Id, Reason]),
                         still_ok
                 end;
-            {error, _} ->
+            {error, _r} ->
                 nevermind
         end,
-    riak_cs_riak_client:checkin(Pbc).
+    riak_cs_utils:close_riak_connection(Pbc).
 

@@ -577,8 +577,8 @@ make_credentials(#credentials{access_key_id = AccessKeyId,
                               secret_access_key = SecretAccessKey,
                               session_token = SessioToken,
                               expiration = Expiration}) ->
-    [{'AccessKeyId', [AccessKeyId]},
-     {'SecretAccessKey', [SecretAccessKey]},
+    [{'AccessKeyId', [binary_to_list(AccessKeyId)]},
+     {'SecretAccessKey', [binary_to_list(SecretAccessKey)]},
      {'SessioToken', [binary_to_list(SessioToken)]},
      {'Expiration', [binary_to_list(rts:iso8601(Expiration))]}
     ].
