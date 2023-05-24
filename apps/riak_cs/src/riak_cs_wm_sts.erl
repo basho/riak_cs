@@ -262,7 +262,8 @@ do_action("AssumeRoleWithSAML",
                subject := Subject,
                subject_type := SubjectType}} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("AssumeRoleWithSAML completed for user \"~s\" on request_id ~s", [AssumedRoleId, RequestId]),
+            logger:info("AssumeRoleWithSAML completed for user ~s (key_id: ~s) on request_id ~s",
+                        [AssumedRoleId, Credentials#credentials.access_key_id, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #assume_role_with_saml_response{assumed_role_user = exprec:frommap_assumed_role_user(AssumedRoleUser),
                                                     audience = Audience,

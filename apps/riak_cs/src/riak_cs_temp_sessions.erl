@@ -21,7 +21,7 @@
 -module(riak_cs_temp_sessions).
 
 -export([create/2,
-         get/2
+         get/1, get/2
         ]).
 
 -export([close_session/1]).
@@ -56,6 +56,12 @@ create(DurationSeconds, Pbc) ->
     end.
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.
+get(Id) ->
+    {ok, Pbc} = riak_cs_utils:riak_connection(),
+    Res = get(Id, Pbc),
+    riak_cs_utils:close_riak_connection(Pbc),
+    Res.
+
 get(Id, Pbc) ->
     case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, Id) of
         {ok, Obj} ->

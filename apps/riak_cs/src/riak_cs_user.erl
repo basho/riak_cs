@@ -127,6 +127,17 @@ update_user(User, UserObj, RcPid) ->
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
+    case riak_cs_temp_sessions:get(list_to_binary(KeyId)) of
+        {ok, #temp_session{credentials = #credentials{access_key_id = KeyId,
+                                                      secret_access_key = SecretKey},
+                           user_id = UserId}} ->
+            {ok, {?RCS_USER{name = UserId,
+                            key_id = KeyId,
+                            key_secret = SecretKey}, no_object}};
+        _ ->
+            get_cs_user(KeyId, RcPid)
+    end.
+get_cs_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
     BinKey = iolist_to_binary([KeyId]),
@@ -136,6 +147,7 @@ get_user(KeyId, RcPid) ->
         Error ->
             Error
     end.
+
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
 from_riakc_obj(Obj, KeepDeletedBuckets) ->
     case riakc_obj:value_count(Obj) of
