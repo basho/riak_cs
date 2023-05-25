@@ -128,12 +128,11 @@ get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
     case riak_cs_temp_sessions:get(list_to_binary(KeyId)) of
-        {ok, #temp_session{credentials = #credentials{access_key_id = KeyId,
-                                                      secret_access_key = SecretKey},
+        {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
                            user_id = UserId}} ->
             {ok, {?RCS_USER{name = UserId,
                             key_id = KeyId,
-                            key_secret = SecretKey}, no_object}};
+                            key_secret = binary_to_list(SecretKey)}, no_object}};
         _ ->
             get_cs_user(KeyId, RcPid)
     end.
