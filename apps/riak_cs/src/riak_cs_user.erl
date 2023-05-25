@@ -123,14 +123,15 @@ update_user(User, UserObj, RcPid) ->
     handle_update_user(Result, User, UserObj, RcPid).
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user(undefined | iodata(), riak_client()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, term()}.
+-spec get_user(undefined | iodata(), riak_client()) ->
+          {ok, {rcs_user(), no_object | riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyId, RcPid) ->
     case riak_cs_temp_sessions:get(list_to_binary(KeyId)) of
         {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
-                           user_id = UserId}} ->
-            {ok, {?RCS_USER{name = UserId,
+                           user_id = UserId} = _Session} ->
+            {ok, {?RCS_USER{name = binary_to_list(UserId),
                             key_id = KeyId,
                             key_secret = binary_to_list(SecretKey)}, no_object}};
         _ ->

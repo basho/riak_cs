@@ -120,6 +120,7 @@ error_message(stanchion_recovery_failure) -> "Bucket and user operations are tem
 error_message(invalid_action) -> "This Action is invalid or not yet supported";
 error_message(invalid_parameter_value) -> "Unacceptable parameter value";
 error_message(missing_parameter) -> "Missing parameter";
+error_message(temp_users_create_bucket_restriction) -> "Federated users with assumed roles cannot create buckets";
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -177,6 +178,7 @@ error_code(stanchion_recovery_failure) -> "ServiceDegraded";
 error_code(invalid_action) -> "InvalidAction";
 error_code(invalid_parameter_value) -> "InvalidParameterValue";
 error_code(missing_parameter) -> "MissingParameter";
+error_code(temp_users_create_bucket_restriction) -> "NotImplemented";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -241,7 +243,8 @@ status_code(disconnected)                  -> 500;
 status_code(invalid_action)                -> 400;
 status_code(invalid_parameter_value)       -> 400;
 status_code(missing_parameter)             -> 400;
-status_code(not_implemented)               -> 501;
+status_code(temp_users_create_bucket_restriction) -> 403;
+status_code(not_implemented)                      -> 501;
 status_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
     503.

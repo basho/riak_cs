@@ -105,10 +105,16 @@ create_bucket(#{bucket := Bucket,
     case OpResult1 of
         ok ->
             BucketRecord = bucket_record(Bucket, create),
-            {ok, {UserObj, KeepDeletedBuckets}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
-            User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
-            UpdUser = update_user_buckets(add, User, BucketRecord),
-            save_user(false, UpdUser, UserObj, Pbc);
+            case riak_cs_user:get_user(OwnerId, Pbc) of
+                {ok, {_FedereatedUser, no_object}} ->
+                    logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
+                                [Bucket, OwnerId]),
+                    {error, temp_users_create_bucket_restriction};
+                {ok, {UserObj, KeepDeletedBuckets}} ->
+                    User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
+                    UpdUser = update_user_buckets(add, User, BucketRecord),
+                    save_user(false, UpdUser, UserObj, Pbc)
+            end;
         {error, _} ->
             OpResult1
     end.
