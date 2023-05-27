@@ -156,7 +156,7 @@
 -type amz_policy() :: #amz_policy{}.
 -define(AMZ_POLICY, #amz_policy).
 
--record(policy_v1, { arn :: arn() | undefined
+-record(policy_v1, { arn :: string() | undefined
                    , attachment_count :: non_neg_integer() | undefined
                    , create_date = rts:iso8601(os:system_time(millisecond)) :: string() | undefined
                    , default_version_id :: string() | undefined
@@ -170,7 +170,7 @@
                    , update_date :: binary() | undefined
          }).
 -type policy() :: #policy_v1{}.
--define(S3_POLICY, #policy_v1).
+-define(IAM_POLICY, #policy_v1).
 
 
 -record(permissions_boundary, { permissions_boundary_arn :: arn()

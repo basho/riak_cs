@@ -130,13 +130,20 @@ get_user(undefined, _RcPid) ->
 get_user(KeyId, RcPid) ->
     case riak_cs_temp_sessions:get(list_to_binary(KeyId)) of
         {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
-                           user_id = UserId} = _Session} ->
-            {ok, {?RCS_USER{name = binary_to_list(UserId),
+                           effective_policy = Policy,
+                           canonical_id = CanonicalId,
+                           subject = Subject} = _Session} ->
+            {ok, {?RCS_USER{name = binary_to_list(Subject),
+                            display_name = binary_to_list(Subject),
+                            email = lists:flatten(io_lib:format("~s@some.idp", [Subject])),
+                            canonical_id = binary_to_list(CanonicalId),
                             key_id = KeyId,
-                            key_secret = binary_to_list(SecretKey)}, no_object}};
+                            key_secret = binary_to_list(SecretKey),
+                            buckets = extract_buckets_from_policy(Policy)}, no_object}};
         _ ->
             get_cs_user(KeyId, RcPid)
     end.
+
 get_cs_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
@@ -147,6 +154,11 @@ get_cs_user(KeyId, RcPid) ->
         Error ->
             Error
     end.
+
+extract_buckets_from_policy(P) ->
+    ?LOG_DEBUG("STUB ~p", [P]),
+    
+    [].
 
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
 from_riakc_obj(Obj, KeepDeletedBuckets) ->

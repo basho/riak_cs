@@ -24,6 +24,7 @@
          make_id/2,
          make_role_arn/2,
          make_provider_arn/1,
+         make_assumed_role_user_arn/2,
          generate_access_creds/1,
          generate_secret/2,
          generate_canonical_id/1
@@ -48,7 +49,10 @@ make_role_arn(Name, Path) ->
     iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":role", Path, $/, Name]).
 
 make_provider_arn(Name) ->
-    iolist_to_binary("arn:aws:iam::" ++ fill(12, "", "0123456789") ++ ":saml-provider/" ++ Name).
+    iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider/", Name]).
+
+make_assumed_role_user_arn(RoleName, SessionName) ->
+    iolist_to_binary(["arn:aws:sts::", fill(12, "", "0123456789"), ":assumed-role/", RoleName, $/, SessionName]).
 
 
 %% @doc Generate a new set of access credentials for user.

@@ -23,16 +23,27 @@
 -export([create_role/1,
          delete_role/1,
          get_role/2,
-         fix_permissions_boundary/1,
+         find_role/2,
+
          create_saml_provider/1,
          delete_saml_provider/1,
          get_saml_provider/2,
+
+         create_policy/1,
+         delete_policy/1,
+         get_policy/2,
+         find_policy/2,
+         merge_policies/1,
+
+         fix_permissions_boundary/1,
          exprec_role/1,
+         exprec_policy/1,
          exprec_saml_provider/1
         ]).
 
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
+-include_lib("riakc/include/riakc.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 
@@ -60,6 +71,71 @@ get_role(RoleName, RcPid) ->
         Error ->
             Error
     end.
+
+-spec find_role(Arn::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
+find_role(Arn, RcPid) ->
+    Res = riakc_pb_socket:get_index_eq(RcPid, ?IAM_ROLE_BUCKET, ?ROLE_ARN_INDEX, Arn),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_role(Key, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find role by arn ~s: ~p", [Arn, Reason]),
+            {error, Reason}
+    end.
+
+
+-spec create_policy(maps:map()) -> {ok, policy()} | {error, already_exists | term()}.
+create_policy(Specs) ->
+    Encoded = jsx:encode(Specs),
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:create_policy(
+               "application/json",
+               Encoded,
+               [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+-spec delete_policy(string()) -> ok | {error, term()}.
+delete_policy(RoleId) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:delete_policy(RoleId, [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+-spec get_policy(binary(), pid()) -> {ok, ?IAM_POLICY{}} | {error, term()}.
+get_policy(RoleName, RcPid) ->
+    case riak_cs_riak_client:get_policy(RcPid, RoleName) of
+        {ok, Obj} ->
+            from_riakc_obj(Obj);
+        Error ->
+            Error
+    end.
+
+-spec find_policy(Arn::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
+find_policy(Arn, RcPid) ->
+    Res = riakc_pb_socket:get_index_eq(RcPid, ?IAM_POLICY_BUCKET, ?POLICY_ARN_INDEX, Arn),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_policy(Key, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find managed policy by arn ~s: ~p", [Arn, Reason]),
+            {error, Reason}
+    end.
+
+-spec merge_policies([policy()]) -> {ok, policy()} | {error, term()}.
+merge_policies(PP) ->
+    merge_policies(PP, []).
+merge_policies([], Q) ->
+    {ok, Q};
+merge_policies([P1|PP], Q) ->
+    merge_policies(PP, merge_these_two(P1, Q)).
+merge_these_two(P1, P2) ->
+    ?LOG_DEBUG("STUB ~p ~p", [P1, P2]),
+    
+    P1.
+
 
 from_riakc_obj(Obj) ->
     case riakc_obj:value_count(Obj) of
@@ -109,6 +185,12 @@ exprec_role(Map) ->
     Role0?IAM_ROLE{permissions_boundary = PB,
                    role_last_used = LU,
                    tags = TT}.
+
+-spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
+exprec_policy(Map) ->
+    Policy0 = ?IAM_ROLE{tags = TT0} = exprec:frommap_policy_v1(Map),
+    TT = [exprec:frommap_tag(T) || T <- TT0],
+    Policy0?IAM_ROLE{tags = TT}.
 
 -spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
 exprec_saml_provider(Map) ->

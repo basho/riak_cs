@@ -88,10 +88,15 @@
 
 
 %% federated users
--record(temp_session, { user_id :: binary()
+
+-record(temp_session, { assumed_role_user :: assumed_role_user()
                       , credentials :: credentials()
                       , duration_seconds :: non_neg_integer()
                       , created = os:system_time(millisecond) :: non_neg_integer()
+                      , effective_policy :: policy()
+                      , subject :: binary()
+                      , user_id :: binary()
+                      , canonical_id :: binary()
                       }
        ).
 -type temp_session() :: #temp_session{}.

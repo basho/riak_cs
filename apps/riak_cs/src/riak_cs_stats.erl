@@ -104,6 +104,7 @@ duration_metrics() ->
          [riakc, get_cs_user],
          [riakc, put_cs_user],
          [riakc, get_cs_role],
+         [riakc, get_cs_policy],
          [riakc, get_cs_saml_provider],
 
          [riakc, get_manifest],

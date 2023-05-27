@@ -145,7 +145,7 @@ extract_bucket_from_host(Host) ->
     Bucket =
         case re:run(Host, "(.+\.|)s3\.(.+\.|)?amazonaws\.com",
                     [{capture, all_but_first, list}]) of
-            {match, [M1, M2]} ->
+            {match, [M1, _M2]} ->
                 M1;
             {match, [M1]} ->
                 M1;

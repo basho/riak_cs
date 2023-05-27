@@ -65,6 +65,8 @@ duration_metrics() ->
      [riakc, get_cs_role],
      [riakc, get_cs_role_strong],
      [riakc, put_cs_role],
+     [riakc, get_cs_policy],
+     [riakc, put_cs_policy],
      [riakc, get_cs_samlprovider],
      [riakc, put_cs_samlprovider],
 

@@ -56,6 +56,7 @@
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(SERVICE_BUCKET, <<"moss.service">>).
 -define(IAM_ROLE_BUCKET, <<"moss.iam.roles">>).
+-define(IAM_POLICY_BUCKET, <<"moss.iam.policies">>).
 -define(IAM_SAMLPROVIDER_BUCKET, <<"moss.iam.samlproviders">>).
 -define(TEMP_SESSIONS_BUCKET, <<"moss.sts.temp-sessions">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
@@ -75,7 +76,11 @@
 -define(ID_INDEX, <<"c_id_bin">>).
 -define(KEY_INDEX, <<"$key">>).
 -define(ROLE_PATH_INDEX, <<"role_path_bin">>).
+-define(ROLE_ARN_INDEX, <<"role_arn_bin">>).
+-define(POLICY_PATH_INDEX, <<"policy_path_bin">>).
+-define(POLICY_ARN_INDEX, <<"policy_arn_bin">>).
 -define(SAMLPROVIDER_NAME_INDEX, <<"samlprovider_name_bin">>).
+-define(SAMLPROVIDER_ARN_INDEX, <<"samlprovider_arn_bin">>).
 
 -define(STANCHION_DETAILS_KEY, <<"stanchion">>).
 

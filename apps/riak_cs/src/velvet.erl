@@ -33,6 +33,8 @@
          update_user/4,
          create_role/3,
          delete_role/2,
+         create_policy/3,
+         delete_policy/2,
          create_saml_provider/3,
          delete_saml_provider/2
         ]).
@@ -333,6 +335,61 @@ delete_role(Id, Options) ->
     end.
 
 
+-spec create_policy(string(), string(), proplists:proplist()) -> {ok, policy()} | {error, term()}.
+create_policy(ContentType, Doc, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = policies_path([]),
+    Headers0 = [{"Content-Md5", content_md5(Doc)},
+                {"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('POST',
+                                               ContentType,
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(post, Path, [201], ContentType, Headers, Doc) of
+        {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
+            Role = riak_cs_iam:exprec_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            {ok, Role};
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec delete_policy(string(), proplists:proplist()) -> ok | {error, term()}.
+delete_policy(Id, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = policies_path(Id),
+    Headers0 = [{"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('DELETE',
+                                               "",
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(delete, Path, [204], Headers) of
+        {ok, {{_, 204, _}, _RespHeaders, _}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
 -spec create_saml_provider(string(), string(), proplists:proplist()) ->
           {ok, {binary(), [tag()]}} | {error, term()}.
 create_saml_provider(ContentType, Doc, Options) ->
@@ -471,6 +528,11 @@ users_path(User) ->
 
 roles_path(Role) ->
     stringy(["/roles",
+             ["/" ++ Role || Role /= []]
+            ]).
+
+policies_path(Role) ->
+    stringy(["/policies",
              ["/" ++ Role || Role /= []]
             ]).
 

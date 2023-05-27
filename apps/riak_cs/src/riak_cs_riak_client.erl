@@ -33,6 +33,7 @@
          get_bucket/2,
          set_bucket_name/2,
          get_role/2,
+         get_policy/2,
          get_saml_provider/2,
          get_user/2,
          get_user_with_pbc/2,
@@ -183,8 +184,12 @@ get_manifest_bag(RcPid) ->
     gen_server:call(RcPid, get_manifest_bag).
 
 -spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_role(RcPid, BucketName) ->
-    gen_server:call(RcPid, {get_role, BucketName}, infinity).
+get_role(RcPid, A) ->
+    gen_server:call(RcPid, {get_role, A}, infinity).
+
+-spec get_policy(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+get_policy(RcPid, A) ->
+    gen_server:call(RcPid, {get_policy, A}, infinity).
 
 -spec get_saml_provider(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_saml_provider(RcPid, Arn) ->
@@ -244,6 +249,13 @@ handle_call({save_user, User, OldUserObj}, _From, State) ->
     end;
 handle_call({get_role, Id}, _From, State0) ->
     case do_get_from_bucket(?IAM_ROLE_BUCKET, Id, get_cs_role, State0) of
+        {ok, Obj, State9} ->
+            {reply, {ok, Obj}, State9};
+        {error, Reason, State9} ->
+            {reply, {error, Reason}, State9}
+    end;
+handle_call({get_policy, Id}, _From, State0) ->
+    case do_get_from_bucket(?IAM_POLICY_BUCKET, Id, get_cs_policy, State0) of
         {ok, Obj, State9} ->
             {reply, {ok, Obj}, State9};
         {error, Reason, State9} ->

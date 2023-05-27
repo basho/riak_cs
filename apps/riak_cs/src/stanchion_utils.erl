@@ -30,6 +30,8 @@
          update_user/3,
          create_role/2,
          delete_role/2,
+         create_policy/2,
+         delete_policy/2,
          create_saml_provider/2,
          delete_saml_provider/2,
          set_bucket_acl/3,
@@ -170,10 +172,12 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
                             path = Path}, Pbc) ->
     RoleId = ensure_unique_role_id(Pbc),
 
-    Role1 = Role0?IAM_ROLE{arn = riak_cs_aws_utils:make_role_arn(RoleName, Path),
+    Arn = riak_cs_aws_utils:make_role_arn(RoleName, Path),
+    Role1 = Role0?IAM_ROLE{arn = Arn,
                            role_id = RoleId},
 
-    Indexes = [{?ROLE_PATH_INDEX, Path}],
+    Indexes = [{?ROLE_PATH_INDEX, Path},
+               {?ROLE_ARN_INDEX, Arn}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_ROLE_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
@@ -217,6 +221,64 @@ delete_role(RoleName, Pbc) ->
     end.
 
 
+-spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
+create_policy(Fields, Pbc) ->
+    Policy = riak_cs_iam:exprec_policy(Fields),
+    save_policy(Policy, Pbc).
+
+save_policy(Policy0 = ?IAM_POLICY{policy_name = PolicyName,
+                                  path = Path}, Pbc) ->
+    PolicyId = ensure_unique_policy_id(Pbc),
+
+    Arn = riak_cs_aws_utils:make_policy_arn(PolicyName, Path),
+    Policy1 = Policy0?IAM_POLICY{arn = Arn,
+                                 policy_id = PolicyId},
+
+    Indexes = [{?POLICY_PATH_INDEX, Path},
+               {?POLICY_ARN_INDEX, Arn}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Obj = riakc_obj:update_metadata(
+            riakc_obj:new(?IAM_POLICY_BUCKET, iolist_to_binary(PolicyName), term_to_binary(Policy1)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    case Res of
+        ok ->
+            ?LOG_INFO("Saved new managed policy \"~s\" with id ~s", [PolicyName, PolicyId]),
+            ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
+            {ok, Policy1};
+        {error, Reason} ->
+            logger:error("Failed to save managed policy \"~s\": ~p", [PolicyName, Reason]),
+            Res
+    end.
+
+ensure_unique_policy_id(RcPid) ->
+    Id = riak_cs_aws_utils:make_id(?ROLE_ID_LENGTH, "ANPA"),
+    case fetch_object(?IAM_POLICY_BUCKET, Id, RcPid) of
+        {ok, _} ->
+            ensure_unique_policy_id(RcPid);
+        _ ->
+            Id
+    end.
+
+-spec delete_policy(string(), pid()) -> ok | {error, term()}.
+delete_policy(PolicyName, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, list_to_binary(PolicyName)) of
+        {ok, Obj0} ->
+            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
+            {Res, TAT} = ?TURNAROUND_TIME(
+                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
+            case Res of
+                ok ->
+                    stanchion_stats:update([riakc, put_cs_policy], TAT);
+                {error, Reason} ->
+                    logger:error("Failed to delete managed policy object \"~s\": ~p", [PolicyName, Reason]),
+                    Res
+            end;
+        {error, _} = ER ->
+            ER
+    end.
+
+
 -spec create_saml_provider(maps:map(), pid()) -> {ok, string()} | {error, term()}.
 create_saml_provider(#{name := Name} = Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
@@ -230,7 +292,8 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
     ?LOG_INFO("Saving new SAML Provider \"~s\" with ARN ~s", [Name, Arn]),
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
-    Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name}],
+    Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},
+               {?SAMLPROVIDER_ARN_INDEX, Arn}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),
