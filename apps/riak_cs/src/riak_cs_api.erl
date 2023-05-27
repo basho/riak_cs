@@ -24,6 +24,7 @@
 -export([list_buckets/1,
          list_objects/6,
          list_roles/2,
+         list_policies/2,
          list_saml_providers/2
         ]).
 
@@ -74,6 +75,32 @@ list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
     end.
 
 
+-spec list_policies(riak_client(), #list_policies_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_policies(RcPid, #list_policies_request{path_prefix = PathPrefix,
+                                            only_attached = OnlyAttached,
+                                            policy_usage_filter = PolicyUsageFilter,
+                                            scope = Scope,
+                                            max_items = MaxItems,
+                                            marker = Marker}) ->
+    Arg = #{path_prefix => PathPrefix,
+            only_attached => OnlyAttached,
+            policy_usage_filter => PolicyUsageFilter,
+            scope => Scope,
+            max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_POLICY_BUCKET, mapred_query(policies, Arg)) of
+        {ok, Batches} ->
+            {ok, #{policies => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
+    end.
+
+
 -spec list_saml_providers(riak_client(), #list_saml_providers_request{}) ->
           {ok, maps:map()} | {error, term()}.
 list_saml_providers(RcPid, #list_saml_providers_request{}) ->
@@ -97,6 +124,11 @@ mapred_query(roles, Arg) ->
     [{map, {modfun, riak_cs_utils, map_roles},
       Arg, false},
      {reduce, {modfun, riak_cs_utils, reduce_roles},
+      Arg, true}];
+mapred_query(policies, Arg) ->
+    [{map, {modfun, riak_cs_utils, map_policies},
+      Arg, false},
+     {reduce, {modfun, riak_cs_utils, reduce_policies},
       Arg, true}];
 mapred_query(saml_providers, Arg) ->
     [{map, {modfun, riak_cs_utils, map_saml_providers},

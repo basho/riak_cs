@@ -58,6 +58,7 @@
 
 
 -define(ROLE_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
+-define(POLICY_ID_LENGTH, 21).  %% length("AGPACKCEVSQ6C2EXAMPLE").
 
 
 %% this riak connection is separate, potentially to a different riak
@@ -107,15 +108,19 @@ create_bucket(#{bucket := Bucket,
     case OpResult1 of
         ok ->
             BucketRecord = bucket_record(Bucket, create),
-            case riak_cs_user:get_user(OwnerId, Pbc) of
-                {ok, {_FedereatedUser, no_object}} ->
-                    logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
-                                [Bucket, OwnerId]),
-                    {error, temp_users_create_bucket_restriction};
-                {ok, {UserObj, KeepDeletedBuckets}} ->
-                    User = riak_cs_user:from_riakc_obj(UserObj, KeepDeletedBuckets),
-                    UpdUser = update_user_buckets(add, User, BucketRecord),
-                    save_user(false, UpdUser, UserObj, Pbc)
+            {ok, RcPid} = riak_cs_riak_client:checkout(),
+            try
+                case riak_cs_user:get_user(OwnerId, RcPid) of
+                    {ok, {_FedereatedUser, no_object}} ->
+                        logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
+                                    [Bucket, OwnerId]),
+                        {error, temp_users_create_bucket_restriction};
+                    {ok, {User, UserObj}} ->
+                        UpdUser = update_user_buckets(add, User, BucketRecord),
+                        save_user(false, UpdUser, UserObj, Pbc)
+                end
+            after
+                riak_cs_riak_client:checkin(RcPid)
             end;
         {error, _} ->
             OpResult1
@@ -223,7 +228,8 @@ delete_role(RoleName, Pbc) ->
 
 -spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
 create_policy(Fields, Pbc) ->
-    Policy = riak_cs_iam:exprec_policy(Fields),
+    Policy_ = ?IAM_POLICY{policy_document = A} = riak_cs_iam:exprec_policy(Fields),
+    Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
     save_policy(Policy, Pbc).
 
 save_policy(Policy0 = ?IAM_POLICY{policy_name = PolicyName,
@@ -252,7 +258,7 @@ save_policy(Policy0 = ?IAM_POLICY{policy_name = PolicyName,
     end.
 
 ensure_unique_policy_id(RcPid) ->
-    Id = riak_cs_aws_utils:make_id(?ROLE_ID_LENGTH, "ANPA"),
+    Id = riak_cs_aws_utils:make_id(?POLICY_ID_LENGTH, "ANPA"),
     case fetch_object(?IAM_POLICY_BUCKET, Id, RcPid) of
         {ok, _} ->
             ensure_unique_policy_id(RcPid);

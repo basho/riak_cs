@@ -78,6 +78,8 @@
          reduce_keys_and_manifests/2,
          map_roles/3,
          reduce_roles/2,
+         map_policies/3,
+         reduce_policies/2,
          map_saml_providers/3,
          reduce_saml_providers/2
         ]).
@@ -235,21 +237,48 @@ map_roles({error, notfound}, _, _) ->
     [];
 map_roles(Object, _2, Args) ->
     #{path_prefix := PathPrefix} = Args,
-    [RoleBin|_] = riak_object:get_values(Object),
-    case RoleBin of
+    [RBin|_] = riak_object:get_values(Object),
+    case RBin of
         ?DELETED_MARKER ->
             [];
         _ ->
-            ?IAM_ROLE{path = Path} = Role = binary_to_term(RoleBin),
+            ?IAM_ROLE{path = Path} = R = binary_to_term(RBin),
             case binary:longest_common_prefix([Path, PathPrefix]) of
                 0 ->
                     [];
                 _ ->
-                    [Role]
+                    [R]
             end
     end.
 
 reduce_roles(Acc, _) ->
+    Acc.
+
+map_policies({error, notfound}, _, _) ->
+    [];
+map_policies(Object, _2, Args) ->
+    #{path_prefix := PathPrefix,
+      only_attached := OnlyAttached,
+      policy_usage_filter := PolicyUsageFilter,
+      scope := Scope} = Args,
+    ?LOG_DEBUG("list_roles: Ignoring parameters PolicyUsageFilter (~s) and Scope (~s)", [PolicyUsageFilter, Scope]),
+    [PBin|_] = riak_object:get_values(Object),
+    case PBin of
+        ?DELETED_MARKER ->
+            [];
+        _ ->
+            ?IAM_POLICY{path = Path,
+                        attachment_count = AttachmentCount} = P = binary_to_term(PBin),
+            case (0 < binary:longest_common_prefix([Path, PathPrefix])) and
+                ((true == OnlyAttached andalso AttachmentCount > 0) orelse false == OnlyAttached) of
+                false ->
+                    [];
+                true ->
+                    [P]
+            end
+    end.
+
+reduce_policies(Acc, _) ->
     Acc.
 
 map_saml_providers({error, notfound}, _, _) ->

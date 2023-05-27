@@ -316,6 +316,34 @@
        ).
 
 
+-record(create_policy_response, { policy :: policy()
+                                , request_id :: string()
+                                }
+       ).
+-record(get_policy_response, { policy :: policy()
+                             , request_id :: string()
+                             }
+       ).
+-record(delete_policy_response, { request_id :: string()
+                                }
+       ).
+-record(list_policies_request, { max_items = 1000 :: non_neg_integer()
+                               , only_attached = false :: boolean()
+                               , policy_usage_filter = 'All' :: 'All' | 'PermissionsPolicy' | 'PermissionsBoundary'
+                               , scope = all :: 'All' | 'AWS' | 'Local'
+                               , path_prefix :: binary() | undefined
+                               , marker :: binary() | undefined
+                               , request_id :: string()
+                               }
+       ).
+-record(list_policies_response, { marker :: binary() | undefined
+                                , is_truncated :: boolean()
+                                , policies :: [policy()]
+                                , request_id :: string()
+                                }
+       ).
+
+
 -record(create_saml_provider_response, { saml_provider_arn :: arn()
                                        , tags :: [tag()]
                                        , request_id :: string()

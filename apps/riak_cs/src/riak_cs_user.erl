@@ -127,8 +127,9 @@ update_user(User, UserObj, RcPid) ->
           {ok, {rcs_user(), no_object | riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
-get_user(KeyId, RcPid) ->
-    case riak_cs_temp_sessions:get(list_to_binary(KeyId)) of
+get_user(KeyIdS, RcPid) ->
+    KeyId = iolist_to_binary([KeyIdS]),
+    case riak_cs_temp_sessions:get(KeyId) of
         {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
                            effective_policy = Policy,
                            canonical_id = CanonicalId,
@@ -147,9 +148,9 @@ get_user(KeyId, RcPid) ->
 get_cs_user(KeyId, RcPid) ->
     %% Check for and resolve siblings to get a
     %% coherent view of the bucket ownership.
-    BinKey = iolist_to_binary([KeyId]),
-    case catch riak_cs_riak_client:get_user(RcPid, BinKey) of
+    case catch riak_cs_riak_client:get_user(RcPid, KeyId) of
         {ok, {Obj, KeepDeletedBuckets}} ->
+            ?LOG_DEBUG("PPPPPPPPPPP Obj ~p", [Obj]),
             {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
         Error ->
             Error

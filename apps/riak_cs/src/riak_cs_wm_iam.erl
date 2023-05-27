@@ -296,7 +296,7 @@ do_action("DeleteRole",
 do_action("ListRoles",
           Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    PathPrefix = proplists:get_value("PathPrefix", Form),
+    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_roles(
@@ -316,6 +316,85 @@ do_action("ListRoles",
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
+
+
+do_action("CreatePolicy",
+          Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
+    Specs = lists:foldl(fun policy_fields_filter/2, #{}, Form),
+    case riak_cs_iam:create_policy(Specs) of
+        {ok, Policy} ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            logger:info("Created managed policy \"~s\" on request_id ~s", [Policy?IAM_POLICY.policy_id, RequestId]),
+            Doc = riak_cs_xml:to_xml(
+                    #create_policy_response{policy = Policy,
+                                            request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("GetPolicy",
+          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    PolicyName = proplists:get_value("PolicyName", Form),
+    case riak_cs_iam:get_policy(PolicyName, RcPid) of
+        {ok, Policy} ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            Doc = riak_cs_xml:to_xml(
+                    #get_policy_response{policy = Policy,
+                                         request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, not_found} ->
+            ResponseMod:api_error(no_such_policy, RD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("DeletePolicy",
+          Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
+    PolicyName = proplists:get_value("PolicyName", Form),
+    case riak_cs_iam:delete_policy(PolicyName) of
+        ok ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            logger:info("Deleted policy \"~s\" on request_id ~s", [PolicyName, RequestId]),
+            Doc = riak_cs_xml:to_xml(
+                    #delete_policy_response{request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, not_found} ->
+            ResponseMod:api_error(no_such_policy, RD, Ctx);
+        {error, Reason} ->
+            ?LOG_DEBUG("deal with me ~p", [Reason]),
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("ListPolicies",
+          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
+    OnlyAttached = proplists:get_value("OnlyAttached", Form, "false"),
+    PolicyUsageFilter = proplists:get_value("PolicyUsageFilter", Form, "All"),
+    MaxItems = proplists:get_value("MaxItems", Form),
+    Marker = proplists:get_value("Marker", Form),
+    case riak_cs_api:list_policies(
+           RcPid, #list_policies_request{path_prefix = list_to_binary(PathPrefix),
+                                         only_attached = list_to_atom(OnlyAttached),
+                                         policy_usage_filter = list_to_atom(PolicyUsageFilter),
+                                         max_items = MaxItems,
+                                         marker = Marker}) of
+        {ok, #{policies := Policies,
+               marker := NewMarker,
+               is_truncated := IsTruncated}} ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            Doc = riak_cs_xml:to_xml(
+                    #list_policies_response{policies = Policies,
+                                            request_id = RequestId,
+                                            marker = NewMarker,
+                                            is_truncated = IsTruncated}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
 
 do_action("CreateSAMLProvider",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
@@ -417,6 +496,24 @@ role_fields_filter({ItemKey, ItemValue}, Acc) ->
             Acc;
         Unrecognized ->
             logger:warning("Unrecognized parameter for CreateRole: ~s", [Unrecognized]),
+            Acc
+    end.
+
+policy_fields_filter({ItemKey, ItemValue}, Acc) ->
+    case ItemKey of
+        "Description" ->
+            maps:put(description, list_to_binary(ItemValue), Acc);
+        "Path" ->
+            maps:put(path, list_to_binary(ItemValue), Acc);
+        "PolicyDocument" ->
+            maps:put(policy_document, base64:encode(ItemValue), Acc);
+        "PolicyName" ->
+            maps:put(policy_name, list_to_binary(ItemValue), Acc);
+        CommonParameter when CommonParameter == "Action";
+                             CommonParameter == "Version" ->
+            Acc;
+        Unrecognized ->
+            logger:warning("Unrecognized parameter for CreatePolicy: ~s", [Unrecognized]),
             Acc
     end.
 

@@ -156,18 +156,19 @@
 -type amz_policy() :: #amz_policy{}.
 -define(AMZ_POLICY, #amz_policy).
 
--record(policy_v1, { arn :: string() | undefined
-                   , attachment_count :: non_neg_integer() | undefined
-                   , create_date = rts:iso8601(os:system_time(millisecond)) :: string() | undefined
-                   , default_version_id :: string() | undefined
-                   , description :: string() | undefined
-                   , is_attachable :: boolean() | undefined
-                   , path :: string() | undefined
-                   , permissions_boundary_usage_count :: non_neg_integer() | undefined
-                   , policy_id :: string() | undefined
-                   , policy_name :: string() | undefined
-                   , tags :: [tag()] | undefined
-                   , update_date :: binary() | undefined
+-record(policy_v1, { arn :: binary()
+                   , attachment_count = 0 :: non_neg_integer()
+                   , create_date = os:system_time(millisecond) :: non_neg_integer()
+                   , default_version_id = <<"v1">> :: binary()
+                   , description :: binary()
+                   , is_attachable :: boolean()
+                   , path :: binary()
+                   , permissions_boundary_usage_count = 0 :: non_neg_integer()
+                   , policy_document :: binary()
+                   , policy_id :: binary()
+                   , policy_name :: binary()
+                   , tags = [] :: [tag()]
+                   , update_date = os:system_time(millisecond) :: non_neg_integer()
          }).
 -type policy() :: #policy_v1{}.
 -define(IAM_POLICY, #policy_v1).
