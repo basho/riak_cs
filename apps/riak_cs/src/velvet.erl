@@ -300,7 +300,9 @@ create_role(ContentType, Doc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
-            Role = riak_cs_iam:exprec_role(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
+                riak_cs_iam:exprec_role(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
             {ok, Role};
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};

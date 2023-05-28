@@ -36,13 +36,14 @@
                                      | region_disabled.
 
 -spec assume_role_with_saml(maps:map(), pid()) -> {ok, maps:map()} | {error, assume_role_with_saml_error()}.
-assume_role_with_saml(Specs, Pbc) ->
+assume_role_with_saml(Specs, RcPid) ->
     Res = lists:foldl(
             fun(StepF, State) -> StepF(State) end,
-            #{pbc => Pbc,
+            #{riak_client => RcPid,
               specs => Specs},
             [fun validate_args/1,
              fun check_with_saml_provider/1,
+             fun check_role/1,
              fun create_session_and_issue_temp_creds/1]),
     case Res of
         #{status := ok} ->
@@ -140,6 +141,18 @@ validate_saml_assertion(#{}) ->
 
 
 
+check_role(#{status := {error, _}} = PreviousStepFailed) ->
+    PreviousStepFailed;
+check_role(#{riak_client := RcPid,
+             specs := #{role_arn := RoleArn}} = State) ->
+    case riak_cs_iam:find_role(RoleArn, RcPid) of
+        {ok, Role} ->
+            State#{status => ok,
+                   role => Role};
+        ER ->
+            State#{status => ER}
+    end.
+
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{specs := #{principal_arn := _PrincipalArn,
@@ -156,15 +169,16 @@ check_with_saml_provider(#{specs := #{principal_arn := _PrincipalArn,
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-create_session_and_issue_temp_creds(#{pbc := Pbc,
-                                      specs := #{policy := InlinePolicy,
-                                                 role_arn := RoleArn,
+create_session_and_issue_temp_creds(#{specs := #{policy := InlinePolicy,
                                                  policy_arns := PolicyArns,
-                                                 duration_seconds := DurationSeconds,
-                                                 subject_type := SubjectType,
-                                                 subject := Subject}} = State) ->
+                                                 duration_seconds := DurationSeconds},
+                                      role := Role,
+                                      subject := Subject,
+                                      subject_type := SubjectType,
+                                      source_identity := SourceIdentity,
+                                      riak_client := RcPid} = State) ->
     case riak_cs_temp_sessions:create(
-           RoleArn, Subject, DurationSeconds, InlinePolicy, PolicyArns, Pbc) of
+           Role, Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of
         {ok, #temp_session{assumed_role_user = AssumedRoleUser,
                            credentials = Credentials}} ->
             State#{status => ok,
@@ -174,9 +188,9 @@ create_session_and_issue_temp_creds(#{pbc := Pbc,
                    issuer => <<"https://samltest.id/saml/idp">>,
                    name_qualifier => <<"SbdGOnUkh1i4+EXAMPLExL/jEvs=">>,
                    packed_policy_size => 6,
-                   source_identity => <<"SomeSourceIdentity">>,
                    subject => Subject,
-                   subject_type => SubjectType};
+                   subject_type => SubjectType,
+                   source_identity => SourceIdentity};
         ER ->
             State#{status => ER}
     end.

@@ -32,18 +32,13 @@
 -define(USER_ID_LENGTH, 16).  %% length("ARO456EXAMPLE789").
 
 
--spec create(binary(), binary(), non_neg_integer(), binary(), [binary()], pid()) ->
+-spec create(role(), binary(), non_neg_integer(), binary(), [binary()], pid()) ->
           {ok, temp_session()} | {error, term()}.
-create(RoleArn, Subject, DurationSeconds, InlinePolicy, PolicyArns, Pbc) ->
-    case riak_cs_iam:find_role(RoleArn, Pbc) of
-        {ok, Role} ->
-            create2(Role, Subject, DurationSeconds, InlinePolicy, PolicyArns, Pbc);
-        ER ->
-            ER
-    end.
-create2(?IAM_ROLE{role_id = RoleId,
-                  role_name = RoleName},
-        Subject, DurationSeconds, InlinePolicy, PolicyArns, Pbc) ->
+create(?IAM_ROLE{role_id = RoleId,
+                 role_name = RoleName},
+       Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, "AIDA"),
     {KeyIdS, AccessKeyS} = riak_cs_aws_utils:generate_access_creds(UserId),
     CanonicalIdS = riak_cs_aws_utils:generate_canonical_id(KeyIdS),
@@ -66,7 +61,7 @@ create2(?IAM_ROLE{role_id = RoleId,
                             user_id = UserId,
                             canonical_id = CanonicalId,
                             effective_policy = riak_cs_iam:merge_policies(
-                                                 [InlinePolicy | [riak_cs_iam:find_policy(A)
+                                                 [InlinePolicy | [riak_cs_iam:find_policy(A, RcPid)
                                                                   || A <- PolicyArns]])},
 
     Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, KeyId, term_to_binary(Session)),

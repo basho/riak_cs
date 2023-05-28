@@ -87,9 +87,15 @@ init(Config) ->
 
 
 -spec service_available(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
-service_available(RD, Ctx = #rcs_sts_context{riak_client = undefined}) ->
-    {ok, Pbc} = riak_cs_utils:riak_connection(),
-    {true, RD, Ctx#rcs_sts_context{riak_client = Pbc}}.
+service_available(RD, Ctx = #rcs_sts_context{rc_pool = undefined}) ->
+    service_available(RD, Ctx#rcs_sts_context{rc_pool = request_pool});
+service_available(RD, Ctx = #rcs_sts_context{rc_pool = RcPool}) ->
+    case riak_cs_riak_client:checkout(RcPool) of
+        {ok, RcPid} ->
+            {true, RD, Ctx#rcs_sts_context{riak_client = RcPid}};
+        {error, _Reason} ->
+            {false, RD, Ctx}
+    end.
 
 -spec malformed_request(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
 malformed_request(RD, Ctx) ->
@@ -239,7 +245,7 @@ accept_wwwform(RD, Ctx) ->
 finish_request(RD, Ctx=#rcs_sts_context{riak_client = undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
-    riak_cs_utils:close_riak_connection(RcPid),
+    riak_cs_riak_client:checkin(RcPid),
     {true, RD, Ctx#rcs_sts_context{riak_client = undefined}}.
 
 
@@ -248,11 +254,11 @@ finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
 %% -------------------------------------------------------------------
 
 do_action("AssumeRoleWithSAML",
-          Form, RD, Ctx = #rcs_sts_context{riak_client = Pbc,
+          Form, RD, Ctx = #rcs_sts_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2, #{}, Form),
-    case riak_cs_sts:assume_role_with_saml(Specs, Pbc) of
-        {ok, #{assumed_role_user := #{assumed_role_id := AssumedRoleId} = AssumedRoleUser,
+    case riak_cs_sts:assume_role_with_saml(Specs, RcPid) of
+        {ok, #{assumed_role_user := #assumed_role_user{assumed_role_id = AssumedRoleId} = AssumedRoleUser,
                audience := Audience,
                credentials := Credentials,
                issuer := Issuer,
@@ -265,7 +271,7 @@ do_action("AssumeRoleWithSAML",
             logger:info("AssumeRoleWithSAML completed for user ~s (key_id: ~s) on request_id ~s",
                         [AssumedRoleId, Credentials#credentials.access_key_id, RequestId]),
             Doc = riak_cs_xml:to_xml(
-                    #assume_role_with_saml_response{assumed_role_user = exprec:frommap_assumed_role_user(AssumedRoleUser),
+                    #assume_role_with_saml_response{assumed_role_user = AssumedRoleUser,
                                                     audience = Audience,
                                                     credentials = Credentials,
                                                     issuer = Issuer,
@@ -290,7 +296,7 @@ assume_role_with_saml_fields_filter({K, V}, Acc) ->
         "DurationSeconds" ->
             maps:put(duration_seconds, list_to_integer(V), Acc);
         "Policy" ->
-            maps:put(description, base64:encode(V), Acc);
+            maps:put(policy, base64:encode(V), Acc);
         "PrincipalArn" ->
             maps:put(principal_arn, list_to_binary(V), Acc);
         "RoleArn" ->
@@ -299,7 +305,7 @@ assume_role_with_saml_fields_filter({K, V}, Acc) ->
             maps:put(saml_assertion, list_to_binary(V), Acc);
         "PolicyArns.member." ++ _MemberNo ->
             AA = maps:get(policy_arns, Acc, []),
-            maps:put(policy_arns, AA ++ [V], Acc);
+            maps:put(policy_arns, AA ++ [list_to_binary(V)], Acc);
         CommonParameter when CommonParameter == "Action";
                              CommonParameter == "Version" ->
             Acc;

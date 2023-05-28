@@ -150,7 +150,6 @@ get_cs_user(KeyId, RcPid) ->
     %% coherent view of the bucket ownership.
     case catch riak_cs_riak_client:get_user(RcPid, KeyId) of
         {ok, {Obj, KeepDeletedBuckets}} ->
-            ?LOG_DEBUG("PPPPPPPPPPP Obj ~p", [Obj]),
             {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
         Error ->
             Error

@@ -74,7 +74,8 @@ get_role(RoleName, RcPid) ->
 
 -spec find_role(Arn::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
 find_role(Arn, RcPid) ->
-    Res = riakc_pb_socket:get_index_eq(RcPid, ?IAM_ROLE_BUCKET, ?ROLE_ARN_INDEX, Arn),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_ARN_INDEX, Arn),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
@@ -113,7 +114,8 @@ get_policy(RoleName, RcPid) ->
 
 -spec find_policy(Arn::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
 find_policy(Arn, RcPid) ->
-    Res = riakc_pb_socket:get_index_eq(RcPid, ?IAM_POLICY_BUCKET, ?POLICY_ARN_INDEX, Arn),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?POLICY_ARN_INDEX, Arn),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
