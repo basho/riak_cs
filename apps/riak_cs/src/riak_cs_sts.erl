@@ -25,6 +25,7 @@
 
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 
@@ -42,8 +43,9 @@ assume_role_with_saml(Specs, RcPid) ->
             #{riak_client => RcPid,
               specs => Specs},
             [fun validate_args/1,
-             fun check_with_saml_provider/1,
              fun check_role/1,
+             fun parse_saml_assertion_claims/1,
+             fun check_with_saml_provider/1,
              fun create_session_and_issue_temp_creds/1]),
     case Res of
         #{status := ok} ->
@@ -153,19 +155,55 @@ check_role(#{riak_client := RcPid,
             State#{status => ER}
     end.
 
+parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
+    PreviousStepFailed;
+parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
+                                         saml_assertion := SAMLAssertion_}} = State) ->
+    SAMLAssertion = base64:decode(SAMLAssertion_),
+    {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(SAMLAssertion)),
+    [{AssertionContent, _AssertionAttrs}|_] = [{C, AA} || #xmlElement{name = 'saml:Assertion',
+                                                                    attributes = AA,
+                                                                    content = C} <- RootContent],
+    [SubjectContent|_] = [C || #xmlElement{name = 'saml:Subject', content = C} <- AssertionContent],
+    [{NameIDContent, NameIDAttrs}|_] = [{C, AA} || #xmlElement{name = 'saml:NameID',
+                                                               content = C,
+                                                               attributes = AA} <- SubjectContent],
+    [#xmlText{value = NameID}|_] = NameIDContent,
+
+    [IssuerContent|_] = [C || #xmlElement{name = 'saml:Issuer', content = C} <- AssertionContent],
+    [#xmlText{value = Issuer}|_] = IssuerContent,
+
+    SourceIdentity =
+        case [V || #xmlAttribute{name = 'https://aws.amazon.com/SAML/Attributes/SourceIdentity', value = V} <- NameIDAttrs] of
+            [] ->
+                "";
+            [V] ->
+                V
+        end,
+
+    SubjectType =
+        case [V || #xmlAttribute{name = 'Format', value = V} <- NameIDAttrs] of
+            [S] ->
+                lists:last(string:tokens(S, ":"));
+            [] ->
+                []
+        end,
+
+    State#{status => ok,
+           issuer => list_to_binary(Issuer),
+           subject => list_to_binary(NameID),
+           subject_type => list_to_binary(SubjectType),
+           source_identity => list_to_binary(SourceIdentity)}.
+
+
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-check_with_saml_provider(#{specs := #{principal_arn := _PrincipalArn,
-                                      saml_assertion := _SAMLAssertion}} = State) ->
+check_with_saml_provider(#{riak_client := _RcPid,
+                           issuer := Issuer} = State) ->
+    ?LOG_DEBUG("STUB Issuer ~p", [Issuer]),
     
-    Subject = <<"The value of the NameID element in the Subject element of the SAML assertion">>,
-    SubjectType = <<"transient">>,
-    SourceIdentity = <<"The value in the SourceIdentity attribute in the SAML assertion">>,
-    
-    State#{status => ok,
-           subject => Subject,
-           subject_type => SubjectType,
-           source_identity => SourceIdentity}.
+    State.
+
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
