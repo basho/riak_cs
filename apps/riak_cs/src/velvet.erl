@@ -310,10 +310,10 @@ create_role(ContentType, Doc, Options) ->
             {error, Error}
     end.
 
--spec delete_role(string(), proplists:proplist()) -> ok | {error, term()}.
-delete_role(Id, Options) ->
+-spec delete_role(binary(), proplists:proplist()) -> ok | {error, term()}.
+delete_role(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
-    Path = roles_path(Id),
+    Path = roles_path(binary_to_list(Arn)),
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->
@@ -365,10 +365,10 @@ create_policy(ContentType, Doc, Options) ->
             {error, Error}
     end.
 
--spec delete_policy(string(), proplists:proplist()) -> ok | {error, term()}.
-delete_policy(Id, Options) ->
+-spec delete_policy(binary(), proplists:proplist()) -> ok | {error, term()}.
+delete_policy(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
-    Path = policies_path(Id),
+    Path = policies_path(binary_to_list(Arn)),
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->
@@ -421,10 +421,10 @@ create_saml_provider(ContentType, Doc, Options) ->
             {error, Error}
     end.
 
--spec delete_saml_provider(string(), proplists:proplist()) -> ok | {error, term()}.
-delete_saml_provider(Id, Options) ->
+-spec delete_saml_provider(binary(), proplists:proplist()) -> ok | {error, term()}.
+delete_saml_provider(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
-    Path = saml_provider_path(Id),
+    Path = saml_provider_path(binary_to_list(Arn)),
     Headers0 = [{"Date", httpd_util:rfc1123_date()}],
     case AuthCreds of
         {_, _} ->

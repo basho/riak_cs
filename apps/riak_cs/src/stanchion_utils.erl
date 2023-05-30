@@ -165,6 +165,7 @@ create_user(FF = #{email := Email}, Pbc) ->
             {error, user_already_exists}
     end.
 
+
 -spec create_role(maps:map(), pid()) -> {ok, role()} | {error, term()}.
 create_role(Fields, Pbc) ->
     Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
@@ -182,10 +183,10 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
                            role_id = RoleId},
 
     Indexes = [{?ROLE_PATH_INDEX, Path},
-               {?ROLE_ARN_INDEX, Arn}],
+               {?ROLE_NAME_INDEX, Arn}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
-            riakc_obj:new(?IAM_ROLE_BUCKET, iolist_to_binary(RoleName), term_to_binary(Role1)),
+            riakc_obj:new(?IAM_ROLE_BUCKET, Arn, term_to_binary(Role1)),
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
@@ -207,9 +208,9 @@ ensure_unique_role_id(RcPid) ->
             Id
     end.
 
--spec delete_role(string(), pid()) -> ok | {error, term()}.
-delete_role(RoleName, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, list_to_binary(RoleName)) of
+-spec delete_role(binary(), pid()) -> ok | {error, term()}.
+delete_role(Arn, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, Arn) of
         {ok, Obj0} ->
             Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
             {Res, TAT} = ?TURNAROUND_TIME(
@@ -218,7 +219,7 @@ delete_role(RoleName, Pbc) ->
                 ok ->
                     stanchion_stats:update([riakc, put_cs_role], TAT);
                 {error, Reason} ->
-                    logger:error("Failed to delete role object \"~s\": ~p", [RoleName, Reason]),
+                    logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
                     Res
             end;
         {error, _} = ER ->
@@ -232,28 +233,28 @@ create_policy(Fields, Pbc) ->
     Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
     save_policy(Policy, Pbc).
 
-save_policy(Policy0 = ?IAM_POLICY{policy_name = PolicyName,
+save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
                                   path = Path}, Pbc) ->
     PolicyId = ensure_unique_policy_id(Pbc),
 
-    Arn = riak_cs_aws_utils:make_policy_arn(PolicyName, Path),
+    Arn = riak_cs_aws_utils:make_policy_arn(Name, Path),
     Policy1 = Policy0?IAM_POLICY{arn = Arn,
                                  policy_id = PolicyId},
 
     Indexes = [{?POLICY_PATH_INDEX, Path},
-               {?POLICY_ARN_INDEX, Arn}],
+               {?POLICY_NAME_INDEX, Name}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
-            riakc_obj:new(?IAM_POLICY_BUCKET, iolist_to_binary(PolicyName), term_to_binary(Policy1)),
+            riakc_obj:new(?IAM_POLICY_BUCKET, Arn, term_to_binary(Policy1)),
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
         ok ->
-            ?LOG_INFO("Saved new managed policy \"~s\" with id ~s", [PolicyName, PolicyId]),
+            ?LOG_INFO("Saved new managed policy \"~s\" (~s) with id ~s", [Name, Arn, PolicyId]),
             ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
             {ok, Policy1};
         {error, Reason} ->
-            logger:error("Failed to save managed policy \"~s\": ~p", [PolicyName, Reason]),
+            logger:error("Failed to save managed policy \"~s\": ~p", [Name, Reason]),
             Res
     end.
 
@@ -266,9 +267,9 @@ ensure_unique_policy_id(RcPid) ->
             Id
     end.
 
--spec delete_policy(string(), pid()) -> ok | {error, term()}.
-delete_policy(PolicyName, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, list_to_binary(PolicyName)) of
+-spec delete_policy(binary(), pid()) -> ok | {error, term()}.
+delete_policy(Arn, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, Arn) of
         {ok, Obj0} ->
             Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
             {Res, TAT} = ?TURNAROUND_TIME(
@@ -277,7 +278,7 @@ delete_policy(PolicyName, Pbc) ->
                 ok ->
                     stanchion_stats:update([riakc, put_cs_policy], TAT);
                 {error, Reason} ->
-                    logger:error("Failed to delete managed policy object \"~s\": ~p", [PolicyName, Reason]),
+                    logger:error("Failed to delete managed policy object ~s: ~p", [Arn, Reason]),
                     Res
             end;
         {error, _} = ER ->
@@ -299,7 +300,7 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},
-               {?SAMLPROVIDER_ARN_INDEX, Arn}],
+               {?SAMLPROVIDER_ISSUER_INDEX, riak_cs_iam:saml_provider_issuer(P1)}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),

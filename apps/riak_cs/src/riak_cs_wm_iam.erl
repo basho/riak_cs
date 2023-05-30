@@ -250,7 +250,8 @@ do_action("CreateRole",
     case riak_cs_iam:create_role(Specs) of
         {ok, Role} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created role \"~s\" on request_id ~s", [Role?IAM_ROLE.role_id, RequestId]),
+            logger:info("Created role \"~s\" (~s) on request_id ~s",
+                        [Role?IAM_ROLE.role_id, Role?IAM_ROLE.arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_role_response{role = Role,
                                           request_id = RequestId}),
@@ -263,7 +264,7 @@ do_action("GetRole",
           Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
     RoleName = proplists:get_value("RoleName", Form),
-    case riak_cs_iam:get_role(RoleName, RcPid) of
+    case riak_cs_iam:find_role(#{name => RoleName}, RcPid) of
         {ok, Role} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
@@ -277,20 +278,26 @@ do_action("GetRole",
     end;
 
 do_action("DeleteRole",
-          Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
-    RoleName = proplists:get_value("RoleName", Form),
-    case riak_cs_iam:delete_role(RoleName) of
-        ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Deleted role \"~s\" on request_id ~s", [RoleName, RequestId]),
-            Doc = riak_cs_xml:to_xml(
-                    #delete_role_response{request_id = RequestId}),
-            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, not_found} ->
-            ResponseMod:api_error(no_such_role, RD, Ctx);
-        {error, Reason} ->
-            ?LOG_DEBUG("deal with me ~p", [Reason]),
-            ResponseMod:api_error(Reason, RD, Ctx)
+          Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    Name = proplists:get_value("RoleName", Form),
+    case riak_cs_iam:find_role(#{name => list_to_binary(Name)}, RcPid) of
+        {ok, ?IAM_ROLE{arn = Arn}} ->
+            case riak_cs_iam:delete_role(Arn) of
+                ok ->
+                    RequestId = riak_cs_wm_utils:make_request_id(),
+                    logger:info("Deleted role \"~s\" (~s) on request_id ~s", [Name, Arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #delete_role_response{request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, not_found} ->
+                    ResponseMod:api_error(no_such_role, RD, Ctx);
+                {error, Reason} ->
+                    ?LOG_DEBUG("deal with me ~p", [Reason]),
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end;
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_role, RD, Ctx)
     end;
 
 do_action("ListRoles",
@@ -324,7 +331,8 @@ do_action("CreatePolicy",
     case riak_cs_iam:create_policy(Specs) of
         {ok, Policy} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created managed policy \"~s\" on request_id ~s", [Policy?IAM_POLICY.policy_id, RequestId]),
+            logger:info("Created managed policy \"~s\" (~s) on request_id ~s",
+                        [Policy?IAM_POLICY.policy_id, Policy?IAM_POLICY.arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_policy_response{policy = Policy,
                                             request_id = RequestId}),
@@ -336,8 +344,8 @@ do_action("CreatePolicy",
 do_action("GetPolicy",
           Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    PolicyName = proplists:get_value("PolicyName", Form),
-    case riak_cs_iam:get_policy(PolicyName, RcPid) of
+    Arn = proplists:get_value("PolicyArn", Form),
+    case riak_cs_iam:get_policy(list_to_binary(Arn), RcPid) of
         {ok, Policy} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
@@ -352,11 +360,11 @@ do_action("GetPolicy",
 
 do_action("DeletePolicy",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
-    PolicyName = proplists:get_value("PolicyName", Form),
-    case riak_cs_iam:delete_policy(PolicyName) of
+    Arn = proplists:get_value("PolicyArn", Form),
+    case riak_cs_iam:delete_policy(list_to_binary(Arn)) of
         ok ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Deleted policy \"~s\" on request_id ~s", [PolicyName, RequestId]),
+            logger:info("Deleted policy with arn ~s on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_policy_response{request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
@@ -404,7 +412,8 @@ do_action("CreateSAMLProvider",
     case riak_cs_iam:create_saml_provider(Specs) of
         {ok, {Arn, Tags}} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created SAML Provider \"~s\" on request_id ~s", [maps:get(name, Specs), RequestId]),
+            logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
+                        [maps:get(name, Specs), Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_saml_provider_response{saml_provider_arn = Arn,
                                                    tags = Tags,
@@ -421,7 +430,7 @@ do_action("GetSAMLProvider",
           Form, RD, Ctx = #rcs_iam_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
-    case riak_cs_iam:get_saml_provider(Arn, RcPid) of
+    case riak_cs_iam:get_saml_provider(list_to_binary(Arn), RcPid) of
         {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
                                 valid_until = ValidUntil,
                                 tags = Tags}} ->
@@ -441,10 +450,10 @@ do_action("GetSAMLProvider",
 do_action("DeleteSAMLProvider",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
-    case riak_cs_iam:delete_saml_provider(Arn) of
+    case riak_cs_iam:delete_saml_provider(list_to_binary(Arn)) of
         ok ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Deleted SAML Provider with arn \"~s\" on request_id ~s", [Arn, RequestId]),
+            logger:info("Deleted SAML Provider with arn ~s on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_saml_provider_response{request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};

@@ -28,6 +28,8 @@
          create_saml_provider/1,
          delete_saml_provider/1,
          get_saml_provider/2,
+         find_saml_provider/2,
+         saml_provider_issuer/1,
 
          create_policy/1,
          delete_policy/1,
@@ -44,6 +46,7 @@
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 
@@ -57,32 +60,46 @@ create_role(Specs) ->
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
--spec delete_role(string()) -> ok | {error, term()}.
-delete_role(RoleId) ->
+-spec delete_role(binary()) -> ok | {error, term()}.
+delete_role(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_role(RoleId, [{auth_creds, AdminCreds}]),
+    Result = velvet:delete_role(Arn, [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
 -spec get_role(binary(), pid()) -> {ok, ?IAM_ROLE{}} | {error, term()}.
-get_role(RoleName, RcPid) ->
-    case riak_cs_riak_client:get_role(RcPid, RoleName) of
+get_role(Arn, RcPid) ->
+    case riak_cs_riak_client:get_role(RcPid, Arn) of
         {ok, Obj} ->
             from_riakc_obj(Obj);
         Error ->
             Error
     end.
 
--spec find_role(Arn::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
-find_role(Arn, RcPid) ->
+-spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
+find_role(Name, RcPid) when is_binary(Name) ->
+    find_role(#{name => Name}, RcPid);
+find_role(#{name := Name}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_ARN_INDEX, Arn),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, RcPid);
         {error, Reason} ->
-            logger:error("Failed to find role by arn ~s: ~p", [Arn, Reason]),
+            logger:error("Failed to find role by name ~s: ~p", [Name, Reason]),
+            {error, Reason}
+    end;
+find_role(#{path := Path}, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_PATH_INDEX, Path),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_role(Key, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find role by path ~s: ~p", [Path, Reason]),
             {error, Reason}
     end.
 
@@ -97,34 +114,37 @@ create_policy(Specs) ->
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
--spec delete_policy(string()) -> ok | {error, term()}.
-delete_policy(RoleId) ->
+-spec delete_policy(binary()) -> ok | {error, term()}.
+delete_policy(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_policy(RoleId, [{auth_creds, AdminCreds}]),
+    Result = velvet:delete_policy(Arn, [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
 -spec get_policy(binary(), pid()) -> {ok, ?IAM_POLICY{}} | {error, term()}.
-get_policy(RoleName, RcPid) ->
-    case riak_cs_riak_client:get_policy(RcPid, RoleName) of
+get_policy(Arn, RcPid) ->
+    case riak_cs_riak_client:get_policy(RcPid, Arn) of
         {ok, Obj} ->
             from_riakc_obj(Obj);
         Error ->
             Error
     end.
 
--spec find_policy(Arn::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
-find_policy(Arn, RcPid) ->
+-spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
+find_policy(Name, RcPid) when is_binary(Name) ->
+    get_policy(#{name => Name}, RcPid);
+find_policy(#{name := Name}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?POLICY_ARN_INDEX, Arn),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?POLICY_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_policy(Key, RcPid);
         {error, Reason} ->
-            logger:error("Failed to find managed policy by arn ~s: ~p", [Arn, Reason]),
+            logger:error("Failed to find managed policy by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end.
+
 
 -spec merge_policies([policy()]) -> {ok, policy()} | {error, term()}.
 merge_policies(PP) ->
@@ -137,6 +157,87 @@ merge_these_two(P1, P2) ->
     ?LOG_DEBUG("STUB ~p ~p", [P1, P2]),
     
     P1.
+
+
+
+%% CreateRole takes a string for PermissionsBoundary parameter, which
+%% needs to become part of a structure (and handled and exported thus), so:
+-spec fix_permissions_boundary(maps:map()) -> maps:map().
+fix_permissions_boundary(#{permissions_boundary := A} = Map) when not is_map(A) ->
+    maps:update(permissions_boundary, #{permissions_boundary_arn => A}, Map);
+fix_permissions_boundary(Map) ->
+    Map.
+
+
+-spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
+create_saml_provider(Specs) ->
+    Encoded = jsx:encode(
+                enrich_with_valid_until(Specs)),
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:create_saml_provider(
+               "application/json",
+               Encoded,
+               [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+enrich_with_valid_until(#{saml_metadata_document := _D} = Specs) ->
+    ?LOG_WARNING("STUB need to extract ValidUntil here from SAMLMetadataDocument", []),
+    TS = calendar:system_time_to_local_time(os:system_time(second) + 3600*24, second),
+    maps:put(valid_until, rts:iso8601(TS), Specs).
+
+
+-spec delete_saml_provider(string()) -> ok | {error, term()}.
+delete_saml_provider(Arn) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:delete_saml_provider(
+               binary_to_list(base64:encode(Arn)), [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+
+-spec get_saml_provider(binary(), pid()) -> {ok, ?IAM_SAML_PROVIDER{}} | {error, term()}.
+get_saml_provider(Arn, RcPid) ->
+    case riak_cs_riak_client:get_saml_provider(RcPid, Arn) of
+        {ok, Obj} ->
+            from_riakc_obj(Obj);
+        Error ->
+            Error
+    end.
+
+-spec find_saml_provider(maps:map() | Arn::binary(), pid()) -> {ok, saml_provider()} | {error, notfound | term()}.
+find_saml_provider(Name, RcPid) when is_binary(Name) ->
+    find_saml_provider(#{name => Name}, RcPid);
+find_saml_provider(#{name := Name}, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_NAME_INDEX, Name),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_saml_provider(Key, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find SAML Provider by name ~s: ~p", [Name, Reason]),
+            {error, Reason}
+    end;
+find_saml_provider(#{issuer := Issuer}, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_ISSUER_INDEX, Issuer),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_saml_provider(Key, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find SAML Provider by issuer ~s: ~p", [Issuer, Reason]),
+            {error, Reason}
+    end.
+
+saml_provider_issuer(?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
+    {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(D)),
+    ?LOG_DEBUG("STUB ~p", [RootContent]),
+    
+    <<"fafa.org">>.
+
+
 
 
 from_riakc_obj(Obj) ->
@@ -199,48 +300,6 @@ exprec_saml_provider(Map) ->
     P0 = ?IAM_SAML_PROVIDER{tags = TT0} = exprec:frommap_saml_provider_v1(Map),
     TT = [exprec:frommap_tag(T) || T <- TT0],
     P0?IAM_SAML_PROVIDER{tags = TT}.
-
-%% CreateRole takes a string for PermissionsBoundary parameter, which
-%% needs to become part of a structure (and handled and exported thus), so:
--spec fix_permissions_boundary(maps:map()) -> maps:map().
-fix_permissions_boundary(#{permissions_boundary := A} = Map) when not is_map(A) ->
-    maps:update(permissions_boundary, #{permissions_boundary_arn => A}, Map);
-fix_permissions_boundary(Map) ->
-    Map.
-
-
--spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
-create_saml_provider(Specs) ->
-    Encoded = jsx:encode(
-                enrich_with_valid_until(Specs)),
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:create_saml_provider(
-               "application/json",
-               Encoded,
-               [{auth_creds, AdminCreds}]),
-    handle_response(Result).
-
-enrich_with_valid_until(#{saml_metadata_document := _D} = Specs) ->
-    ?LOG_WARNING("STUB need to extract ValidUntil here from SAMLMetadataDocument", []),
-    TS = calendar:system_time_to_local_time(os:system_time(second) + 3600*24, second),
-    maps:put(valid_until, rts:iso8601(TS), Specs).
-
--spec delete_saml_provider(string()) -> ok | {error, term()}.
-delete_saml_provider(Arn) ->
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_saml_provider(
-               binary_to_list(base64:encode(Arn)), [{auth_creds, AdminCreds}]),
-    handle_response(Result).
-
--spec get_saml_provider(string(), pid()) -> {ok, ?IAM_SAML_PROVIDER{}} | {error, term()}.
-get_saml_provider(Arn, RcPid) ->
-    BinKey = list_to_binary(Arn),
-    case riak_cs_riak_client:get_saml_provider(RcPid, BinKey) of
-        {ok, Obj} ->
-            from_riakc_obj(Obj);
-        Error ->
-            Error
-    end.
 
 
 handle_response({ok, Returnable}) ->

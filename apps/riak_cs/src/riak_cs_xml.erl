@@ -34,7 +34,9 @@
 
 %% Public API
 -export([scan/1,
-         to_xml/1]).
+         to_xml/1,
+         find_element/2
+        ]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
@@ -67,6 +69,16 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+
+-spec find_element(atom(), [#xmlElement{}]) -> #xmlElement{} | notfound.
+find_element(Name, EE) ->
+    case [E || E = #xmlElement{name = N} <- EE, N == Name] of
+        [] ->
+            notfound;
+        [E] ->
+            E
+    end.
 
 
 %% @doc parse XML and produce xmlElement (other comments and else are bad)

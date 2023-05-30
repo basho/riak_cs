@@ -161,16 +161,14 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
                                          saml_assertion := SAMLAssertion_}} = State) ->
     SAMLAssertion = base64:decode(SAMLAssertion_),
     {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(SAMLAssertion)),
-    [{AssertionContent, _AssertionAttrs}|_] = [{C, AA} || #xmlElement{name = 'saml:Assertion',
-                                                                    attributes = AA,
-                                                                    content = C} <- RootContent],
-    [SubjectContent|_] = [C || #xmlElement{name = 'saml:Subject', content = C} <- AssertionContent],
-    [{NameIDContent, NameIDAttrs}|_] = [{C, AA} || #xmlElement{name = 'saml:NameID',
-                                                               content = C,
-                                                               attributes = AA} <- SubjectContent],
+    #xmlElement{content = AssertionContent,
+                attributes = _AssertionAttrs} = riak_cs_xml:find_element('saml:Assertion', RootContent),
+    #xmlElement{content = SubjectContent} = riak_cs_xml:find_element('saml:Subject', AssertionContent),
+    #xmlElement{content = NameIDContent,
+                attributes = NameIDAttrs} = riak_cs_xml:find_element('saml:NameID', SubjectContent),
     [#xmlText{value = NameID}|_] = NameIDContent,
 
-    [IssuerContent|_] = [C || #xmlElement{name = 'saml:Issuer', content = C} <- AssertionContent],
+    #xmlElement{content = IssuerContent} = riak_cs_xml:find_element('saml:Issuer', AssertionContent),
     [#xmlText{value = Issuer}|_] = IssuerContent,
 
     SourceIdentity =
@@ -191,6 +189,8 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
 
     State#{status => ok,
            issuer => list_to_binary(Issuer),
+           
+           certificate => <<"Certificate">>,
            subject => list_to_binary(NameID),
            subject_type => list_to_binary(SubjectType),
            source_identity => list_to_binary(SourceIdentity)}.
@@ -198,12 +198,21 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-check_with_saml_provider(#{riak_client := _RcPid,
+check_with_saml_provider(#{riak_client := RcPid,
+                           certificate := Certificate,
                            issuer := Issuer} = State) ->
     ?LOG_DEBUG("STUB Issuer ~p", [Issuer]),
-    
-    State.
+    case riak_cs_iam:find_saml_provider(#{issuer => Issuer}, RcPid) of
+        {ok, SP} ->
+            State#{status => check_assertion_certificate(Certificate, SP)};
+        ER ->
+            State#{status => ER}
+    end.
 
+check_assertion_certificate(Cert, ?IAM_SAML_PROVIDER{saml_metadata_document = MDD}) ->
+    ?LOG_DEBUG("STUB ~p ~p", [Cert, MDD]),
+    
+    ok.
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;

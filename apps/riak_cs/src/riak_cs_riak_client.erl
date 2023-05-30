@@ -247,22 +247,22 @@ handle_call({save_user, User, OldUserObj}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-handle_call({get_role, Id}, _From, State0) ->
-    case do_get_from_bucket(?IAM_ROLE_BUCKET, Id, get_cs_role, State0) of
+handle_call({get_role, A}, _From, State0) ->
+    case do_get_from_bucket(?IAM_ROLE_BUCKET, A, get_cs_role, State0) of
         {ok, Obj, State9} ->
             {reply, {ok, Obj}, State9};
         {error, Reason, State9} ->
             {reply, {error, Reason}, State9}
     end;
-handle_call({get_policy, Id}, _From, State0) ->
-    case do_get_from_bucket(?IAM_POLICY_BUCKET, Id, get_cs_policy, State0) of
+handle_call({get_policy, A}, _From, State0) ->
+    case do_get_from_bucket(?IAM_POLICY_BUCKET, A, get_cs_policy, State0) of
         {ok, Obj, State9} ->
             {reply, {ok, Obj}, State9};
         {error, Reason, State9} ->
             {reply, {error, Reason}, State9}
     end;
-handle_call({get_saml_provider, Id}, _From, State0) ->
-    case do_get_from_bucket(?IAM_SAMLPROVIDER_BUCKET, Id, get_cs_saml_provider, State0) of
+handle_call({get_saml_provider, A}, _From, State0) ->
+    case do_get_from_bucket(?IAM_SAMLPROVIDER_BUCKET, A, get_cs_saml_provider, State0) of
         {ok, Obj, State9} ->
             {reply, {ok, Obj}, State9};
         {error, Reason, State9} ->
