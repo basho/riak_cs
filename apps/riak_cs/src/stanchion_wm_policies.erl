@@ -104,8 +104,8 @@ accept_json(RD, Ctx) ->
 -spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.
 delete_resource(RD, Ctx = #stanchion_context{}) ->
-    PolicyName = wrq:path_info(policy_name, RD),
-    case stanchion_server:delete_policy(PolicyName) of
+    Arn = mochiweb_util:unquote(wrq:path_info(arn, RD)),
+    case stanchion_server:delete_policy(Arn) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

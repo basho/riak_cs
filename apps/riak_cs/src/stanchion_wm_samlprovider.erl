@@ -102,9 +102,8 @@ accept_json(RD, Ctx) ->
 -spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.
 delete_resource(RD, Ctx = #stanchion_context{}) ->
-    Arn = wrq:path_info(arn, RD),
-    case stanchion_server:delete_saml_provider(
-           base64:decode(Arn)) of
+    Arn = mochiweb_util:unquote(wrq:path_info(arn, RD)),
+    case stanchion_server:delete_saml_provider(Arn) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

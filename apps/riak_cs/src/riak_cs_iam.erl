@@ -186,11 +186,11 @@ enrich_with_valid_until(#{saml_metadata_document := _D} = Specs) ->
     maps:put(valid_until, rts:iso8601(TS), Specs).
 
 
--spec delete_saml_provider(string()) -> ok | {error, term()}.
+-spec delete_saml_provider(binary()) -> ok | {error, term()}.
 delete_saml_provider(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:delete_saml_provider(
-               binary_to_list(base64:encode(Arn)), [{auth_creds, AdminCreds}]),
+               Arn, [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
 

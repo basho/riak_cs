@@ -174,16 +174,16 @@ create_role(Fields, Pbc) ->
     Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
     save_role(Role, Pbc).
 
-save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
+save_role(Role0 = ?IAM_ROLE{role_name = Name,
                             path = Path}, Pbc) ->
     RoleId = ensure_unique_role_id(Pbc),
 
-    Arn = riak_cs_aws_utils:make_role_arn(RoleName, Path),
+    Arn = riak_cs_aws_utils:make_role_arn(Name, Path),
     Role1 = Role0?IAM_ROLE{arn = Arn,
                            role_id = RoleId},
 
     Indexes = [{?ROLE_PATH_INDEX, Path},
-               {?ROLE_NAME_INDEX, Arn}],
+               {?ROLE_NAME_INDEX, Name}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_ROLE_BUCKET, Arn, term_to_binary(Role1)),
@@ -191,11 +191,10 @@ save_role(Role0 = ?IAM_ROLE{role_name = RoleName,
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
         ok ->
-            ?LOG_INFO("Saved new role \"~s\" with id ~s", [RoleName, RoleId]),
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
             {ok, Role1};
         {error, Reason} ->
-            logger:error("Failed to save role \"~s\": ~p", [RoleName, Reason]),
+            logger:error("Failed to save role \"~s\": ~p", [Name, Reason]),
             Res
     end.
 
@@ -250,7 +249,6 @@ save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
     case Res of
         ok ->
-            ?LOG_INFO("Saved new managed policy \"~s\" (~s) with id ~s", [Name, Arn, PolicyId]),
             ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
             {ok, Policy1};
         {error, Reason} ->
@@ -269,7 +267,7 @@ ensure_unique_policy_id(RcPid) ->
 
 -spec delete_policy(binary(), pid()) -> ok | {error, term()}.
 delete_policy(Arn, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, Arn) of
+    case riakc_pb_socket:get(Pbc, ?IAM_POLICY_BUCKET, Arn) of
         {ok, Obj0} ->
             Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
             {Res, TAT} = ?TURNAROUND_TIME(
@@ -296,7 +294,6 @@ create_saml_provider(#{name := Name} = Fields, Pbc) ->
 save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
     Arn = riak_cs_aws_utils:make_provider_arn(Name),
 
-    ?LOG_INFO("Saving new SAML Provider \"~s\" with ARN ~s", [Name, Arn]),
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},

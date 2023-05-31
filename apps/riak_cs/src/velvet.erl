@@ -528,19 +528,19 @@ users_path(User) ->
              ["/" ++ User || User /= []]
             ]).
 
-roles_path(Role) ->
+roles_path(A) ->
     stringy(["/roles",
-             ["/" ++ Role || Role /= []]
+             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
             ]).
 
-policies_path(Role) ->
+policies_path(A) ->
     stringy(["/policies",
-             ["/" ++ Role || Role /= []]
+             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
             ]).
 
 saml_provider_path(A) ->
     stringy(["/samlproviders",
-             ["/" ++ A || A /= []]
+             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
             ]).
 
 stringy(List) ->

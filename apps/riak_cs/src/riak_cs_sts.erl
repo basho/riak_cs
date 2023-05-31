@@ -147,7 +147,7 @@ check_role(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_role(#{riak_client := RcPid,
              specs := #{role_arn := RoleArn}} = State) ->
-    case riak_cs_iam:find_role(RoleArn, RcPid) of
+    case riak_cs_iam:get_role(RoleArn, RcPid) of
         {ok, Role} ->
             State#{status => ok,
                    role => Role};
@@ -172,7 +172,8 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
     [#xmlText{value = Issuer}|_] = IssuerContent,
 
     SourceIdentity =
-        case [V || #xmlAttribute{name = 'https://aws.amazon.com/SAML/Attributes/SourceIdentity', value = V} <- NameIDAttrs] of
+        case [V || #xmlAttribute{name = 'https://aws.amazon.com/SAML/Attributes/SourceIdentity',
+                                 value = V} <- NameIDAttrs] of
             [] ->
                 "";
             [V] ->
@@ -205,8 +206,8 @@ check_with_saml_provider(#{riak_client := RcPid,
     case riak_cs_iam:find_saml_provider(#{issuer => Issuer}, RcPid) of
         {ok, SP} ->
             State#{status => check_assertion_certificate(Certificate, SP)};
-        ER ->
-            State#{status => ER}
+        {error, notfound} ->
+            State#{status => {error, no_such_saml_provider}}
     end.
 
 check_assertion_certificate(Cert, ?IAM_SAML_PROVIDER{saml_metadata_document = MDD}) ->

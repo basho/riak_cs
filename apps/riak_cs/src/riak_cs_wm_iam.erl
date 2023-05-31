@@ -250,8 +250,8 @@ do_action("CreateRole",
     case riak_cs_iam:create_role(Specs) of
         {ok, Role} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created role \"~s\" (~s) on request_id ~s",
-                        [Role?IAM_ROLE.role_id, Role?IAM_ROLE.arn, RequestId]),
+            logger:info("Created role ~s \"~s\" (~s) on request_id ~s",
+                        [Role?IAM_ROLE.role_id, Role?IAM_ROLE.role_name, Role?IAM_ROLE.arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #create_role_response{role = Role,
                                           request_id = RequestId}),
