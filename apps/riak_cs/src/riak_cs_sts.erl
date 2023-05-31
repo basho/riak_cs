@@ -158,43 +158,83 @@ check_role(#{riak_client := RcPid,
 parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
-                                         saml_assertion := SAMLAssertion_}} = State) ->
+                                         saml_assertion := SAMLAssertion_}} = State0) ->
     SAMLAssertion = base64:decode(SAMLAssertion_),
-    {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(SAMLAssertion)),
+    {#xmlElement{content = RootContent}, _} =
+        xmerl_scan:string(binary_to_list(SAMLAssertion)),
+
     #xmlElement{content = AssertionContent,
-                attributes = _AssertionAttrs} = riak_cs_xml:find_element('saml:Assertion', RootContent),
-    #xmlElement{content = SubjectContent} = riak_cs_xml:find_element('saml:Subject', AssertionContent),
+                attributes = _AssertionAttrs} =
+        riak_cs_xml:find_element('saml:Assertion', RootContent),
+    #xmlElement{content = SubjectContent} =
+        riak_cs_xml:find_element('saml:Subject', AssertionContent),
+    #xmlElement{content = AttributeStatementContent} =
+        riak_cs_xml:find_element('saml:AttributeStatement', AssertionContent),
     #xmlElement{content = NameIDContent,
-                attributes = NameIDAttrs} = riak_cs_xml:find_element('saml:NameID', SubjectContent),
+                attributes = NameIDAttrs} =
+        riak_cs_xml:find_element('saml:NameID', SubjectContent),
     [#xmlText{value = NameID}|_] = NameIDContent,
 
     #xmlElement{content = IssuerContent} = riak_cs_xml:find_element('saml:Issuer', AssertionContent),
     [#xmlText{value = Issuer}|_] = IssuerContent,
 
+    RoleSessionName =
+        first_or_none(
+          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/RoleSessionName",
+                                            AttributeStatementContent)),
     SourceIdentity =
-        case [V || #xmlAttribute{name = 'https://aws.amazon.com/SAML/Attributes/SourceIdentity',
-                                 value = V} <- NameIDAttrs] of
-            [] ->
-                "";
-            [V] ->
-                V
-        end,
+        first_or_none(
+          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/SourceIdentity",
+                                            AttributeStatementContent)),
+    SessionDuration =
+        first_or_none(
+          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/SessionDuration",
+                                            AttributeStatementContent)),
+    Role =
+        find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/Role",
+                                          AttributeStatementContent),
 
-    SubjectType =
-        case [V || #xmlAttribute{name = 'Format', value = V} <- NameIDAttrs] of
-            [S] ->
-                lists:last(string:tokens(S, ":"));
-            [] ->
-                []
-        end,
+    SubjectType = attr_value('Format', NameIDAttrs),
 
-    State#{status => ok,
-           issuer => list_to_binary(Issuer),
-           
-           certificate => <<"Certificate">>,
-           subject => list_to_binary(NameID),
-           subject_type => list_to_binary(SubjectType),
-           source_identity => list_to_binary(SourceIdentity)}.
+    State1 = State0#{status => ok,
+                     issuer => list_to_binary(Issuer),
+                     certificate => <<"Certificate">>,
+                     subject => list_to_binary(NameID),
+                     subject_type => list_to_binary(SubjectType)},
+    maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
+                             {source_identity, maybe_list_to_binary(SourceIdentity)},
+                             {session_duration, maybe_list_to_integer(SessionDuration)},
+                             {role, [maybe_list_to_binary(A) || A <- Role]}], State1).
+
+attr_value(A, AA) ->
+    case [V || #xmlAttribute{name = Name, value = V} <- AA, Name == A] of
+        [] ->
+            [];
+        [V] ->
+            V
+    end.
+
+find_AttributeValues_of_Attribute(AttrName, AA) ->
+    [extract_attribute_value(C) || #xmlElement{name = 'saml:Attribute',
+                                               attributes = EA,
+                                               content = C} <- AA,
+                                   attr_value('Name', EA) == AttrName].
+extract_attribute_value(AA) ->
+    hd([V || #xmlElement{name = 'saml:AttributeValue', content = [#xmlText{value = V}]} <- AA]).
+
+first_or_none(A) ->
+    case A of
+        [V|_] ->
+            V;
+        [] ->
+            none
+    end.
+
+maybe_list_to_integer(none) -> none;
+maybe_list_to_integer(A) -> list_to_integer(A).
+maybe_list_to_binary(none) -> none;
+maybe_list_to_binary(A) -> list_to_binary(A).
+
 
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
@@ -203,7 +243,7 @@ check_with_saml_provider(#{riak_client := RcPid,
                            certificate := Certificate,
                            issuer := Issuer} = State) ->
     ?LOG_DEBUG("STUB Issuer ~p", [Issuer]),
-    case riak_cs_iam:find_saml_provider(#{issuer => Issuer}, RcPid) of
+    case riak_cs_iam:find_saml_provider(#{entity_id => Issuer}, RcPid) of
         {ok, SP} ->
             State#{status => check_assertion_certificate(Certificate, SP)};
         {error, notfound} ->
@@ -242,6 +282,16 @@ create_session_and_issue_temp_creds(#{specs := #{policy := InlinePolicy,
         ER ->
             State#{status => ER}
     end.
+
+
+maybe_update_state_with([], State) ->
+    State;
+maybe_update_state_with([{_, none}|Rest], State) ->
+    maybe_update_state_with(Rest, State);
+maybe_update_state_with([{P, V}|Rest], State) ->
+    maybe_update_state_with(Rest, maps:put(P, V, State)).
+
+
 
 
 is_valid_arn(A) ->

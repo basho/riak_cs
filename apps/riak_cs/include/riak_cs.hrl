@@ -80,7 +80,7 @@
 -define(POLICY_PATH_INDEX, <<"policy_path_bin">>).
 -define(POLICY_NAME_INDEX, <<"policy_name_bin">>).
 -define(SAMLPROVIDER_NAME_INDEX, <<"samlprovider_name_bin">>).
--define(SAMLPROVIDER_ISSUER_INDEX, <<"samlprovider_issuer_bin">>).
+-define(SAMLPROVIDER_ENTITYID_INDEX, <<"samlprovider_entityid_bin">>).
 
 -define(STANCHION_DETAILS_KEY, <<"stanchion">>).
 

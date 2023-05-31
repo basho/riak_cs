@@ -297,7 +297,7 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},
-               {?SAMLPROVIDER_ISSUER_INDEX, riak_cs_iam:saml_provider_issuer(P1)}],
+               {?SAMLPROVIDER_ENTITYID_INDEX, riak_cs_iam:saml_provider_entity_id(P1)}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),

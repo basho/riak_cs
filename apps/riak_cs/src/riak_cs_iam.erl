@@ -29,7 +29,7 @@
          delete_saml_provider/1,
          get_saml_provider/2,
          find_saml_provider/2,
-         saml_provider_issuer/1,
+         saml_provider_entity_id/1,
 
          create_policy/1,
          delete_policy/1,
@@ -218,20 +218,20 @@ find_saml_provider(#{name := Name}, RcPid) ->
             logger:error("Failed to find SAML Provider by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end;
-find_saml_provider(#{issuer := Issuer}, RcPid) ->
+find_saml_provider(#{entity_id := EntityID}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_ISSUER_INDEX, Issuer),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_saml_provider(Key, RcPid);
         {error, Reason} ->
-            logger:error("Failed to find SAML Provider by issuer ~s: ~p", [Issuer, Reason]),
+            logger:error("Failed to find SAML Provider by EntityID ~s: ~p", [EntityID, Reason]),
             {error, Reason}
     end.
 
-saml_provider_issuer(?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
+saml_provider_entity_id(?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
     {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(D)),
     ?LOG_DEBUG("STUB ~p", [RootContent]),
     
