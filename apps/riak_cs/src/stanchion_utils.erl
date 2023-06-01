@@ -289,15 +289,23 @@ create_saml_provider(#{name := Name} = Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
         riak_cs_iam:exprec_saml_provider(Fields),
     P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
-    save_saml_provider(Name, P1, Pbc).
+    case riak_cs_iam:parse_saml_provider_idp_metadata(P1) of
+        {ok, P9} ->
+            save_saml_provider(Name, P9, Pbc);
+        ER ->
+            ER
+    end.
 
-save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{tags = Tags}, Pbc) ->
+save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{entity_id = EntityID,
+                                                 tags = Tags}, Pbc) ->
     Arn = riak_cs_aws_utils:make_provider_arn(Name),
 
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
+    %% not sure this shortcut is entirely valid
+    {_Scheme, EntityIDHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(EntityID)),
     Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},
-               {?SAMLPROVIDER_ENTITYID_INDEX, riak_cs_iam:saml_provider_entity_id(P1)}],
+               {?SAMLPROVIDER_ENTITYID_INDEX, list_to_binary(EntityIDHostS)}],
     Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),

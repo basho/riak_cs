@@ -199,7 +199,7 @@
 
 -record(role_v1, { arn :: arn()
                  , assume_role_policy_document :: binary()
-                 , create_date = rts:iso8601(os:system_time(millisecond)) :: non_neg_integer()
+                 , create_date = os:system_time(millisecond) :: non_neg_integer()
                  , description :: binary()
                  , max_session_duration :: non_neg_integer()
                  , path :: binary()
@@ -214,10 +214,13 @@
 -define(IAM_ROLE, #role_v1).
 
 -record(saml_provider_v1, { arn :: arn()
-                          , create_date = rts:iso8601(os:system_time(millisecond)) :: non_neg_integer()
                           , saml_metadata_document :: string()
                           , tags :: [tag()]
-                          , valid_until :: non_neg_integer()
+                          %% fields populated with values extracted from MD document
+                          , create_date = os:system_time(millisecond) :: non_neg_integer()
+                          , valid_until :: undefined | non_neg_integer()
+                          , entity_id :: undefined | binary()
+                          , certificates :: undefined | [{signing|encryption, binary()}]
                           }
        ).
 -type saml_provider() :: #saml_provider_v1{}.

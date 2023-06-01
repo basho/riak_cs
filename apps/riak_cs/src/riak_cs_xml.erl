@@ -35,7 +35,7 @@
 %% Public API
 -export([scan/1,
          to_xml/1,
-         find_element/2
+         find_elements/2
         ]).
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
@@ -71,14 +71,9 @@
 %% ===================================================================
 
 
--spec find_element(atom(), [#xmlElement{}]) -> #xmlElement{} | notfound.
-find_element(Name, EE) ->
-    case [E || E = #xmlElement{name = N} <- EE, N == Name] of
-        [] ->
-            notfound;
-        [E] ->
-            E
-    end.
+-spec find_elements(atom(), [#xmlElement{}]) -> [#xmlElement{}].
+find_elements(Name, EE) ->
+    [E || E = #xmlElement{name = N} <- EE, N == Name].
 
 
 %% @doc parse XML and produce xmlElement (other comments and else are bad)
@@ -483,8 +478,8 @@ saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
                                       valid_until = ValidUntil}) ->
     C = [{'Arn', [binary_to_list(Arn)]},
          {'SAMLMetadataDocument', [binary_to_list(SAMLMetadataDocument)]},
-         {'CreateDate', [binary_to_list(CreateDate)]},
-         {'ValidUntil', [binary_to_list(ValidUntil)]},
+         {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]},
          {'Tags', [tag_node(T) || T <- Tags]}
         ],
     {'SAMLProvider', C}.
@@ -496,16 +491,16 @@ saml_provider_node_for_create(Arn, Tags) ->
     {'CreateSAMLProviderResult', C}.
 
 saml_provider_node_for_get(CreateDate, ValidUntil, Tags) ->
-    C = [{'CreateDate', [binary_to_list(CreateDate)]},
-         {'ValidUntil', [binary_to_list(ValidUntil)]},
+    C = [{'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]},
          {'Tags', [], [tag_node(T) || T <- Tags]}
         ],
     {'GetSAMLProviderResult', C}.
 
 saml_provider_node_for_list(Arn, CreateDate, ValidUntil) ->
     C = [{'Arn', [make_arn(Arn)]},
-         {'CreateDate', [binary_to_list(CreateDate)]},
-         {'ValidUntil', [binary_to_list(ValidUntil)]}
+         {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]}
         ],
     {'GetSAMLProviderResult', C}.
 
@@ -564,16 +559,17 @@ assume_role_with_saml_response_to_xml(#assume_role_with_saml_response{assumed_ro
                                                                       subject_type = SubjectType,
                                                                       request_id = RequestId}) ->
     AssumeRoleWithSAMLResult =
-        [{'AssumedRoleUser', make_assumed_role_user(AssumedRoleUser)},
-         {'Audience', [binary_to_list(Audience)]},
-         {'Credentials', make_credentials(Credentials)},
-         {'Issuer', [binary_to_list(Issuer)]},
-         {'NameQualifier', [binary_to_list(NameQualifier)]},
-         {'PackedPolicySize', [integer_to_list(PackedPolicySize)]},
-         {'SourceIdentity', [binary_to_list(SourceIdentity)]},
-         {'Subject', [binary_to_list(Subject)]},
-         {'SubjectType', [binary_to_list(SubjectType)]}
-        ],
+        lists:flatten(
+          [{'AssumedRoleUser', make_assumed_role_user(AssumedRoleUser)},
+           {'Audience', [binary_to_list(Audience)]},
+           {'Credentials', make_credentials(Credentials)},
+           {'Issuer', [binary_to_list(Issuer)]},
+           {'NameQualifier', [binary_to_list(NameQualifier)]},
+           {'PackedPolicySize', [integer_to_list(PackedPolicySize)]},
+           [{'SourceIdentity', [binary_to_list(SourceIdentity)]} || SourceIdentity /= <<>>],
+           {'Subject', [binary_to_list(Subject)]},
+           {'SubjectType', [binary_to_list(SubjectType)]}
+          ]),
     ResponseMetadata = make_internal_node('RequestId', [RequestId]),
     C = [{'AssumeRoleWithSAMLResult', AssumeRoleWithSAMLResult},
          {'ResponseMetadata', [ResponseMetadata]}],

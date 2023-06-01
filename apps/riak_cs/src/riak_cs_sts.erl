@@ -163,19 +163,20 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
     {#xmlElement{content = RootContent}, _} =
         xmerl_scan:string(binary_to_list(SAMLAssertion)),
 
-    #xmlElement{content = AssertionContent,
-                attributes = _AssertionAttrs} =
-        riak_cs_xml:find_element('saml:Assertion', RootContent),
-    #xmlElement{content = SubjectContent} =
-        riak_cs_xml:find_element('saml:Subject', AssertionContent),
-    #xmlElement{content = AttributeStatementContent} =
-        riak_cs_xml:find_element('saml:AttributeStatement', AssertionContent),
-    #xmlElement{content = NameIDContent,
-                attributes = NameIDAttrs} =
-        riak_cs_xml:find_element('saml:NameID', SubjectContent),
+    [#xmlElement{content = AssertionContent,
+                 attributes = _AssertionAttrs}|_] =
+        riak_cs_xml:find_elements('saml:Assertion', RootContent),
+    [#xmlElement{content = SubjectContent}|_] =
+        riak_cs_xml:find_elements('saml:Subject', AssertionContent),
+    [#xmlElement{content = AttributeStatementContent}|_] =
+        riak_cs_xml:find_elements('saml:AttributeStatement', AssertionContent),
+    [#xmlElement{content = NameIDContent,
+                 attributes = NameIDAttrs}|_] =
+        riak_cs_xml:find_elements('saml:NameID', SubjectContent),
     [#xmlText{value = NameID}|_] = NameIDContent,
 
-    #xmlElement{content = IssuerContent} = riak_cs_xml:find_element('saml:Issuer', AssertionContent),
+    [#xmlElement{content = IssuerContent}|_] =
+        riak_cs_xml:find_elements('saml:Issuer', AssertionContent),
     [#xmlText{value = Issuer}|_] = IssuerContent,
 
     RoleSessionName =
@@ -204,7 +205,7 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
     maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
                              {source_identity, maybe_list_to_binary(SourceIdentity)},
                              {session_duration, maybe_list_to_integer(SessionDuration)},
-                             {role, [maybe_list_to_binary(A) || A <- Role]}], State1).
+                             {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1).
 
 attr_value(A, AA) ->
     case [V || #xmlAttribute{name = Name, value = V} <- AA, Name == A] of
@@ -242,16 +243,16 @@ check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
 check_with_saml_provider(#{riak_client := RcPid,
                            certificate := Certificate,
                            issuer := Issuer} = State) ->
-    ?LOG_DEBUG("STUB Issuer ~p", [Issuer]),
-    case riak_cs_iam:find_saml_provider(#{entity_id => Issuer}, RcPid) of
+    {_, IssuerHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(Issuer)),
+    case riak_cs_iam:find_saml_provider(#{entity_id => list_to_binary(IssuerHostS)}, RcPid) of
         {ok, SP} ->
             State#{status => check_assertion_certificate(Certificate, SP)};
         {error, notfound} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
-check_assertion_certificate(Cert, ?IAM_SAML_PROVIDER{saml_metadata_document = MDD}) ->
-    ?LOG_DEBUG("STUB ~p ~p", [Cert, MDD]),
+check_assertion_certificate(ClaimsCert, ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
+    ?LOG_DEBUG("STUB ~p ~p", [ClaimsCert, ProviderCerts]),
     
     ok.
 
@@ -263,8 +264,9 @@ create_session_and_issue_temp_creds(#{specs := #{policy := InlinePolicy,
                                       role := Role,
                                       subject := Subject,
                                       subject_type := SubjectType,
-                                      source_identity := SourceIdentity,
                                       riak_client := RcPid} = State) ->
+    SourceIdentity = maps:get(source_identity, State, <<>>),
+
     case riak_cs_temp_sessions:create(
            Role, Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of
         {ok, #temp_session{assumed_role_user = AssumedRoleUser,
@@ -273,8 +275,7 @@ create_session_and_issue_temp_creds(#{specs := #{policy := InlinePolicy,
                    assumed_role_user => AssumedRoleUser,
                    audience => <<"https://signin.aws.amazon.com/saml">>,
                    credentials => Credentials,
-                   issuer => <<"https://samltest.id/saml/idp">>,
-                   name_qualifier => <<"SbdGOnUkh1i4+EXAMPLExL/jEvs=">>,
+                   name_qualifier => <<"Base64 ( SHA1 ( \"https://example.com/saml\" + \"123456789012\" + \"/MySAMLIdP\" ) )">>,
                    packed_policy_size => 6,
                    subject => Subject,
                    subject_type => SubjectType,

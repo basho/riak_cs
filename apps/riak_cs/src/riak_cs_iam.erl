@@ -29,7 +29,7 @@
          delete_saml_provider/1,
          get_saml_provider/2,
          find_saml_provider/2,
-         saml_provider_entity_id/1,
+         parse_saml_provider_idp_metadata/1,
 
          create_policy/1,
          delete_policy/1,
@@ -131,7 +131,7 @@ get_policy(Arn, RcPid) ->
 
 -spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
 find_policy(Name, RcPid) when is_binary(Name) ->
-    get_policy(#{name => Name}, RcPid);
+    find_policy(#{name => Name}, RcPid);
 find_policy(#{name := Name}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?POLICY_NAME_INDEX, Name),
@@ -171,19 +171,13 @@ fix_permissions_boundary(Map) ->
 
 -spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
 create_saml_provider(Specs) ->
-    Encoded = jsx:encode(
-                enrich_with_valid_until(Specs)),
+    Encoded = jsx:encode(Specs),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_saml_provider(
                "application/json",
                Encoded,
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
-
-enrich_with_valid_until(#{saml_metadata_document := _D} = Specs) ->
-    ?LOG_WARNING("STUB need to extract ValidUntil here from SAMLMetadataDocument", []),
-    TS = calendar:system_time_to_local_time(os:system_time(second) + 3600*24, second),
-    maps:put(valid_until, rts:iso8601(TS), Specs).
 
 
 -spec delete_saml_provider(binary()) -> ok | {error, term()}.
@@ -208,7 +202,7 @@ find_saml_provider(Name, RcPid) when is_binary(Name) ->
     find_saml_provider(#{name => Name}, RcPid);
 find_saml_provider(#{name := Name}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_NAME_INDEX, Name),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
@@ -220,7 +214,7 @@ find_saml_provider(#{name := Name}, RcPid) ->
     end;
 find_saml_provider(#{entity_id := EntityID}, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
@@ -231,12 +225,36 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
             {error, Reason}
     end.
 
-saml_provider_entity_id(?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
-    {#xmlElement{content = RootContent}, _} = xmerl_scan:string(binary_to_list(D)),
-    ?LOG_DEBUG("STUB ~p", [RootContent]),
-    
-    <<"fafa.org">>.
+-spec parse_saml_provider_idp_metadata(saml_provider()) ->
+          {ok, saml_provider()} | {error, invalid_metadata_document}.
+parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} = P) ->
+    {#xmlElement{content = RootContent,
+                 attributes = RootAttributes}, _} = xmerl_scan:string(binary_to_list(D)),
+    [#xmlElement{content = IDPSSODescriptorContent}|_] =
+        riak_cs_xml:find_elements('IDPSSODescriptor', RootContent),
+    [#xmlElement{content = _ExtensionsContent}|_] =
+        riak_cs_xml:find_elements('Extensions', IDPSSODescriptorContent),
 
+    [#xmlAttribute{value = EntityIDS}|_] = [A || A = #xmlAttribute{name = 'entityID'} <- RootAttributes],
+    [#xmlAttribute{value = ValidUntilS}|_] = [A || A = #xmlAttribute{name = 'validUntil'} <- RootAttributes],
+    Certificates = extract_certs(
+                     riak_cs_xml:find_elements('KeyDescriptor', IDPSSODescriptorContent), []),
+    {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
+                             valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
+                             certificates = Certificates}}.
+
+extract_certs([], Q) ->
+    Q;
+extract_certs([#xmlElement{content = RootContent,
+                           attributes = RootAttributes} | Rest], Q) ->
+    [#xmlElement{content = KeyInfoContent}|_] = riak_cs_xml:find_elements('ds:KeyInfo', RootContent),
+    [#xmlElement{content = X509DataContent}|_] = riak_cs_xml:find_elements('ds:X509Data', KeyInfoContent),
+    [#xmlElement{content = X509CertificateContent}|_] = riak_cs_xml:find_elements('ds:X509Certificate', X509DataContent),
+    [#xmlText{value = CertDataS}] = [T || T = #xmlText{} <- X509CertificateContent],
+    [#xmlAttribute{value = TypeS}|_] = [A || A = #xmlAttribute{name = use} <- RootAttributes],
+    _ = [encryption, signing],
+    Type = list_to_existing_atom(TypeS),
+    extract_certs(Rest, [{Type, list_to_binary(CertDataS)} | Q]).
 
 
 
