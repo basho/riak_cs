@@ -379,7 +379,7 @@ role_node(?IAM_ROLE{arn = Arn,
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
            [{'AssumeRolePolicyDocument', [binary_to_list(AssumeRolePolicyDocument)]} || AssumeRolePolicyDocument /= undefined],
-           {'CreateDate', [binary_to_list(CreateDate)]},
+           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
            [{'Description', [binary_to_list(Description)]} || Description /= undefined],
            [{'MaxSessionDuration', [integer_to_list(MaxSessionDuration)]} || MaxSessionDuration /= undefined],
            {'Path', [binary_to_list(Path)]},

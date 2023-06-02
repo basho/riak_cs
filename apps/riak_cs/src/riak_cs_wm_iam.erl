@@ -296,7 +296,7 @@ do_action("DeleteRole",
                     ?LOG_DEBUG("deal with me ~p", [Reason]),
                     ResponseMod:api_error(Reason, RD, Ctx)
             end;
-        {error, notfound} ->
+        {error, not_found} ->
             ResponseMod:api_error(no_such_role, RD, Ctx)
     end;
 

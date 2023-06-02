@@ -174,11 +174,43 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
                  attributes = NameIDAttrs}|_] =
         riak_cs_xml:find_elements('saml:NameID', SubjectContent),
     [#xmlText{value = NameID}|_] = NameIDContent,
+    SubjectType = attr_value('Format', NameIDAttrs),
 
     [#xmlElement{content = IssuerContent}|_] =
         riak_cs_xml:find_elements('saml:Issuer', AssertionContent),
     [#xmlText{value = Issuer}|_] = IssuerContent,
 
+    %% signature and key
+    [#xmlElement{content = SignatureContent}|_] =
+        riak_cs_xml:find_elements('ds:Signature', RootContent),
+    [#xmlElement{content = SignedInfoContent}|_] =
+        riak_cs_xml:find_elements('ds:SignedInfo', SignatureContent),
+    [#xmlElement{attributes = SignatureMethodAttrs}|_] =
+        riak_cs_xml:find_elements('ds:SignatureMethod', SignedInfoContent),
+    SignatureAlgorithm = attr_value('Algorithm', SignatureMethodAttrs),
+
+    [#xmlElement{content = ReferenceContent}|_] =
+        riak_cs_xml:find_elements('ds:Reference', SignedInfoContent),
+    [#xmlElement{content = DigestValueContent}|_] =
+        riak_cs_xml:find_elements('ds:DigestValue', ReferenceContent),
+    [#xmlText{value = DigestValue}|_] = DigestValueContent,
+    [#xmlElement{attributes = DigestMethodAttrs}|_] =
+        riak_cs_xml:find_elements('ds:DigestMethod', ReferenceContent),
+    DigestAlgorithm = attr_value('Algorithm', DigestMethodAttrs),
+
+    [#xmlElement{content = SignatureValueContent}|_] =
+        riak_cs_xml:find_elements('ds:SignatureValue', SignatureContent),
+    [#xmlText{value = SignatureValue}|_] = SignatureValueContent,
+
+    [#xmlElement{content = KeyInfoContent}|_] =
+        riak_cs_xml:find_elements('ds:KeyInfo', SignatureContent),
+    [#xmlElement{content = X509DataContent}|_] =
+        riak_cs_xml:find_elements('ds:X509Data', KeyInfoContent),
+    [#xmlElement{content = X509CertificateContent}|_] =
+        riak_cs_xml:find_elements('ds:X509Certificate', X509DataContent),
+    [#xmlText{value = X509Certificate}|_] = X509CertificateContent,
+
+    %% optional fields
     RoleSessionName =
         first_or_none(
           find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/RoleSessionName",
@@ -195,11 +227,14 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
         find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/Role",
                                           AttributeStatementContent),
 
-    SubjectType = attr_value('Format', NameIDAttrs),
 
     State1 = State0#{status => ok,
                      issuer => list_to_binary(Issuer),
-                     certificate => <<"Certificate">>,
+                     signature => #{signature_algorithm => sign_alg_to_atom(SignatureAlgorithm),
+                                    signature_value => list_to_binary(SignatureValue),
+                                    digest_algorithm => digest_alg_to_atom(DigestAlgorithm),
+                                    digest_value => list_to_binary(DigestValue),
+                                    certificate => list_to_binary(X509Certificate)},
                      subject => list_to_binary(NameID),
                      subject_type => list_to_binary(SubjectType)},
     maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
@@ -236,23 +271,28 @@ maybe_list_to_integer(A) -> list_to_integer(A).
 maybe_list_to_binary(none) -> none;
 maybe_list_to_binary(A) -> list_to_binary(A).
 
+sign_alg_to_atom("http://www.w3.org/2000/09/xmldsig#rsa-sha1") -> sha1;
+sign_alg_to_atom(A) -> {unsupported_sign_alg, A}.
+digest_alg_to_atom("http://www.w3.org/2000/09/xmldsig#sha1") -> sha1;
+digest_alg_to_atom(A) -> {unsupported_digest_alg, A}.
+
 
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{riak_client := RcPid,
-                           certificate := Certificate,
+                           signature := Signature,
                            issuer := Issuer} = State) ->
     {_, IssuerHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(Issuer)),
     case riak_cs_iam:find_saml_provider(#{entity_id => list_to_binary(IssuerHostS)}, RcPid) of
         {ok, SP} ->
-            State#{status => check_assertion_certificate(Certificate, SP)};
-        {error, notfound} ->
+            State#{status => check_assertion_certificate(Signature, SP)};
+        {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
-check_assertion_certificate(ClaimsCert, ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
-    ?LOG_DEBUG("STUB ~p ~p", [ClaimsCert, ProviderCerts]),
+check_assertion_certificate(Signature, ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
+    ?LOG_DEBUG("STUB ~p ~p", [Signature, ProviderCerts]),
     
     ok.
 

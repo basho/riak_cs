@@ -75,7 +75,7 @@ get_role(Arn, RcPid) ->
             Error
     end.
 
--spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
+-spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, not_found | term()}.
 find_role(Name, RcPid) when is_binary(Name) ->
     find_role(#{name => Name}, RcPid);
 find_role(#{name := Name}, RcPid) ->
@@ -83,7 +83,7 @@ find_role(#{name := Name}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
+            {error, not_found};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, RcPid);
         {error, Reason} ->
@@ -95,7 +95,7 @@ find_role(#{path := Path}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_PATH_INDEX, Path),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
+            {error, not_found};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, RcPid);
         {error, Reason} ->
@@ -129,7 +129,7 @@ get_policy(Arn, RcPid) ->
             Error
     end.
 
--spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
+-spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, not_found | term()}.
 find_policy(Name, RcPid) when is_binary(Name) ->
     find_policy(#{name => Name}, RcPid);
 find_policy(#{name := Name}, RcPid) ->
@@ -217,7 +217,7 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
+            {error, not_found};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_saml_provider(Key, RcPid);
         {error, Reason} ->
