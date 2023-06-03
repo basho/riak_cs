@@ -390,7 +390,7 @@ role_node(?IAM_ROLE{arn = Arn,
            [{'RoleLastUsed', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
                               {'xsi:type', "RoleLastUsed"}],
              make_role_last_used(RoleLastUsed)} || RoleLastUsed /= undefined],
-           [{'RoleName', [binary_to_list(RoleName)]} || RoleName /= undefined],
+           {'RoleName', [binary_to_list(RoleName)]},
            {'Tags', [tag_node(T) || T <- Tags]}
           ]),
     {'Role', C}.

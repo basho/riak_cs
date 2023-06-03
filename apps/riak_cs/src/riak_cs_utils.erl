@@ -284,13 +284,13 @@ reduce_policies(Acc, _) ->
 map_saml_providers({error, notfound}, _, _) ->
     [];
 map_saml_providers(Object, _2, _Args) ->
-    [RoleBin|_] = riak_object:get_values(Object),
-    case RoleBin of
+    [PBin|_] = riak_object:get_values(Object),
+    case PBin of
         ?DELETED_MARKER ->
             [];
         _ ->
-            ?IAM_SAML_PROVIDER{} = A = binary_to_term(RoleBin),
-            [A]
+            ?IAM_SAML_PROVIDER{} = P = binary_to_term(PBin),
+            [P]
     end.
 
 reduce_saml_providers(Acc, _) ->

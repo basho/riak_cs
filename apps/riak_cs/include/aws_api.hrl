@@ -216,6 +216,7 @@
 -record(saml_provider_v1, { arn :: arn()
                           , saml_metadata_document :: string()
                           , tags :: [tag()]
+                          , name :: binary()
                           %% fields populated with values extracted from MD document
                           , create_date = os:system_time(millisecond) :: non_neg_integer()
                           , valid_until :: undefined | non_neg_integer()

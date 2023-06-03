@@ -166,13 +166,27 @@ create_user(FF = #{email := Email}, Pbc) ->
     end.
 
 
--spec create_role(maps:map(), pid()) -> {ok, role()} | {error, term()}.
+-spec create_role(maps:map(), pid()) -> {ok, role()} | {error, already_exists|term()}.
 create_role(Fields, Pbc) ->
-    Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
+    Role_ = ?IAM_ROLE{role_name = Name,
+                      assume_role_policy_document = A} =
         riak_cs_iam:exprec_role(
           riak_cs_iam:fix_permissions_boundary(Fields)),
     Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
-    save_role(Role, Pbc).
+    case role_name_available(Name) of
+        true ->
+            save_role(Role, Pbc);
+        false ->
+            ?LOG_DEBUG("Not role exist, already!"),
+            {error, role_already_exists}
+    end.
+
+role_name_available(Name) ->
+    {ok, Pbc} = riak_cs_riak_client:checkout(),
+    ?LOG_DEBUG("finding Role ~p", [Name]),
+    Res = riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound},
+    riak_cs_riak_client:checkin(Pbc),
+    Res.
 
 save_role(Role0 = ?IAM_ROLE{role_name = Name,
                             path = Path}, Pbc) ->
@@ -209,28 +223,33 @@ ensure_unique_role_id(RcPid) ->
 
 -spec delete_role(binary(), pid()) -> ok | {error, term()}.
 delete_role(Arn, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_ROLE_BUCKET, Arn) of
-        {ok, Obj0} ->
-            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
-            {Res, TAT} = ?TURNAROUND_TIME(
-                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
-            case Res of
-                ok ->
-                    stanchion_stats:update([riakc, put_cs_role], TAT);
-                {error, Reason} ->
-                    logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
-                    Res
-            end;
-        {error, _} = ER ->
+    case ?TURNAROUND_TIME(
+            riakc_pb_socket:delete(Pbc, ?IAM_ROLE_BUCKET, Arn, [{dw, all}])) of
+        {ok, TAT} ->
+            stanchion_stats:update([riakc, delete_cs_role], TAT);
+        {error, Reason} = ER ->
+            logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
             ER
     end.
 
 
 -spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
 create_policy(Fields, Pbc) ->
-    Policy_ = ?IAM_POLICY{policy_document = A} = riak_cs_iam:exprec_policy(Fields),
+    Policy_ = ?IAM_POLICY{policy_name = Name,
+                          policy_document = A} = riak_cs_iam:exprec_policy(Fields),
     Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
-    save_policy(Policy, Pbc).
+    case policy_name_available(Name) of
+        true ->
+            save_policy(Policy, Pbc);
+        false ->
+            {error, policy_already_exists}
+    end.
+
+policy_name_available(Name) ->
+    {ok, Pbc} = riak_cs_riak_client:checkout(),
+    Res = riak_cs_iam:find_policy(#{name => Name}, Pbc) == {error, notfound},
+    riak_cs_riak_client:checkin(Pbc),
+    Res.
 
 save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
                                   path = Path}, Pbc) ->
@@ -267,37 +286,44 @@ ensure_unique_policy_id(RcPid) ->
 
 -spec delete_policy(binary(), pid()) -> ok | {error, term()}.
 delete_policy(Arn, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_POLICY_BUCKET, Arn) of
-        {ok, Obj0} ->
-            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
-            {Res, TAT} = ?TURNAROUND_TIME(
-                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
-            case Res of
-                ok ->
-                    stanchion_stats:update([riakc, put_cs_policy], TAT);
-                {error, Reason} ->
-                    logger:error("Failed to delete managed policy object ~s: ~p", [Arn, Reason]),
-                    Res
-            end;
-        {error, _} = ER ->
+    case ?TURNAROUND_TIME(
+            riakc_pb_socket:delete(Pbc, ?IAM_POLICY_BUCKET, Arn, [{dw, all}])) of
+        {ok, TAT} ->
+            stanchion_stats:update([riakc, delete_cs_policy], TAT);
+        {error, Reason} = ER ->
+            logger:error("Failed to delete managed policy object ~s: ~p", [Arn, Reason]),
             ER
     end.
 
 
 -spec create_saml_provider(maps:map(), pid()) -> {ok, string()} | {error, term()}.
-create_saml_provider(#{name := Name} = Fields, Pbc) ->
-    P0 = ?IAM_SAML_PROVIDER{saml_metadata_document = A} =
+create_saml_provider(Fields, Pbc) ->
+    P0 = ?IAM_SAML_PROVIDER{name = Name,
+                            saml_metadata_document = A} =
         riak_cs_iam:exprec_saml_provider(Fields),
     P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
     case riak_cs_iam:parse_saml_provider_idp_metadata(P1) of
         {ok, P9} ->
-            save_saml_provider(Name, P9, Pbc);
+            case saml_provider_name_available(Name) of
+                true ->
+                    save_saml_provider(P9, Pbc);
+                false ->
+                    {error, saml_provider_already_exists}
+            end;
         ER ->
             ER
     end.
 
-save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{entity_id = EntityID,
-                                                 tags = Tags}, Pbc) ->
+saml_provider_name_available(Name) ->
+    {ok, Pbc} = riak_cs_riak_client:checkout(),
+    Res = riak_cs_iam:find_saml_provider(#{name => Name}, Pbc) == {error, notfound},
+    riak_cs_riak_client:checkin(Pbc),
+    Res.
+
+
+save_saml_provider(P0 = ?IAM_SAML_PROVIDER{name = Name,
+                                           entity_id = EntityID,
+                                           tags = Tags}, Pbc) ->
     Arn = riak_cs_aws_utils:make_provider_arn(Name),
 
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
@@ -323,19 +349,12 @@ save_saml_provider(Name, P0 = ?IAM_SAML_PROVIDER{entity_id = EntityID,
 
 -spec delete_saml_provider(binary(), pid()) -> ok | {error, term()}.
 delete_saml_provider(Arn, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn) of
-        {ok, Obj0} ->
-            Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
-            {Res, TAT} = ?TURNAROUND_TIME(
-                            riakc_pb_socket:put(Pbc, Obj1, [{w, all}, {pw, all}])),
-            case Res of
-                ok ->
-                    stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
-                {error, Reason} ->
-                    logger:error("Failed to delete saml_provider object ~s: ~p", [Arn, Reason]),
-                    Res
-            end;
-        {error, _} = ER ->
+    case ?TURNAROUND_TIME(
+            riakc_pb_socket:delete(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, [{dw, all}])) of
+        {ok, TAT} ->
+            stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
+        {error, Reason} = ER ->
+            logger:error("Failed to delete saml_provider object ~s: ~p", [Arn, Reason]),
             ER
     end.
 

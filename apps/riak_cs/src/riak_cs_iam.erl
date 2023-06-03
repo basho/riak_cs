@@ -75,7 +75,7 @@ get_role(Arn, RcPid) ->
             Error
     end.
 
--spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, not_found | term()}.
+-spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
 find_role(Name, RcPid) when is_binary(Name) ->
     find_role(#{name => Name}, RcPid);
 find_role(#{name := Name}, RcPid) ->
@@ -83,7 +83,7 @@ find_role(#{name := Name}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, not_found};
+            {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, RcPid);
         {error, Reason} ->
@@ -95,7 +95,7 @@ find_role(#{path := Path}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_PATH_INDEX, Path),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, not_found};
+            {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, RcPid);
         {error, Reason} ->
@@ -129,7 +129,7 @@ get_policy(Arn, RcPid) ->
             Error
     end.
 
--spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, not_found | term()}.
+-spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
 find_policy(Name, RcPid) when is_binary(Name) ->
     find_policy(#{name => Name}, RcPid);
 find_policy(#{name := Name}, RcPid) ->
@@ -217,7 +217,7 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, not_found};
+            {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_saml_provider(Key, RcPid);
         {error, Reason} ->
@@ -228,8 +228,10 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
 -spec parse_saml_provider_idp_metadata(saml_provider()) ->
           {ok, saml_provider()} | {error, invalid_metadata_document}.
 parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} = P) ->
+    ?LOG_DEBUG("Are we here, ~p", [binary_to_list(D)]),
     {#xmlElement{content = RootContent,
                  attributes = RootAttributes}, _} = xmerl_scan:string(binary_to_list(D)),
+    ?LOG_DEBUG("Are we here"),
     [#xmlElement{content = IDPSSODescriptorContent}|_] =
         riak_cs_xml:find_elements('IDPSSODescriptor', RootContent),
     [#xmlElement{content = _ExtensionsContent}|_] =
@@ -239,6 +241,7 @@ parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} 
     [#xmlAttribute{value = ValidUntilS}|_] = [A || A = #xmlAttribute{name = 'validUntil'} <- RootAttributes],
     Certificates = extract_certs(
                      riak_cs_xml:find_elements('KeyDescriptor', IDPSSODescriptorContent), []),
+    ?LOG_DEBUG("Are we here"),
     {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
                              valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
                              certificates = Certificates}}.
@@ -263,7 +266,7 @@ from_riakc_obj(Obj) ->
         1 ->
             case riakc_obj:get_value(Obj) of
                 ?DELETED_MARKER ->
-                    {error, not_found};
+                    {error, notfound};
                 V ->
                     {ok, binary_to_term(V)}
             end;
@@ -276,7 +279,7 @@ from_riakc_obj(Obj) ->
                            V /= ?DELETED_MARKER],
             case length(Values) of
                 0 ->
-                    {error, not_found};
+                    {error, notfound};
                 _ ->
                     {ok, binary_to_term(hd(Values))}
             end
