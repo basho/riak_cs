@@ -237,11 +237,12 @@ map_roles({error, notfound}, _, _) ->
     [];
 map_roles(Object, _2, Args) ->
     #{path_prefix := PathPrefix} = Args,
-    [RBin|_] = riak_object:get_values(Object),
-    case RBin of
-        ?DELETED_MARKER ->
+    case riak_object:get_values(Object) of
+        [] ->
             [];
-        _ ->
+        [<<>>|_] ->
+            [];
+        [RBin|_] ->
             ?IAM_ROLE{path = Path} = R = binary_to_term(RBin),
             case binary:longest_common_prefix([Path, PathPrefix]) of
                 0 ->
@@ -262,11 +263,12 @@ map_policies(Object, _2, Args) ->
       policy_usage_filter := PolicyUsageFilter,
       scope := Scope} = Args,
     ?LOG_DEBUG("list_roles: Ignoring parameters PolicyUsageFilter (~s) and Scope (~s)", [PolicyUsageFilter, Scope]),
-    [PBin|_] = riak_object:get_values(Object),
-    case PBin of
-        ?DELETED_MARKER ->
+    case riak_object:get_values(Object) of
+        [] ->
             [];
-        _ ->
+        [<<>>|_] ->
+            [];
+        [PBin|_] ->
             ?IAM_POLICY{path = Path,
                         attachment_count = AttachmentCount} = P = binary_to_term(PBin),
             case (0 < binary:longest_common_prefix([Path, PathPrefix])) and
@@ -284,11 +286,12 @@ reduce_policies(Acc, _) ->
 map_saml_providers({error, notfound}, _, _) ->
     [];
 map_saml_providers(Object, _2, _Args) ->
-    [PBin|_] = riak_object:get_values(Object),
-    case PBin of
-        ?DELETED_MARKER ->
+    case riak_object:get_values(Object) of
+        [] ->
             [];
-        _ ->
+        [<<>>|_] ->
+            [];
+        [PBin|_] ->
             ?IAM_SAML_PROVIDER{} = P = binary_to_term(PBin),
             [P]
     end.
