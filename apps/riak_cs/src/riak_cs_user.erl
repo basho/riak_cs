@@ -85,11 +85,11 @@ handle_create_user(ok, User) ->
 handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
     case riak_cs_config:api() of
         s3 ->
-            riak_cs_aws_response:error_response(ErrorDoc);
+            riak_cs_aws_response:velvet_response(ErrorDoc);
         oos ->
             {error, ErrorDoc}
     end;
-handle_create_user({error, _}=Error, _User) ->
+handle_create_user({error, _} = Error, _User) ->
     Error.
 
 handle_update_user(ok, User, UserObj, RcPid) ->
@@ -98,11 +98,11 @@ handle_update_user(ok, User, UserObj, RcPid) ->
 handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
     case riak_cs_config:api() of
         s3 ->
-            riak_cs_aws_response:error_response(ErrorDoc);
+            riak_cs_aws_response:velvet_response(ErrorDoc);
         oos ->
             {error, ErrorDoc}
     end;
-handle_update_user({error, _}=Error, _User, _, _) ->
+handle_update_user({error, _} = Error, _User, _, _) ->
     Error.
 
 %% @doc Update a Riak CS user record

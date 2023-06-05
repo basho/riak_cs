@@ -183,7 +183,6 @@ create_role(Fields, Pbc) ->
 
 role_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    ?LOG_DEBUG("finding Role ~p", [Name]),
     Res = riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound},
     riak_cs_riak_client:checkin(Pbc),
     Res.
@@ -657,7 +656,7 @@ replace_meta(Key, NewValue, MetaVals) ->
 %% abort-all-multipart and then deletes bucket?  This will be a big
 %% TODO.
 -spec is_bucket_ready_to_delete(binary(), pid(), riakc_obj()) ->
-                                       {false, multipart_upload_remains|bucket_not_empty} |
+                                       {false, remaining_multipart_upload|bucket_not_empty} |
                                        {true, riakc_obj()}.
 is_bucket_ready_to_delete(Bucket, Pbc, BucketObj) ->
     is_bucket_clean(Bucket, Pbc, BucketObj).
@@ -666,7 +665,7 @@ is_bucket_ready_to_delete(Bucket, Pbc, BucketObj) ->
 %% multipart uploads remains in deleted buckets in former versions
 %% before 1.5.0 (or 1.4.6) where the bug (identified in riak_cs/#475).
 -spec is_bucket_ready_to_create(binary(), pid(), riakc_obj()) ->
-                                       {false, multipart_upload_remains|bucket_not_empty} |
+                                       {false, remaining_multipart_upload|bucket_not_empty} |
                                        {true, riakc_obj()}.
 is_bucket_ready_to_create(Bucket, Pbc, BucketObj) ->
     is_bucket_clean(Bucket, Pbc, BucketObj).
@@ -686,7 +685,7 @@ is_bucket_clean(Bucket, Pbc, BucketObj) ->
             true ->
                 case stanchion_multipart:check_no_multipart_uploads(Bucket, ManifestPbc) of
                     false ->
-                        {false, multipart_upload_remains};
+                        {false, remaining_multipart_upload};
                     true ->
                         {true, BucketObj}
                 end

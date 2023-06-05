@@ -20,32 +20,24 @@
 %% ---------------------------------------------------------------------
 
 -module(riak_cs_aws_response).
+
 -export([api_error/3,
          status_code/1,
          respond/3,
          respond/4,
          error_message/1,
          error_code/1,
-         error_response/1,
+         velvet_response/1,
          copy_object_response/3,
          copy_part_response/3,
          no_such_upload_response/3,
-         invalid_digest_response/3,
-         error_code_to_atom/1,
-         xml_error_code/1]).
+         invalid_digest_response/3]).
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--type xmlElement() :: #xmlElement{}.
-
--type error_reason() :: atom()
-                      | {'riak_connect_failed', term()}
-                      | {'malformed_policy_version', string()}
-                      | {'invalid_argument', string()}
-                      | {'key_too_long', pos_integer()}.
 -spec error_message(error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
@@ -124,6 +116,8 @@ error_message(invalid_action) -> "This Action is invalid or not yet supported";
 error_message(invalid_parameter_value) -> "Unacceptable parameter value";
 error_message(missing_parameter) -> "Missing parameter";
 error_message(temp_users_create_bucket_restriction) -> "Federated users with assumed roles cannot create buckets";
+error_message({unsatisfied_constraint, Constraint}) ->
+    io_lib:format("Unable to complete operation due to ~s constraint violation.", [Constraint]);
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
 error_message(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -148,6 +142,7 @@ error_code(no_such_bucket) -> "NoSuchBucket";
 error_code(no_such_key) -> "NoSuchKey";
 error_code(no_copy_source_key) -> "NoSuchKey";
 error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
+error_code({unsatisfied_constraint, _}) -> "UnsatisfiedConstraint";
 error_code(admin_key_undefined) -> "ServiceUnavailable";
 error_code(admin_secret_undefined) -> "ServiceUnavailable";
 error_code(bucket_owner_unavailable) -> "ServiceUnavailable";
@@ -306,11 +301,6 @@ api_error(stanchion_recovery_failure, RD, Ctx) ->
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
-error_response(ErrorDoc) when length(ErrorDoc) =:= 0 ->
-    {error, error_code_to_atom("BadRequest")};
-error_response(ErrorDoc) ->
-    {error, error_code_to_atom(xml_error_code(ErrorDoc))}.
-
 error_response(ErrorTag, StatusCode, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
                          {'Message', [Message]},
@@ -318,7 +308,14 @@ error_response(ErrorTag, StatusCode, Code, Message, RD, Ctx) ->
                          {'RequestId', [""]}]}],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
--spec error_resource(atom(), #wm_reqdata{}) -> iodata().
+-spec velvet_response(string()) -> {error, error_reason()}.
+velvet_response(Response) ->
+    ?LOG_DEBUG("aaa ~p", [Response]),
+    #{error_tag := Tag,
+      resource := _Resource} = jsx:decode(list_to_binary(Response), [{labels, atom}]),
+    {error, binary_to_term(base64:decode(Tag))}.
+
+
 error_resource(Tag, RD)
   when Tag =:= no_copy_source_key;
        Tag =:= copy_source_access_denied->
@@ -419,51 +416,3 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
               ]},
     Body = riak_cs_xml:to_xml([XmlDoc]),
     respond(status_code(invalid_digest), Body, RD, Ctx).
-
-%% @doc Convert an error code string into its corresponding atom
--spec error_code_to_atom(string()) -> atom().
-error_code_to_atom(ErrorCode) ->
-    case ErrorCode of
-        "BadRequest" ->
-            bad_request;
-        "InvalidAccessKeyId" ->
-            invalid_access_key_id;
-        "AccessDenied" ->
-            access_denied;
-        "BucketNotEmpty" ->
-            bucket_not_empty;
-        "BucketAlreadyExists" ->
-            bucket_already_exists;
-        "UserAlreadyExists" ->
-            user_already_exists;
-        "NoSuchBucket" ->
-            no_such_bucket;
-        _ ->
-            unknown
-    end.
-
-%% @doc Get the value of the `Code' element from
-%% and XML document.
--spec xml_error_code(string()) -> string().
-xml_error_code(Xml) ->
-    %% here comes response from velvet (Stanchion),
-    %% this scan should match, otherwise bug.
-    {ok, ParsedData} = riak_cs_xml:scan(Xml),
-    process_xml_error(ParsedData#xmlElement.content).
-
-%% @doc Process the top-level elements of the
--spec process_xml_error([xmlElement()]) -> string().
-process_xml_error([]) ->
-    [];
-process_xml_error([#xmlText{value=" "}|Rest]) ->
-    process_xml_error(Rest);
-process_xml_error([HeadElement | RestElements]) ->
-    ?LOG_DEBUG("Element name: ~p", [HeadElement#xmlElement.name]),
-    ElementName = HeadElement#xmlElement.name,
-    case ElementName of
-        'Code' ->
-            [Content] = HeadElement#xmlElement.content,
-            Content#xmlText.value;
-        _ ->
-            process_xml_error(RestElements)
-    end.

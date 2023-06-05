@@ -22,90 +22,20 @@
 -module(stanchion_response).
 
 -export([api_error/3,
-         respond/4,
-         error_response/5,
          list_buckets_response/3]).
 
+-include("riak_cs.hrl").
+-include("stanchion.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--define(xml_prolog, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").
-
-error_message(invalid_access_key_id) ->
-    "The AWS Access Key Id you provided does not exist in our records.";
-error_message(access_denied) ->
-    "Access Denied";
-error_message(bucket_not_empty) ->
-    "The bucket you tried to delete is not empty.";
-error_message(bucket_already_exists) ->
-    "The requested bucket name is not available. The bucket namespace is shared by all users of the system. Please select a different name and try again.";
-error_message(user_already_exists) ->
-    "The specified email address has already been registered. Email addresses must be unique among all users of the system. Please try again with a different email address.";
-error_message(entity_too_large) ->
-    "Your proposed upload exceeds the maximum allowed object size.";
-error_message(no_such_bucket) ->
-    "The specified bucket does not exist.";
-error_message({riak_connect_failed, Reason}) ->
-    io_lib:format("Unable to establish connection to Riak. Reason: ~p", [Reason]);
-error_message({unsatisfied_constraint, Constraint}) ->
-    io_lib:format("Unable to complete operation due to ~s constraint violation.", [Constraint]);
-error_message(multipart_upload_remains) ->
-    "Multipart uploads still remaining.";
-error_message(role_already_exists) ->
-    "Role already exists";
-error_message(policy_already_exists) ->
-    "Policy already exists";
-error_message(saml_provider_already_exists) ->
-    "SAML provider already exists";
-error_message(unknown_error) ->
-    "Unexpected error occurred. Please see the stanchion error log for more details.".
-
-error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
-error_code(access_denied) -> "AccessDenied";
-error_code(bucket_not_empty) -> "BucketNotEmpty";
-error_code(bucket_already_exists) -> "BucketAlreadyExists";
-error_code(user_already_exists) -> "UserAlreadyExists";
-error_code(entity_too_large) -> "EntityTooLarge";
-error_code(no_such_bucket) -> "NoSuchBucket";
-error_code({riak_connect_failed, _}) -> "RiakConnectFailed";
-error_code({unsatisfied_constraint, _}) -> "UnsatisfiedConstraint";
-error_code(multipart_upload_remains) -> "MultipartUploadRemaining";
-error_code(role_already_exists) -> "EntityAlreadyExists";
-error_code(policy_already_exists) -> "EntityAlreadyExists";
-error_code(saml_provider_already_exists) -> "EntityAlreadyExists";
-error_code(unknown_error) -> "UnexpectedError".
-
-status_code(access_denied) ->  403;
-status_code(bucket_not_empty) ->  409;
-status_code(bucket_already_exists) -> 409;
-status_code(user_already_exists) -> 409;
-status_code(entity_too_large) -> 400;
-status_code(invalid_access_key_id) -> 403;
-status_code(no_such_bucket) -> 404;
-status_code({riak_connect_failed, _}) -> 503;
-status_code({unsatisfied_constraint, _}) -> 500;
-status_code(multipart_upload_remains) -> 409;
-status_code(role_already_exists) -> 409;
-status_code(policy_already_exists) -> 409;
-status_code(saml_provider_already_exists) -> 409;
-status_code(unknown_error) -> 500.
-
-respond(StatusCode, Body, ReqData, Ctx) ->
-    {{halt, StatusCode}, wrq:set_resp_body(Body, ReqData), Ctx}.
-
-api_error(Error, ReqData, Ctx) when is_binary(Error) ->
-    api_error(binary_to_list(Error), ReqData, Ctx);
-api_error(Error, ReqData, Ctx) when is_list(Error) ->
-    api_error(error_string_to_atom(Error), ReqData, Ctx);
-api_error(Error, ReqData, Ctx) ->
-    error_response(status_code(Error), error_code(Error), error_message(Error),
-                   ReqData, Ctx).
-
-error_response(StatusCode, Code, Message, RD, Ctx) ->
-    XmlDoc = [{'Error', [{'Code', [Code]},
-                         {'Message', [Message]},
-                         {'Resource', [wrq:path(RD)]},
-                         {'RequestId', [""]}]}],
-    respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+-spec api_error(error_reason(), #wm_reqdata{}, #stanchion_context{}) ->
+          {{halt, 400..599}, string(), #stanchion_context{}}.
+api_error(Error, RD, Ctx) ->
+    StatusCode = riak_cs_aws_response:status_code(Error),
+    ErrorDesc = jsx:encode(#{error_tag => base64:encode(term_to_binary(Error)),
+                             resource => wrq:path(RD)}),
+    {{halt, StatusCode}, wrq:set_resp_body(ErrorDesc, RD), Ctx}.
 
 
 list_buckets_response(BucketData, RD, Ctx) ->
@@ -115,15 +45,5 @@ list_buckets_response(BucketData, RD, Ctx) ->
                   || {Bucket, Owner} <- BucketData],
     Contents = [{'Buckets', BucketsDoc}],
     XmlDoc = [{'ListBucketsResult',  Contents}],
-    respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+    riak_cs_aws_response:respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
-error_string_to_atom("{r_val_unsatisfied," ++ _) ->
-    {unsatisfied_constraint, "r"};
-error_string_to_atom("{w_val_unsatisfied," ++ _) ->
-    {unsatisfied_constraint, "w"};
-error_string_to_atom("{pr_val_unsatisfied," ++ _) ->
-    {unsatisfied_constraint, "pr"};
-error_string_to_atom("{pw_val_unsatisfied," ++ _) ->
-    {unsatisfied_constraint, "pw"};
-error_string_to_atom(_) ->
-    unknown_error.

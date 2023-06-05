@@ -693,24 +693,24 @@ serialized_bucket_op(Bucket, BagId, Arg, User, BucketOp, StatsKey) ->
 handle_stanchion_response(409, ErrorDoc, Op, Bucket)
   when Op =:= delete orelse Op =:= create ->
 
-    Value = riak_cs_aws_response:xml_error_code(ErrorDoc),
-    case {lists:flatten(Value), Op} of
-        {"MultipartUploadRemaining", delete} ->
+    {error, Tag} = riak_cs_aws_response:velvet_response(ErrorDoc),
+    case {Tag, Op} of
+        {remaining_multipart_upload, delete} ->
             logger:error("Concurrent multipart upload might have"
                          " happened on deleting bucket '~s'.", [Bucket]),
             {error, remaining_multipart_upload};
-        {"MultipartUploadRemaining", create} ->
+        {remaining_multipart_upload, create} ->
             %% might be security issue
             logger:critical("Multipart upload remains in deleted bucket (~s)"
                             " Clean up the deleted buckets now.", [Bucket]),
             %% Broken, returns 500
             throw({remaining_multipart_upload_on_deleted_bucket, Bucket});
         _Other ->
-            riak_cs_aws_response:error_response(ErrorDoc)
+            riak_cs_aws_response:velvet_response(ErrorDoc)
     end;
 handle_stanchion_response(_C, ErrorDoc, _M, _) ->
     %% logger:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
-    riak_cs_aws_response:error_response(ErrorDoc).
+    riak_cs_aws_response:velvet_response(ErrorDoc).
 
 %% @doc Update a bucket record to convert the name from binary
 %% to string if necessary.
