@@ -62,6 +62,7 @@
          timestamp_to_milliseconds/1,
          update_obj_value/2,
          pid_to_binary/1,
+         parse_x509_cert/1,
          from_bucket_name/1,
          to_bucket_name/2,
          big_end_key/1,
@@ -86,6 +87,7 @@
 
 
 -include("riak_cs.hrl").
+-include_lib("public_key/include/public_key.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -614,6 +616,28 @@ camel_case(String) when is_list(String) ->
 -spec capitalize(string()) -> string().
 capitalize("") -> "";
 capitalize([H|T]) -> string:to_upper([H]) ++ T.
+
+
+-spec parse_x509_cert(binary()) -> {ok, [#'OTPCertificate'{}]} | {error, term()}.
+parse_x509_cert(X509Certificate) ->
+    try
+        CC = public_key:pem_decode(
+               iolist_to_binary(["-----BEGIN CERTIFICATE-----\n",
+                                 X509Certificate,
+                                 "\n-----END CERTIFICATE-----\n"])),
+        parse_certs(CC, [])
+    catch
+        _E:R ->
+            {error, R}
+    end.
+
+parse_certs([], Q) ->
+    {ok, lists:reverse(Q)};
+parse_certs([{'Certificate', EntryData, _encrypted_or_not} | Rest], Q) ->
+    Entry = public_key:pkix_decode_cert(EntryData, otp),
+    parse_certs(Rest, [Entry | Q]).
+
+
 
 
 -ifdef(TEST).

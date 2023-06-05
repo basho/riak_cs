@@ -256,7 +256,9 @@ finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
 do_action("AssumeRoleWithSAML",
           Form, RD, Ctx = #rcs_sts_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2, #{}, Form),
+    RequestId = riak_cs_wm_utils:make_request_id(),
+    Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2,
+                        #{request_id => RequestId}, Form),
     case riak_cs_sts:assume_role_with_saml(Specs, RcPid) of
         {ok, #{assumed_role_user := #assumed_role_user{assumed_role_id = AssumedRoleId} = AssumedRoleUser,
                audience := Audience,
@@ -267,7 +269,6 @@ do_action("AssumeRoleWithSAML",
                source_identity := SourceIdentity,
                subject := Subject,
                subject_type := SubjectType}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("AssumeRoleWithSAML completed for user ~s (key_id: ~s) on request_id ~s",
                         [AssumedRoleId, Credentials#credentials.access_key_id, RequestId]),
             Doc = riak_cs_xml:to_xml(

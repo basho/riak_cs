@@ -228,10 +228,8 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
 -spec parse_saml_provider_idp_metadata(saml_provider()) ->
           {ok, saml_provider()} | {error, invalid_metadata_document}.
 parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} = P) ->
-    ?LOG_DEBUG("Are we here, ~p", [binary_to_list(D)]),
     {#xmlElement{content = RootContent,
                  attributes = RootAttributes}, _} = xmerl_scan:string(binary_to_list(D)),
-    ?LOG_DEBUG("Are we here"),
     [#xmlElement{content = IDPSSODescriptorContent}|_] =
         riak_cs_xml:find_elements('IDPSSODescriptor', RootContent),
     [#xmlElement{content = _ExtensionsContent}|_] =
@@ -239,15 +237,19 @@ parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} 
 
     [#xmlAttribute{value = EntityIDS}|_] = [A || A = #xmlAttribute{name = 'entityID'} <- RootAttributes],
     [#xmlAttribute{value = ValidUntilS}|_] = [A || A = #xmlAttribute{name = 'validUntil'} <- RootAttributes],
-    Certificates = extract_certs(
-                     riak_cs_xml:find_elements('KeyDescriptor', IDPSSODescriptorContent), []),
-    ?LOG_DEBUG("Are we here"),
-    {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
-                             valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
-                             certificates = Certificates}}.
+    case extract_certs(
+           riak_cs_xml:find_elements('KeyDescriptor', IDPSSODescriptorContent), []) of
+        {ok, Certs} ->
+            {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
+                                     valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
+                                     certificates = Certs}};
+        {error, Reason} ->
+            logger:warning("Problem parsing certificate in IdP metadata: ~p", [Reason]),
+            {error, invalid_metadata_document}
+    end.
 
 extract_certs([], Q) ->
-    Q;
+    {ok, Q};
 extract_certs([#xmlElement{content = RootContent,
                            attributes = RootAttributes} | Rest], Q) ->
     [#xmlElement{content = KeyInfoContent}|_] = riak_cs_xml:find_elements('ds:KeyInfo', RootContent),
@@ -255,9 +257,13 @@ extract_certs([#xmlElement{content = RootContent,
     [#xmlElement{content = X509CertificateContent}|_] = riak_cs_xml:find_elements('ds:X509Certificate', X509DataContent),
     [#xmlText{value = CertDataS}] = [T || T = #xmlText{} <- X509CertificateContent],
     [#xmlAttribute{value = TypeS}|_] = [A || A = #xmlAttribute{name = use} <- RootAttributes],
-    _ = [encryption, signing],
-    Type = list_to_existing_atom(TypeS),
-    extract_certs(Rest, [{Type, list_to_binary(CertDataS)} | Q]).
+    Type = list_to_atom(TypeS),
+    case riak_cs_utils:parse_x509_cert(list_to_binary(CertDataS)) of
+        {ok, Certs} ->
+            extract_certs(Rest, [{Type, Certs} | Q]);
+        ER ->
+            ER
+    end.
 
 
 

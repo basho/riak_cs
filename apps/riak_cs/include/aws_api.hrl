@@ -22,6 +22,8 @@
 -ifndef(RIAK_CS_S3_API_HRL).
 -define(RIAK_CS_S3_API_HRL, included).
 
+-include_lib("public_key/include/public_key.hrl").
+
 -define(S3_ROOT_HOST, "s3.amazonaws.com").
 -define(IAM_ROOT_HOST, "iam.amazonaws.com").
 
@@ -221,7 +223,7 @@
                           , create_date = os:system_time(millisecond) :: non_neg_integer()
                           , valid_until :: undefined | non_neg_integer()
                           , entity_id :: undefined | binary()
-                          , certificates :: undefined | [{signing|encryption, binary()}]
+                          , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}}]
                           }
        ).
 -type saml_provider() :: #saml_provider_v1{}.

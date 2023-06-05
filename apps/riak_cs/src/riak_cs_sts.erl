@@ -157,7 +157,8 @@ check_role(#{riak_client := RcPid,
 
 parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
+parse_saml_assertion_claims(#{specs := #{request_id := RequestId,
+                                         principal_arn := _PrincipalArn,
                                          saml_assertion := SAMLAssertion_}} = State0) ->
     SAMLAssertion = base64:decode(SAMLAssertion_),
     {#xmlElement{content = RootContent}, _} =
@@ -227,20 +228,26 @@ parse_saml_assertion_claims(#{specs := #{principal_arn := _PrincipalArn,
         find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/Role",
                                           AttributeStatementContent),
 
-
-    State1 = State0#{status => ok,
-                     issuer => list_to_binary(Issuer),
-                     signature => #{signature_algorithm => sign_alg_to_atom(SignatureAlgorithm),
-                                    signature_value => list_to_binary(SignatureValue),
-                                    digest_algorithm => digest_alg_to_atom(DigestAlgorithm),
-                                    digest_value => list_to_binary(DigestValue),
-                                    certificate => list_to_binary(X509Certificate)},
-                     subject => list_to_binary(NameID),
-                     subject_type => list_to_binary(SubjectType)},
-    maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
-                             {source_identity, maybe_list_to_binary(SourceIdentity)},
-                             {session_duration, maybe_list_to_integer(SessionDuration)},
-                             {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1).
+    case riak_cs_utils:parse_x509_cert(X509Certificate) of
+        {ok, Certificates} ->
+            State1 = State0#{status => ok,
+                             issuer => list_to_binary(Issuer),
+                             signature => #{signature_algorithm => sign_alg_to_atom(SignatureAlgorithm),
+                                            signature_value => list_to_binary(SignatureValue),
+                                            digest_algorithm => digest_alg_to_atom(DigestAlgorithm),
+                                            digest_value => list_to_binary(DigestValue),
+                                            certificates => Certificates},
+                             subject => list_to_binary(NameID),
+                             subject_type => list_to_binary(SubjectType)},
+            maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
+                                     {source_identity, maybe_list_to_binary(SourceIdentity)},
+                                     {session_duration, maybe_list_to_integer(SessionDuration)},
+                                     {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1);
+        {error, Reason} ->
+            logger:warning("Problem parsong certificate in SAML assertion in AssumeRoleWithSAML call"
+                           " with request_id ~s: !p", [RequestId, Reason]),
+            State0#{status => {error, idp_rejected_claim}}
+    end.
 
 attr_value(A, AA) ->
     case [V || #xmlAttribute{name = Name, value = V} <- AA, Name == A] of
@@ -286,15 +293,30 @@ check_with_saml_provider(#{riak_client := RcPid,
     {_, IssuerHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(Issuer)),
     case riak_cs_iam:find_saml_provider(#{entity_id => list_to_binary(IssuerHostS)}, RcPid) of
         {ok, SP} ->
-            State#{status => check_assertion_certificate(Signature, SP)};
+            State#{status => check_assertion_signature(Signature, SP)};
         {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
-check_assertion_certificate(Signature, ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
-    ?LOG_DEBUG("STUB ~p ~p", [Signature, ProviderCerts]),
-    
-    ok.
+check_assertion_signature(#{signature_value := SignatureValue,
+                            digest_value := DigestValue},
+                          ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
+    SigningCerts = lists:flatten([C || {signing, C} <- ProviderCerts]),
+    case lists:any(
+           fun(#'OTPCertificate'{
+                  tbsCertificate =
+                      #'OTPTBSCertificate'{
+                         subjectPublicKeyInfo =
+                             #'OTPSubjectPublicKeyInfo'{
+                                subjectPublicKey = PubKey}}}) ->
+                   true == public_key:verify(DigestValue, none, SignatureValue, PubKey)
+           end,
+           SigningCerts) of
+        true ->
+            ok;
+        false ->
+            {error, idp_rejected_claim}
+    end.
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;

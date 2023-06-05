@@ -402,10 +402,10 @@ do_action("CreateSAMLProvider",
           Form, RD, Ctx = #rcs_iam_context{response_module = ResponseMod}) ->
     Specs = finish_tags(
               lists:foldl(fun create_saml_provider_fields_filter/2, #{}, Form)),
+    RequestId = riak_cs_wm_utils:make_request_id(),
 
-    case riak_cs_iam:create_saml_provider(Specs) of
+    case riak_cs_iam:create_saml_provider(Specs#{request_id => RequestId}) of
         {ok, {Arn, Tags}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
                         [maps:get(name, Specs), Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(

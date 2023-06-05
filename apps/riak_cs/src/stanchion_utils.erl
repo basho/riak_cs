@@ -177,7 +177,6 @@ create_role(Fields, Pbc) ->
         true ->
             save_role(Role, Pbc);
         false ->
-            ?LOG_DEBUG("Not role exist, already!"),
             {error, role_already_exists}
     end.
 
@@ -295,7 +294,7 @@ delete_policy(Arn, Pbc) ->
     end.
 
 
--spec create_saml_provider(maps:map(), pid()) -> {ok, string()} | {error, term()}.
+-spec create_saml_provider(maps:map(), pid()) -> {ok, {string(), [tag()]}} | {error, term()}.
 create_saml_provider(Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{name = Name,
                             saml_metadata_document = A} =
@@ -318,7 +317,6 @@ saml_provider_name_available(Name) ->
     Res = riak_cs_iam:find_saml_provider(#{name => Name}, Pbc) == {error, notfound},
     riak_cs_riak_client:checkin(Pbc),
     Res.
-
 
 save_saml_provider(P0 = ?IAM_SAML_PROVIDER{name = Name,
                                            entity_id = EntityID,
