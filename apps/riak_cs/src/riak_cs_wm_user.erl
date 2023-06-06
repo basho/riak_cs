@@ -67,9 +67,9 @@ init(Config) ->
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
     Api = riak_cs_config:api(),
     RespModule = riak_cs_config:response_module(Api),
-    {ok, #rcs_s3_context{auth_bypass=AuthBypass,
-                         api=Api,
-                         response_module=RespModule}}.
+    {ok, #rcs_web_context{auth_bypass = AuthBypass,
+                          api = Api,
+                          response_module = RespModule}}.
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
@@ -81,13 +81,13 @@ allowed_methods(RD, Ctx) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
-forbidden(RD, Ctx=#rcs_s3_context{auth_bypass=AuthBypass}) ->
+forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     Method = wrq:method(RD),
     AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
               riak_cs_config:anonymous_user_creation())
         orelse AuthBypass,
-    Next = fun(NewRD, NewCtx=#rcs_s3_context{user=User}) ->
+    Next = fun(NewRD, NewCtx = #rcs_web_context{user = User}) ->
                    forbidden(wrq:method(RD),
                              NewRD,
                              NewCtx,
@@ -100,15 +100,16 @@ forbidden(RD, Ctx=#rcs_s3_context{auth_bypass=AuthBypass}) ->
 
 handle_user_auth_response({false, _RD, Ctx} = Ret) ->
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                [], [riak_cs_wm_utils:extract_name(Ctx#rcs_s3_context.user), <<"false">>]),
+                                [], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"false">>]),
     Ret;
 handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                [Code], [riak_cs_wm_utils:extract_name(Ctx#rcs_s3_context.user), <<"true">>]),
+                                [Code], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"true">>]),
     Ret;
 handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                [-1], [riak_cs_wm_utils:extract_name(Ctx#rcs_s3_context.user), <<"true">>]),
+    riak_cs_dtrace:dt_wm_return(
+      ?MODULE, <<"forbidden">>,
+      [-1], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"true">>]),
     Ret.
 
 -spec content_types_accepted(term(), term()) ->
@@ -125,9 +126,9 @@ post_is_create(RD, Ctx) -> {true, RD, Ctx}.
 
 create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 
--spec accept_json(#wm_reqdata{}, #rcs_s3_context{}) ->
+-spec accept_json(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_json(RD, Ctx=#rcs_s3_context{user = undefined}) ->
+accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
@@ -148,7 +149,7 @@ accept_json(RD, Ctx) ->
 
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_xml(RD, Ctx=#rcs_s3_context{user=undefined}) ->
+accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
@@ -182,28 +183,28 @@ accept_xml(RD, Ctx) ->
 
     end.
 
-produce_json(RD, #rcs_s3_context{user=User}=Ctx) ->
+produce_json(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_json">>),
     Body = riak_cs_json:to_json(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
-produce_xml(RD, #rcs_s3_context{user=User}=Ctx) ->
+produce_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
     Body = riak_cs_xml:to_xml(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
-finish_request(RD, Ctx=#rcs_s3_context{riak_client=undefined}) ->
+finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
-finish_request(RD, Ctx=#rcs_s3_context{riak_client=RcPid}) ->
+finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(RcPid),
     riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
-    {true, RD, Ctx#rcs_s3_context{riak_client=undefined}}.
+    {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
@@ -211,7 +212,7 @@ finish_request(RD, Ctx=#rcs_s3_context{riak_client=RcPid}) ->
 
 -spec admin_check(boolean(), term(), term()) -> {boolean(), term(), term()}.
 admin_check(true, RD, Ctx) ->
-    {false, RD, Ctx#rcs_s3_context{user=undefined}};
+    {false, RD, Ctx#rcs_web_context{user = undefined}};
 admin_check(false, RD, Ctx) ->
     riak_cs_wm_utils:deny_access(RD, Ctx).
 
@@ -243,20 +244,21 @@ forbidden(_Method, RD, Ctx, User, UserPathKey, _) ->
 
 get_user({false, RD, Ctx}, UserPathKey) ->
     handle_get_user_result(
-      riak_cs_user:get_user(UserPathKey, Ctx#rcs_s3_context.riak_client),
+      riak_cs_user:get_user(UserPathKey, Ctx#rcs_web_context.riak_client),
       RD,
       Ctx);
 get_user(AdminCheckResult, _) ->
     AdminCheckResult.
 
 handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
-    {false, RD, Ctx#rcs_s3_context{user=User, user_object=UserObj}};
+    {false, RD, Ctx#rcs_web_context{user = User,
+                                    user_object = UserObj}};
 handle_get_user_result({error, Reason}, RD, Ctx) ->
     logger:warning("Failed to fetch user record. KeyId: ~p"
                    " Reason: ~p", [user_key(RD), Reason]),
     riak_cs_aws_response:api_error(invalid_access_key_id, RD, Ctx).
 
-update_user(UpdateItems, RD, Ctx = #rcs_s3_context{user = User}) ->
+update_user(UpdateItems, RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
     handle_update_result(UpdateUserResult, RD, Ctx).
@@ -283,12 +285,11 @@ str_to_status(<<"disabled">>) -> disabled.
 
 handle_update_result({false, _User}, _RD, _Ctx) ->
     {halt, 200};
-handle_update_result({true, User}, _RD, Ctx) ->
-    #rcs_s3_context{user_object=UserObj,
-                    riak_client=RcPid} = Ctx,
+handle_update_result({true, User}, _RD, #rcs_web_context{user_object = UserObj,
+                                                         riak_client = RcPid}) ->
     riak_cs_user:update_user(User, UserObj, RcPid).
 
-set_resp_data(ContentType, RD, #rcs_s3_context{user=User}) ->
+set_resp_data(ContentType, RD, #rcs_web_context{user = User}) ->
     UserDoc = format_user_record(User, ContentType),
     wrq:set_resp_body(UserDoc, RD).
 

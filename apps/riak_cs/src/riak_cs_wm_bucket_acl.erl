@@ -56,7 +56,7 @@ stats_prefix() -> bucket_acl.
 allowed_methods() ->
     ['GET', 'PUT'].
 
--spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {false, #wm_reqdata{}, #rcs_web_context{}}.
 malformed_request(RD, Ctx) ->
     case riak_cs_wm_utils:has_acl_header_and_body(RD) of
         true ->
@@ -65,12 +65,12 @@ malformed_request(RD, Ctx) ->
             {false, RD, Ctx}
     end.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) ->
-          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
@@ -80,16 +80,16 @@ content_types_accepted(RD, Ctx) ->
             {[{Media, add_acl_to_context_then_accept}], RD, Ctx}
     end.
 
--spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_web_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_acl, true, RD, Ctx).
 
 
--spec to_xml(#wm_reqdata{}, #rcs_s3_context{}) ->
-          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
-to_xml(RD, Ctx=#rcs_s3_context{user=User,
-                               bucket=Bucket,
-                               riak_client=RcPid}) ->
+-spec to_xml(#wm_reqdata{}, #rcs_web_context{}) ->
+          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+to_xml(RD, Ctx = #rcs_web_context{user = User,
+                                  bucket = Bucket,
+                                  riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
@@ -107,12 +107,12 @@ to_xml(RD, Ctx=#rcs_s3_context{user=User,
     end.
 
 %% @doc Process request body on `PUT' request.
--spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
-accept_body(RD, Ctx=#rcs_s3_context{user=User,
-                                    user_object=UserObj,
-                                    acl=AclFromHeadersOrDefault,
-                                    bucket=Bucket,
-                                    riak_client=RcPid}) ->
+-spec accept_body(#wm_reqdata{}, #rcs_web_context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+accept_body(RD, Ctx = #rcs_web_context{user = User,
+                                       user_object = UserObj,
+                                       acl = AclFromHeadersOrDefault,
+                                       bucket = Bucket,
+                                       riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>,
                                       [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),

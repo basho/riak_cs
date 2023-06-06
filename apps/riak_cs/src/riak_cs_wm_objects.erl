@@ -44,9 +44,9 @@
 
 -define(RIAKCPOOL, bucket_list_pool).
 
--spec init(#rcs_s3_context{}) -> {ok, #rcs_s3_context{}}.
+-spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
 init(Ctx) ->
-    {ok, Ctx#rcs_s3_context{rc_pool=?RIAKCPOOL}}.
+    {ok, Ctx#rcs_web_context{rc_pool=?RIAKCPOOL}}.
 
 -spec stats_prefix() -> list_objects.
 stats_prefix() -> list_objects.
@@ -58,21 +58,21 @@ allowed_methods() ->
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
--spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
 
--spec api_request(#wm_reqdata{}, #rcs_s3_context{}) -> {ok, ?LORESP{}} | {error, term()}.
-api_request(RD, Ctx = #rcs_s3_context{bucket = Bucket,
-                                      riak_client = RcPid,
-                                      user = User}) ->
+-spec api_request(#wm_reqdata{}, #rcs_web_context{}) -> {ok, ?LORESP{}} | {error, term()}.
+api_request(RD, Ctx = #rcs_web_context{bucket = Bucket,
+                                       riak_client = RcPid,
+                                       user = User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_keys">>, [], [UserName, Bucket]),
     Res = riak_cs_api:list_objects(
             objects,
             [B || B <- riak_cs_bucket:get_buckets(User),
                   B?RCS_BUCKET.name =:= Bucket],
-            Ctx#rcs_s3_context.bucket,
+            Ctx#rcs_web_context.bucket,
             get_max_keys(RD),
             get_options(RD),
             RcPid),

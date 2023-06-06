@@ -56,7 +56,7 @@
 %% Public API
 %% ===================================================================
 
--spec identify(#wm_reqdata{}, #rcs_s3_context{}) ->
+-spec identify(#wm_reqdata{}, #rcs_web_context{}) ->
           {string() | undefined,
            string() | {v4, v4_attrs()} | undefined} |
           {failed, Reason::atom()}.
@@ -68,7 +68,7 @@ identify(RD, _Ctx) ->
             parse_auth_header(AuthHeader)
     end.
 
--spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, #wm_reqdata{}, rcs_aws_context()) ->
+-spec authenticate(rcs_user(), string() | {v4, v4_attrs()}, #wm_reqdata{}, #rcs_web_context{}) ->
           ok | {error, atom()}.
 authenticate(User, Signature, RD, Ctx) ->
     case wrq:get_req_header("authorization", RD) of
@@ -84,7 +84,7 @@ authenticate(User, Signature, RD, Ctx) ->
             end
     end.
 
--spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), rcs_aws_context()) ->
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_web_context{}) ->
           ok | {error, atom()}.
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);

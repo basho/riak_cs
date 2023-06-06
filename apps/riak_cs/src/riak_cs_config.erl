@@ -23,6 +23,7 @@
 
 -export([
          warnings/0,
+         host_id/0,
          admin_creds/0,
          anonymous_user_creation/0,
          api/0,
@@ -145,6 +146,10 @@ warnings() ->
 %% ===================================================================
 %% General config options
 %% ===================================================================
+
+-spec host_id() -> string().
+host_id() ->
+    get_env(riak_cs, host_id, binary_to_list(base64:encode("riak_cs-is-not-amazonaws.com"))).
 
 %% @doc Return the value of the `anonymous_user_creation' application
 %% environment variable.

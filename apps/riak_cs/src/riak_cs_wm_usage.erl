@@ -246,13 +246,14 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
     end,
     {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
     Etag = riak_cs_utils:etag_from_binary_no_quotes(riak_cs_utils:md5(Body)),
-    {Etag, NewRD, NewCtx#ctx{etag=Etag}};
-generate_etag(RD, #ctx{etag=Etag}=Ctx) ->
+    {Etag, NewRD, NewCtx#ctx{etag = Etag}};
+generate_etag(RD, #ctx{etag = Etag} = Ctx) ->
     {Etag, RD, Ctx}.
 
 forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
-    BogusContext = #rcs_s3_context{auth_bypass=AuthBypass, riak_client=RcPid},
-    Next = fun(NewRD, #rcs_s3_context{user=User}) ->
+    BogusContext = #rcs_web_context{auth_bypass = AuthBypass,
+                                    riak_client = RcPid},
+    Next = fun(NewRD, #rcs_web_context{user = User}) ->
                    forbidden(NewRD, Ctx, User, AuthBypass)
            end,
     Conv2Ctx = fun(_) -> Ctx end,

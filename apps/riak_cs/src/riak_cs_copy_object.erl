@@ -45,8 +45,8 @@
 %% * x-amz-copy-source-if-* stuff
 %% * bucket/object acl
 %% * bucket policy
--spec test_condition_and_permission(riak_client(), lfs_manifest(), #wm_reqdata{}, #rcs_s3_context{}) ->
-          {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec test_condition_and_permission(riak_client(), lfs_manifest(), #wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 
     ETag = riak_cs_manifest:etag(SrcManifest),
@@ -61,11 +61,11 @@ test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
     end.
 
 %% @doc tests permission on acl, policy
--spec authorize_on_src(riak_client(), lfs_manifest(), #wm_reqdata{}, #rcs_s3_context{}) ->
-          {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec authorize_on_src(riak_client(), lfs_manifest(), #wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize_on_src(RcPid, SrcManifest, RD,
-                 #rcs_s3_context{auth_module = AuthMod,
-                                 local_context = LocalCtx} = Ctx) ->
+                 #rcs_web_context{auth_module = AuthMod,
+                                  local_context = LocalCtx} = Ctx) ->
     {SrcBucket, SrcKey} = SrcManifest?MANIFEST.bkey,
     {ok, SrcBucketObj} = riak_cs_bucket:fetch_bucket_object(SrcBucket, RcPid),
     {ok, SrcBucketAcl} = riak_cs_acl:bucket_acl(SrcBucketObj),
@@ -86,10 +86,10 @@ authorize_on_src(RcPid, SrcManifest, RD,
                                          key = SrcKey,
                                          bucket_object = SrcBucketObj,
                                          manifest = SrcManifest},
-    OtherCtx = Ctx#rcs_s3_context{local_context = OtherLocalCtx,
-                                  acl = SrcBucketAcl,
-                                  user = User,
-                                  user_object = UserObj},
+    OtherCtx = Ctx#rcs_web_context{local_context = OtherLocalCtx,
+                                   acl = SrcBucketAcl,
+                                   user = User,
+                                   user_object = UserObj},
 
     %% Build fake ReqData for checking read access to the src object
     %% TODO: use unicode module for for key? or is this encoded?

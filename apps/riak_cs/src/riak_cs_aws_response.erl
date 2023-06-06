@@ -259,8 +259,8 @@ status_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
     503.
 
--spec respond(term(), #wm_reqdata{}, #rcs_s3_context{}) ->
-                     {binary(), #wm_reqdata{}, #rcs_s3_context{}}.
+-spec respond(term(), #wm_reqdata{}, #rcs_web_context{}) ->
+                     {binary(), #wm_reqdata{}, #rcs_web_context{}}.
 respond(?LBRESP{} = Response, RD, Ctx) ->
     {riak_cs_xml:to_xml(Response), RD, Ctx};
 respond({ok, ?LORESP{} = Response}, RD, Ctx) ->
@@ -280,18 +280,16 @@ respond(StatusCode, Body, ReqData, Ctx) ->
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
 api_error(Error, RD, Ctx) when is_atom(Error) ->
-    error_response(Error,
-                   status_code(Error),
+    error_response(status_code(Error),
                    error_code(Error),
                    error_message(Error),
                    RD,
                    Ctx);
-api_error({Tag, _}=Error, RD, Ctx)
+api_error({Tag, _} = Error, RD, Ctx)
   when Tag =:= riak_connect_failed orelse
        Tag =:= malformed_policy_version orelse
        Tag =:= auth_not_supported ->
-    error_response(Tag,
-                   status_code(Error),
+    error_response(status_code(Error),
                    error_code(Error),
                    error_message(Error),
                    RD,
@@ -307,80 +305,69 @@ api_error(stanchion_recovery_failure, RD, Ctx) ->
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
-error_response(ErrorTag, StatusCode, Code, Message, RD, Ctx) ->
+error_response(StatusCode, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
-                         {'Message', [Message]},
-                         {'Resource', [error_resource(ErrorTag, RD)]},
-                         {'RequestId', [""]}]}],
+                         {'Message', [Message]}
+                        ] ++ common_response_items(Ctx)}
+             ],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 -spec velvet_response(string()) -> {error, error_reason()}.
 velvet_response(Response) ->
-    ?LOG_DEBUG("aaa ~p", [Response]),
+    ?LOG_DEBUG("AAAAaaa ~p", [Response]),
     #{error_tag := Tag,
       resource := _Resource} = jsx:decode(list_to_binary(Response), [{labels, atom}]),
     {error, binary_to_term(base64:decode(Tag))}.
 
 
-error_resource(Tag, RD)
-  when Tag =:= no_copy_source_key;
-       Tag =:= copy_source_access_denied->
-    {B, K, V} = riak_cs_copy_object:get_copy_source(RD),
-    case V of
-        ?LFS_DEFAULT_OBJECT_VERSION ->
-            <<$/, B/binary, $/, K/binary>>;
-        _ ->
-            <<$/, B/binary, $/, K/binary, $/, V/binary>>
-    end;
+%% error_resource(Tag, RD)
+%%   when Tag =:= no_copy_source_key;
+%%        Tag =:= copy_source_access_denied->
+%%     {B, K, V} = riak_cs_copy_object:get_copy_source(RD),
+%%     case V of
+%%         ?LFS_DEFAULT_OBJECT_VERSION ->
+%%             <<$/, B/binary, $/, K/binary>>;
+%%         _ ->
+%%             <<$/, B/binary, $/, K/binary, $/, V/binary>>
+%%     end;
 
-error_resource(_Tag, RD) ->
-    {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
-    OrigResource.
+%% error_resource(_Tag, RD) ->
+%%     {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
+%%     OrigResource.
 
 toomanybuckets_response(Current, BucketLimit, RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(toomanybuckets)]},
-               {'Message', [error_message(toomanybuckets)]},
-               {'CurrentNumberOfBuckets', [Current]},
-               {'AllowedNumberOfBuckets', [BucketLimit]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(toomanybuckets), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code(toomanybuckets)]},
+                         {'Message', [error_message(toomanybuckets)]},
+                         {'CurrentNumberOfBuckets', [Current]},
+                         {'AllowedNumberOfBuckets', [BucketLimit]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(toomanybuckets), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 invalid_argument_response(Name, Value, RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(invalid_argument)]},
-               {'Message', [error_message({invalid_argument, Name})]},
-               {'ArgumentName', [Name]},
-               {'ArgumentValue', [Value]},
-               {'RequestId', [""]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(invalid_argument), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code(invalid_argument)]},
+                         {'Message', [error_message({invalid_argument, Name})]},
+                         {'ArgumentName', [Name]},
+                         {'ArgumentValue', [Value]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 key_too_long(Len, RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code({key_too_long, Len})]},
-               {'Message', [error_message({key_too_long, Len})]},
-               {'Size', [Len]},
-               {'MaxSizeAllowed', [riak_cs_config:max_key_length()]},
-               {'RequestId', [""]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(invalid_argument), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code({key_too_long, Len})]},
+                         {'Message', [error_message({key_too_long, Len})]},
+                         {'Size', [Len]},
+                         {'MaxSizeAllowed', [riak_cs_config:max_key_length()]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 stanchion_recovery_failure(RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(stanchion_recovery_failure)]},
-               {'Message', [error_message(stanchion_recovery_failure)]},
-               {'RequestId', [""]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(invalid_argument), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code(stanchion_recovery_failure)]},
+                         {'Message', [error_message(stanchion_recovery_failure)]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 copy_object_response(Manifest, RD, Ctx) ->
     copy_response(Manifest, 'CopyObjectResult', RD, Ctx).
@@ -391,9 +378,10 @@ copy_part_response(Manifest, RD, Ctx) ->
 copy_response(Manifest, TagName, RD, Ctx) ->
     LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
     ETag = riak_cs_manifest:etag(Manifest),
-    XmlDoc = [{TagName,
-               [{'LastModified', [LastModified]},
-                {'ETag', [ETag]}]}],
+    XmlDoc = [{TagName, [{'LastModified', [LastModified]},
+                         {'ETag', [ETag]}
+                        ] ++ common_response_items(Ctx)}
+             ],
     respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 
@@ -402,23 +390,30 @@ no_such_upload_response(InternalUploadId, RD, Ctx) ->
                    {raw, ReqUploadId} -> ReqUploadId;
                    _ -> base64url:encode(InternalUploadId)
                end,
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(no_such_upload)]},
-               {'Message', [error_message(no_such_upload)]},
-               {'UploadId', [UploadId]},
-               {'HostId', ["host-id"]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(no_such_upload), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code(no_such_upload)]},
+                         {'Message', [error_message(no_such_upload)]},
+                         {'UploadId', [UploadId]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(no_such_upload), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 invalid_digest_response(ContentMd5, RD, Ctx) ->
-    XmlDoc = {'Error',
-              [
-               {'Code', [error_code(invalid_digest)]},
-               {'Message', [error_message(invalid_digest)]},
-               {'Content-MD5', [ContentMd5]},
-               {'HostId', ["host-id"]}
-              ]},
-    Body = riak_cs_xml:to_xml([XmlDoc]),
-    respond(status_code(invalid_digest), Body, RD, Ctx).
+    XmlDoc = [{'Error', [{'Code', [error_code(invalid_digest)]},
+                         {'Message', [error_message(invalid_digest)]},
+                         {'Content-MD5', [ContentMd5]}
+                        ] ++ common_response_items(Ctx)}
+             ],
+    respond(status_code(invalid_digest), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+
+
+common_response_items(#rcs_web_context{request_id = RequestId,
+                                       user = User}) ->
+    [{'RequestId', [binary_to_list(RequestId)]},
+     {'AWSAccessKeyId', [user_access_key(User)]},
+     {'HostId', [riak_cs_config:host_id()]}
+    ].
+
+user_access_key(?RCS_USER{key_id = KeyId}) when KeyId /= undefined ->
+    KeyId;
+user_access_key(_) ->
+    "NoKeyId".

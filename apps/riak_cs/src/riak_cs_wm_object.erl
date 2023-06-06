@@ -57,15 +57,15 @@
 -include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--spec init(#rcs_s3_context{}) -> {ok, #rcs_s3_context{}}.
+-spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
 init(Ctx) ->
-    {ok, Ctx#rcs_s3_context{local_context=#key_context{}}}.
+    {ok, Ctx#rcs_web_context{local_context = #key_context{}}}.
 
 -spec stats_prefix() -> object.
 stats_prefix() -> object.
 
--spec malformed_request(#wm_reqdata{}, #rcs_s3_context{}) -> {false, #wm_reqdata{}, #rcs_s3_context{}}.
-malformed_request(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
+-spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {false, #wm_reqdata{}, #rcs_web_context{}}.
+malformed_request(RD, #rcs_web_context{response_module=ResponseMod} = Ctx) ->
     case riak_cs_wm_utils:extract_key(RD, Ctx) of
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx);
@@ -88,15 +88,16 @@ malformed_request(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
 %% object ACL and compare the permission requested with the permission
 %% granted, and allow or deny access. Returns a result suitable for
 %% directly returning from the {@link forbidden/2} webmachine export.
--spec authorize(#wm_reqdata{}, #rcs_s3_context{}) ->
-    {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_s3_context{}}.
-authorize(RD, Ctx0=#rcs_s3_context{local_context=LocalCtx0,
-                                   riak_client=RcPid}) ->
+-spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
+    {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
+authorize(RD, Ctx0 = #rcs_web_context{local_context = LocalCtx0,
+                                      riak_client = RcPid}) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, false),
     LocalCtx = riak_cs_wm_utils:ensure_doc(LocalCtx0, RcPid),
-    Ctx = Ctx0#rcs_s3_context{requested_perm=RequestedAccess, local_context=LocalCtx},
+    Ctx = Ctx0#rcs_web_context{requested_perm = RequestedAccess,
+                               local_context = LocalCtx},
     authorize(RD, Ctx,
               LocalCtx#key_context.bucket_object,
               Method, LocalCtx#key_context.manifest).
@@ -116,7 +117,7 @@ allowed_methods() ->
     %% TODO: POST
     ['HEAD', 'GET', 'DELETE', 'PUT'].
 
--spec valid_entity_length(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean(), #wm_reqdata{}, #rcs_s3_context{}}.
+-spec valid_entity_length(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 valid_entity_length(RD, Ctx) ->
     MaxLen = riak_cs_lfs_utils:max_content_len(),
     case riak_cs_wm_utils:valid_entity_length(MaxLen, RD, Ctx) of
@@ -127,9 +128,9 @@ valid_entity_length(RD, Ctx) ->
             Other
     end.
 
--spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
-content_types_provided(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
-                                               riak_client=RcPid}) ->
+-spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
+content_types_provided(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
+                                                  riak_client = RcPid}) ->
     Mfst = LocalCtx#key_context.manifest,
     %% TODO:
     %% As I understand S3, the content types provided
@@ -142,7 +143,7 @@ content_types_provided(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
             ContentType = binary_to_list(Mfst?MANIFEST.content_type),
             case ContentType of
                 _ ->
-                    UpdCtx = Ctx#rcs_s3_context{local_context=UpdLocalCtx},
+                    UpdCtx = Ctx#rcs_web_context{local_context = UpdLocalCtx},
                     {[{ContentType, produce_body}], RD, UpdCtx}
             end;
        true ->
@@ -151,22 +152,22 @@ content_types_provided(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
             {[{"text/plain", produce_body}], RD, Ctx}
     end.
 
--spec generate_etag(#wm_reqdata{}, #rcs_s3_context{}) -> {string(), #wm_reqdata{}, #rcs_s3_context{}}.
-generate_etag(RD, Ctx=#rcs_s3_context{local_context=LocalCtx}) ->
+-spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) -> {string(), #wm_reqdata{}, #rcs_web_context{}}.
+generate_etag(RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
     ETag = riak_cs_manifest:etag_no_quotes(Mfst),
     {ETag, RD, Ctx}.
 
--spec last_modified(#wm_reqdata{}, #rcs_s3_context{}) -> {calendar:datetime(), #wm_reqdata{}, #rcs_s3_context{}}.
-last_modified(RD, Ctx=#rcs_s3_context{local_context=LocalCtx}) ->
+-spec last_modified(#wm_reqdata{}, #rcs_web_context{}) -> {calendar:datetime(), #wm_reqdata{}, #rcs_web_context{}}.
+last_modified(RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
     Mfst = LocalCtx#key_context.manifest,
     ErlDate = riak_cs_wm_utils:iso_8601_to_erl_date(Mfst?MANIFEST.created),
     {ErlDate, RD, Ctx}.
 
--spec produce_body(#wm_reqdata{}, #rcs_s3_context{}) ->
-          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #rcs_s3_context{}}.
-produce_body(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
-                                     response_module=ResponseMod}) ->
+-spec produce_body(#wm_reqdata{}, #rcs_web_context{}) ->
+          {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #rcs_web_context{}}.
+produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
+                                        response_module = ResponseMod}) ->
     #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
     ResourceLength = Mfst?MANIFEST.content_length,
     case parse_range(RD, ResourceLength) of
@@ -181,11 +182,11 @@ produce_body(RD, Ctx=#rcs_s3_context{local_context=LocalCtx,
             produce_body(RD, Ctx, RangeIndexes, RespRange)
     end.
 
-produce_body(RD, Ctx=#rcs_s3_context{rc_pool=RcPool,
-                                     riak_client=RcPid,
-                                     local_context=LocalCtx,
-                                     start_time=StartTime,
-                                     user=User},
+produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
+                                        riak_client = RcPid,
+                                        local_context = LocalCtx,
+                                        start_time = StartTime,
+                                        user = User},
              {Start, End}, RespRange) ->
     #key_context{get_fsm_pid = GetFsmPid,
                  manifest = ?MANIFEST{bkey = {Bucket, File},
@@ -220,7 +221,8 @@ produce_body(RD, Ctx=#rcs_s3_context{rc_pool=RcPool,
                 %% Streaming by `known_length_stream' and `StreamBody' function
                 %% will be handled *after* WM's `finish_request' callback complets.
                 %% Use `no_stats` to avoid auto stats update by `riak_cs_wm_common'.
-                {Ctx#rcs_s3_context{auto_rc_close=false, stats_key=no_stats},
+                {Ctx#rcs_web_context{auto_rc_close = false,
+                                     stats_key = no_stats},
                  {<<>>, fun() ->
                                 riak_cs_wm_utils:streaming_get(
                                   RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
@@ -251,15 +253,15 @@ parse_range(RD, ResourceLength) ->
     end.
 
 %% @doc Callback for deleting an object.
--spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) -> {true, #wm_reqdata{}, #rcs_s3_context{}}.
-delete_resource(RD, Ctx = #rcs_s3_context{local_context = LocalCtx,
-                                          riak_client = RcPid}) ->
+-spec delete_resource(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}}.
+delete_resource(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
+                                           riak_client = RcPid}) ->
     #key_context{bucket = Bucket,
                  key = Key,
                  obj_vsn = ObjVsn,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
     BFile_str = bfile_str(Bucket, Key, ObjVsn),
-    UserName = riak_cs_wm_utils:extract_name(Ctx#rcs_s3_context.user),
+    UserName = riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user),
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>,
                                    [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
@@ -275,17 +277,17 @@ handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) 
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [1], [UserName, BFile_str]),
     {true, RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     content_types_accepted(wrq:get_req_header("Content-Type", RD), RD, Ctx).
 
--spec content_types_accepted(undefined | string(), #wm_reqdata{}, #rcs_s3_context{}) ->
-          {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_accepted(undefined | string(), #wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(CT, RD, Ctx)
   when CT =:= undefined;
        CT =:= [] ->
     content_types_accepted("application/octet-stream", RD, Ctx);
-content_types_accepted(CT, RD, Ctx=#rcs_s3_context{local_context=LocalCtx0}) ->
+content_types_accepted(CT, RD, Ctx = #rcs_web_context{local_context = LocalCtx0}) ->
     %% This was shamelessly ripped out of
     %% https://github.com/basho/riak_kv/blob/0d91ca641a309f2962a216daa0cee869c82ffe26/src/riak_kv_wm_object.erl#L492
     {Media, _Params} = mochiweb_util:parse_header(CT),
@@ -293,7 +295,7 @@ content_types_accepted(CT, RD, Ctx=#rcs_s3_context{local_context=LocalCtx0}) ->
         [_Type, _Subtype] ->
             %% accept whatever the user says
             LocalCtx = LocalCtx0#key_context{putctype=Media},
-            {[{Media, add_acl_to_context_then_accept}], RD, Ctx#rcs_s3_context{local_context=LocalCtx}};
+            {[{Media, add_acl_to_context_then_accept}], RD, Ctx#rcs_web_context{local_context = LocalCtx}};
         _ ->
             %% TODO:
             %% Maybe we should have caught
@@ -310,11 +312,11 @@ content_types_accepted(CT, RD, Ctx=#rcs_s3_context{local_context=LocalCtx0}) ->
              Ctx}
     end.
 
--spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) ->
-          {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
-accept_body(RD, Ctx=#rcs_s3_context{riak_client=RcPid,
-                                    local_context=LocalCtx,
-                                    response_module=ResponseMod})
+-spec accept_body(#wm_reqdata{}, #rcs_web_context{}) ->
+          {{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+accept_body(RD, Ctx = #rcs_web_context{riak_client=RcPid,
+                                       local_context=LocalCtx,
+                                       response_module=ResponseMod})
   when LocalCtx#key_context.update_metadata == true ->
     %% zero-body put copy - just updating metadata
     #key_context{bucket=Bucket, key=Key, obj_vsn = ObjVsn, manifest=Mfst} = LocalCtx,
@@ -331,24 +333,24 @@ accept_body(RD, Ctx=#rcs_s3_context{riak_client=RcPid,
         {error, Err} ->
             ResponseMod:api_error(Err, RD, Ctx)
     end;
-accept_body(RD, #rcs_s3_context{response_module=ResponseMod} = Ctx) ->
+accept_body(RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
     case riak_cs_copy_object:get_copy_source(RD) of
         undefined ->
             handle_normal_put(RD, Ctx);
         {error, _} = Err ->
             ResponseMod:api_error(Err, RD, Ctx);
         {SrcBucket, SrcKey, SrcObjVsn} ->
-            handle_copy_put(RD, Ctx#rcs_s3_context{stats_key=[object, put_copy]},
+            handle_copy_put(RD, Ctx#rcs_web_context{stats_key = [object, put_copy]},
                             SrcBucket, SrcKey, SrcObjVsn)
     end.
 
--spec handle_normal_put(#wm_reqdata{}, #rcs_s3_context{}) ->
-    {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec handle_normal_put(#wm_reqdata{}, #rcs_web_context{}) ->
+    {{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 handle_normal_put(RD, Ctx0) ->
-    #rcs_s3_context{local_context=LocalCtx,
-                    user=User,
-                    acl=ACL,
-                    riak_client=RcPid} = Ctx0,
+    #rcs_web_context{local_context = LocalCtx,
+                     user = User,
+                     acl = ACL,
+                     riak_client = RcPid} = Ctx0,
     #key_context{bucket = Bucket,
                  key = Key,
                  obj_vsn = SuppliedVsn,
@@ -357,7 +359,7 @@ handle_normal_put(RD, Ctx0) ->
                  get_fsm_pid = GetFsmPid} = LocalCtx,
 
     EventualVsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
-    Ctx1 = Ctx0#rcs_s3_context{local_context = LocalCtx#key_context{obj_vsn = EventualVsn}},
+    Ctx1 = Ctx0#rcs_web_context{local_context = LocalCtx#key_context{obj_vsn = EventualVsn}},
 
     BFile_str = bfile_str(Bucket, Key, EventualVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
@@ -403,13 +405,13 @@ determine_object_version(Vsn0, Bucket, Key, RcPid) ->
     end.
 
 %% @doc the head is PUT copy path
--spec handle_copy_put(#wm_reqdata{}, #rcs_s3_context{}, binary(), binary(), binary()) ->
-          {boolean()|{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec handle_copy_put(#wm_reqdata{}, #rcs_web_context{}, binary(), binary(), binary()) ->
+          {boolean()|{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
-    #rcs_s3_context{local_context=LocalCtx,
-                    response_module=ResponseMod,
-                    acl=Acl,
-                    riak_client=RcPid} = Ctx,
+    #rcs_web_context{local_context = LocalCtx,
+                     response_module = ResponseMod,
+                     acl = Acl,
+                     riak_client = RcPid} = Ctx,
     %% manifest is always notfound|undefined here
     #key_context{bucket = Bucket, key = Key, obj_vsn = ObjVsn,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
@@ -452,7 +454,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
                         ETag = riak_cs_manifest:etag(DstManifest),
                         RD2 = wrq:set_resp_header("ETag", ETag, RD),
                         ResponseMod:copy_object_response(DstManifest, RD2,
-                                                         Ctx#rcs_s3_context{local_context=LocalCtx});
+                                                         Ctx#rcs_web_context{local_context = LocalCtx});
                     {true, _RD, _OtherCtx} ->
                         %% access to source object not authorized
                         %% TODO: check the return value / http status
@@ -478,15 +480,15 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
         riak_cs_riak_client:checkin(ReadRcPid)
     end.
 
--spec accept_streambody(#wm_reqdata{}, #rcs_s3_context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec accept_streambody(#wm_reqdata{}, #rcs_web_context{}, pid(), term()) -> {{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 accept_streambody(RD,
-                  Ctx=#rcs_s3_context{local_context=_LocalCtx=#key_context{size=0}},
+                  Ctx = #rcs_web_context{local_context = #key_context{size = 0}},
                   Pid,
                   {_Data, _Next}) ->
     finalize_request(RD, Ctx, Pid);
 accept_streambody(RD,
-                  Ctx=#rcs_s3_context{local_context=LocalCtx,
-                                      user=User},
+                  Ctx = #rcs_web_context{local_context = LocalCtx,
+                                         user = User},
                   Pid,
                   {Data, Next}) ->
     #key_context{bucket = Bucket,
@@ -505,12 +507,11 @@ accept_streambody(RD,
 %% TODO:
 %% We need to do some checking to make sure the bucket exists
 %% for the user who is doing this PUT
--spec finalize_request(#wm_reqdata{}, #rcs_s3_context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec finalize_request(#wm_reqdata{}, #rcs_web_context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #rcs_web_context{}}.
 finalize_request(RD,
-                 Ctx=#rcs_s3_context{local_context = LocalCtx,
-                                     response_module = ResponseMod,
-                                     user = User,
-                                     riak_client = _RcPid},
+                 Ctx = #rcs_web_context{local_context = LocalCtx,
+                                        response_module = ResponseMod,
+                                        user = User},
                  Pid) ->
     #key_context{bucket = Bucket,
                  key = Key,
@@ -539,20 +540,20 @@ finalize_request(RD,
     riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
 
-check_0length_metadata_update(Length, RD, Ctx=#rcs_s3_context{local_context=LocalCtx}) ->
+check_0length_metadata_update(Length, RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
     %% The authorize() callback has already been called, which means
     %% that ensure_doc() has been called, so the local context
     %% manifest is up-to-date: the object exists or it doesn't.
     case (not is_atom(LocalCtx#key_context.manifest) andalso
           zero_length_metadata_update_p(Length, RD)) of
         false ->
-            UpdLocalCtx = LocalCtx#key_context{size=Length},
-            {true, RD, Ctx#rcs_s3_context{local_context=UpdLocalCtx}};
+            UpdLocalCtx = LocalCtx#key_context{size = Length},
+            {true, RD, Ctx#rcs_web_context{local_context = UpdLocalCtx}};
         true ->
-            UpdLocalCtx = LocalCtx#key_context{size=Length,
-                                               update_metadata=true},
-            {true, RD, Ctx#rcs_s3_context{stats_key=[object, put_copy],
-                                          local_context=UpdLocalCtx}}
+            UpdLocalCtx = LocalCtx#key_context{size = Length,
+                                               update_metadata = true},
+            {true, RD, Ctx#rcs_web_context{stats_key = [object, put_copy],
+                                           local_context = UpdLocalCtx}}
     end.
 
 zero_length_metadata_update_p(0, RD) ->

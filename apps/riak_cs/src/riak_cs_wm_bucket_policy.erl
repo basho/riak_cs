@@ -55,13 +55,13 @@ stats_prefix() -> bucket_policy.
 allowed_methods() ->
     ['GET', 'PUT', 'DELETE'].
 
--spec content_types_provided(#wm_reqdata{}, #rcs_s3_context{}) ->
-                                    {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{"application/json", to_json}], RD, Ctx}.
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_s3_context{}) ->
-                                    {[{string(), atom()}], #wm_reqdata{}, #rcs_s3_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
@@ -72,20 +72,19 @@ content_types_accepted(RD, Ctx) ->
             {false, RD, Ctx}
     end.
 
--spec authorize(#wm_reqdata{}, #rcs_s3_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_web_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_policy, true, RD, Ctx).
 
 
--spec to_json(#wm_reqdata{}, #rcs_s3_context{}) ->
-          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
-to_json(RD, Ctx=#rcs_s3_context{start_time=_StartTime,
-                                user=User,
-                                bucket=Bucket,
-                                response_module = RespMod,
-                                riak_client=RcPid}) ->
+-spec to_json(#wm_reqdata{}, #rcs_web_context{}) ->
+          {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+to_json(RD, Ctx = #rcs_web_context{user = User,
+                                   bucket = Bucket,
+                                   response_module = RespMod,
+                                   riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
+                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
     case riak_cs_s3_policy:fetch_bucket_policy(Bucket, RcPid) of
         {ok, PolicyJson} ->
@@ -102,13 +101,14 @@ to_json(RD, Ctx=#rcs_s3_context{start_time=_StartTime,
     end.
 
 %% @doc Process request body on `PUT' request.
--spec accept_body(#wm_reqdata{}, #rcs_s3_context{}) -> {{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_s3_context{}}.
-accept_body(RD, Ctx=#rcs_s3_context{user=User,
-                                    user_object=UserObj,
-                                    bucket=Bucket,
-                                    policy_module=PolicyMod,
-                                    response_module = RespMod,
-                                    riak_client=RcPid}) ->
+-spec accept_body(#wm_reqdata{}, #rcs_web_context{}) ->
+          {{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+accept_body(RD, Ctx = #rcs_web_context{user = User,
+                                       user_object = UserObj,
+                                       bucket = Bucket,
+                                       policy_module = PolicyMod,
+                                       response_module = RespMod,
+                                       riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_policy">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
@@ -138,13 +138,13 @@ accept_body(RD, Ctx=#rcs_s3_context{user=User,
 
 
 %% @doc Callback for deleting policy.
--spec delete_resource(#wm_reqdata{}, #rcs_s3_context{}) -> {true, #wm_reqdata{}, #rcs_s3_context{}} |
-          {{halt, 200}, #wm_reqdata{}, #rcs_s3_context{}}.
-delete_resource(RD, Ctx=#rcs_s3_context{user=User,
-                                        user_object=UserObj,
-                                        bucket=Bucket,
-                                        response_module = RespMod,
-                                        riak_client=RcPid}) ->
+-spec delete_resource(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}} |
+          {{halt, 200}, #wm_reqdata{}, #rcs_web_context{}}.
+delete_resource(RD, Ctx = #rcs_web_context{user = User,
+                                           user_object = UserObj,
+                                           bucket = Bucket,
+                                           response_module = RespMod,
+                                           riak_client = RcPid}) ->
     riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
                                    [], [RD, Ctx, RcPid]),
 

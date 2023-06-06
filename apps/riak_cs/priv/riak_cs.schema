@@ -160,6 +160,12 @@
    {datatype, flag}
 ]}.
 
+%% @doc A string identifying this host. It will appear in error responses.
+{mapping, "host_id", "riak_cs.host_id", [
+  {default, binary_to_list(base64:encode("riak_cs-is-not-amazonaws.com"))},
+  {datatype, string}
+]}.
+
 %% @doc Root host name which Riak CS accepts for S3 requests.
 %% Your CS bucket at s3.example.com will be accessible
 %% via URL like http://bucket.s3.example.com/object/name

@@ -70,7 +70,7 @@
 %% Webmachine callbacks
 %% -------------------------------------------------------------------
 
--spec init([proplists:proplist()]) -> {ok, #rcs_sts_context{}}.
+-spec init([proplists:proplist()]) -> {ok, #rcs_web_context{}}.
 init(Config) ->
     %% Check if authentication is disabled and set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
@@ -78,38 +78,39 @@ init(Config) ->
     Api = riak_cs_config:api(),
     RespModule = riak_cs_config:response_module(Api),
     StatsPrefix = no_stats,
-    Ctx = #rcs_sts_context{auth_bypass = AuthBypass,
+    Ctx = #rcs_web_context{auth_bypass = AuthBypass,
                            auth_module = AuthModule,
                            response_module = RespModule,
                            stats_prefix = StatsPrefix,
+                           request_id = riak_cs_aws_utils:make_id(16),
                            api = Api},
     {ok, Ctx}.
 
 
--spec service_available(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
-service_available(RD, Ctx = #rcs_sts_context{rc_pool = undefined}) ->
-    service_available(RD, Ctx#rcs_sts_context{rc_pool = request_pool});
-service_available(RD, Ctx = #rcs_sts_context{rc_pool = RcPool}) ->
+-spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
+service_available(RD, Ctx = #rcs_web_context{rc_pool = undefined}) ->
+    service_available(RD, Ctx#rcs_web_context{rc_pool = request_pool});
+service_available(RD, Ctx = #rcs_web_context{rc_pool = RcPool}) ->
     case riak_cs_riak_client:checkout(RcPool) of
         {ok, RcPid} ->
-            {true, RD, Ctx#rcs_sts_context{riak_client = RcPid}};
+            {true, RD, Ctx#rcs_web_context{riak_client = RcPid}};
         {error, _Reason} ->
             {false, RD, Ctx}
     end.
 
--spec malformed_request(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
 
 
--spec valid_entity_length(#wm_reqdata{}, #rcs_sts_context{}) -> {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec valid_entity_length(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 valid_entity_length(RD, Ctx) ->
     {true, RD, Ctx}.
 
 
--spec forbidden(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_sts_context{}}.
-forbidden(RD, Ctx=#rcs_sts_context{auth_module = AuthMod,
+-spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
                                    riak_client = RcPid}) ->
     case unsigned_call_allowed(RD) of
         true ->
@@ -142,33 +143,33 @@ unsigned_call_allowed(RD) ->
 
 post_authentication({ok, User, _UserObj}, RD, Ctx, Authorize) ->
     %% given keyid and signature matched, proceed
-    Authorize(RD, Ctx#rcs_sts_context{user = User});
+    Authorize(RD, Ctx#rcs_web_context{user = User});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize) ->
     %% no keyid was given, proceed anonymously
     ?LOG_DEBUG("No user key"),
     Authorize(RD, Ctx);
-post_authentication({error, bad_auth}, RD, #rcs_sts_context{response_module = ResponseMod} = Ctx, _) ->
+post_authentication({error, bad_auth}, RD, #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
     %% given keyid was found, but signature didn't match
     ?LOG_DEBUG("bad_auth"),
     ResponseMod:api_error(access_denied, RD, Ctx);
 post_authentication({error, reqtime_tooskewed} = Error, RD,
-                    #rcs_sts_context{response_module = ResponseMod} = Ctx, _) ->
+                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
     ?LOG_DEBUG("reqtime_tooskewed"),
     ResponseMod:api_error(Error, RD, Ctx);
 post_authentication({error, {auth_not_supported, AuthType}}, RD,
-                    #rcs_sts_context{response_module = ResponseMod} = Ctx, _) ->
+                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
     ?LOG_DEBUG("auth_not_supported: ~s", [AuthType]),
     ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
-post_authentication({error, notfound}, RD, #rcs_sts_context{response_module = ResponseMod} = Ctx, _) ->
+post_authentication({error, notfound}, RD, #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
     ?LOG_DEBUG("User does not exist"),
     ResponseMod:api_error(invalid_access_key_id, RD, Ctx);
 post_authentication({error, Reason}, RD,
-                    #rcs_sts_context{response_module = ResponseMod} = Ctx, _) ->
+                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
     %% Lookup failed, basically due to disconnected stuff
     ?LOG_DEBUG("Authentication error: ~p", [Reason]),
     ResponseMod:api_error(Reason, RD, Ctx).
 
-authenticate(User, UserObj, RD, Ctx = #rcs_sts_context{auth_module = AuthMod}, AuthData)
+authenticate(User, UserObj, RD, Ctx = #rcs_web_context{auth_module = AuthMod}, AuthData)
   when User?RCS_USER.status =:= enabled ->
     case AuthMod:authenticate(User, AuthData, RD, Ctx) of
         ok ->
@@ -183,70 +184,70 @@ authenticate(User, _UserObj, _RD, _Ctx, _AuthData)
     %% {ok, _} -> %% disabled account, we are going to 403
     {error, bad_auth}.
 
--spec allowed_methods(#wm_reqdata{}, #rcs_sts_context{}) -> {[atom()], #wm_reqdata{}, #rcs_sts_context{}}.
+-spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
 allowed_methods(RD, Ctx) ->
     {['POST'], RD, Ctx}.
 
 
--spec content_types_accepted(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {[{string(), module()}], #wm_reqdata{}, #rcs_sts_context{}}.
+-spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), module()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{?WWWFORM_TYPE, accept_wwwform}], RD, Ctx}.
 
 
--spec content_types_provided(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {[{string(), module()}], #wm_reqdata{}, #rcs_sts_context{}}.
+-spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) ->
+          {[{string(), module()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}], RD, Ctx}.
 
 
--spec authorize(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_sts_context{}}.
+-spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:role_access_authorize_helper(RD, Ctx).
 
 
--spec generate_etag(#wm_reqdata{}, #rcs_sts_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
 generate_etag(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
 
--spec last_modified(#wm_reqdata{}, #rcs_sts_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec last_modified(#wm_reqdata{}, #rcs_web_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
 last_modified(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
--spec post_is_create(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {true, #wm_reqdata{}, #rcs_sts_context{}}.
+-spec post_is_create(#wm_reqdata{}, #rcs_web_context{}) ->
+          {true, #wm_reqdata{}, #rcs_web_context{}}.
 post_is_create(RD, Ctx) ->
     {true, RD, Ctx}.
 
 
--spec create_path(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {string(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec create_path(#wm_reqdata{}, #rcs_web_context{}) ->
+          {string(), #wm_reqdata{}, #rcs_web_context{}}.
 create_path(RD, Ctx) ->
     {wrq:disp_path(RD), RD, Ctx}.
 
 
--spec multiple_choices(#wm_reqdata{}, #rcs_sts_context{}) ->
-          {boolean(), #wm_reqdata{}, #rcs_sts_context{}}.
+-spec multiple_choices(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 multiple_choices(RD, Ctx) ->
     {false, RD, Ctx}.
 
 
--spec accept_wwwform(#wm_reqdata{}, #rcs_sts_context{}) ->
+-spec accept_wwwform(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, term(), term()}.
 accept_wwwform(RD, Ctx) ->
     Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
     Action = proplists:get_value("Action", Form),
     do_action(Action, Form, RD, Ctx).
 
--spec finish_request(#wm_reqdata{}, #rcs_sts_context{}) ->
+-spec finish_request(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, term(), term()}.
-finish_request(RD, Ctx=#rcs_sts_context{riak_client = undefined}) ->
+finish_request(RD, Ctx=#rcs_web_context{riak_client = undefined}) ->
     {true, RD, Ctx};
-finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
+finish_request(RD, Ctx=#rcs_web_context{riak_client = RcPid}) ->
     riak_cs_riak_client:checkin(RcPid),
-    {true, RD, Ctx#rcs_sts_context{riak_client = undefined}}.
+    {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
 
 %% -------------------------------------------------------------------
@@ -254,7 +255,7 @@ finish_request(RD, Ctx=#rcs_sts_context{riak_client = RcPid}) ->
 %% -------------------------------------------------------------------
 
 do_action("AssumeRoleWithSAML",
-          Form, RD, Ctx = #rcs_sts_context{riak_client = RcPid,
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
     RequestId = riak_cs_wm_utils:make_request_id(),
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2,
@@ -287,7 +288,7 @@ do_action("AssumeRoleWithSAML",
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
 
-do_action(Unsupported, _Form, RD, Ctx = #rcs_sts_context{response_module = ResponseMod}) ->
+do_action(Unsupported, _Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
     logger:warning("STS action ~s not supported yet; ignoring request", [Unsupported]),
     ResponseMod:api_error(invalid_action, RD, Ctx).
 

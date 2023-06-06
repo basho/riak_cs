@@ -93,13 +93,13 @@
                      | string()|binary(),  %% Other authenticated user
             Access :: access(), %% including accessor, bucket, key, RD
             Context::term()) ->
-    {ok, Request::#wm_reqdata{}, Context::#rcs_s3_context{}} |
+    {ok, Request::#wm_reqdata{}, Context::#rcs_web_context{}} |
     {error, Reason::term()}.
 
 -callback error_response(Reason :: term(),
-                         #wm_reqdata{}, #rcs_s3_context{}) ->
+                         #wm_reqdata{}, #rcs_web_context{}) ->
     {non_neg_integer() | {non_neg_integer(), string()},
-     #wm_reqdata{}, #rcs_s3_context{}}.
+     #wm_reqdata{}, #rcs_web_context{}}.
 
 %% @doc for now, to know the accessor, RD should be retrieved from
 %% headers in LogData (not knowing whether he's authenticated or not)

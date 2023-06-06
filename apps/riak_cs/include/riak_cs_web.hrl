@@ -38,73 +38,38 @@
 
 -type api() :: aws | oos.
 
--record(rcs_s3_context, {start_time =  os:system_time(millisecond) :: non_neg_integer(),
-                         auth_bypass :: atom(),
-                         user :: undefined | moss_user(),
-                         user_object :: undefined | riakc_obj:riakc_obj(),
-                         role :: undefined | role(),
-                         bucket :: undefined | binary(),
-                         acl :: 'undefined' | acl(),
-                         requested_perm :: undefined | acl_perm(),
-                         riak_client :: undefined | pid(),
-                         rc_pool :: atom(),    % pool name which riak_client belongs to
-                         auto_rc_close = true :: boolean(),
-                         submodule :: module(),
-                         exports_fun :: undefined | function(),
-                         auth_module :: module(),
-                         response_module :: module(),
-                         policy_module :: module(),
-                         %% Key for API rate and latency stats.
-                         %% If `stats_prefix' or `stats_key' is `no_stats', no stats
-                         %% will be gathered by riak_cs_wm_common.
-                         %% The prefix is defined by `stats_prefix()' callback of sub-module.
-                         %% If sub-module provides only `stats_prefix' (almost the case),
-                         %% stats key is [Prefix, HttpMethod]. Otherwise, sum-module
-                         %% can set specific `stats_key' by any callback that returns
-                         %% this context.
-                         stats_prefix = no_stats :: atom(),
-                         stats_key = prefix_and_method :: prefix_and_method |
-                                                          no_stats |
-                                                          riak_cs_stats:key(),
-                         local_context :: term(),
-                         api :: atom()
-                        }).
-
--record(rcs_iam_context, {start_time = os:system_time(millisecond) :: non_neg_integer(),
+-record(rcs_web_context, {start_time =  os:system_time(millisecond) :: non_neg_integer(),
+                          request_id :: binary(),
                           auth_bypass :: atom(),
                           user :: undefined | moss_user(),
+                          user_object :: undefined | riakc_obj:riakc_obj(),
                           role :: undefined | role(),
+                          bucket :: undefined | binary(),
+                          acl :: 'undefined' | acl(),
+                          requested_perm :: undefined | acl_perm(),
                           riak_client :: undefined | pid(),
                           rc_pool :: atom(),    % pool name which riak_client belongs to
                           auto_rc_close = true :: boolean(),
+                          submodule :: module(),
+                          exports_fun :: undefined | function(),
                           auth_module :: module(),
                           response_module :: module(),
+                          policy_module :: module(),
+                          %% Key for API rate and latency stats.
+                          %% If `stats_prefix' or `stats_key' is `no_stats', no stats
+                          %% will be gathered by riak_cs_wm_common.
+                          %% The prefix is defined by `stats_prefix()' callback of sub-module.
+                          %% If sub-module provides only `stats_prefix' (almost the case),
+                          %% stats key is [Prefix, HttpMethod]. Otherwise, sum-module
+                          %% can set specific `stats_key' by any callback that returns
+                          %% this context.
                           stats_prefix = no_stats :: atom(),
                           stats_key = prefix_and_method :: prefix_and_method |
                                                            no_stats |
                                                            riak_cs_stats:key(),
+                          local_context :: term(),
                           api :: atom()
                          }).
-
--record(rcs_sts_context, {start_time = os:system_time(millisecond) :: non_neg_integer(),
-                          auth_bypass :: atom(),
-                          user :: undefined | moss_user(),
-                          role :: undefined | role(),
-                          riak_client :: undefined | pid(),
-                          rc_pool :: atom(),    % pool name which riak_client belongs to
-                          auto_rc_close = true :: boolean(),
-                          auth_module :: module(),
-                          response_module :: module(),
-                          stats_prefix = no_stats :: atom(),
-                          stats_key = prefix_and_method :: prefix_and_method |
-                                                           no_stats |
-                                                           riak_cs_stats:key(),
-                          api :: atom()
-                         }).
-
--type rcs_aws_context() :: #rcs_s3_context{}
-                         | #rcs_iam_context{}
-                         | #rcs_sts_context{}.
 
 
 -record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),

@@ -30,8 +30,8 @@
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
 
--spec respond(term(), #wm_reqdata{}, #rcs_s3_context{}) ->
-          {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_s3_context{}}.
+-spec respond(term(), #wm_reqdata{}, #rcs_web_context{}) ->
+          {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_web_context{}}.
 respond(?LBRESP{}=Response, RD, Ctx) ->
     BucketsDoc =
         [begin

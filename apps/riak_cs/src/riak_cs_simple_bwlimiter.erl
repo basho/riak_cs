@@ -124,7 +124,7 @@ refresher() ->
             refresher()
     end.
 
--spec allow(rcs_user(), access(), #rcs_s3_context{}) -> {ok, #wm_reqdata{}, #rcs_s3_context{}}.
+-spec allow(rcs_user(), access(), #rcs_web_context{}) -> {ok, #wm_reqdata{}, #rcs_web_context{}}.
 allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
 
     OwnerKey = list_to_binary(riak_cs_user:key_id(Owner)),

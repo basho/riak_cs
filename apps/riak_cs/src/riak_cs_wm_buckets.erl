@@ -45,8 +45,8 @@ stats_prefix() -> service.
 allowed_methods() ->
     ['GET'].
 
--spec api_request(#wm_reqdata{}, #rcs_s3_context{}) -> ?LBRESP{}.
-api_request(_RD, #rcs_s3_context{user=User}) ->
+-spec api_request(#wm_reqdata{}, #rcs_web_context{}) -> ?LBRESP{}.
+api_request(_RD, #rcs_web_context{user = User}) ->
     UserName = riak_cs_wm_utils:extract_name(User),
     riak_cs_dtrace:dt_service_entry(?MODULE, <<"service_get_buckets">>, [], [UserName]),
     Res = riak_cs_api:list_buckets(User),
