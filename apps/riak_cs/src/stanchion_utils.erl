@@ -182,7 +182,7 @@ create_role(Fields, Pbc) ->
 
 role_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound},
+    Res = (riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound}),
     riak_cs_riak_client:checkin(Pbc),
     Res.
 
@@ -245,7 +245,7 @@ create_policy(Fields, Pbc) ->
 
 policy_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = riak_cs_iam:find_policy(#{name => Name}, Pbc) == {error, notfound},
+    Res = (riak_cs_iam:find_policy(#{name => Name}, Pbc) == {error, notfound}),
     riak_cs_riak_client:checkin(Pbc),
     Res.
 
@@ -314,7 +314,7 @@ create_saml_provider(Fields, Pbc) ->
 
 saml_provider_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = riak_cs_iam:find_saml_provider(#{name => Name}, Pbc) == {error, notfound},
+    Res = (riak_cs_iam:find_saml_provider(#{name => Name}, Pbc) == {error, notfound}),
     riak_cs_riak_client:checkin(Pbc),
     Res.
 
