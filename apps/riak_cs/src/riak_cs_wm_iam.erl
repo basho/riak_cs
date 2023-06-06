@@ -272,7 +272,7 @@ do_action("GetRole",
                     #get_role_response{role = Role,
                                        request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, not_found} ->
+        {error, notfound} ->
             ResponseMod:api_error(no_such_role, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
@@ -294,8 +294,10 @@ do_action("DeleteRole",
                 {error, Reason} ->
                     ResponseMod:api_error(Reason, RD, Ctx)
             end;
-        {error, not_found} ->
-            ResponseMod:api_error(no_such_role, RD, Ctx)
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_role, RD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
     end;
 
 do_action("ListRoles",
@@ -350,7 +352,7 @@ do_action("GetPolicy",
                     #get_policy_response{policy = Policy,
                                          request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, not_found} ->
+        {error, notfound} ->
             ResponseMod:api_error(no_such_policy, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
@@ -366,6 +368,8 @@ do_action("DeletePolicy",
             Doc = riak_cs_xml:to_xml(
                     #delete_policy_response{request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_policy, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
@@ -433,7 +437,7 @@ do_action("GetSAMLProvider",
                                                 tags = Tags,
                                                 request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, not_found} ->
+        {error, notfound} ->
             ResponseMod:api_error(no_such_saml_provider, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
@@ -449,6 +453,8 @@ do_action("DeleteSAMLProvider",
             Doc = riak_cs_xml:to_xml(
                     #delete_saml_provider_response{request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_saml_provider, RD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
