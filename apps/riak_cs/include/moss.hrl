@@ -93,7 +93,9 @@
                       , credentials :: credentials()
                       , duration_seconds :: non_neg_integer()
                       , created = os:system_time(millisecond) :: non_neg_integer()
-                      , effective_policy :: policy()
+                      , role_arn :: flat_arn()
+                      , inline_policy :: undefined | flat_arn()
+                      , session_policies :: [flat_arn()]
                       , subject :: binary()
                       , user_id :: binary()
                       , canonical_id :: binary()

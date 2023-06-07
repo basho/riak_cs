@@ -21,10 +21,10 @@
 -module(riak_cs_temp_sessions).
 
 -export([create/6,
-         get/1, get/2
+         get/1, get/2,
+         effective_policies/1,
+         close_session/1
         ]).
-
--export([close_session/1]).
 
 -include("riak_cs.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -60,9 +60,8 @@ create(?IAM_ROLE{role_id = RoleId,
                             subject = Subject,
                             user_id = UserId,
                             canonical_id = CanonicalId,
-                            effective_policy = riak_cs_iam:merge_policies(
-                                                 [InlinePolicy | [riak_cs_iam:find_policy(A, RcPid)
-                                                                  || A <- PolicyArns]])},
+                            inline_policy = InlinePolicy,
+                            session_policies = PolicyArns},
 
     Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, KeyId, term_to_binary(Session)),
     case riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}]) of
@@ -75,6 +74,33 @@ create(?IAM_ROLE{role_id = RoleId,
             logger:error("Failed to save temp session: ~p", [Reason]),
             ER
     end.
+
+
+-spec effective_policies(#temp_session{}) -> [policy()].
+effective_policies(#temp_session{inline_policy = InlinePolicy,
+                                 session_policies = SessionPolicies,
+                                 role_arn = RoleArn}) ->
+    RoleAttachedPolicies =
+        case riak_cs_iam:get_role(RoleArn) of
+            {ok, ?IAM_ROLE{attached_policies = PP}} ->
+                PP;
+            _ ->
+                logger:notice("Assumed role ~s deleted while temp session is still open", [RoleArn]),
+                []
+        end,
+    lists:flatten(
+      [InlinePolicy |
+       [begin
+            case riak_cs_iam:get_policy(Arn) of
+                {ok, Policy} ->
+                    Policy;
+                _ ->
+                    logger:notice("Managed policy ~p previously attached to role "
+                                  "or referenced as session policy, is not available", [Arn]),
+                    []
+            end
+        end || Arn <- SessionPolicies ++ RoleAttachedPolicies]]
+     ).
 
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.
@@ -93,8 +119,7 @@ get(Id, Pbc) ->
     end.
 session_from_riakc_obj(Obj) ->
     case [binary_to_term(Value) || Value <- riakc_obj:get_values(Obj),
-                                   Value /= <<>>,
-                                   Value /= ?DELETED_MARKER] of
+                                   Value /= <<>>] of
         [] ->
             {error, notfound};
         [S] ->
@@ -108,7 +133,7 @@ session_from_riakc_obj(Obj) ->
 make_session_token() ->
     ?LOG_DEBUG("STUB"),
     
-    riak_cs_aws_utils:make_id(800).
+    riak_cs_aws_utils:make_id(80).
 
 close_session(Id) ->
     {ok, Pbc} = riak_cs_utils:riak_connection(),

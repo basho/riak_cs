@@ -320,14 +320,14 @@ check_assertion_signature(#{signature_value := SignatureValue,
 
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-create_session_and_issue_temp_creds(#{specs := #{policy := InlinePolicy,
-                                                 policy_arns := PolicyArns,
-                                                 duration_seconds := DurationSeconds},
+create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSeconds} = Specs,
                                       role := Role,
                                       subject := Subject,
                                       subject_type := SubjectType,
                                       riak_client := RcPid} = State) ->
     SourceIdentity = maps:get(source_identity, State, <<>>),
+    InlinePolicy = maps:get(policy, Specs, undefined),
+    PolicyArns = maps:get(policy_arns, Specs, []),
 
     case riak_cs_temp_sessions:create(
            Role, Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of

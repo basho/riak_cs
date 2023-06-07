@@ -124,14 +124,13 @@ update_user(User, UserObj, RcPid) ->
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user(undefined | iodata(), riak_client()) ->
-          {ok, {rcs_user(), no_object | riakc_obj:riakc_obj()}} | {error, term()}.
+          {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, term()}.
 get_user(undefined, _RcPid) ->
     {error, no_user_key};
 get_user(KeyIdS, RcPid) ->
     KeyId = iolist_to_binary([KeyIdS]),
     case riak_cs_temp_sessions:get(KeyId) of
         {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
-                           effective_policy = Policy,
                            canonical_id = CanonicalId,
                            subject = Subject} = _Session} ->
             {ok, {?RCS_USER{name = binary_to_list(Subject),
@@ -140,7 +139,7 @@ get_user(KeyIdS, RcPid) ->
                             canonical_id = binary_to_list(CanonicalId),
                             key_id = KeyId,
                             key_secret = binary_to_list(SecretKey),
-                            buckets = extract_buckets_from_policy(Policy)}, no_object}};
+                            buckets = []}, undefined}};
         _ ->
             get_cs_user(KeyId, RcPid)
     end.
@@ -154,11 +153,6 @@ get_cs_user(KeyId, RcPid) ->
         Error ->
             Error
     end.
-
-extract_buckets_from_policy(P) ->
-    ?LOG_DEBUG("STUB ~p", [P]),
-    
-    [].
 
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
 from_riakc_obj(Obj, KeepDeletedBuckets) ->

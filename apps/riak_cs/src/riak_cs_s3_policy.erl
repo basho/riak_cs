@@ -71,7 +71,7 @@
 %% ===================================================================
 
 %% @doc evaluates the policy and returns the policy allows, denies or
-%% not says nothing about this access. Usually in case of undefined,
+%% not says anything about this access. Usually in case of undefined,
 %% the owner access must be accepted and others must be refused.
 -spec eval(access(), amz_policy() | undefined | binary() ) -> boolean() | undefined.
 eval(_, undefined) -> undefined;

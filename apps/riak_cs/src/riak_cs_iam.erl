@@ -35,7 +35,6 @@
          delete_policy/1,
          get_policy/2,
          find_policy/2,
-         merge_policies/1,
 
          fix_permissions_boundary/1,
          exprec_role/1,
@@ -144,20 +143,6 @@ find_policy(#{name := Name}, RcPid) ->
             logger:error("Failed to find managed policy by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end.
-
-
--spec merge_policies([policy()]) -> {ok, policy()} | {error, term()}.
-merge_policies(PP) ->
-    merge_policies(PP, []).
-merge_policies([], Q) ->
-    {ok, Q};
-merge_policies([P1|PP], Q) ->
-    merge_policies(PP, merge_these_two(P1, Q)).
-merge_these_two(P1, P2) ->
-    ?LOG_DEBUG("STUB ~p ~p", [P1, P2]),
-    
-    P1.
-
 
 
 %% CreateRole takes a string for PermissionsBoundary parameter, which

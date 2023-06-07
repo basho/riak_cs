@@ -51,12 +51,12 @@ content_types_provided(RD, Ctx) ->
     {[{"application/xml", to_xml}], RD, Ctx}.
 
 -spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
-                       {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:bucket_access_authorize_helper(bucket_location, false, RD, Ctx).
 
 -spec to_xml(#wm_reqdata{}, #rcs_web_context{}) ->
-                    {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_web_context{}}.
+          {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_web_context{}}.
 to_xml(RD, Ctx = #rcs_web_context{user = User,
                                   bucket = Bucket}) ->
     StrBucket = binary_to_list(Bucket),

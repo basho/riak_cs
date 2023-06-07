@@ -691,7 +691,8 @@ extract_user_metadata([_ | Headers], Acc) ->
     extract_user_metadata(Headers, Acc).
 
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
-                                     RD::term(), Ctx::#rcs_web_context{}) -> term().
+                                     #wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     #rcs_web_context{riak_client = RcPid,
                      policy_module = PolicyMod} = Ctx,
@@ -701,9 +702,35 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     PermCtx = Ctx#rcs_web_context{bucket = Bucket,
                                   requested_perm = RequestedAccess},
-    handle_bucket_acl_policy_response(
-      riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid),
-      AccessType, Deletable, RD, PermCtx).
+    case any_assumed_role_policies_or_halt(Ctx) of
+        user_session_expired ->
+            deny_access(RD, Ctx);
+        SessionPolicies ->
+            Policies = [riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) |
+                        SessionPolicies],
+            lists:foldl(
+              fun(P, {false, _, _}) ->
+                      handle_bucket_acl_policy_response(
+                        P, AccessType, Deletable, RD, PermCtx);
+                 (_, Q) ->
+                      Q
+              end,
+              {false, RD, Ctx},
+              Policies)
+    end.
+
+any_assumed_role_policies_or_halt(#rcs_web_context{user_object = undefined,
+                                                   user = ?RCS_USER{key_id = KeyId}}) ->
+    case riak_cs_temp_sessions:get(KeyId) of
+        {ok, S} ->
+            riak_cs_temp_sessions:effective_policies(S);
+        {error, notfound} ->
+            logger:notice("Denying an API request by user with key_id ~s as their session has expired", [KeyId]),
+            user_session_expired
+    end;
+any_assumed_role_policies_or_halt(#rcs_web_context{user_object = _NonFederatedUser}) ->
+    [].
+
 
 handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
     ResponseMod = Ctx#rcs_web_context.response_module,
@@ -737,8 +764,10 @@ handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
     Access = PolicyMod:reqdata_to_access(RD, AccessType,
                                          User?RCS_USER.canonical_id),
     case PolicyMod:eval(Access, Policy) of
-        false ->     riak_cs_wm_utils:deny_access(AccessRD, Ctx);
-        _ ->      {false, AccessRD, Ctx}
+        false ->
+            deny_access(AccessRD, Ctx);
+        _ ->
+            {false, AccessRD, Ctx}
     end;
 handle_acl_check_result({true, _OwnerId}, _, _, _, true, RD, Ctx) ->
     %% grants lied: this is a delete, and only the owner is allowed to
@@ -754,8 +783,8 @@ handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     %% No policy so emulate a policy eval failure to avoid code duplication
     handle_policy_eval_result(Ctx#rcs_web_context.user, false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
-    #rcs_web_context{riak_client=RcPid,
-                     user=User0} = Ctx,
+    #rcs_web_context{riak_client = RcPid,
+                     user = User0} = Ctx,
     PolicyMod = Ctx#rcs_web_context.policy_module,
     User = case User0 of
                undefined -> undefined;
@@ -781,7 +810,7 @@ handle_policy_eval_result(User, _, _, RD, Ctx) ->
     %% make the correct decision to return a 404 or 403
     case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
         {ok, _} ->
-            riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+            deny_access(AccessRD, Ctx);
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end.

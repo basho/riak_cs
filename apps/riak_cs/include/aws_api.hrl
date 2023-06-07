@@ -123,7 +123,7 @@
                         | {string_condition_type(),  [{'aws:UserAgent', binary()}]}
                         | {string_condition_type(),  [{'aws:Referer', binary()}]}.
 
--type service() :: s3 | iam.
+-type service() :: s3 | iam | sts.
 
 -record(arn_v1, { provider = aws :: aws
                 , service  = s3  :: service()
@@ -136,6 +136,8 @@
 -type arn() :: #arn_v1{}.
 -define(S3_ARN, #arn_v1).
 
+-type flat_arn() :: binary().
+
 -type principal() :: '*'
                    | [{canonical_id, string()}|{aws, '*'}].
 
@@ -144,7 +146,7 @@
                    , principal  = [] :: principal()
                    , action     = [] :: [ s3_object_action() | s3_bucket_action() ] | '*'
                    , not_action = [] :: [ s3_object_action() | s3_bucket_action() ] | '*'
-                   , resource   = [] :: [ arn() ] | '*'
+                   , resource   = [] :: [ flat_arn() ] | '*'
                    , condition_block = [] :: [ condition_pair() ]
                    }
        ).
@@ -176,7 +178,7 @@
 -define(IAM_POLICY, #policy_v1).
 
 
--record(permissions_boundary, { permissions_boundary_arn :: arn()
+-record(permissions_boundary, { permissions_boundary_arn :: flat_arn()
                               , permissions_boundary_type = <<"Policy">> :: binary()
                               }
 ).
@@ -199,7 +201,7 @@
 -type role_last_used() :: #role_last_used{}.
 -define(IAM_ROLE_LAST_USED, #role_last_used).
 
--record(role_v1, { arn :: arn()
+-record(role_v1, { arn :: flat_arn()
                  , assume_role_policy_document :: binary()
                  , create_date = os:system_time(millisecond) :: non_neg_integer()
                  , description :: binary()
@@ -210,12 +212,13 @@
                  , role_last_used :: role_last_used()
                  , role_name :: binary()
                  , tags :: [tag()]
+                 , attached_policies :: [flat_arn()]
                  }
        ).
 -type role() :: #role_v1{}.
 -define(IAM_ROLE, #role_v1).
 
--record(saml_provider_v1, { arn :: arn()
+-record(saml_provider_v1, { arn :: flat_arn()
                           , saml_metadata_document :: string()
                           , tags :: [tag()]
                           , name :: binary()
@@ -230,7 +233,7 @@
 -define(IAM_SAML_PROVIDER, #saml_provider_v1).
 
 
--record(assumed_role_user, { arn :: arn()
+-record(assumed_role_user, { arn :: flat_arn()
                            , assumed_role_id :: binary()
                            }
        ).
