@@ -158,7 +158,6 @@ check_role(#{riak_client := RcPid,
 parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 parse_saml_assertion_claims(#{specs := #{request_id := RequestId,
-                                         principal_arn := _PrincipalArn,
                                          saml_assertion := SAMLAssertion_}} = State0) ->
     SAMLAssertion = base64:decode(SAMLAssertion_),
     {#xmlElement{content = RootContent}, _} =
@@ -289,9 +288,9 @@ check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{riak_client := RcPid,
                            signature := Signature,
-                           issuer := Issuer} = State) ->
-    {_, IssuerHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(Issuer)),
-    case riak_cs_iam:find_saml_provider(#{entity_id => list_to_binary(IssuerHostS)}, RcPid) of
+                           specs := #{principal_arn := PrincipalArn}
+                          } = State) ->
+    case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
         {ok, SP} ->
             State#{status => check_assertion_signature(Signature, SP)};
         {error, not_found} ->
