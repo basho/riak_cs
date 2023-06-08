@@ -197,8 +197,8 @@ reqdata_to_access(RD, Target, ID) ->
 policy_from_json(JSON) ->
     case catch jsx:decode(JSON) of
         #{<<"Version">> := Version,
-          <<"ID">> := ID,
-          <<"Statement">> := Stmts0} ->
+          <<"Statement">> := Stmts0} = Map ->
+            ID = maps:get(<<"ID">>, Map, <<"undefined">>),
             case catch lists:map(fun(S) ->
                                          statement_from_pairs(maps:to_list(S), #statement{})
                                  end, Stmts0) of
