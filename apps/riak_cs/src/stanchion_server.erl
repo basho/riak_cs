@@ -37,8 +37,10 @@
          stop/1,
          update_user/2,
          create_role/1,
+         update_role/1,
          delete_role/1,
          create_policy/1,
+         update_policy/1,
          delete_policy/1,
          create_saml_provider/1,
          delete_saml_provider/1,
@@ -153,6 +155,13 @@ create_role(A) ->
                              {create_role, A},
                              infinity)).
 
+-spec update_role(maps:map()) -> ok | {error, term()}.
+update_role(A) ->
+    ?MEASURE([role, update],
+             gen_server:call(?MODULE,
+                             {update_role, A},
+                             infinity)).
+
 -spec delete_role(string()) -> ok | {error, term()}.
 delete_role(A) ->
     ?MEASURE([role, delete],
@@ -165,6 +174,13 @@ create_policy(A) ->
     ?MEASURE([policy, create],
              gen_server:call(?MODULE,
                              {create_policy, A},
+                             infinity)).
+
+-spec update_policy(maps:map()) -> ok | {error, term()}.
+update_policy(A) ->
+    ?MEASURE([policy, update],
+             gen_server:call(?MODULE,
+                             {update_policy, A},
                              infinity)).
 
 -spec delete_policy(string()) -> ok | {error, term()}.
@@ -268,6 +284,11 @@ handle_call({create_role, A},
             State=#state{pbc = Pbc}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:create_role(A, Pbc)),
     {reply, Result, State};
+handle_call({update_role, A},
+            _From,
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:updeate_role(A, Pbc)),
+    {reply, Result, State};
 handle_call({delete_role, A},
             _From,
             State=#state{pbc = Pbc}) ->
@@ -277,6 +298,11 @@ handle_call({create_policy, A},
             _From,
             State=#state{pbc = Pbc}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:create_policy(A, Pbc)),
+    {reply, Result, State};
+handle_call({update_policy, A},
+            _From,
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:update_policy(A, Pbc)),
     {reply, Result, State};
 handle_call({delete_policy, A},
             _From,

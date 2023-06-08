@@ -349,4 +349,11 @@
                                         }
        ).
 
+-record(attach_role_policy_response, { request_id :: string()
+                                     }
+       ).
+-record(detach_role_policy_response, { request_id :: string()
+                                     }
+       ).
+
 -endif.

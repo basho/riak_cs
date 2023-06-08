@@ -58,10 +58,10 @@ service_available(RD, Ctx) ->
 
 -spec allowed_methods(#wm_reqdata{}, #stanchion_context{}) -> {[atom()], #wm_reqdata{}, #stanchion_context{}}.
 allowed_methods(RD, Ctx) ->
-    {['POST', 'DELETE'], RD, Ctx}.
+    {['POST', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec is_authorized(#wm_reqdata{}, #stanchion_context{}) -> {boolean(), #wm_reqdata{}, #stanchion_context{}}.
-is_authorized(RD, Ctx=#stanchion_context{auth_bypass=AuthBypass}) ->
+is_authorized(RD, Ctx = #stanchion_context{auth_bypass = AuthBypass}) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case stanchion_wm_utils:parse_auth_header(AuthHeader, AuthBypass) of
         {ok, AuthMod, Args} ->
@@ -91,6 +91,14 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_json(#wm_reqdata{}, #stanchion_context{}) ->
           {true | {halt, pos_integer()}, #wm_reqdata{}, #stanchion_context{}}.
 accept_json(RD, Ctx) ->
+    case wrq:method(RD) of
+        'POST' ->
+            do_create(RD, Ctx);
+        'PUT' ->
+            do_update(RD, Ctx)
+    end.
+
+do_create(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_role(FF) of
         {ok, Role} ->
@@ -98,7 +106,6 @@ accept_json(RD, Ctx) ->
                                [{records, [{role_v1, record_info(fields, role_v1)},
                                            {permissions_boundary, record_info(fields, permissions_boundary)},
                                            {role_last_used, record_info(fields, role_last_used)},
-                                           {arn_v1, record_info(fields, arn_v1)},
                                            {tag, record_info(fields, tag)}]}]),
             {true, wrq:set_resp_body(Doc, RD), Ctx};
         {error, Reason} ->
@@ -106,6 +113,15 @@ accept_json(RD, Ctx) ->
     end.
 armor_json_in_arpd(Role = ?IAM_ROLE{assume_role_policy_document = ARP}) ->
     Role?IAM_ROLE{assume_role_policy_document = base64:encode(ARP)}.
+
+do_update(RD, Ctx) ->
+    FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
+    case stanchion_server:update_role(FF) of
+        ok ->
+            {true, RD, Ctx};
+        {error, Reason} ->
+            stanchion_response:api_error(Reason, RD, Ctx)
+    end.
 
 -spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.

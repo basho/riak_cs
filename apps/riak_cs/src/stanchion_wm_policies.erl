@@ -57,7 +57,7 @@ service_available(RD, Ctx) ->
 
 -spec allowed_methods(#wm_reqdata{}, #stanchion_context{}) -> {[atom()], #wm_reqdata{}, #stanchion_context{}}.
 allowed_methods(RD, Ctx) ->
-    {['POST', 'DELETE'], RD, Ctx}.
+    {['POST', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec is_authorized(#wm_reqdata{}, #stanchion_context{}) -> {boolean(), #wm_reqdata{}, #stanchion_context{}}.
 is_authorized(RD, Ctx = #stanchion_context{auth_bypass=AuthBypass}) ->
@@ -90,6 +90,14 @@ content_types_accepted(RD, Ctx) ->
 -spec accept_json(#wm_reqdata{}, #stanchion_context{}) ->
           {true | {halt, pos_integer()}, #wm_reqdata{}, #stanchion_context{}}.
 accept_json(RD, Ctx) ->
+    case wrq:method(RD) of
+        'POST' ->
+            do_create(RD, Ctx);
+        'PUT' ->
+            do_update(RD, Ctx)
+    end.
+
+do_create(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_policy(FF) of
         {ok, Policy} ->
@@ -97,6 +105,15 @@ accept_json(RD, Ctx) ->
                                [{records, [{policy_v1, record_info(fields, policy_v1)},
                                            {tag, record_info(fields, tag)}]}]),
             {true, wrq:set_resp_body(Doc, RD), Ctx};
+        {error, Reason} ->
+            stanchion_response:api_error(Reason, RD, Ctx)
+    end.
+
+do_update(RD, Ctx) ->
+    FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
+    case stanchion_server:update_policy(FF) of
+        ok ->
+            {true, RD, Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)
     end.

@@ -134,7 +134,13 @@ to_xml(#delete_saml_provider_response{} = R) ->
 to_xml(#list_saml_providers_response{} = R) ->
     list_saml_providers_response_to_xml(R);
 to_xml(#assume_role_with_saml_response{} = R) ->
-    assume_role_with_saml_response_to_xml(R).
+    assume_role_with_saml_response_to_xml(R);
+to_xml(#attach_role_policy_response{} = R) ->
+    attach_role_policy_response_to_xml(R);
+to_xml(#detach_role_policy_response{} = R) ->
+    detach_role_policy_response_to_xml(R).
+
+
 
 
 
@@ -462,6 +468,20 @@ list_roles_response_to_xml(#list_roles_response{roles = RR,
                                    [{'xmlns', ?IAM_XMLNS}],
                                    lists:flatten(C))], []).
 
+
+attach_role_policy_response_to_xml(#attach_role_policy_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('AttachRolePolicyResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+detach_role_policy_response_to_xml(#detach_role_policy_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('DetachRolePolicyResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
 
 saml_provider_record_to_xml(P) ->
     export_xml([saml_provider_node(P)]).

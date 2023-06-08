@@ -725,7 +725,10 @@ any_assumed_role_policies_or_halt(#rcs_web_context{user_object = undefined,
         {ok, S} ->
             riak_cs_temp_sessions:effective_policies(S);
         {error, notfound} ->
-            logger:notice("Denying an API request by user with key_id ~s as their session has expired", [KeyId]),
+            %% there was a call to temp_sessions:get a fraction of a
+            %% second ago as part of webmachine's serving of this
+            %% request. Still, races happen.
+            logger:notice("Denying an API request by user with key_id ~s as their session has (just!) expired", [KeyId]),
             user_session_expired
     end;
 any_assumed_role_policies_or_halt(#rcs_web_context{user_object = _NonFederatedUser}) ->

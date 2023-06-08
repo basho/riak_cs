@@ -29,8 +29,10 @@
          create_user/2,
          update_user/3,
          create_role/2,
+         update_role/2,
          delete_role/2,
          create_policy/2,
+         update_policy/2,
          delete_policy/2,
          create_saml_provider/2,
          delete_saml_provider/2,
@@ -180,6 +182,13 @@ create_role(Fields, Pbc) ->
             {error, role_already_exists}
     end.
 
+-spec update_role(maps:map(), pid()) -> ok | {error, already_exists|term()}.
+update_role(Fields, Pbc) ->
+    Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
+        riak_cs_iam:exprec_role(Fields),
+    Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
+    save_role_directly(Role, Pbc).
+
 role_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
     Res = (riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound}),
@@ -205,6 +214,25 @@ save_role(Role0 = ?IAM_ROLE{role_name = Name,
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
             {ok, Role1};
+        {error, Reason} ->
+            logger:error("Failed to save role \"~s\": ~p", [Name, Reason]),
+            Res
+    end.
+
+save_role_directly(Role = ?IAM_ROLE{arn = Arn,
+                                    role_name = Name,
+                                    path = Path}, Pbc) ->
+    Indexes = [{?ROLE_PATH_INDEX, Path},
+               {?ROLE_NAME_INDEX, Name}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Obj = riakc_obj:update_metadata(
+            riakc_obj:new(?IAM_ROLE_BUCKET, Arn, term_to_binary(Role)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    case Res of
+        ok ->
+            ok = stanchion_stats:update([riakc, put_cs_role], TAT),
+            ok;
         {error, Reason} ->
             logger:error("Failed to save role \"~s\": ~p", [Name, Reason]),
             Res
@@ -243,6 +271,12 @@ create_policy(Fields, Pbc) ->
             {error, policy_already_exists}
     end.
 
+-spec update_policy(maps:map(), pid()) -> ok | {error, term()}.
+update_policy(Fields, Pbc) ->
+    Policy_ = ?IAM_POLICY{policy_document = A} = riak_cs_iam:exprec_policy(Fields),
+    Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
+    save_policy_directly(Policy, Pbc).
+
 policy_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
     Res = (riak_cs_iam:find_policy(#{name => Name}, Pbc) == {error, notfound}),
@@ -268,6 +302,25 @@ save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
             {ok, Policy1};
+        {error, Reason} ->
+            logger:error("Failed to save managed policy \"~s\": ~p", [Name, Reason]),
+            Res
+    end.
+
+save_policy_directly(Policy = ?IAM_POLICY{arn = Arn,
+                                          policy_name = Name,
+                                          path = Path}, Pbc) ->
+    Indexes = [{?POLICY_PATH_INDEX, Path},
+               {?POLICY_NAME_INDEX, Name}],
+    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Obj = riakc_obj:update_metadata(
+            riakc_obj:new(?IAM_POLICY_BUCKET, Arn, term_to_binary(Policy)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    case Res of
+        ok ->
+            ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
+            ok;
         {error, Reason} ->
             logger:error("Failed to save managed policy \"~s\": ~p", [Name, Reason]),
             Res

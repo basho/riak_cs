@@ -33,8 +33,10 @@
          update_user/4,
          create_role/3,
          delete_role/2,
+         update_role/4,
          create_policy/3,
          delete_policy/2,
+         update_policy/4,
          create_saml_provider/3,
          delete_saml_provider/2
         ]).
@@ -336,6 +338,33 @@ delete_role(Arn, Options) ->
             {error, Error}
     end.
 
+-spec update_role(string(), string(), string(), proplists:proplist()) -> ok | {error, term()}.
+update_role(ContentType, Arn, Doc, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = roles_path(Arn),
+    Headers0 = [{"Content-Md5", content_md5(Doc)},
+                {"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('POST',
+                                               ContentType,
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(post, Path, [201], ContentType, Headers, Doc) of
+        {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 
 -spec create_policy(string(), string(), proplists:proplist()) -> {ok, policy()} | {error, term()}.
 create_policy(ContentType, Doc, Options) ->
@@ -384,6 +413,33 @@ delete_policy(Arn, Options) ->
     end,
     case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec update_policy(string(), string(), string(), proplists:proplist()) -> ok | {error, term()}.
+update_policy(ContentType, Arn, Doc, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = policies_path(Arn),
+    Headers0 = [{"Content-Md5", content_md5(Doc)},
+                {"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('POST',
+                                               ContentType,
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(post, Path, [201], ContentType, Headers, Doc) of
+        {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};

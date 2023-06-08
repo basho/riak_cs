@@ -402,6 +402,42 @@ do_action("ListPolicies",
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
 
+do_action("AttachRolePolicy",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    PolicyArn = proplists:get_value("PolicyArn", Form),
+    RoleName = proplists:get_value("RoleName", Form),
+    case riak_cs_iam:attach_policy(list_to_binary(PolicyArn),
+                                   list_to_binary(RoleName), RcPid) of
+        ok ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            logger:info("Attached policy ~s to role ~s on request_id ~s",
+                        [PolicyArn, RoleName, RequestId]),
+            Doc = riak_cs_xml:to_xml(
+                    #attach_role_policy_response{request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("DetachRolePolicy",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    PolicyArn = proplists:get_value("PolicyArn", Form),
+    RoleName = proplists:get_value("RoleName", Form),
+    case riak_cs_iam:detach_policy(list_to_binary(PolicyArn),
+                                   list_to_binary(RoleName), RcPid) of
+        ok ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            logger:info("Detached policy ~s from role ~s on request_id ~s",
+                        [PolicyArn, RoleName, RequestId]),
+            Doc = riak_cs_xml:to_xml(
+                    #detach_role_policy_response{request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
 
 do_action("CreateSAMLProvider",
           Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->

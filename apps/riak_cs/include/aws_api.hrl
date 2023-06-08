@@ -160,7 +160,7 @@
 -type amz_policy() :: #amz_policy{}.
 -define(AMZ_POLICY, #amz_policy).
 
--record(policy_v1, { arn :: binary()
+-record(policy_v1, { arn :: flat_arn()
                    , attachment_count = 0 :: non_neg_integer()
                    , create_date = os:system_time(millisecond) :: non_neg_integer()
                    , default_version_id = <<"v1">> :: binary()

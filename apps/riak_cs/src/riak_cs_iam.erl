@@ -35,6 +35,8 @@
          delete_policy/1,
          get_policy/2,
          find_policy/2,
+         attach_role_policy/3,
+         detach_role_policy/3,
 
          fix_permissions_boundary/1,
          exprec_role/1,
@@ -143,6 +145,85 @@ find_policy(#{name := Name}, RcPid) ->
             logger:error("Failed to find managed policy by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end.
+
+-spec attach_role_policy(binary(), binary(), pid()) ->
+          ok | {error, error_reason()}.
+attach_role_policy(PolicyArn, RoleName, RcPid) ->
+    case find_role(#{name => RoleName}, RcPid) of
+        {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
+            case lists:member(PolicyArn, PP) of
+                true ->
+                    ok;
+                false ->
+                    case get_policy(PolicyArn, RcPid) of
+                        {ok, Policy = ?IAM_POLICY{is_attachable = true,
+                                                  attachment_count = AC}} ->
+                            case update_role(Role?IAM_ROLE{attached_policies = lists:usort([PolicyArn | PP])}) of
+                                ok ->
+                                    update_policy(Policy?IAM_POLICY{attachment_count = AC + 1});
+                                ER1 ->
+                                    ER1
+                            end;
+                        {ok, ?IAM_POLICY{}} ->
+                            {error, policy_not_attachable};
+                        {error, notfound} ->
+                            {error, no_such_policy}
+                    end
+            end;
+        {error, notfound} ->
+            {error, no_such_role}
+    end.
+
+-spec detach_role_policy(binary(), binary(), pid()) ->
+          ok | {error, unmodifiable_entity}.
+detach_role_policy(PolicyArn, RoleName, RcPid) ->
+    case find_role(#{name => RoleName}, RcPid) of
+        {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
+            case lists:member(PolicyArn, PP) of
+                false ->
+                    ok;
+                true ->
+                    case get_policy(PolicyArn, RcPid) of
+                        {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
+                            case update_role(Role?IAM_ROLE{attached_policies = lists:delete(PolicyArn, PP)}) of
+                                ok ->
+                                    update_policy(Policy?IAM_POLICY{attachment_count = AC - 1});
+                                ER1 ->
+                                    ER1
+                            end;
+                        {error, notfound} ->
+                            {error, no_such_policy}
+                    end
+            end;
+        {error, notfound} ->
+            {error, no_such_role}
+    end.
+
+update_role(R = ?IAM_ROLE{arn = Arn,
+                          assume_role_policy_document = D}) ->
+    Encoded = jason:encode(R?IAM_ROLE{assume_role_policy_document = base64:encode(D)},
+                           [{records, [{role_v1, record_info(fields, role_v1)},
+                                       {role_last_used, record_info(fields, arn_v1)},
+                                       {permissions_boundary, record_info(fields, permissions_boundary)},
+                                       {tag, record_info(fields, tag)}]}]),
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:update_role(
+               "application/json",
+               Arn,
+               Encoded,
+               [{auth_creds, AdminCreds}]),
+    handle_response(Result).
+
+update_policy(A = ?IAM_POLICY{arn = Arn}) ->
+    Encoded = jason:encode(A, [{records, [{policy_v1, record_info(fields, policy_v1)},
+                                          {tag, record_info(fields, tag)}]}]),
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:update_policy(
+               "application/json",
+               Arn,
+               Encoded,
+               [{auth_creds, AdminCreds}]),
+    handle_response(Result).
 
 
 %% CreateRole takes a string for PermissionsBoundary parameter, which
