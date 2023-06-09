@@ -302,14 +302,12 @@ parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} 
     {#xmlElement{content = RootContent,
                  attributes = RootAttributes}, _} = xmerl_scan:string(binary_to_list(D)),
     [#xmlElement{content = IDPSSODescriptorContent}|_] =
-        riak_cs_xml:find_elements('IDPSSODescriptor', RootContent),
-    [#xmlElement{content = _ExtensionsContent}|_] =
-        riak_cs_xml:find_elements('Extensions', IDPSSODescriptorContent),
+        riak_cs_xml:find_elements('md:IDPSSODescriptor', RootContent),
 
     [#xmlAttribute{value = EntityIDS}|_] = [A || A = #xmlAttribute{name = 'entityID'} <- RootAttributes],
     [#xmlAttribute{value = ValidUntilS}|_] = [A || A = #xmlAttribute{name = 'validUntil'} <- RootAttributes],
     case extract_certs(
-           riak_cs_xml:find_elements('KeyDescriptor', IDPSSODescriptorContent), []) of
+           riak_cs_xml:find_elements('md:KeyDescriptor', IDPSSODescriptorContent), []) of
         {ok, Certs} ->
             {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
                                      valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
