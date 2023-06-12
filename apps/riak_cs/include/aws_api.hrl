@@ -227,6 +227,7 @@
                           , valid_until :: undefined | non_neg_integer()
                           , entity_id :: undefined | binary()
                           , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}}]
+                          , fingerprints :: [binary()]
                           }
        ).
 -type saml_provider() :: #saml_provider_v1{}.

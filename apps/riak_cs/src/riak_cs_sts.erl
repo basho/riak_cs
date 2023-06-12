@@ -26,6 +26,7 @@
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
+-include_lib("esaml/include/esaml.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 
@@ -160,160 +161,73 @@ parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
 parse_saml_assertion_claims(#{specs := #{request_id := RequestId,
                                          saml_assertion := SAMLAssertion_}} = State0) ->
     SAMLAssertion = base64:decode(SAMLAssertion_),
-    {#xmlElement{content = RootContent}, _} =
-        xmerl_scan:string(binary_to_list(SAMLAssertion)),
-
-    [#xmlElement{content = AssertionContent,
-                 attributes = _AssertionAttrs}|_] =
-        riak_cs_xml:find_elements('saml:Assertion', RootContent),
-    [#xmlElement{content = SubjectContent}|_] =
-        riak_cs_xml:find_elements('saml:Subject', AssertionContent),
-    [#xmlElement{content = AttributeStatementContent}|_] =
-        riak_cs_xml:find_elements('saml:AttributeStatement', AssertionContent),
-    [#xmlElement{content = NameIDContent,
-                 attributes = NameIDAttrs}|_] =
-        riak_cs_xml:find_elements('saml:NameID', SubjectContent),
-    [#xmlText{value = NameID}|_] = NameIDContent,
-    SubjectType = attr_value('Format', NameIDAttrs),
-
-    [#xmlElement{content = IssuerContent}|_] =
-        riak_cs_xml:find_elements('saml:Issuer', AssertionContent),
-    [#xmlText{value = Issuer}|_] = IssuerContent,
-
-    %% signature and key
-    [#xmlElement{content = SignatureContent}|_] =
-        riak_cs_xml:find_elements('ds:Signature', RootContent),
-    [#xmlElement{content = SignedInfoContent}|_] =
-        riak_cs_xml:find_elements('ds:SignedInfo', SignatureContent),
-    [#xmlElement{attributes = SignatureMethodAttrs}|_] =
-        riak_cs_xml:find_elements('ds:SignatureMethod', SignedInfoContent),
-    SignatureAlgorithm = attr_value('Algorithm', SignatureMethodAttrs),
-
-    [#xmlElement{content = ReferenceContent}|_] =
-        riak_cs_xml:find_elements('ds:Reference', SignedInfoContent),
-    [#xmlElement{content = DigestValueContent}|_] =
-        riak_cs_xml:find_elements('ds:DigestValue', ReferenceContent),
-    [#xmlText{value = DigestValue}|_] = DigestValueContent,
-    [#xmlElement{attributes = DigestMethodAttrs}|_] =
-        riak_cs_xml:find_elements('ds:DigestMethod', ReferenceContent),
-    DigestAlgorithm = attr_value('Algorithm', DigestMethodAttrs),
-
-    [#xmlElement{content = SignatureValueContent}|_] =
-        riak_cs_xml:find_elements('ds:SignatureValue', SignatureContent),
-    [#xmlText{value = SignatureValue}|_] = SignatureValueContent,
-
-    [#xmlElement{content = KeyInfoContent}|_] =
-        riak_cs_xml:find_elements('ds:KeyInfo', SignatureContent),
-    [#xmlElement{content = X509DataContent}|_] =
-        riak_cs_xml:find_elements('ds:X509Data', KeyInfoContent),
-    [#xmlElement{content = X509CertificateContent}|_] =
-        riak_cs_xml:find_elements('ds:X509Certificate', X509DataContent),
-    [#xmlText{value = X509Certificate}|_] = X509CertificateContent,
+    {Doc, _} = xmerl_scan:string(binary_to_list(SAMLAssertion)),
+    case esaml:decode_response(Doc) of
+        {ok, DecodedResponse} ->
+            parse_saml_assertion_claims(
+              DecodedResponse,
+              State0#{assertion_doc => Doc});
+        {error, Reason} ->
+            logger:warning("Failed to parse Response document in request ~s: ~p", [RequestId, Reason]),
+            State0#{status => {error, idp_rejected_claim}}
+    end.
+parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
+                                            assertion = Assertion,
+                                            version = _Version}, State0) ->
+    #esaml_assertion{subject = #esaml_subject{name = SubjectName,
+                                              name_format = SubjectNameFormat},
+                     attributes = Attributes} = Assertion,
 
     %% optional fields
     RoleSessionName =
-        first_or_none(
-          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/RoleSessionName",
-                                            AttributeStatementContent)),
-    SourceIdentity =
-        first_or_none(
-          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/SourceIdentity",
-                                            AttributeStatementContent)),
+        proplists:get_value("https://aws.amazon.com/SAML/Attributes/RoleSessionName",
+                            Attributes),
     SessionDuration =
-        first_or_none(
-          find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/SessionDuration",
-                                            AttributeStatementContent)),
+        proplists:get_value("https://aws.amazon.com/SAML/Attributes/SessionDuration",
+                            Attributes),
+    SourceIdentity =
+        proplists:get_value("https://aws.amazon.com/SAML/Attributes/SourceIdentity",
+                            Attributes),
     Role =
-        find_AttributeValues_of_Attribute("https://aws.amazon.com/SAML/Attributes/Role",
-                                          AttributeStatementContent),
+        proplists:get_value("https://aws.amazon.com/SAML/Attributes/Role",
+                            Attributes, []),
 
-    case riak_cs_utils:parse_x509_cert(X509Certificate) of
-        {ok, Certificates} ->
-            State1 = State0#{status => ok,
-                             issuer => list_to_binary(Issuer),
-                             signature => #{signature_algorithm => sign_alg_to_atom(SignatureAlgorithm),
-                                            signature_value => list_to_binary(SignatureValue),
-                                            digest_algorithm => digest_alg_to_atom(DigestAlgorithm),
-                                            digest_value => list_to_binary(DigestValue),
-                                            certificates => Certificates},
-                             subject => list_to_binary(NameID),
-                             subject_type => list_to_binary(SubjectType)},
-            maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
-                                     {source_identity, maybe_list_to_binary(SourceIdentity)},
-                                     {session_duration, maybe_list_to_integer(SessionDuration)},
-                                     {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1);
-        {error, Reason} ->
-            logger:warning("Problem parsong certificate in SAML assertion in AssumeRoleWithSAML call"
-                           " with request_id ~s: !p", [RequestId, Reason]),
-            State0#{status => {error, idp_rejected_claim}}
-    end.
+    State1 = State0#{status => ok,
+                     issuer => list_to_binary(Issuer),
+                     subject => list_to_binary(SubjectName),
+                     subject_type => list_to_binary(SubjectNameFormat)},
+    maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
+                             {source_identity, maybe_list_to_binary(SourceIdentity)},
+                             {session_duration, maybe_list_to_integer(SessionDuration)},
+                             {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1).
 
-attr_value(A, AA) ->
-    case [V || #xmlAttribute{name = Name, value = V} <- AA, Name == A] of
-        [] ->
-            [];
-        [V] ->
-            V
-    end.
-
-find_AttributeValues_of_Attribute(AttrName, AA) ->
-    [extract_attribute_value(C) || #xmlElement{name = 'saml:Attribute',
-                                               attributes = EA,
-                                               content = C} <- AA,
-                                   attr_value('Name', EA) == AttrName].
-extract_attribute_value(AA) ->
-    hd([V || #xmlElement{name = 'saml:AttributeValue', content = [#xmlText{value = V}]} <- AA]).
-
-first_or_none(A) ->
-    case A of
-        [V|_] ->
-            V;
-        [] ->
-            none
-    end.
-
-maybe_list_to_integer(none) -> none;
+maybe_list_to_integer(undefined) -> undefined;
 maybe_list_to_integer(A) -> list_to_integer(A).
-maybe_list_to_binary(none) -> none;
+maybe_list_to_binary(undefined) -> undefined;
 maybe_list_to_binary(A) -> list_to_binary(A).
-
-sign_alg_to_atom("http://www.w3.org/2000/09/xmldsig#rsa-sha1") -> sha1;
-sign_alg_to_atom(A) -> {unsupported_sign_alg, A}.
-digest_alg_to_atom("http://www.w3.org/2000/09/xmldsig#sha1") -> sha1;
-digest_alg_to_atom(A) -> {unsupported_digest_alg, A}.
-
 
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{riak_client := RcPid,
-                           signature := Signature,
-                           specs := #{principal_arn := PrincipalArn}
+                           assertion_doc := Assertion,
+                           specs := #{request_id := RequestId,
+                                      principal_arn := PrincipalArn}
                           } = State) ->
     case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
-        {ok, SP} ->
-            State#{status => check_assertion_signature(Signature, SP)};
+        {ok, ?IAM_SAML_PROVIDER{fingerprints = FPs}} ->
+            State#{status => validate_assertion(Assertion, FPs, RequestId)};
         {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
-check_assertion_signature(#{signature_value := SignatureValue,
-                            digest_value := DigestValue},
-                          ?IAM_SAML_PROVIDER{certificates = ProviderCerts}) ->
-    SigningCerts = lists:flatten([C || {signing, C} <- ProviderCerts]),
-    case lists:any(
-           fun(#'OTPCertificate'{
-                  tbsCertificate =
-                      #'OTPTBSCertificate'{
-                         subjectPublicKeyInfo =
-                             #'OTPSubjectPublicKeyInfo'{
-                                subjectPublicKey = PubKey}}}) ->
-                   true == public_key:verify(DigestValue, none, SignatureValue, PubKey)
-           end,
-           SigningCerts) of
-        true ->
+validate_assertion(Assertion, FPs, RequestId) ->
+    ?LOG_DEBUG("FPs: ~p", [FPs]),
+    case xmerl_dsig:verify(Assertion, FPs) of
+        {ok, _Assertion2} ->
             ok;
-        false ->
+        {error, Reason} ->
+            logger:warning("Failed to validate SAML Assertion for AssumeRoleWithSAML call on request ~s: ~p", [RequestId, Reason]),
             {error, idp_rejected_claim}
     end.
 
@@ -348,7 +262,7 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
 
 maybe_update_state_with([], State) ->
     State;
-maybe_update_state_with([{_, none}|Rest], State) ->
+maybe_update_state_with([{_, undefined}|Rest], State) ->
     maybe_update_state_with(Rest, State);
 maybe_update_state_with([{P, V}|Rest], State) ->
     maybe_update_state_with(Rest, maps:put(P, V, State)).
