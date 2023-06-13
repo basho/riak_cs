@@ -227,8 +227,9 @@ check_with_saml_provider(#{riak_client := RcPid,
                                       principal_arn := PrincipalArn}
                           } = State) ->
     case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
-        {ok, SP} ->
-            State#{status => validate_assertion(ResponseDoc, SP, RequestId)};
+        {ok, SP = ?IAM_SAML_PROVIDER{name = SAMLProviderName}} ->
+            State#{status => validate_assertion(ResponseDoc, SP, RequestId),
+                   saml_provider_name => SAMLProviderName};
         {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
     end.
@@ -254,6 +255,8 @@ validate_assertion(ResponseDoc, ?IAM_SAML_PROVIDER{certificates = Certs,
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSeconds} = Specs,
+                                      issuer := Issuer,
+                                      saml_provider_name := SAMLProviderName,
                                       audience := Audience,
                                       role := Role,
                                       subject := Subject,
@@ -271,7 +274,10 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
                    assumed_role_user => AssumedRoleUser,
                    audience => Audience,
                    credentials => Credentials,
-                   name_qualifier => <<"Base64 ( SHA1 ( \"https://example.com/saml\" + \"123456789012\" + \"/MySAMLIdP\" ) )">>,
+                   name_qualifier => base64:encode(
+                                       crypto:hash(
+                                         sha, iolist_to_binary(
+                                                [Issuer, account_id_of_role(Role), $/, SAMLProviderName]))),
                    packed_policy_size => 6,
                    subject => Subject,
                    subject_type => SubjectType,
@@ -279,6 +285,11 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
         ER ->
             State#{status => ER}
     end.
+
+account_id_of_role(?IAM_ROLE{} = R) ->
+    ?LOG_DEBUG("STUB ~p", [R]),
+    
+    "123456789012".
 
 
 maybe_update_state_with([], State) ->
