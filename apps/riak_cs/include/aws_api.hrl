@@ -226,8 +226,7 @@
                           , create_date = os:system_time(millisecond) :: non_neg_integer()
                           , valid_until :: undefined | non_neg_integer()
                           , entity_id :: undefined | binary()
-                          , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}}]
-                          , fingerprints :: [binary()]
+                          , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}, FP::binary()}]
                           }
        ).
 -type saml_provider() :: #saml_provider_v1{}.

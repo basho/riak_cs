@@ -215,7 +215,8 @@ check_with_saml_provider(#{riak_client := RcPid,
                                       principal_arn := PrincipalArn}
                           } = State) ->
     case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
-        {ok, ?IAM_SAML_PROVIDER{fingerprints = FPs}} ->
+        {ok, ?IAM_SAML_PROVIDER{certificates = Certs}} ->
+            FPs = lists:flatten([FP || {signing, _, FP} <- Certs]),
             State#{status => validate_assertion(Assertion, FPs, RequestId)};
         {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
@@ -224,7 +225,7 @@ check_with_saml_provider(#{riak_client := RcPid,
 validate_assertion(Assertion, FPs, RequestId) ->
     ?LOG_DEBUG("FPs: ~p", [FPs]),
     case xmerl_dsig:verify(Assertion, FPs) of
-        {ok, _Assertion2} ->
+        ok ->
             ok;
         {error, Reason} ->
             logger:warning("Failed to validate SAML Assertion for AssumeRoleWithSAML call on request ~s: ~p", [RequestId, Reason]),

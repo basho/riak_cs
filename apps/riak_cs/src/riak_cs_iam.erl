@@ -309,11 +309,9 @@ parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} 
     case extract_certs(
            riak_cs_xml:find_elements('md:KeyDescriptor', IDPSSODescriptorContent), []) of
         {ok, Certs} ->
-            SigningCerts = lists:flatten([C || {signing, C} <- Certs]),
             {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
                                      valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
-                                     certificates = Certs,
-                                     fingerprints = lists:flatten([extract_fingerprints(C) || C <- SigningCerts])}};
+                                     certificates = Certs}};
         {error, Reason} ->
             logger:warning("Problem parsing certificate in IdP metadata: ~p", [Reason]),
             {error, invalid_metadata_document}
@@ -329,19 +327,14 @@ extract_certs([#xmlElement{content = RootContent,
     [#xmlText{value = CertDataS}] = [T || T = #xmlText{} <- X509CertificateContent],
     [#xmlAttribute{value = TypeS}|_] = [A || A = #xmlAttribute{name = use} <- RootAttributes],
     Type = list_to_atom(TypeS),
+    FP = esaml_util:convert_fingerprints(
+           [crypto:hash(sha, base64:decode(CertDataS))]),
     case riak_cs_utils:parse_x509_cert(list_to_binary(CertDataS)) of
         {ok, Certs} ->
-            extract_certs(Rest, [{Type, Certs} | Q]);
+            extract_certs(Rest, [{Type, Certs, FP} | Q]);
         ER ->
             ER
     end.
-
-extract_fingerprints(#'OTPCertificate'{
-                        tbsCertificate = #'OTPTBSCertificate'{
-                                            subjectPublicKeyInfo = #'OTPSubjectPublicKeyInfo'{
-                                                                     subjectPublicKey = PK}}}) ->
-    esaml_util:convert_fingerprints(
-      [ssh:hostkey_fingerprint(PK)]).
 
 
 from_riakc_obj(Obj) ->
