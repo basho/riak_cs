@@ -184,6 +184,7 @@ parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
                                             version = _Version}, State0) ->
     #esaml_assertion{subject = #esaml_subject{name = SubjectName,
                                               name_format = SubjectNameFormat},
+                     conditions = Conditions,
                      attributes = Attributes} = Assertion,
 
     %% optional fields
@@ -200,10 +201,13 @@ parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
         proplists:get_value("https://aws.amazon.com/SAML/Attributes/Role",
                             Attributes, []),
 
+    Audience = proplists:get_value(audience, Conditions),
+
     State1 = State0#{status => ok,
                      issuer => list_to_binary(Issuer),
                      subject => list_to_binary(SubjectName),
-                     subject_type => list_to_binary(SubjectNameFormat)},
+                     subject_type => list_to_binary(SubjectNameFormat),
+                     audience => list_to_binary(Audience)},
     maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
                              {source_identity, maybe_list_to_binary(SourceIdentity)},
                              {session_duration, maybe_list_to_integer(SessionDuration)},
@@ -250,6 +254,7 @@ validate_assertion(ResponseDoc, ?IAM_SAML_PROVIDER{certificates = Certs,
 create_session_and_issue_temp_creds(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSeconds} = Specs,
+                                      audience := Audience,
                                       role := Role,
                                       subject := Subject,
                                       subject_type := SubjectType,
@@ -264,7 +269,7 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
                            credentials = Credentials}} ->
             State#{status => ok,
                    assumed_role_user => AssumedRoleUser,
-                   audience => <<"https://signin.aws.amazon.com/saml">>,
+                   audience => Audience,
                    credentials => Credentials,
                    name_qualifier => <<"Base64 ( SHA1 ( \"https://example.com/saml\" + \"123456789012\" + \"/MySAMLIdP\" ) )">>,
                    packed_policy_size => 6,
