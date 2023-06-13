@@ -226,6 +226,7 @@
                           , create_date = os:system_time(millisecond) :: non_neg_integer()
                           , valid_until :: undefined | non_neg_integer()
                           , entity_id :: undefined | binary()
+                          , consume_uri :: binary()
                           , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}, FP::binary()}]
                           }
        ).

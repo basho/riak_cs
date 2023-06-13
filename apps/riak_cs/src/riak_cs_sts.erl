@@ -156,6 +156,15 @@ check_role(#{riak_client := RcPid,
             State#{status => ER}
     end.
 
+
+%% Since we have IdP metadata (from previous calls to
+%% CreateSAMLProvider), we can, and will, use esaml decoding and
+%% validation facilities to emulate a SP without actuallay talking to
+%% the IdP described in the SAMLMetadataDocument.  This appears to be
+%% sufficient except for the case of encrypted SAML assertions, for
+%% which we need a private key which we currently have no way to
+%% obtain via an IAM or STS call.
+
 parse_saml_assertion_claims(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 parse_saml_assertion_claims(#{specs := #{request_id := RequestId,
@@ -163,10 +172,9 @@ parse_saml_assertion_claims(#{specs := #{request_id := RequestId,
     SAMLAssertion = base64:decode(SAMLAssertion_),
     {Doc, _} = xmerl_scan:string(binary_to_list(SAMLAssertion)),
     case esaml:decode_response(Doc) of
-        {ok, DecodedResponse} ->
+        {ok, #esaml_response{} = SAMLResponse} ->
             parse_saml_assertion_claims(
-              DecodedResponse,
-              State0#{assertion_doc => Doc});
+              SAMLResponse, State0#{response_doc => Doc});
         {error, Reason} ->
             logger:warning("Failed to parse Response document in request ~s: ~p", [RequestId, Reason]),
             State0#{status => {error, idp_rejected_claim}}
@@ -210,22 +218,29 @@ maybe_list_to_binary(A) -> list_to_binary(A).
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
 check_with_saml_provider(#{riak_client := RcPid,
-                           assertion_doc := Assertion,
+                           response_doc := ResponseDoc,
                            specs := #{request_id := RequestId,
                                       principal_arn := PrincipalArn}
                           } = State) ->
     case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
-        {ok, ?IAM_SAML_PROVIDER{certificates = Certs}} ->
-            FPs = lists:flatten([FP || {signing, _, FP} <- Certs]),
-            State#{status => validate_assertion(Assertion, FPs, RequestId)};
+        {ok, SP} ->
+            State#{status => validate_assertion(ResponseDoc, SP, RequestId)};
         {error, not_found} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
-validate_assertion(Assertion, FPs, RequestId) ->
-    ?LOG_DEBUG("FPs: ~p", [FPs]),
-    case xmerl_dsig:verify(Assertion, FPs) of
-        ok ->
+validate_assertion(ResponseDoc, ?IAM_SAML_PROVIDER{certificates = Certs,
+                                                   consume_uri = ConsumeUri,
+                                                   entity_id = EntityId},
+                   RequestId) ->
+    FPs = lists:flatten([FP || {signing, _, FP} <- Certs]),
+    SP = #esaml_sp{trusted_fingerprints = FPs,
+                   entity_id = binary_to_list(EntityId),
+                   idp_signs_assertions = false,
+                   idp_signs_envelopes = false,
+                   consume_uri = ConsumeUri},
+    case esaml_sp:validate_assertion(ResponseDoc, SP) of
+        {ok, _} ->
             ok;
         {error, Reason} ->
             logger:warning("Failed to validate SAML Assertion for AssumeRoleWithSAML call on request ~s: ~p", [RequestId, Reason]),

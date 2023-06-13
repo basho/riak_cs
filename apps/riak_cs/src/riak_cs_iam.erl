@@ -299,18 +299,17 @@ find_saml_provider(#{entity_id := EntityID}, RcPid) ->
 -spec parse_saml_provider_idp_metadata(saml_provider()) ->
           {ok, saml_provider()} | {error, invalid_metadata_document}.
 parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} = P) ->
-    {#xmlElement{content = RootContent,
-                 attributes = RootAttributes}, _} = xmerl_scan:string(binary_to_list(D)),
-    [#xmlElement{content = IDPSSODescriptorContent}|_] =
-        riak_cs_xml:find_elements('md:IDPSSODescriptor', RootContent),
-
-    [#xmlAttribute{value = EntityIDS}|_] = [A || A = #xmlAttribute{name = 'entityID'} <- RootAttributes],
-    [#xmlAttribute{value = ValidUntilS}|_] = [A || A = #xmlAttribute{name = 'validUntil'} <- RootAttributes],
+    {Xml, _} = xmerl_scan:string(binary_to_list(D)),
+    Ns = [{namespace, [{"md", "urn:oasis:names:tc:SAML:2.0:metadata"}]}],
+    [#xmlAttribute{value = EntityID}] = xmerl_xpath:string("/md:EntityDescriptor/@entityID", Xml, Ns),
+    [#xmlAttribute{value = ValidUntil}] = xmerl_xpath:string("/md:EntityDescriptor/@validUntil", Xml, Ns),
+    [#xmlAttribute{value = ConsumeUri}] = xmerl_xpath:string("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService/@Location", Xml, Ns),
     case extract_certs(
-           riak_cs_xml:find_elements('md:KeyDescriptor', IDPSSODescriptorContent), []) of
+           xmerl_xpath:string("/md:EntityDescriptor/md:IDPSSODescriptor/md:KeyDescriptor", Xml, Ns), []) of
         {ok, Certs} ->
-            {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityIDS),
-                                     valid_until = calendar:rfc3339_to_system_time(ValidUntilS, [{unit, millisecond}]),
+            {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityID),
+                                     valid_until = calendar:rfc3339_to_system_time(ValidUntil, [{unit, millisecond}]),
+                                     consume_uri = ConsumeUri,
                                      certificates = Certs}};
         {error, Reason} ->
             logger:warning("Problem parsing certificate in IdP metadata: ~p", [Reason]),
