@@ -20,7 +20,8 @@
 
 -module(riak_cs_aws_utils).
 
--export([make_id/1,
+-export([aws_service_from_url/1,
+         make_id/1,
          make_id/2,
          make_role_arn/2,
          make_provider_arn/1,
@@ -36,6 +37,33 @@
 -define(AWS_ID_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
 -define(AWS_ID_EXT_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_").
 -define(ACCESS_KEY_LENGTH, 20).
+
+-spec aws_service_from_url(string()) -> aws_service() | unsupported.
+aws_service_from_url(Host) ->
+    {Third, Fourth} =
+        case lists:reverse(
+               string:split(string:to_lower(Host), ".", all)) of
+            ["com", "amazonaws", A] ->
+                {A, ""};
+            ["com", "amazonaws", A, B|_] ->
+                {A, B};
+            _ ->
+                {"", ""}
+        end,
+    case aws_service(Third) of
+        unsupported ->
+            %% third item is a region, then fourth must be it
+            aws_service(Fourth);
+        Service ->
+            Service
+    end.
+
+aws_service("s3") -> s3;
+aws_service("iam") -> iam;
+aws_service("sts") -> sts;
+aws_service(_) ->  unsupported.
+
+
 
 -spec make_id(non_neg_integer(), string()) -> binary().
 make_id(Length) ->

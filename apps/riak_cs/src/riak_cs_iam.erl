@@ -21,6 +21,7 @@
 -module(riak_cs_iam).
 
 -export([create_role/1,
+         update_role/1,
          delete_role/1,
          get_role/2,
          find_role/2,
@@ -32,6 +33,7 @@
          parse_saml_provider_idp_metadata/1,
 
          create_policy/1,
+         update_policy/1,
          delete_policy/1,
          get_policy/2,
          find_policy/2,

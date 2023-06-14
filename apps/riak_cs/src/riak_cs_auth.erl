@@ -22,7 +22,6 @@
 -module(riak_cs_auth).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 %% TODO: arguments of `identify/2', and 3rd and 4th arguments of
 %%       authenticate/4 are actually `#wm_reqdata{}' and `#context{}'

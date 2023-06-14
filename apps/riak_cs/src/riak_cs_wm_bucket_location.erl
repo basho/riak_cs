@@ -36,7 +36,6 @@
 -export([authorize/2]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec stats_prefix() -> bucket_location.
 stats_prefix() -> bucket_location.

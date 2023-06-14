@@ -136,7 +136,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("webmachine/include/webmachine.hrl").
 -include("rts.hrl").
 -include("riak_cs.hrl").
 

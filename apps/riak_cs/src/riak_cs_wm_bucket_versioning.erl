@@ -41,7 +41,6 @@
 
 -include("riak_cs.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec stats_prefix() -> bucket_versioning.
 stats_prefix() -> bucket_versioning.

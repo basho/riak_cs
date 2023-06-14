@@ -55,7 +55,6 @@
 
 -include("riak_cs.hrl").
 -include_lib("webmachine/include/webmachine_logger.hrl").
--include_lib("webmachine/include/wm_reqdata.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 %% Quota not set

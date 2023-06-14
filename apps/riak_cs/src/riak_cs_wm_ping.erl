@@ -36,7 +36,6 @@
              ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -record(ping_context, {pool_pid=true :: boolean(),
                        riak_client :: undefined | riak_client()}).

@@ -31,7 +31,6 @@
              ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->

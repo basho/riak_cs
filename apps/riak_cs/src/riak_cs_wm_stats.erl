@@ -43,7 +43,6 @@
         ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 init(Props) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),

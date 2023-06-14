@@ -39,8 +39,6 @@
 %% Do not use this
 -export([connection_checker/1]).
 
--include_lib("webmachine/include/webmachine.hrl").
-
 %% @doc tests condition and permission on source object:
 %% * x-amz-copy-source-if-* stuff
 %% * bucket/object acl

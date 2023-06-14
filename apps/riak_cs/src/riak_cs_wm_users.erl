@@ -42,7 +42,6 @@
              ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks

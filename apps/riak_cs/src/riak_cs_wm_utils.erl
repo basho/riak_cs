@@ -69,14 +69,13 @@
          check_timeskew/1,
          content_length/1,
          valid_entity_length/3,
-         role_access_authorize_helper/2,
-         eval_role_for_action/2,
+         role_access_authorize_helper/3,
+         aws_service_action/2,
          make_final_rd/2,
          make_request_id/0
         ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -define(QS_KEYID, "AWSAccessKeyId").
@@ -89,6 +88,59 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
+
+-spec aws_service_action(#wm_reqdata{}, action_target()) -> aws_action() | no_action.
+aws_service_action(RD, Target) ->
+    Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
+    case proplists:get_value("Action", Form) of
+        undefined ->
+            make_s3_action(wrq:method(RD), Target);
+        Defined ->
+            Path = wrq:path(RD),
+            Service = hd(string:tokens(Path, ".")),
+            list_to_atom(Service ++ ":" ++ Defined)
+    end.
+
+make_s3_action(Method, Target) ->
+    case {Method, Target} of
+        {'PUT', object} -> 's3:PutObject';
+        {'PUT', object_part} -> 's3:PutObject';
+        {'PUT', object_acl} -> 's3:PutObjectAcl';
+        {'PUT', bucket_acl} -> 's3:PutBucketAcl';
+        {'PUT', bucket_policy} -> 's3:PutBucketPolicy';
+        {'PUT', bucket_request_payment} -> 's3:PutBucketRequestPayment';
+
+        {'GET', object} -> 's3:GetObject';
+        {'GET', object_part} -> 's3:ListMultipartUploadParts';
+        {'GET', object_acl} -> 's3:GetObjectAcl';
+        {'GET', bucket} -> 's3:ListBucket';
+        {'GET', no_bucket } -> 's3:ListAllMyBuckets';
+        {'GET', bucket_acl} -> 's3:GetBucketAcl';
+        {'GET', bucket_policy} -> 's3:GetBucketPolicy';
+        {'GET', bucket_location} -> 's3:GetBucketLocation';
+        {'GET', bucket_request_payment} -> 's3:GetBucketRequestPayment';
+        {'GET', bucket_uploads} -> 's3:ListBucketMultipartUploads';
+
+        {'DELETE', object} -> 's3:DeleteObject';
+        {'DELETE', object_part} -> 's3:AbortMultipartUpload';
+        {'DELETE', bucket} -> 's3:DeleteBucket';
+        {'DELETE', bucket_policy} -> 's3:DeleteBucketPolicy';
+
+        {'HEAD', object} -> 's3:GetObject'; % no HeadObjet
+
+        %% PUT Object includes POST Object,
+        %% including Initiate Multipart Upload, Upload Part, Complete Multipart Upload
+        {'POST', object} -> 's3:PutObject';
+        {'POST', object_part} -> 's3:PutObject';
+
+        %% same as {'GET' bucket}
+        {'HEAD', bucket} -> 's3:ListBucket';
+
+        %% 400 (MalformedPolicy): Policy has invalid action
+        {'PUT', bucket} -> 's3:CreateBucket';
+
+        {'HEAD', _} -> no_action
+    end.
 
 service_available(RD, Ctx) ->
     service_available(request_pool, RD, Ctx).
@@ -1156,18 +1208,33 @@ valid_entity_length(MaxLen, RD, #rcs_web_context{response_module = ResponseMod,
     end.
 
 
--spec role_access_authorize_helper(#wm_reqdata{}, #rcs_web_context{}) ->
+-spec role_access_authorize_helper(action_target(), #wm_reqdata{}, #rcs_web_context{}) ->
           authorized_response().
-role_access_authorize_helper(RD, Ctx) ->
-    ?LOG_DEBUG("STUB role_access_authorize_helper, returning false"),
-    
-    {false, RD, Ctx}.
-
--spec eval_role_for_action(#wm_reqdata{}, #rcs_web_context{}) ->
-          boolean().
-eval_role_for_action(_RD, _Role) ->
-    ?LOG_DEBUG("STUB eval_role_for_action"),
-    true.
+role_access_authorize_helper(Target, RD,
+                             Ctx = #rcs_web_context{policy_module = PolicyMod,
+                                                   user = User}) ->
+    Access = PolicyMod:reqdata_to_access(RD, Target,
+                                         User?RCS_USER.canonical_id),
+    case any_assumed_role_policies_or_halt(Ctx) of
+        user_session_expired ->
+            deny_access(RD, Ctx);
+        Policies ->
+            PoliciesEvaluated =
+                lists:foldl(
+                  fun(_, false) ->
+                          false;
+                     (P, _) ->
+                          PolicyMod:eval(Access, P)
+                  end,
+                  undefined,
+                  Policies),
+            case PoliciesEvaluated of
+                true ->
+                    {false, RD, Ctx};
+                _false_or_undecided ->
+                    deny_access(RD, Ctx)
+            end
+    end.
 
 
 make_final_rd(Body, RD) ->

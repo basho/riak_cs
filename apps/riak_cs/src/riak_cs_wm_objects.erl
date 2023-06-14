@@ -39,7 +39,6 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_web.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -define(RIAKCPOOL, bucket_list_pool).

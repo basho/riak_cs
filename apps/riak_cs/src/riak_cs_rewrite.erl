@@ -31,7 +31,6 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_web.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 
 %% no-rewrite, for calls directly to riak_cs

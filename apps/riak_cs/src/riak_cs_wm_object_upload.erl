@@ -46,7 +46,6 @@
              ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
 init(Ctx) ->

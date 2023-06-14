@@ -62,7 +62,6 @@
              ]).
 
 -include("riak_cs_web.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -125,9 +124,7 @@ forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
                         authenticate(User, Obj, RD, Ctx, AuthData);
                     Error ->
                         Error
-                end;
-            Role ->
-                riak_cs_wm_utils:eval_role_for_action(RD, Role)
+                end
         end,
     post_authentication(AuthResult, RD, Ctx, fun authorize/2).
 
@@ -194,7 +191,7 @@ content_types_provided(RD, Ctx) ->
 -spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:role_access_authorize_helper(RD, Ctx).
+    riak_cs_wm_utils:role_access_authorize_helper(iam_entity, RD, Ctx).
 
 
 -spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.

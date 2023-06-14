@@ -74,6 +74,31 @@
           's3:GetBucketVersioning', 's3:PutBucketVersioning',
           's3:ListBucketMultipartUploads']).
 
+-type s3_action() :: s3_bucket_action() | s3_object_action().
+
+
+-type iam_action() :: 'iam:CreateRole' | 'iam:GetRole' | 'iam:DeleteRole' | 'iam:ListRoles'
+                    | 'iam:CreatePolicy' | 'iam:GetPolicy' | 'iam:DeletePolicy' | 'iam:ListPolicies'
+                    | 'iam:AttachRolePolicy' | 'iam:DetachRolePolicy'
+                    | 'iam:CreateSAMLProvider' | 'iam:GetSAMLProvider' | 'iam:DeleteSAMLProvider' | 'iam:ListSAMLProviders'.
+-define(SUPPORTED_IAM_ACTION,
+        [ 'iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:ListRoles'
+        , 'iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 'iam:ListPolicies'
+        , 'iam:AttachRolePolicy', 'iam:DetachRolePolicy'
+        , 'iam:CreateSAMLProvider', 'iam:GetSAMLProvider', 'iam:DeleteSAMLProvider', 'iam:ListSAMLProviders'
+        ]
+       ).
+
+-type sts_action() :: 'sts:AssumeRoleWithSAML'.
+-define(SUPPORTED_STS_ACTION,
+        [ 'sts:AssumeRoleWithSAML'
+        ]
+       ).
+
+-type aws_action() :: s3_action() | iam_action() | sts_action().
+
+
+
 % one of string, numeric, date&time, boolean, IP address, ARN and existence of condition keys
 -type string_condition_type() :: 'StringEquals' | streq            | 'StringNotEquals' | strneq
                                | 'StringEqualsIgnoreCase' | streqi | 'StringNotEqualsIgnoreCase' | strneqi
@@ -123,10 +148,10 @@
                         | {string_condition_type(),  [{'aws:UserAgent', binary()}]}
                         | {string_condition_type(),  [{'aws:Referer', binary()}]}.
 
--type service() :: s3 | iam | sts.
+-type aws_service() :: s3 | iam | sts.
 
 -record(arn_v1, { provider = aws :: aws
-                , service  = s3  :: service()
+                , service  = s3  :: aws_service()
                 , region         :: string()
                 , id             :: binary()
                 , path           :: string()

@@ -35,7 +35,6 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_web.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec stats_prefix() -> service.
 stats_prefix() -> service.

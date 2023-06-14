@@ -28,7 +28,6 @@
          status_code/1]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -spec respond(term(), #wm_reqdata{}, #rcs_web_context{}) ->
           {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_web_context{}}.

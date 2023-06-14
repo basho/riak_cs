@@ -42,7 +42,6 @@
         ]).
 
 -include("riak_cs.hrl").
--include_lib("webmachine/include/wm_reqdata.hrl").
 -include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -179,7 +178,7 @@ check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
     [B|_] = string:tokens(Path, "/"),
     B =:= binary_to_list(BucketBin).
 
--spec reqdata_to_access(#wm_reqdata{}, Target::atom(), ID::string()|undefined) -> access().
+-spec reqdata_to_access(#wm_reqdata{}, action_target(), ID::string()|undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;
@@ -190,7 +189,8 @@ reqdata_to_access(RD, Target, ID) ->
                id = ID,
                req = RD,
                bucket = list_to_binary(wrq:path_info(bucket, RD)),
-               key = Key
+               key = Key,
+               action = riak_cs_wm_utils:aws_service_action(RD, Target)
               }.
 
 -spec policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
@@ -364,9 +364,10 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
 
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.
-eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Access,
-               #statement{effect=E, condition_block=Conds, action=As} = Stmt) ->
-    {ok, A} = make_action(M, T),
+eval_statement(#access_v1{req = Req,
+                          bucket = B, key = K,
+                          action = A},
+               #statement{effect = E, condition_block = Conds, action = As} = Stmt) ->
     ResourceMatch = resource_matches(B, K, Stmt),
     IsRelated = (As =:= '*')
         orelse (A =:= As)
@@ -383,46 +384,6 @@ eval_statement(#access_v1{method=M, target=T, req=Req, bucket=B, key=K} = _Acces
             end
     end.
 
-make_action(Method, Target) ->
-    case {Method, Target} of
-        {'PUT', object} ->     {ok, 's3:PutObject'};
-        {'PUT', object_part} -> {ok, 's3:PutObject'};
-        {'PUT', object_acl} -> {ok, 's3:PutObjectAcl'};
-        {'PUT', bucket_acl} -> {ok, 's3:PutBucketAcl'};
-        {'PUT', bucket_policy} -> {ok, 's3:PutBucketPolicy'};
-        {'PUT', bucket_request_payment} -> {ok, 's3:PutBucketRequestPayment'};
-
-        {'GET', object} ->     {ok, 's3:GetObject'};
-        {'GET', object_part} -> {ok, 's3:ListMultipartUploadParts'};
-        {'GET', object_acl} -> {ok, 's3:GetObjectAcl'};
-        {'GET', bucket} ->     {ok, 's3:ListBucket'};
-        {'GET', no_bucket } -> {ok, 's3:ListAllMyBuckets'};
-        {'GET', bucket_acl} -> {ok, 's3:GetBucketAcl'};
-        {'GET', bucket_policy} -> {ok, 's3:GetBucketPolicy'};
-        {'GET', bucket_location} -> {ok, 's3:GetBucketLocation'};
-        {'GET', bucket_request_payment} -> {ok, 's3:GetBucketRequestPayment'};
-        {'GET', bucket_uploads} -> {ok, 's3:ListBucketMultipartUploads'};
-
-        {'DELETE', object} ->  {ok, 's3:DeleteObject'};
-        {'DELETE', object_part} -> {ok, 's3:AbortMultipartUpload'};
-        {'DELETE', bucket} ->  {ok, 's3:DeleteBucket'};
-        {'DELETE', bucket_policy} -> {ok, 's3:DeleteBucketPolicy'};
-
-        {'HEAD', object} -> {ok, 's3:GetObject'}; % no HeadObject
-
-        %% PUT Object includes POST Object,
-        %% including Initiate Multipart Upload, Upload Part, Complete Multipart Upload
-        {'POST', object} -> {ok, 's3:PutObject'};
-        {'POST', object_part} -> {ok, 's3:PutObject'};
-
-        %% same as {'GET' bucket}
-        {'HEAD', bucket} -> {ok, 's3:ListBucket'};
-
-        %% 400 (MalformedPolicy): Policy has invalid action
-        {'PUT', bucket} ->  {ok, 's3:CreateBucket'};
-
-        {'HEAD', _} -> {error, no_action}
-    end.
 
 eval_condition(Req, {AtomKey, Cond}) ->
     case AtomKey of

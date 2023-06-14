@@ -24,6 +24,7 @@
 -include("manifest.hrl").
 -include("moss.hrl").
 -include("aws_api.hrl").
+-include_lib("webmachine/include/wm_reqdata.hrl").
 
 -type mochiweb_headers() :: gb_trees:tree().
 
@@ -71,7 +72,6 @@
                           api :: atom()
                          }).
 
-
 -record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
                       upload_id :: undefined | binary(),
                       part_number :: undefined | integer(),
@@ -87,14 +87,21 @@
                       content_md5 :: undefined | binary(),
                       update_metadata = false :: boolean()}).
 
--record(access_v1, {
-          method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD',
-          target :: atom(), % object | object_acl | ....
-          id :: string(),
-          bucket :: binary(),
-          key = <<>> :: undefined | binary(),
-          req %:: #wm_reqdata{} % request of webmachine
-         }).
+-type action_target() :: object | object_part | object_acl
+                       | bucket | bucket_acl | bucket_policy
+                       | bucket_request_payment | bucket_location | bucket_uploads | no_bucket
+                       | iam_entity
+                       | sts_entity.
+
+-record(access_v1, { method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD'
+                   , target :: action_target()
+                   , id :: string()
+                   , bucket :: binary()
+                   , key = <<>> :: undefined | binary()
+                   , action :: aws_action()
+                   , req :: #wm_reqdata{}
+                   }
+       ).
 -type access() :: #access_v1{}.
 
 

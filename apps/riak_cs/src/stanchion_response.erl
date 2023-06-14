@@ -26,7 +26,6 @@
 
 -include("riak_cs.hrl").
 -include("stanchion.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -spec api_error(error_reason(), #wm_reqdata{}, #stanchion_context{}) ->

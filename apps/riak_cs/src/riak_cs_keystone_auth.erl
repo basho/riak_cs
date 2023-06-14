@@ -28,7 +28,6 @@
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
 -include("oos_api.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

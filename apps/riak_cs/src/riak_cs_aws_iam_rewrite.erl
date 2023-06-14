@@ -27,7 +27,6 @@
 
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
--include_lib("webmachine/include/webmachine.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->

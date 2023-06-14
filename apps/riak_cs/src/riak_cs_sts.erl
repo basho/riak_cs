@@ -206,7 +206,7 @@ parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
     State1 = State0#{status => ok,
                      issuer => list_to_binary(Issuer),
                      subject => list_to_binary(SubjectName),
-                     subject_type => list_to_binary(SubjectNameFormat),
+                     subject_type => list_to_binary(amazonize(SubjectNameFormat)),
                      audience => list_to_binary(Audience)},
     maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
                              {source_identity, maybe_list_to_binary(SourceIdentity)},
@@ -217,6 +217,10 @@ maybe_list_to_integer(undefined) -> undefined;
 maybe_list_to_integer(A) -> list_to_integer(A).
 maybe_list_to_binary(undefined) -> undefined;
 maybe_list_to_binary(A) -> list_to_binary(A).
+
+amazonize("urn:oasis:names:tc:SAML:2.0:nameid-format:" ++ A) -> A;
+amazonize(A) -> A.
+
 
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
