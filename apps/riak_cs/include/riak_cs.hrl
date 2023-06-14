@@ -34,9 +34,6 @@
 -define(AWS_RESPONSE_MOD, riak_cs_aws_response).
 -define(OOS_RESPONSE_MOD, riak_cs_oos_response).
 
--define(DEFAULT_AUTH_MODULE, riak_cs_aws_auth).
--define(DEFAULT_POLICY_MODULE, riak_cs_s3_policy).
-
 -define(DEFAULT_STANCHION_IP, "127.0.0.1").
 -define(DEFAULT_STANCHION_PORT, 8085).
 -define(DEFAULT_STANCHION_SSL, true).

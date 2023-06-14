@@ -140,9 +140,9 @@ unsigned_call_allowed(RD) ->
                  ?UNSIGNED_API_CALLS).
 
 
-post_authentication({ok, User, _UserObj}, RD, Ctx, Authorize) ->
-    %% given keyid and signature matched, proceed
-    Authorize(RD, Ctx#rcs_web_context{user = User});
+post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
+    Authorize(RD, Ctx#rcs_web_context{user = User,
+                                      user_object = UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize) ->
     %% no keyid was given, proceed anonymously
     ?LOG_DEBUG("No user key"),

@@ -128,9 +128,10 @@ forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
         end,
     post_authentication(AuthResult, RD, Ctx, fun authorize/2).
 
-post_authentication({ok, User, _UserObj}, RD, Ctx, Authorize) ->
+post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
     %% given keyid and signature matched, proceed
-    Authorize(RD, Ctx#rcs_web_context{user = User});
+    Authorize(RD, Ctx#rcs_web_context{user = User,
+                                      user_object = UserObj});
 post_authentication({error, no_user_key}, RD, Ctx, Authorize) ->
     %% no keyid was given, proceed anonymously
     ?LOG_DEBUG("No user key"),

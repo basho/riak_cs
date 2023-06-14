@@ -35,11 +35,10 @@
               finish_request/2
              ]).
 
--include("riak_cs.hrl").
--include_lib("webmachine/include/webmachine.hrl").
+-include("riak_cs_web.hrl").
 
--record(ping_context, {pool_pid=true :: boolean(),
-                       riak_client :: undefined | riak_client()}).
+-record(ping_context, {pool_pid = true :: boolean(),
+                       riak_client :: undefined | pid()}).
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -82,7 +81,6 @@ finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
 %% Internal functions
 %% -------------------------------------------------------------------
 
--spec get_connection_pid() -> {riak_client(), boolean()}.
 get_connection_pid() ->
     case pool_checkout() of
         full ->
@@ -91,7 +89,6 @@ get_connection_pid() ->
             {RcPid, true}
     end.
 
--spec pool_checkout() -> full | riak_client().
 pool_checkout() ->
     case riak_cs_riak_client:checkout(request_pool) of
         {ok, RcPid} ->
@@ -100,7 +97,6 @@ pool_checkout() ->
             full
     end.
 
--spec non_pool_connection() -> {undefined | riak_client(), false}.
 non_pool_connection() ->
     case riak_cs_riak_client:start_link([]) of
         {ok, RcPid} ->
@@ -109,7 +105,6 @@ non_pool_connection() ->
             {undefined, false}
     end.
 
--spec riak_ping({riak_client(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
 riak_ping({RcPid, PoolPid}, Ctx) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     Timeout = riak_cs_config:ping_timeout(),

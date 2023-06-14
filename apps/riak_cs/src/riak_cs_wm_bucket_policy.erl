@@ -81,11 +81,12 @@ authorize(RD, Ctx) ->
 to_json(RD, Ctx = #rcs_web_context{user = User,
                                    bucket = Bucket,
                                    response_module = RespMod,
+                                   policy_module = PolicyMod,
                                    riak_client = RcPid}) ->
     riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
                                    [], [riak_cs_wm_utils:extract_name(User), Bucket]),
 
-    case riak_cs_s3_policy:fetch_bucket_policy(Bucket, RcPid) of
+    case PolicyMod:fetch_bucket_policy(Bucket, RcPid) of
         {ok, PolicyJson} ->
             {PolicyJson, RD, Ctx};
         {error, policy_undefined} ->

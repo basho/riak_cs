@@ -1212,7 +1212,7 @@ valid_entity_length(MaxLen, RD, #rcs_web_context{response_module = ResponseMod,
           authorized_response().
 role_access_authorize_helper(Target, RD,
                              Ctx = #rcs_web_context{policy_module = PolicyMod,
-                                                   user = User}) ->
+                                                    user = User}) ->
     Access = PolicyMod:reqdata_to_access(RD, Target,
                                          User?RCS_USER.canonical_id),
     case any_assumed_role_policies_or_halt(Ctx) of

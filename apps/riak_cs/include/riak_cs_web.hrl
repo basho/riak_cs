@@ -28,6 +28,10 @@
 
 -type mochiweb_headers() :: gb_trees:tree().
 
+-define(DEFAULT_AUTH_MODULE, riak_cs_aws_auth).
+-define(DEFAULT_POLICY_MODULE, riak_cs_aws_policy).
+-define(DEFAULT_RESPONSE_MODULE, riak_cs_aws_response).
+
 -define(RCS_REWRITE_HEADER, "x-rcs-rewrite-path").
 -define(RCS_RAW_URL_HEADER, "x-rcs-raw-url").
 -define(OOS_API_VSN_HEADER, "x-oos-api-version").
@@ -53,9 +57,9 @@
                           auto_rc_close = true :: boolean(),
                           submodule :: module(),
                           exports_fun :: undefined | function(),
-                          auth_module :: module(),
-                          response_module :: module(),
-                          policy_module :: module(),
+                          auth_module = ?DEFAULT_AUTH_MODULE :: module(),
+                          policy_module = ?DEFAULT_POLICY_MODULE :: module(),
+                          response_module = ?DEFAULT_RESPONSE_MODULE :: module(),
                           %% Key for API rate and latency stats.
                           %% If `stats_prefix' or `stats_key' is `no_stats', no stats
                           %% will be gathered by riak_cs_wm_common.

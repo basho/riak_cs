@@ -71,6 +71,7 @@
          handle_error/4]).
 
 -include("riak_cs.hrl").
+-include("riak_cs_web.hrl").
 -include_lib("webmachine/include/webmachine_logger.hrl").
 -include_lib("kernel/include/logger.hrl").
 

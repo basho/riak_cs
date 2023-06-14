@@ -22,13 +22,12 @@
 %% @doc policy utility functions
 %% A (principal) is/isn't allowed (effect) to do B (action) to C (resource) where D (condition) applies
 
--module(riak_cs_s3_policy).
+-module(riak_cs_aws_policy).
 
 -behaviour(riak_cs_policy).
 
 %% Public API
--export([
-         fetch_bucket_policy/2,
+-export([fetch_bucket_policy/2,
          bucket_policy/1,
          bucket_policy_from_contents/2,
          eval/2,
@@ -188,7 +187,10 @@ reqdata_to_access(RD, Target, ID) ->
                target = Target,
                id = ID,
                req = RD,
-               bucket = list_to_binary(wrq:path_info(bucket, RD)),
+               bucket = case wrq:path_info(bucket, RD) of
+                            undefined -> undefined;
+                            B -> list_to_binary(B)
+                        end,
                key = Key,
                action = riak_cs_wm_utils:aws_service_action(RD, Target)
               }.
