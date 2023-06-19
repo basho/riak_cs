@@ -159,10 +159,9 @@ set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
 %% If the initial read fails retry using
 %% R=quorum and PR=1, but indicate that bucket deletion
 %% indicators should not be cleaned up.
--spec get_user(riak_client(),
-               UserKey :: binary()) ->
-                      {ok, {riakc_obj:riakc_obj(), KeepDeletedBuckets :: boolean()}} |
-                      {error, term()}.
+-spec get_user(riak_client(), binary()) ->
+          {ok, {riakc_obj:riakc_obj(), KeepDeletedBuckets :: boolean()}} |
+          {error, term()}.
 get_user(RcPid, UserKey) when is_binary(UserKey) ->
     gen_server:call(RcPid, {get_user, UserKey}, infinity).
 
@@ -403,9 +402,7 @@ weak_get_user_with_pbc(MasterPbc, Key) ->
     end.
 
 save_user_with_pbc(MasterPbc, User, OldUserObj) ->
-    Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
-               {?ID_INDEX, User?RCS_USER.canonical_id}],
-    MD = dict:store(?MD_INDEX, Indexes, dict:new()),
+    MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
     UpdUserObj = riakc_obj:update_metadata(
                    riakc_obj:update_value(OldUserObj,
                                           riak_cs_utils:encode_term(User)),

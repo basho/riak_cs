@@ -52,6 +52,7 @@
 -define(STORAGE_BUCKET, <<"moss.storage">>).
 -define(BUCKETS_BUCKET, <<"moss.buckets">>).
 -define(SERVICE_BUCKET, <<"moss.service">>).
+-define(IAM_USER_BUCKET, ?USER_BUCKET).
 -define(IAM_ROLE_BUCKET, <<"moss.iam.roles">>).
 -define(IAM_POLICY_BUCKET, <<"moss.iam.policies">>).
 -define(IAM_SAMLPROVIDER_BUCKET, <<"moss.iam.samlproviders">>).
@@ -69,15 +70,23 @@
 -define(USERMETA_KEY, "RCS-key").
 -define(USERMETA_BCSUM, "RCS-bcsum").
 
--define(EMAIL_INDEX, <<"email_bin">>).
--define(ID_INDEX, <<"c_id_bin">>).
+-define(USER_EMAIL_INDEX, <<"user_email_bin">>).
+-define(USER_PATH_INDEX, <<"user_path_bin">>).
+-define(USER_NAME_INDEX, <<"user_name_bin">>).
+-define(USER_KEYID_INDEX, <<"user_keyid_bin">>).
+-define(USER_ID_INDEX, <<"user_id_bin">>).
 -define(KEY_INDEX, <<"$key">>).
+-define(ROLE_ID_INDEX, <<"role_id_bin">>).
 -define(ROLE_PATH_INDEX, <<"role_path_bin">>).
 -define(ROLE_NAME_INDEX, <<"role_name_bin">>).
+-define(POLICY_ID_INDEX, <<"policy_id_bin">>).
 -define(POLICY_PATH_INDEX, <<"policy_path_bin">>).
 -define(POLICY_NAME_INDEX, <<"policy_name_bin">>).
 -define(SAMLPROVIDER_NAME_INDEX, <<"samlprovider_name_bin">>).
 -define(SAMLPROVIDER_ENTITYID_INDEX, <<"samlprovider_entityid_bin">>).
+
+-define(CONSISTENT_WRITE_OPTIONS, [{w, all}, {pw, all}]).
+-define(CONSISTENT_DELETE_OPTIONS, [{dw, all}]).
 
 -define(STANCHION_DETAILS_KEY, <<"stanchion">>).
 

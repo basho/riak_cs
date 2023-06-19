@@ -367,4 +367,11 @@
                                      }
        ).
 
+-record(attach_user_policy_response, { request_id :: string()
+                                     }
+       ).
+-record(detach_user_policy_response, { request_id :: string()
+                                     }
+       ).
+
 -endif.

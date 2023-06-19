@@ -783,7 +783,7 @@ any_assumed_role_policies_or_halt(#rcs_web_context{user_object = undefined,
             logger:notice("Denying an API request by user with key_id ~s as their session has (just!) expired", [KeyId]),
             user_session_expired
     end;
-any_assumed_role_policies_or_halt(#rcs_web_context{user_object = _NonFederatedUser}) ->
+any_assumed_role_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser}) ->
     [].
 
 

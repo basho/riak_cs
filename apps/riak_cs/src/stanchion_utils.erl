@@ -59,10 +59,6 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--define(ROLE_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
--define(POLICY_ID_LENGTH, 21).  %% length("AGPACKCEVSQ6C2EXAMPLE").
-
-
 %% this riak connection is separate, potentially to a different riak
 %% endpoint, from the standard one obtained via riak_cs_utils
 -spec make_pbc() -> pid().
@@ -113,7 +109,7 @@ create_bucket(#{bucket := Bucket,
             {ok, RcPid} = riak_cs_riak_client:checkout(),
             try
                 case riak_cs_user:get_user(OwnerId, RcPid) of
-                    {ok, {_FedereatedUser, no_object}} ->
+                    {ok, {_FedereatedUser, undefined}} ->
                         logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
                                     [Bucket, OwnerId]),
                         {error, temp_users_create_bucket_restriction};
@@ -197,19 +193,16 @@ role_name_available(Name) ->
 
 save_role(Role0 = ?IAM_ROLE{role_name = Name,
                             path = Path}, Pbc) ->
-    RoleId = ensure_unique_role_id(Pbc),
-
+    Id = riak_cs_aws_utils:make_unique_index_id(role, Pbc),
     Arn = riak_cs_aws_utils:make_role_arn(Name, Path),
     Role1 = Role0?IAM_ROLE{arn = Arn,
-                           role_id = RoleId},
+                           role_id = Id},
 
-    Indexes = [{?ROLE_PATH_INDEX, Path},
-               {?ROLE_NAME_INDEX, Name}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(Role1), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_ROLE_BUCKET, Arn, term_to_binary(Role1)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
@@ -220,15 +213,12 @@ save_role(Role0 = ?IAM_ROLE{role_name = Name,
     end.
 
 save_role_directly(Role = ?IAM_ROLE{arn = Arn,
-                                    role_name = Name,
-                                    path = Path}, Pbc) ->
-    Indexes = [{?ROLE_PATH_INDEX, Path},
-               {?ROLE_NAME_INDEX, Name}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+                                    role_name = Name}, Pbc) ->
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(Role), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_ROLE_BUCKET, Arn, term_to_binary(Role)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_role], TAT),
@@ -238,19 +228,10 @@ save_role_directly(Role = ?IAM_ROLE{arn = Arn,
             Res
     end.
 
-ensure_unique_role_id(RcPid) ->
-    Id = riak_cs_aws_utils:make_id(?ROLE_ID_LENGTH, "AROA"),
-    case fetch_object(?IAM_ROLE_BUCKET, Id, RcPid) of
-        {ok, _} ->
-            ensure_unique_role_id(RcPid);
-        _ ->
-            Id
-    end.
-
 -spec delete_role(binary(), pid()) -> ok | {error, term()}.
 delete_role(Arn, Pbc) ->
     case ?TURNAROUND_TIME(
-            riakc_pb_socket:delete(Pbc, ?IAM_ROLE_BUCKET, Arn, [{dw, all}])) of
+            riakc_pb_socket:delete(Pbc, ?IAM_ROLE_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_role], TAT);
         {error, Reason} = ER ->
@@ -261,9 +242,7 @@ delete_role(Arn, Pbc) ->
 
 -spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
 create_policy(Fields, Pbc) ->
-    Policy_ = ?IAM_POLICY{policy_name = Name,
-                          policy_document = A} = riak_cs_iam:exprec_policy(Fields),
-    Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
+    Policy = ?IAM_POLICY{policy_name = Name} = riak_cs_iam:exprec_policy(Fields),
     case policy_name_available(Name) of
         true ->
             save_policy(Policy, Pbc);
@@ -273,31 +252,29 @@ create_policy(Fields, Pbc) ->
 
 -spec update_policy(maps:map(), pid()) -> ok | {error, term()}.
 update_policy(Fields, Pbc) ->
-    Policy_ = ?IAM_POLICY{policy_document = A} = riak_cs_iam:exprec_policy(Fields),
-    Policy = Policy_?IAM_POLICY{policy_document = base64:decode(A)},
+    Policy = riak_cs_iam:exprec_policy(Fields),
     save_policy_directly(Policy, Pbc).
 
 policy_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = (riak_cs_iam:find_policy(#{name => Name}, Pbc) == {error, notfound}),
-    riak_cs_riak_client:checkin(Pbc),
-    Res.
+    try
+        {error, notfound} == riak_cs_iam:find_policy(#{name => Name}, Pbc)
+    after
+        riak_cs_riak_client:checkin(Pbc)
+    end.
 
 save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
                                   path = Path}, Pbc) ->
-    PolicyId = ensure_unique_policy_id(Pbc),
-
+    Id = riak_cs_aws_utils:make_unique_index_id(policy, Pbc),
     Arn = riak_cs_aws_utils:make_policy_arn(Name, Path),
     Policy1 = Policy0?IAM_POLICY{arn = Arn,
-                                 policy_id = PolicyId},
+                                 policy_id = Id},
 
-    Indexes = [{?POLICY_PATH_INDEX, Path},
-               {?POLICY_NAME_INDEX, Name}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(Policy1), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_POLICY_BUCKET, Arn, term_to_binary(Policy1)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
@@ -308,15 +285,12 @@ save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
     end.
 
 save_policy_directly(Policy = ?IAM_POLICY{arn = Arn,
-                                          policy_name = Name,
-                                          path = Path}, Pbc) ->
-    Indexes = [{?POLICY_PATH_INDEX, Path},
-               {?POLICY_NAME_INDEX, Name}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+                                          policy_name = Name}, Pbc) ->
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(Policy), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_POLICY_BUCKET, Arn, term_to_binary(Policy)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_policy], TAT),
@@ -326,19 +300,10 @@ save_policy_directly(Policy = ?IAM_POLICY{arn = Arn,
             Res
     end.
 
-ensure_unique_policy_id(RcPid) ->
-    Id = riak_cs_aws_utils:make_id(?POLICY_ID_LENGTH, "ANPA"),
-    case fetch_object(?IAM_POLICY_BUCKET, Id, RcPid) of
-        {ok, _} ->
-            ensure_unique_policy_id(RcPid);
-        _ ->
-            Id
-    end.
-
 -spec delete_policy(binary(), pid()) -> ok | {error, term()}.
 delete_policy(Arn, Pbc) ->
     case ?TURNAROUND_TIME(
-            riakc_pb_socket:delete(Pbc, ?IAM_POLICY_BUCKET, Arn, [{dw, all}])) of
+            riakc_pb_socket:delete(Pbc, ?IAM_POLICY_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_policy], TAT);
         {error, Reason} = ER ->
@@ -367,26 +332,22 @@ create_saml_provider(Fields, Pbc) ->
 
 saml_provider_name_available(Name) ->
     {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = (riak_cs_iam:find_saml_provider(#{name => Name}, Pbc) == {error, notfound}),
-    riak_cs_riak_client:checkin(Pbc),
-    Res.
+    try
+        {error, notfound} == riak_cs_iam:find_saml_provider(#{name => Name}, Pbc)
+    after
+        riak_cs_riak_client:checkin(Pbc)
+    end.
 
 save_saml_provider(P0 = ?IAM_SAML_PROVIDER{name = Name,
-                                           entity_id = EntityID,
                                            tags = Tags}, Pbc) ->
     Arn = riak_cs_aws_utils:make_provider_arn(Name),
-
     P1 = P0?IAM_SAML_PROVIDER{arn = Arn},
 
-    %% not sure this shortcut is entirely valid
-    {_Scheme, EntityIDHostS, _, _, _} = mochiweb_util:urlsplit(binary_to_list(EntityID)),
-    Indexes = [{?SAMLPROVIDER_NAME_INDEX, Name},
-               {?SAMLPROVIDER_ENTITYID_INDEX, list_to_binary(EntityIDHostS)}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(P1), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:new(?IAM_SAMLPROVIDER_BUCKET, Arn, term_to_binary(P1)),
             Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}])),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     case Res of
         ok ->
             ok = stanchion_stats:update([riakc, put_cs_samlprovider], TAT),
@@ -400,7 +361,7 @@ save_saml_provider(P0 = ?IAM_SAML_PROVIDER{name = Name,
 -spec delete_saml_provider(binary(), pid()) -> ok | {error, term()}.
 delete_saml_provider(Arn, Pbc) ->
     case ?TURNAROUND_TIME(
-            riakc_pb_socket:delete(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, [{dw, all}])) of
+            riakc_pb_socket:delete(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
         {error, Reason} = ER ->
@@ -514,17 +475,14 @@ to_bucket_name(Type, Bucket) ->
     BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
 
-%% @doc Attmpt to create a new user
 -spec update_user(string(), proplists:proplist(), pid()) -> ok | {error, term()}.
 update_user(KeyId, UserFields, Pbc) ->
-    case riak_cs_riak_client:get_user_with_pbc(Pbc, KeyId) of
-        {ok, {UserObj, KDB}} ->
-            User = riak_cs_user:from_riakc_obj(UserObj, KDB),
+    case riak_cs_iam:find_user(#{key_id => KeyId}, Pbc) of
+        {ok, {User, Obj}} ->
             {UpdUser, EmailUpdated} =
                 update_user_record(UserFields, User, false),
             save_user(EmailUpdated,
-                      UpdUser,
-                      UserObj,
+                      UpdUser, Obj,
                       Pbc);
         {error, _}=Error ->
             Error
@@ -830,17 +788,8 @@ close_riak_connection(Pid) ->
 %% for a particular key.
 %% @TODO Consider other options that would give more
 %% assurance that a particular email address is available.
-email_available(Email_, Pbc) ->
-
-    %% this is to pacify dialyzer, which makes an issue of
-    %% Email::string() (coming from #rcs_user_v2.email type) as
-    %% conflicting with binary() as the type appropriate for 4th arg
-    %% in get_index_eq
-    Email = iolist_to_binary([Email_]),
-
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?EMAIL_INDEX, Email)),
-    riak_cs_stats:update([riakc, get_user_by_index], TAT),
-    case Res of
+email_available(Email, Pbc) ->
+    case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
         {ok, ?INDEX_RESULTS{keys=[]}} ->
             true;
         {ok, _} ->
@@ -864,27 +813,27 @@ get_manifests_raw(Pbc, Bucket, Key, Vsn) ->
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
 
-save_user(User, Pbc) ->
-    Indexes = [{?EMAIL_INDEX, User?MOSS_USER.email},
-               {?ID_INDEX, User?MOSS_USER.canonical_id}],
-    Meta = dict:store(?MD_INDEX, Indexes, dict:new()),
-    Obj = riakc_obj:new(?USER_BUCKET, iolist_to_binary(User?MOSS_USER.key_id), term_to_binary(User)),
+save_user(?IAM_USER{name = Name,
+                    path = Path} = User0, Pbc) ->
+    Arn = riak_cs_aws_utils:make_user_arn(Name, Path),
+    User = User0?IAM_USER{arn = Arn},
+
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
+    Obj = riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)),
     UserObj = riakc_obj:update_metadata(Obj, Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UserObj)),
     case Res of
         ok ->
             stanchion_stats:update([riakc, put_cs_user], TAT);
         {error, Reason} ->
-            logger:error("Failed to save user: Reason", [Reason]),
+            logger:error("Failed to save user ~s: ~p", [Name, Reason]),
             Res
     end.
 
-save_user(true, User=?RCS_USER{email=Email}, UserObj, Pbc) ->
+save_user(true = _EmailUpdated, User = ?RCS_USER{email = Email}, UserObj, Pbc) ->
     case email_available(Email, Pbc) of
         true ->
-            Indexes = [{?EMAIL_INDEX, Email},
-                       {?ID_INDEX, User?RCS_USER.canonical_id}],
-            MD = dict:store(?MD_INDEX, Indexes, dict:new()),
+            MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
             UpdUserObj = riakc_obj:update_metadata(
                            riakc_obj:update_value(UserObj,
                                                   term_to_binary(User)),
@@ -895,10 +844,8 @@ save_user(true, User=?RCS_USER{email=Email}, UserObj, Pbc) ->
         {false, Reason} ->
             {error, Reason}
     end;
-save_user(false, User, UserObj, Pbc) ->
-    Indexes = [{?EMAIL_INDEX, User?RCS_USER.email},
-               {?ID_INDEX, User?RCS_USER.canonical_id}],
-    MD = dict:store(?MD_INDEX, Indexes, dict:new()),
+save_user(false = _EmailUpdated, User, UserObj, Pbc) ->
+    MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
     UpdUserObj = riakc_obj:update_metadata(
                    riakc_obj:update_value(UserObj,
                                           term_to_binary(User)),
@@ -910,29 +857,29 @@ save_user(false, User, UserObj, Pbc) ->
 
 update_user_record([], User, EmailUpdated) ->
     {User, EmailUpdated};
-update_user_record([{<<"name">>, Name} | RestUserFields], User, EmailUpdated) ->
+update_user_record([{name, Name} | RestUserFields], User, EmailUpdated) ->
     update_user_record(RestUserFields,
-                       User?RCS_USER{name=binary_to_list(Name)}, EmailUpdated);
-update_user_record([{<<"email">>, Email} | RestUserFields],
+                       User?RCS_USER{name = binary_to_list(Name)}, EmailUpdated);
+update_user_record([{email, Email} | RestUserFields],
                    User, _) ->
     UpdEmail = binary_to_list(Email),
-    EmailUpdated =  not (User?RCS_USER.email =:= UpdEmail),
+    EmailUpdated = not (User?RCS_USER.email =:= UpdEmail),
     update_user_record(RestUserFields,
-                       User?RCS_USER{email=UpdEmail}, EmailUpdated);
-update_user_record([{<<"display_name">>, Name} | RestUserFields], User, EmailUpdated) ->
+                       User?RCS_USER{email = UpdEmail}, EmailUpdated);
+update_user_record([{display_name, Name} | RestUserFields], User, EmailUpdated) ->
     update_user_record(RestUserFields,
-                       User?RCS_USER{display_name=binary_to_list(Name)}, EmailUpdated);
-update_user_record([{<<"key_secret">>, KeySecret} | RestUserFields], User, EmailUpdated) ->
+                       User?RCS_USER{display_name = binary_to_list(Name)}, EmailUpdated);
+update_user_record([{key_secret, KeySecret} | RestUserFields], User, EmailUpdated) ->
     update_user_record(RestUserFields,
-                       User?RCS_USER{key_secret=binary_to_list(KeySecret)}, EmailUpdated);
-update_user_record([{<<"status">>, Status} | RestUserFields], User, EmailUpdated) ->
+                       User?RCS_USER{key_secret = binary_to_list(KeySecret)}, EmailUpdated);
+update_user_record([{status, Status} | RestUserFields], User, EmailUpdated) ->
     case Status of
         <<"enabled">> ->
             update_user_record(RestUserFields,
-                               User?RCS_USER{status=enabled}, EmailUpdated);
+                               User?RCS_USER{status = enabled}, EmailUpdated);
         <<"disabled">> ->
             update_user_record(RestUserFields,
-                               User?RCS_USER{status=disabled}, EmailUpdated);
+                               User?RCS_USER{status = disabled}, EmailUpdated);
         _ ->
             update_user_record(RestUserFields, User, EmailUpdated)
     end;
@@ -964,41 +911,3 @@ update_user_buckets(delete, User, Bucket) ->
             UpdBuckets = lists:delete(ExistingBucket, Buckets),
             User?RCS_USER{buckets=UpdBuckets}
     end.
-
-
-
-
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
-fetch_object(Bucket, Key, Pbc) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(Pbc, Bucket, Key, StrongOptions)),
-    stanchion_stats:update([riakc, metric_for(Bucket, strong)], TAT),
-    case Res of
-        {ok, Obj} ->
-            {ok, {Obj, true}};
-        {error, _} ->
-            weak_fetch_object(Bucket, Key, Pbc)
-    end.
-
-weak_fetch_object(Bucket, Key, Pbc) ->
-    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:get(Pbc, Bucket, Key, WeakOptions)),
-    stanchion_stats:update([riakc, metric_for(Bucket, weak)], TAT),
-    case Res of
-        {ok, Obj} ->
-            {ok, {Obj, false}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-metric_for(?IAM_ROLE_BUCKET, strong) ->
-    get_cs_role_strong;
-metric_for(?USER_BUCKET, strong) ->
-    get_cs_user_strong;
-metric_for(?IAM_ROLE_BUCKET, weak) ->
-    get_cs_role_strong;
-metric_for(?USER_BUCKET, weak) ->
-    get_cs_user.

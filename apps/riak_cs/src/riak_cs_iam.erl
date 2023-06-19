@@ -20,7 +20,11 @@
 
 -module(riak_cs_iam).
 
--export([create_role/1,
+-export([get_user/2,
+         find_user/2,
+         update_user/1,
+
+         create_role/1,
          update_role/1,
          delete_role/1,
          get_role/2,
@@ -39,6 +43,8 @@
          find_policy/2,
          attach_role_policy/3,
          detach_role_policy/3,
+         attach_user_policy/3,
+         detach_user_policy/3,
 
          fix_permissions_boundary/1,
          exprec_role/1,
@@ -46,11 +52,54 @@
          exprec_saml_provider/1
         ]).
 
+-include("moss.hrl").
 -include("riak_cs.hrl").
 -include("aws_api.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
+
+
+-spec get_user(flat_arn(), pid()) -> {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, notfound}.
+get_user(Arn, RcPid) ->
+    case riak_cs_riak_client:get_user(RcPid, Arn) of
+        {ok, {Obj, KDB}} ->
+            {ok, riak_cs_user:from_riakc_obj(Obj, KDB), Obj};
+        ER ->
+            ER
+    end.
+
+-spec find_user(maps:map(), pid()) -> {ok, rcs_user()} | {error, notfound}.
+find_user(#{name := A}, RcPid) ->
+    find_user(?USER_NAME_INDEX, A, RcPid);
+find_user(#{canonical_id := A}, RcPid) ->
+    find_user(?USER_ID_INDEX, A, RcPid);
+find_user(#{key_id := A}, RcPid) ->
+    find_user(?USER_KEYID_INDEX, A, RcPid);
+find_user(#{email := A}, RcPid) ->
+    find_user(?USER_EMAIL_INDEX, A, RcPid).
+
+find_user(Index, A, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, Index, A),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
+            get_user(Arn, RcPid);
+        {error, Reason} ->
+            logger:error("Failed to find user by index ~s with key ~s: ~p", [Index, A, Reason]),
+            {error, Reason}
+    end.
+
+-spec update_user(rcs_user()) -> ok | {error, term()}.
+update_user(U = ?IAM_USER{key_id = KeyId}) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:update_user("application/json",
+                                KeyId,
+                                riak_cs_json:to_json(U),
+                                [{auth_creds, AdminCreds}]),
+    handle_response(Result).
 
 
 -spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
@@ -206,13 +255,61 @@ detach_role_policy(PolicyArn, RoleName, RcPid) ->
             {error, no_such_role}
     end.
 
-update_role(R = ?IAM_ROLE{arn = Arn,
-                          assume_role_policy_document = D}) ->
-    Encoded = jason:encode(R?IAM_ROLE{assume_role_policy_document = base64:encode(D)},
-                           [{records, [{role_v1, record_info(fields, role_v1)},
-                                       {role_last_used, record_info(fields, arn_v1)},
-                                       {permissions_boundary, record_info(fields, permissions_boundary)},
-                                       {tag, record_info(fields, tag)}]}]),
+-spec attach_user_policy(binary(), binary(), pid()) ->
+          ok | {error, error_reason()}.
+attach_user_policy(PolicyArn, UserName, RcPid) ->
+    case find_user(#{name => UserName}, RcPid) of
+        {ok, User = ?RCS_USER{attached_policies = PP}} ->
+            case lists:member(PolicyArn, PP) of
+                true ->
+                    ok;
+                false ->
+                    case get_policy(PolicyArn, RcPid) of
+                        {ok, Policy = ?IAM_POLICY{is_attachable = true,
+                                                  attachment_count = AC}} ->
+                            case update_user(User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
+                                ok ->
+                                    update_policy(Policy?IAM_POLICY{attachment_count = AC + 1});
+                                ER1 ->
+                                    ER1
+                            end;
+                        {ok, ?IAM_POLICY{}} ->
+                            {error, policy_not_attachable};
+                        {error, notfound} ->
+                            {error, no_such_policy}
+                    end
+            end;
+        {error, notfound} ->
+            {error, no_such_user}
+    end.
+
+-spec detach_user_policy(binary(), binary(), pid()) ->
+          ok | {error, unmodifiable_entity}.
+detach_user_policy(PolicyArn, UserName, RcPid) ->
+    case find_user(#{name => UserName}, RcPid) of
+        {ok, User = ?RCS_USER{attached_policies = PP}} ->
+            case lists:member(PolicyArn, PP) of
+                false ->
+                    ok;
+                true ->
+                    case get_policy(PolicyArn, RcPid) of
+                        {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
+                            case update_user(User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
+                                ok ->
+                                    update_policy(Policy?IAM_POLICY{attachment_count = AC - 1});
+                                ER1 ->
+                                    ER1
+                            end;
+                        {error, notfound} ->
+                            {error, no_such_policy}
+                    end
+            end;
+        {error, notfound} ->
+            {error, no_such_user}
+    end.
+
+update_role(R = ?IAM_ROLE{arn = Arn}) ->
+    Encoded = riak_cs_json:to_json(R),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:update_role(
                "application/json",
@@ -222,8 +319,7 @@ update_role(R = ?IAM_ROLE{arn = Arn,
     handle_response(Result).
 
 update_policy(A = ?IAM_POLICY{arn = Arn}) ->
-    Encoded = jason:encode(A, [{records, [{policy_v1, record_info(fields, policy_v1)},
-                                          {tag, record_info(fields, tag)}]}]),
+    Encoded = riak_cs_json:to_json(A),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:update_policy(
                "application/json",
@@ -365,7 +461,8 @@ from_riakc_obj(Obj) ->
 
 -spec exprec_role(maps:map()) -> ?IAM_ROLE{}.
 exprec_role(Map) ->
-    Role0 = ?IAM_ROLE{permissions_boundary = PB0,
+    Role0 = ?IAM_ROLE{assume_role_policy_document = D,
+                      permissions_boundary = PB0,
                       role_last_used = LU0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
     TT = [exprec:frommap_tag(T) || T <- TT0],
@@ -383,15 +480,18 @@ exprec_role(Map) ->
              _ ->
                  exprec:frommap_permissions_boundary(PB0)
          end,
-    Role0?IAM_ROLE{permissions_boundary = PB,
+    Role0?IAM_ROLE{assume_role_policy_document = base64:decode(D),
+                   permissions_boundary = PB,
                    role_last_used = LU,
                    tags = TT}.
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
 exprec_policy(Map) ->
-    Policy0 = ?IAM_ROLE{tags = TT0} = exprec:frommap_policy_v1(Map),
+    Policy0 = ?IAM_POLICY{tags = TT0,
+                          policy_document = D} = exprec:frommap_policy_v1(Map),
     TT = [exprec:frommap_tag(T) || T <- TT0],
-    Policy0?IAM_ROLE{tags = TT}.
+    Policy0?IAM_POLICY{policy_document = base64:decode(D),
+                       tags = TT}.
 
 -spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
 exprec_saml_provider(Map) ->

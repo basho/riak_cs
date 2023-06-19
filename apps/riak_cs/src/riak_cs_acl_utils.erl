@@ -427,9 +427,7 @@ canned_acl_grants(_, Owner, _) ->
 %% @doc Get the canonical id of the user associated with
 %% a given email address.
 canonical_for_email(Email, RcPid) ->
-    case riak_cs_user:get_user_by_index(?EMAIL_INDEX,
-                                         list_to_binary(Email),
-                                         RcPid) of
+    case riak_cs_iam:find_user(#{email => list_to_binary(Email)}, RcPid) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.canonical_id};
         {error, Reason} ->
@@ -440,9 +438,7 @@ canonical_for_email(Email, RcPid) ->
 %% @doc Get the display name of the user associated with
 %% a given canonical id.
 name_for_canonical(CanonicalId, RcPid) ->
-    case riak_cs_user:get_user_by_index(?ID_INDEX,
-                                         list_to_binary(CanonicalId),
-                                         RcPid) of
+    case riak_cs_iam:find_user(#{id => list_to_binary(CanonicalId)}, RcPid) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.display_name};
         {error, _} ->

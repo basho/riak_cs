@@ -80,11 +80,13 @@
 -type iam_action() :: 'iam:CreateRole' | 'iam:GetRole' | 'iam:DeleteRole' | 'iam:ListRoles'
                     | 'iam:CreatePolicy' | 'iam:GetPolicy' | 'iam:DeletePolicy' | 'iam:ListPolicies'
                     | 'iam:AttachRolePolicy' | 'iam:DetachRolePolicy'
+                    | 'iam:AttachUserPolicy' | 'iam:DetachUserPolicy'
                     | 'iam:CreateSAMLProvider' | 'iam:GetSAMLProvider' | 'iam:DeleteSAMLProvider' | 'iam:ListSAMLProviders'.
 -define(SUPPORTED_IAM_ACTION,
         [ 'iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:ListRoles'
         , 'iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 'iam:ListPolicies'
         , 'iam:AttachRolePolicy', 'iam:DetachRolePolicy'
+        , 'iam:AttachUserPolicy', 'iam:DetachUserPolicy'
         , 'iam:CreateSAMLProvider', 'iam:GetSAMLProvider', 'iam:DeleteSAMLProvider', 'iam:ListSAMLProviders'
         ]
        ).
@@ -186,12 +188,12 @@
 -define(AMZ_POLICY, #amz_policy).
 
 -record(policy_v1, { arn :: flat_arn()
+                   , path :: binary()
                    , attachment_count = 0 :: non_neg_integer()
                    , create_date = os:system_time(millisecond) :: non_neg_integer()
                    , default_version_id = <<"v1">> :: binary()
                    , description :: binary()
                    , is_attachable :: boolean()
-                   , path :: binary()
                    , permissions_boundary_usage_count = 0 :: non_neg_integer()
                    , policy_document :: binary()
                    , policy_id :: binary()
@@ -227,11 +229,11 @@
 -define(IAM_ROLE_LAST_USED, #role_last_used).
 
 -record(role_v1, { arn :: flat_arn()
+                 , path :: binary()
                  , assume_role_policy_document :: binary()
                  , create_date = os:system_time(millisecond) :: non_neg_integer()
                  , description :: binary()
                  , max_session_duration :: non_neg_integer()
-                 , path :: binary()
                  , permissions_boundary :: permissions_boundary()
                  , role_id :: binary()
                  , role_last_used :: role_last_used()
@@ -273,6 +275,14 @@
        ).
 -type credentials() :: #credentials{}.
 
+
+-type iam_entity() :: role | policy | user.
+
+-define(ROLE_ID_PREFIX, "AROA").
+-define(USER_ID_PREFIX, "AIDA").
+-define(POLICY_ID_PREFIX, "ANPA").
+
+-define(IAM_ENTITY_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
 
 -define(DEFAULT_REGION, "us-east-1").
 

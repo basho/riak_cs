@@ -69,7 +69,8 @@
          big_end_key/0,
          stanchion_data/0,
          camel_case/1,
-         capitalize/1
+         capitalize/1,
+         object_indices/1
         ]).
 
 %% mapreduce functions that run on a riak node (should probably be
@@ -638,6 +639,32 @@ parse_certs([{'Certificate', EntryData, _encrypted_or_not} | Rest], Q) ->
     parse_certs(Rest, [Entry | Q]).
 
 
+object_indices(?RCS_USER{path = Path,
+                         canonical_id = Id,
+                         email = Email,
+                         name = Name,
+                         key_id = KeyId}) ->
+    [{?USER_NAME_INDEX, Name},
+     {?USER_PATH_INDEX, Path},
+     {?USER_KEYID_INDEX, KeyId},
+     {?USER_EMAIL_INDEX, Email},
+     {?USER_ID_INDEX, Id}];
+object_indices(?IAM_ROLE{role_id = Id,
+                         path = Path,
+                         role_name = Name}) ->
+    [{?ROLE_ID_INDEX, Id},
+     {?ROLE_PATH_INDEX, Path},
+     {?ROLE_NAME_INDEX, Name}];
+object_indices(?IAM_POLICY{policy_id = Id,
+                           path = Path,
+                           policy_name = Name}) ->
+    [{?POLICY_ID_INDEX, Id},
+     {?POLICY_PATH_INDEX, Path},
+     {?POLICY_NAME_INDEX, Name}];
+object_indices(?IAM_SAML_PROVIDER{name = Name,
+                                  entity_id = EntityId}) ->
+    [{?SAMLPROVIDER_NAME_INDEX, Name},
+     {?SAMLPROVIDER_ENTITYID_INDEX, EntityId}].
 
 
 -ifdef(TEST).

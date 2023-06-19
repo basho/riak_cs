@@ -23,6 +23,8 @@
 -export([aws_service_from_url/1,
          make_id/1,
          make_id/2,
+         make_unique_index_id/2,
+         make_user_arn/2,
          make_role_arn/2,
          make_provider_arn/1,
          make_assumed_role_user_arn/2,
@@ -31,12 +33,52 @@
          generate_canonical_id/1
         ]).
 
+-include("riak_cs.hrl").
 -include("aws_api.hrl").
+-include_lib("riakc/include/riakc.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -define(AWS_ID_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
 -define(AWS_ID_EXT_CHARSET, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_").
 -define(ACCESS_KEY_LENGTH, 20).
+
+-spec make_unique_index_id(iam_entity(), pid()) -> binary().
+make_unique_index_id(role, Pbc) ->
+    case try_unique_index_id(
+           make_id(?IAM_ENTITY_ID_LENGTH, ?ROLE_ID_PREFIX),
+           ?IAM_ROLE_BUCKET, ?ROLE_ID_INDEX, Pbc) of
+        retry ->
+            make_unique_index_id(role, Pbc);
+        Id ->
+            Id
+    end;
+make_unique_index_id(user, Pbc) ->
+    case try_unique_index_id(
+           make_id(?IAM_ENTITY_ID_LENGTH, ?USER_ID_PREFIX),
+           ?IAM_USER_BUCKET, ?USER_ID_INDEX, Pbc) of
+        retry ->
+            make_unique_index_id(user, Pbc);
+        Id ->
+            Id
+    end;
+make_unique_index_id(policy, Pbc) ->
+    case try_unique_index_id(
+           make_id(?IAM_ENTITY_ID_LENGTH, ?POLICY_ID_PREFIX),
+           ?IAM_POLICY_BUCKET, ?POLICY_ID_INDEX, Pbc) of
+        retry ->
+            make_unique_index_id(policy, Pbc);
+        Id ->
+            Id
+    end.
+
+try_unique_index_id(Id, Bucket, Index, Pbc) ->
+    case riakc_pb_socket:get_index_eq(Pbc, Bucket, Index, Id) of
+        {ok, ?INDEX_RESULTS{keys=[]}} ->
+            Id;
+        _ ->
+            retry
+    end.
+
 
 -spec aws_service_from_url(string()) -> aws_service() | unsupported.
 aws_service_from_url(Host) ->
@@ -72,6 +114,9 @@ make_id(Length, Prefix) ->
     make_id(Length, Prefix, ?AWS_ID_CHARSET).
 make_id(Length, Prefix, CharSet) ->
     iolist_to_binary([Prefix, fill(Length - length(Prefix), [], CharSet)]).
+
+make_user_arn(Name, Path) ->
+    iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":user", Path, $/, Name]).
 
 make_role_arn(Name, Path) ->
     iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":role", Path, $/, Name]).

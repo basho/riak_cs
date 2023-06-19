@@ -29,11 +29,9 @@
          display_name/1,
          is_admin/1,
          get_user/2,
-         get_user_by_index/3,
          from_riakc_obj/2,
          to_3tuple/1,
          update_key_secret/1,
-         update_user/3,
          key_id/1,
          fetch_user_keys/1
         ]).
@@ -92,67 +90,32 @@ handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
 handle_create_user({error, _} = Error, _User) ->
     Error.
 
-handle_update_user(ok, User, UserObj, RcPid) ->
-    _ = save_user(User, UserObj, RcPid),
-    {ok, User};
-handle_update_user({error, {error_status, _, _, ErrorDoc}}, _User, _, _) ->
-    case riak_cs_config:api() of
-        s3 ->
-            riak_cs_aws_response:velvet_response(ErrorDoc);
-        oos ->
-            {error, ErrorDoc}
-    end;
-handle_update_user({error, _} = Error, _User, _, _) ->
-    Error.
-
-%% @doc Update a Riak CS user record
--spec update_user(rcs_user(), riakc_obj:riakc_obj(), riak_client()) ->
-                         {ok, rcs_user()} | {error, term()}.
-update_user(User, UserObj, RcPid) ->
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Options = [{auth_creds, AdminCreds}],
-    StatsKey = [velvet, update_user],
-    _ = riak_cs_stats:inflow(StatsKey),
-    StartTime = os:timestamp(),
-    %% Make a call to the user request serialization service.
-    Result = velvet:update_user("application/json",
-                                User?RCS_USER.key_id,
-                                binary_to_list(riak_cs_json:to_json(User)),
-                                Options),
-    _ = riak_cs_stats:update_with_start(StatsKey, StartTime, Result),
-    handle_update_user(Result, User, UserObj, RcPid).
-
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user(undefined | iodata(), riak_client()) ->
+-spec get_user(binary(), riak_client()) ->
           {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, term()}.
-get_user(undefined, _RcPid) ->
-    {error, no_user_key};
-get_user(KeyIdS, RcPid) ->
-    KeyId = iolist_to_binary([KeyIdS]),
+get_user(KeyId, RcPid) ->
     case riak_cs_temp_sessions:get(KeyId) of
-        {ok, #temp_session{credentials = #credentials{secret_access_key = SecretKey},
+        {ok, #temp_session{assumed_role_user = #assumed_role_user{arn = AssumedRoleUserArn},
+                           credentials = #credentials{secret_access_key = SecretKey},
                            canonical_id = CanonicalId,
-                           subject = Subject} = _Session} ->
-            {ok, {?RCS_USER{name = binary_to_list(Subject),
+                           subject = Subject} = Session} ->
+            {ok, {?RCS_USER{arn = AssumedRoleUserArn,
+                            attached_policies = riak_cs_temp_sessions:effective_policies(Session),
+                            name = binary_to_list(Subject),
                             display_name = binary_to_list(Subject),
                             email = lists:flatten(io_lib:format("~s@some.idp", [Subject])),
                             canonical_id = binary_to_list(CanonicalId),
                             key_id = KeyId,
                             key_secret = binary_to_list(SecretKey),
-                            buckets = []}, undefined}};
-        _ ->
+                            buckets = []},
+                  _UserObject = undefined}};
+        {error, notfound} ->
             get_cs_user(KeyId, RcPid)
     end.
 
 get_cs_user(KeyId, RcPid) ->
-    %% Check for and resolve siblings to get a
-    %% coherent view of the bucket ownership.
-    case catch riak_cs_riak_client:get_user(RcPid, KeyId) of
-        {ok, {Obj, KeepDeletedBuckets}} ->
-            {ok, {from_riakc_obj(Obj, KeepDeletedBuckets), Obj}};
-        Error ->
-            Error
-    end.
+    riak_cs_iam:find_user(#{key_id => KeyId}, RcPid).
+
 
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().
 from_riakc_obj(Obj, KeepDeletedBuckets) ->
@@ -178,37 +141,6 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
             User?RCS_USER{buckets=Buckets}
     end.
 
-%% @doc Retrieve a Riak CS user's information based on their
-%% canonical id string or email.
-%% @TODO May want to use mapreduce job for this.
--spec get_user_by_index(binary(), binary(), riak_client()) ->
-                               {ok, {rcs_user(), term()}} |
-                               {error, term()}.
-get_user_by_index(Index, Value, RcPid) ->
-    case get_user_index(Index, Value, RcPid) of
-        {ok, KeyId} ->
-            get_user(KeyId, RcPid);
-        {error, _}=Error1 ->
-            Error1
-    end.
-
-%% @doc Query `Index' for `Value' in the users bucket.
--spec get_user_index(binary(), binary(), riak_client()) -> {ok, string()} | {error, term()}.
-get_user_index(Index, Value, RcPid) ->
-    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
-    %% TODO: Does adding max_results=1 help latency or load to riak cluster?
-    case riak_cs_pbc:get_index_eq(MasterPbc, ?USER_BUCKET, Index, Value,
-                                  [riakc, get_user_by_index]) of
-        {ok, ?INDEX_RESULTS{keys=[]}} ->
-            {error, notfound};
-        {ok, ?INDEX_RESULTS{keys=[Key | _]}} ->
-            {ok, binary_to_list(Key)};
-        {error, Reason}=Error ->
-            logger:warning("Error occurred trying to query ~p in user index ~p. Reason: ~p",
-                           [Value, Index, Reason]),
-            Error
-    end.
-
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
@@ -220,14 +152,11 @@ to_3tuple(U) ->
     {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
      U?RCS_USER.key_id}.
 
-save_user(User, UserObj, RcPid) ->
-    riak_cs_riak_client:save_user(RcPid, User, UserObj).
-
 
 %% @doc Generate a new `key_secret' for a user record.
 -spec update_key_secret(rcs_user()) -> rcs_user().
-update_key_secret(User=?RCS_USER{email=Email,
-                                 key_id=KeyId}) ->
+update_key_secret(User = ?RCS_USER{email = Email,
+                                   key_id = KeyId}) ->
     EmailBin = list_to_binary(Email),
     User?RCS_USER{key_secret = riak_cs_aws_utils:generate_secret(EmailBin, KeyId)}.
 
@@ -251,7 +180,7 @@ fetch_user_keys(RcPid) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user(), {ok, {string(), string()}} |
                {error, term()}) -> boolean().
-is_admin(?RCS_USER{key_id=KeyId, key_secret=KeySecret},
+is_admin(?RCS_USER{key_id = KeyId, key_secret = KeySecret},
          {ok, {KeyId, KeySecret}}) ->
     true;
 is_admin(_, _) ->

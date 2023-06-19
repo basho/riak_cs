@@ -108,7 +108,7 @@ get_test_user(Name, RcPid) ->
             get_test_user(Name, RcPid);
         {error, user_already_exists} ->
             {ok, UU} =
-                riak_cs_user:get_user_by_index(?EMAIL_INDEX, list_to_binary(Email), RcPid),
+                riak_cs_iam:find_user(#{email => list_to_binary(Email)}, RcPid),
             UU
     end.
 

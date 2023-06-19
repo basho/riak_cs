@@ -133,12 +133,12 @@ accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
                                    maps:get(email, FF, <<>>)),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
-accept_json(RD, Ctx) ->
+accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch jsx:decode(Body, [{labels, atom}]) of
         UserItems when is_list(UserItems) ->
-            user_response(update_user(UserItems, RD, Ctx),
+            user_response(update_user(UserItems, User),
                           ?JSON_TYPE,
                           RD,
                           Ctx);
@@ -165,7 +165,7 @@ accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
                           RD,
                           Ctx)
     end;
-accept_xml(RD, Ctx) ->
+accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
@@ -175,7 +175,7 @@ accept_xml(RD, Ctx) ->
             UpdateItems = lists:foldl(fun user_xml_filter/2,
                                       [],
                                       ParsedData#xmlElement.content),
-            user_response(update_user(UpdateItems, RD, Ctx),
+            user_response(update_user(UpdateItems, User),
                           ?XML_TYPE,
                           RD,
                           Ctx)
@@ -257,10 +257,10 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
                    " Reason: ~p", [user_key(RD), Reason]),
     riak_cs_aws_response:api_error(invalid_access_key_id, RD, Ctx).
 
-update_user(UpdateItems, RD, Ctx = #rcs_web_context{user = User}) ->
+update_user(UpdateItems, User) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
-    handle_update_result(UpdateUserResult, RD, Ctx).
+    handle_update_result(UpdateUserResult).
 
 update_user_record(_User, [], RecordUpdated) ->
     {RecordUpdated, _User};
@@ -282,11 +282,10 @@ str_to_status(<<"enabled">>) -> enabled;
 str_to_status(<<"disabled">>) -> disabled.
 
 
-handle_update_result({false, _User}, _RD, _Ctx) ->
+handle_update_result({false, _User}) ->
     {halt, 200};
-handle_update_result({true, User}, _RD, #rcs_web_context{user_object = UserObj,
-                                                         riak_client = RcPid}) ->
-    riak_cs_user:update_user(User, UserObj, RcPid).
+handle_update_result({true, User}) ->
+    riak_cs_iam:update_user(User).
 
 set_resp_data(ContentType, RD, #rcs_web_context{user = User}) ->
     UserDoc = format_user_record(User, ContentType),

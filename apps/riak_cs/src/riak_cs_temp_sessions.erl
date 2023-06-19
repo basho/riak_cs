@@ -39,7 +39,7 @@ create(?IAM_ROLE{role_id = RoleId,
        Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
 
-    UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, "AIDA"),
+    UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, ?USER_ID_PREFIX),
     {KeyIdS, AccessKeyS} = riak_cs_aws_utils:generate_access_creds(UserId),
     CanonicalIdS = riak_cs_aws_utils:generate_canonical_id(KeyIdS),
     {KeyId, AccessKey, CanonicalId} =
@@ -48,7 +48,8 @@ create(?IAM_ROLE{role_id = RoleId,
          list_to_binary(CanonicalIdS)},
 
     SessionName = riak_cs_aws_utils:make_id(16),
-    AssumedRoleUser = #assumed_role_user{arn = riak_cs_aws_utils:make_assumed_role_user_arn(RoleName, SessionName),
+    Arn = riak_cs_aws_utils:make_assumed_role_user_arn(RoleName, SessionName),
+    AssumedRoleUser = #assumed_role_user{arn = Arn,
                                          assumed_role_id = <<RoleId/binary, $:, SessionName/binary>>},
 
     Session = #temp_session{assumed_role_user = AssumedRoleUser,
@@ -63,8 +64,12 @@ create(?IAM_ROLE{role_id = RoleId,
                             inline_policy = InlinePolicy,
                             session_policies = PolicyArns},
 
+    %% rather than using an arn for key, consistently with all other
+    %% things in IAM, let's use access_key_id here, to make it easier
+    %% to check for existing assumed role sessions from
+    %% riak_cs_user:get_user/2 where we only have the key_id.
     Obj = riakc_obj:new(?TEMP_SESSIONS_BUCKET, KeyId, term_to_binary(Session)),
-    case riakc_pb_socket:put(Pbc, Obj, [{w, all}, {pw, all}]) of
+    case riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS) of
         ok ->
             logger:info("Opened new temp session for user ~s with key_id ~s", [UserId, KeyId]),
             {ok, _Tref} = timer:apply_after(DurationSeconds * 1000,
@@ -104,14 +109,16 @@ effective_policies(#temp_session{inline_policy = InlinePolicy,
 
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.
-get(Id) ->
+get(KeyId) ->
     {ok, Pbc} = riak_cs_utils:riak_connection(),
-    Res = get(Id, Pbc),
-    riak_cs_utils:close_riak_connection(Pbc),
-    Res.
+    try
+        get(KeyId, Pbc)
+    after
+        riak_cs_utils:close_riak_connection(Pbc)
+    end.
 
-get(Id, Pbc) ->
-    case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, Id) of
+get(KeyId, Pbc) ->
+    case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, KeyId) of
         {ok, Obj} ->
             session_from_riakc_obj(Obj);
         ER ->
