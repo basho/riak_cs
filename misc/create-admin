@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+import os, sys, getopt, httplib2, json, pprint
+import boto3
+from botocore.client import Config
+
+def create_user(host, port, name, email):
+    os.environ['http_proxy'] = ''
+    url = 'http://%s:%d/riak-cs/user' % (host, port)
+    conn = httplib2.Http()
+    resp, content = conn.request(url, "POST",
+                                 headers = {"Content-Type": "application/json"},
+                                 body = json.dumps({"email": email, "name": name}))
+    conn.close()
+    return json.loads(content)
+
+def main():
+    admin_name = "admin"
+    admin_email = "admin@barsik_in_the_clouds.com"
+    port = 8080
+    quiet = False
+
+    opts, args = getopt.getopt(sys.argv[1:], 'p:u:e:q')
+    for o, a in opts:
+        if o == "-u":
+            admin_user = a
+        if o == "-e":
+            admin_email = a
+        if o == "-p":
+            port = int(a)
+        if o == "-q":
+            quiet = True
+
+    admin_user = create_user("127.0.0.1", port, admin_name, admin_email)
+    pprint.pp(res)
+
+    os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
+    config = Config(signature_version = 's3v4')
+    iam_client = boto3.client('iam',
+                              use_ssl = False,
+                              aws_access_key_id = admin_user['key_id'],
+                              aws_secret_access_key = admin_user['key_secret'],
+                              config = config)
+
+    policy = json.dumps({
+        "Version": "2012-10-17",
+        "Statement": {
+            "Effect": "Allow",
+            "Action": ["sts:*", "iam:*", "s3:*"]
+        }
+    })
+    res = iam_client.create_policy(
+        PolicyName = "AdminPolicy",
+        PolicyDocument = policy,
+        Description = "Admin Policy allowing access to all s3. iam and sts actions"
+    )
+    if not quiet:
+        print("Created admin policy:")
+        pprint.pp(res)
+    policy_arn = res['Policy']['Arn']
+
+    res = iam_client.attach_user_policy(
+        UserName = admin_name,
+        PolicyArn = policy_arn
+    )
+    if not quiet:
+        print("Attached admin policy to admin user:")
+        pprint.pp(res)
+
+if __name__ == "__main__":
+    main()
