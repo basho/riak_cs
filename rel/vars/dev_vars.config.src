@@ -23,8 +23,8 @@
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
 {cs_version,        030100}.
-{rewrite_module,    riak_cs_s3_rewrite}.
-{auth_module,       riak_cs_s3_auth}.
+{rewrite_module,    riak_cs_aws_rewrite}.
+{auth_module,       riak_cs_aws_auth}.
 {stanchion_hosting_mode, auto}.
 {tussle_voss_riak_host, auto}.
 

@@ -82,7 +82,7 @@ handle_create_user(ok, User) ->
     {ok, User};
 handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
     case riak_cs_config:api() of
-        s3 ->
+        aws ->
             riak_cs_aws_response:velvet_response(ErrorDoc);
         oos ->
             {error, ErrorDoc}
@@ -91,9 +91,12 @@ handle_create_user({error, _} = Error, _User) ->
     Error.
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user(binary(), riak_client()) ->
-          {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, term()}.
-get_user(KeyId, RcPid) ->
+-spec get_user(iodata(), riak_client()) ->
+          {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, no_user_key | term()}.
+get_user(undefined, _) ->
+    {error, no_user_key};
+get_user(KeyId_, RcPid) ->
+    KeyId = iolist_to_binary([KeyId_]),
     case riak_cs_temp_sessions:get(KeyId) of
         {ok, #temp_session{assumed_role_user = #assumed_role_user{arn = AssumedRoleUserArn},
                            credentials = #credentials{secret_access_key = SecretKey},

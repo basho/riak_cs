@@ -60,11 +60,11 @@
 -include_lib("kernel/include/logger.hrl").
 
 
--spec get_user(flat_arn(), pid()) -> {ok, rcs_user(), riakc_obj:riakc_obj()} | {error, notfound}.
+-spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 get_user(Arn, RcPid) ->
     case riak_cs_riak_client:get_user(RcPid, Arn) of
         {ok, {Obj, KDB}} ->
-            {ok, riak_cs_user:from_riakc_obj(Obj, KDB), Obj};
+            {ok, {riak_cs_user:from_riakc_obj(Obj, KDB), Obj}};
         ER ->
             ER
     end.

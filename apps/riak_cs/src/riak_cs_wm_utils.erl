@@ -276,8 +276,8 @@ handle_auth_admin(RD, Ctx, User, false) ->
 %% it if it exists.  Returns `{ok, User, UserObj}' if validation
 %% succeeds, or `{error, KeyId, Reason}' if any step fails.
 -spec validate_auth_header(#wm_reqdata{}, term(), riak_client(), #rcs_web_context{}|undefined) ->
-                                  {ok, rcs_user(), riakc_obj:riakc_obj()} |
-                                  {error, bad_auth | notfound | no_user_key | term()}.
+          {ok, rcs_user(), riakc_obj:riakc_obj()} |
+          {error, bad_auth | notfound | no_user_key | term()}.
 validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
     AuthHeader = wrq:get_req_header("authorization", RD),
     case AuthHeader of

@@ -39,7 +39,7 @@
           , {nowarn_function, fromlist_multipart_manifest_v1/1}
           , {nowarn_function, fromlist_part_descr_v1/1}
           , {nowarn_function, fromlist_part_manifest_v1/1}
-          , {nowarn_function, fromlist_rcs_user_v2/1}
+          , {nowarn_function, fromlist_rcs_user_v3/1}
           , {nowarn_function, frommap_access_v1/1}
           , {nowarn_function, frommap_lfs_manifest_v2/1}
           , {nowarn_function, frommap_lfs_manifest_v3/1}
@@ -51,7 +51,7 @@
           , {nowarn_function, frommap_multipart_manifest_v1/1}
           , {nowarn_function, frommap_part_descr_v1/1}
           , {nowarn_function, frommap_part_manifest_v1/1}
-          , {nowarn_function, frommap_rcs_user_v2/1}
+          , {nowarn_function, frommap_rcs_user_v3/1}
           , {nowarn_function, new_access_v1/1}
           , {nowarn_function, new_lfs_manifest_v2/1}
           , {nowarn_function, new_lfs_manifest_v3/1}
@@ -63,7 +63,7 @@
           , {nowarn_function, new_multipart_manifest_v1/1}
           , {nowarn_function, new_part_descr_v1/1}
           , {nowarn_function, new_part_manifest_v1/1}
-          , {nowarn_function, new_rcs_user_v2/1}
+          , {nowarn_function, new_rcs_user_v3/1}
           , {nowarn_function, new_access_v1/0}
           , {nowarn_function, new_lfs_manifest_v2/0}
           , {nowarn_function, new_lfs_manifest_v3/0}
@@ -75,13 +75,13 @@
           , {nowarn_function, new_multipart_manifest_v1/0}
           , {nowarn_function, new_part_descr_v1/0}
           , {nowarn_function, new_part_manifest_v1/0}
-          , {nowarn_function, new_rcs_user_v2/0}
+          , {nowarn_function, new_rcs_user_v3/0}
           ]).
 
 -define(ALL_RECORDS,
         [ moss_user
         , moss_user_v1
-        , rcs_user_v2
+        , rcs_user_v3
         , moss_bucket
         , moss_bucket_v1
         , acl_v1

@@ -182,17 +182,17 @@ new_user(UserKeyBin) ->
     DisplayName = UserKey ++ "+DisplayName",
     CanonicalId = UserKey ++ "+CanonicalId",
     DefaultAcl = default_acl(DisplayName, CanonicalId, UserKey),
-    {#rcs_user_v2{name = UserKey,
-                  display_name = UserKey,
-                  email = UserKey ++ "@example.com",
-                  key_id = UserKey,
-                  key_secret = UserKey ++ "+Secret",
-                  canonical_id = CanonicalId,
-                  buckets=[#moss_bucket_v1{name = UserKey ++ "-yessir-bucket-1",
-                                           acl = DefaultAcl}]},
+    {?RCS_USER{name = UserKey,
+               display_name = UserKey,
+               email = UserKey ++ "@example.com",
+               key_id = UserKey,
+               key_secret = UserKey ++ "+Secret",
+               canonical_id = CanonicalId,
+               buckets=[#moss_bucket_v1{name = UserKey ++ "-yessir-bucket-1",
+                                        acl = DefaultAcl}]},
      DefaultAcl}.
 
-user_to_robj(#rcs_user_v2{key_id=Key} = User) ->
+user_to_robj(?RCS_USER{key_id = Key} = User) ->
     UserKeyBin = list_to_binary(Key),
     riakc_obj:new_obj(?USER_BUCKET, UserKeyBin, <<"vclock">>,
                       [{dict:new(), term_to_binary(User)}]).

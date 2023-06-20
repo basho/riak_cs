@@ -299,7 +299,7 @@ owner_id(?ACL{owner = #{key_id := OwnerKeyId}}, _) ->
     OwnerKeyId;
 owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
     {Name, CanonicalId} = OwnerData,
-    case riak_cs_iam:find_user(#{id => list_to_binary(CanonicalId), RcPid) of
+    case riak_cs_iam:find_user(#{id => list_to_binary(CanonicalId)}, RcPid) of
         {ok, {Owner, _}} ->
             Owner?RCS_USER.key_id;
         {error, _} ->

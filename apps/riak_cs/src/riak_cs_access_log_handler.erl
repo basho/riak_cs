@@ -25,12 +25,12 @@
 %% I/O stats are expected as notes in the webmachine log data, with
 %% keys of the form `{access, KEY}'.  I/O stats are only logged if a
 %% note is included with the key `user' and a value that is a
-%% `#rcs_user_v2{}' record.
+%% `#rcs_user_v3{}' record.
 %%
 %% That is, to log I/O stats for a request, call
 %%
 %% ```
-%% wrq:add_note({access, user}, User=#rcs_user_v2{}, RD)
+%% wrq:add_note({access, user}, User=#rcs_user_v3{}, RD)
 %% '''
 %%
 %% somewhere in your resource.  To add another stat, for instance

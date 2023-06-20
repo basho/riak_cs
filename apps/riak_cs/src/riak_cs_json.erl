@@ -87,8 +87,6 @@ to_json(?RCS_USER{} = A) ->
                              {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
                              {acl_grant_v2, record_info(fields, acl_grant_v2)},
                              {acl_v3, record_info(fields, acl_v3)}]}]);
-to_json({users, AA}) ->
-    jason:encode(AA, [{records, [{rcs_user_v2, record_info(fields, rcs_user_v2)}]}]);
 to_json(?IAM_ROLE{assume_role_policy_document = D} = A) ->
     jason:encode(A?IAM_ROLE{assume_role_policy_document = base64:encode(D)},
                  [{records, [{role_v1, record_info(fields, role_v1)},

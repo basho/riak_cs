@@ -156,7 +156,7 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
 create_user(FF = #{email := Email}, Pbc) ->
     case email_available(Email, Pbc) of
         true ->
-            User = exprec:frommap_rcs_user_v2(FF#{status => enabled, buckets => []}),
+            User = exprec:frommap_rcs_user_v3(FF#{status => enabled, buckets => []}),
             save_user(User, Pbc);
         {false, _} ->
             logger:info("Refusing to create an existing user with email ~s", [Email]),
