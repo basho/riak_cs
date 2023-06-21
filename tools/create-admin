@@ -16,7 +16,7 @@ def create_user(host, port, name, email):
 
 def main():
     admin_name = "admin"
-    admin_email = "admin@barsik_in_the_clouds.com"
+    admin_email = "admin@yourinnerfreedom.com"
     port = 8080
     quiet = False
 
@@ -31,15 +31,15 @@ def main():
         if o == "-q":
             quiet = True
 
-    admin_user = create_user("127.0.0.1", port, admin_name, admin_email)
+    res = admin_user = create_user("127.0.0.1", port, admin_name, admin_email)
     pprint.pp(res)
 
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
     config = Config(signature_version = 's3v4')
     iam_client = boto3.client('iam',
                               use_ssl = False,
-                              aws_access_key_id = admin_user['key_id'],
-                              aws_secret_access_key = admin_user['key_secret'],
+                              aws_access_key_id = "admin-key",
+                              aws_secret_access_key = "admin_secret",
                               config = config)
 
     policy = json.dumps({

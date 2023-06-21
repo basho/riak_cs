@@ -166,11 +166,9 @@ create_user(FF = #{email := Email}, Pbc) ->
 
 -spec create_role(maps:map(), pid()) -> {ok, role()} | {error, already_exists|term()}.
 create_role(Fields, Pbc) ->
-    Role_ = ?IAM_ROLE{role_name = Name,
-                      assume_role_policy_document = A} =
+    Role = ?IAM_ROLE{role_name = Name} =
         riak_cs_iam:exprec_role(
           riak_cs_iam:fix_permissions_boundary(Fields)),
-    Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
     case role_name_available(Name) of
         true ->
             save_role(Role, Pbc);
@@ -180,9 +178,7 @@ create_role(Fields, Pbc) ->
 
 -spec update_role(maps:map(), pid()) -> ok | {error, already_exists|term()}.
 update_role(Fields, Pbc) ->
-    Role_ = ?IAM_ROLE{assume_role_policy_document = A} =
-        riak_cs_iam:exprec_role(Fields),
-    Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
+    Role = riak_cs_iam:exprec_role(Fields),
     save_role_directly(Role, Pbc).
 
 role_name_available(Name) ->
@@ -314,11 +310,9 @@ delete_policy(Arn, Pbc) ->
 
 -spec create_saml_provider(maps:map(), pid()) -> {ok, {string(), [tag()]}} | {error, term()}.
 create_saml_provider(Fields, Pbc) ->
-    P0 = ?IAM_SAML_PROVIDER{name = Name,
-                            saml_metadata_document = A} =
+    P0 = ?IAM_SAML_PROVIDER{name = Name} =
         riak_cs_iam:exprec_saml_provider(Fields),
-    P1 = P0?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(A)},
-    case riak_cs_iam:parse_saml_provider_idp_metadata(P1) of
+    case riak_cs_iam:parse_saml_provider_idp_metadata(P0) of
         {ok, P9} ->
             case saml_provider_name_available(Name) of
                 true ->
@@ -813,11 +807,8 @@ get_manifests_raw(Pbc, Bucket, Key, Vsn) ->
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
 
-save_user(?IAM_USER{name = Name,
-                    path = Path} = User0, Pbc) ->
-    Arn = riak_cs_aws_utils:make_user_arn(Name, Path),
-    User = User0?IAM_USER{arn = Arn},
-
+save_user(?IAM_USER{arn = Arn,
+                    name = Name} = User, Pbc) ->
     Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
     Obj = riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)),
     UserObj = riakc_obj:update_metadata(Obj, Meta),

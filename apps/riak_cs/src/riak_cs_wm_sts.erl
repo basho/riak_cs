@@ -110,7 +110,8 @@ valid_entity_length(RD, Ctx) ->
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
-                                   riak_client = RcPid}) ->
+                                   riak_client = RcPid,
+                                   request_id = RequestId}) ->
     case unsigned_call_allowed(RD) of
         true ->
             {false, RD, Ctx};
@@ -123,23 +124,32 @@ forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
                     {failed, Reason} ->
                         {error, Reason};
                     {UserKey, AuthData} ->
-                        case riak_cs_user:get_user(UserKey, RcPid) of
-                            {ok, {User, Obj}} = _LookupResult ->
-                                authenticate(User, Obj, RD, Ctx, AuthData);
-                            Error ->
-                                Error
+                        case riak_cs_config:admin_creds() of
+                            {ok, {UserKey, _}} ->
+                                logger:notice("Granting admin access to request ~s", [RequestId]),
+                                {ok, admin_access};
+                            _NoAdmiAccess ->
+                                case riak_cs_user:get_user(UserKey, RcPid) of
+                                    {ok, {User, Obj}} = _LookupResult ->
+                                        authenticate(User, Obj, RD, Ctx, AuthData);
+                                    Error ->
+                                        Error
+                                end
                         end;
                     Role ->
                         riak_cs_wm_utils:eval_role_for_action(RD, Role)
                 end,
             post_authentication(AuthResult, RD, Ctx, fun authorize/2)
     end.
+
 unsigned_call_allowed(RD) ->
     Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
     lists:member(proplists:get_value("Action", Form),
                  ?UNSIGNED_API_CALLS).
 
 
+post_authentication({ok, admin_access}, RD, Ctx, _Authorize) ->
+    {false, RD, Ctx#rcs_web_context{user = admin}};
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
     Authorize(RD, Ctx#rcs_web_context{user = User,
                                       user_object = UserObj});

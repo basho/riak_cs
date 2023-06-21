@@ -46,7 +46,7 @@
 -record(rcs_web_context, {start_time =  os:system_time(millisecond) :: non_neg_integer(),
                           request_id :: binary(),
                           auth_bypass :: atom(),
-                          user :: undefined | moss_user(),
+                          user :: undefined | admin | moss_user(),
                           user_object :: undefined | riakc_obj:riakc_obj(),
                           role :: undefined | role(),
                           bucket :: undefined | binary(),

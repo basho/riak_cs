@@ -131,7 +131,9 @@ accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
-                                   maps:get(email, FF, <<>>)),
+                                   maps:get(email, FF, <<>>),
+                                   maps:get(path, FF, <<"/">>),
+                                   maps:get(permissions_boundary, FF, <<>>)),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),

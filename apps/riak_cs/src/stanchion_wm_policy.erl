@@ -85,17 +85,17 @@ allowed_methods(RD, Ctx) ->
     {['GET', 'PUT', 'DELETE'], RD, Ctx}.
 
 -spec content_types_provided(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
+          {[{string(), atom()}], term(), term()}.
 content_types_provided(RD, Ctx) ->
     {[{"application/json", to_xml}], RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
+          {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
     {[{"application/json", accept_body}], RD, Ctx}.
 
 -spec to_json(term(), term()) ->
-                     {{'halt', term()}, #wm_reqdata{}, term()}.
+          {{'halt', term()}, #wm_reqdata{}, term()}.
 to_json(RD, Ctx) ->
     Bucket = wrq:path_info(bucket, RD),
     stanchion_response:list_buckets_response(Bucket, RD, Ctx).
@@ -104,7 +104,6 @@ to_json(RD, Ctx) ->
 accept_body(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     Body = wrq:req_body(RD),
-    %% @TODO Handle json decoding exceptions
     ParsedBody = jsx:decode(Body, [{labels, atom}]),
     case stanchion_server:set_bucket_policy(Bucket,
                                             ParsedBody) of

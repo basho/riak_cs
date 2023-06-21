@@ -109,8 +109,9 @@ valid_entity_length(RD, Ctx) ->
 
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
-                                   riak_client = RcPid}) ->
+forbidden(RD, #rcs_web_context{auth_module = AuthMod,
+                               riak_client = RcPid,
+                               request_id = RequestId} = Ctx) ->
     AuthResult =
         case AuthMod:identify(RD, Ctx) of
             failed ->
@@ -119,15 +120,23 @@ forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
             {failed, Reason} ->
                 {error, Reason};
             {UserKey, AuthData} ->
-                case riak_cs_user:get_user(UserKey, RcPid) of
-                    {ok, {User, Obj}} ->
-                        authenticate(User, Obj, RD, Ctx, AuthData);
-                    Error ->
-                        Error
+                case riak_cs_config:admin_creds() of
+                    {ok, {UserKey, _}} ->
+                        logger:notice("Granting admin access to request ~s", [RequestId]),
+                        {ok, admin_access};
+                    _NoAdmiAccess ->
+                        case riak_cs_user:get_user(UserKey, RcPid) of
+                            {ok, {User, Obj}} ->
+                                authenticate(User, Obj, RD, Ctx, AuthData);
+                            Error ->
+                                Error
+                        end
                 end
         end,
     post_authentication(AuthResult, RD, Ctx, fun authorize/2).
 
+post_authentication({ok, admin_access}, RD, Ctx, _Authorize) ->
+    {false, RD, Ctx#rcs_web_context{user = admin}};
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
     %% given keyid and signature matched, proceed
     Authorize(RD, Ctx#rcs_web_context{user = User,
@@ -552,7 +561,7 @@ do_action(Unsupported, _Form, RD, Ctx = #rcs_web_context{response_module = Respo
 role_fields_filter({ItemKey, ItemValue}, Acc) ->
     case ItemKey of
         "AssumeRolePolicyDocument" ->
-            maps:put(assume_role_policy_document, base64:encode(ItemValue), Acc);
+            maps:put(assume_role_policy_document, list_to_binary(ItemValue), Acc);
         "Description" ->
             maps:put(description, list_to_binary(ItemValue), Acc);
         "MaxSessionDuration" ->
@@ -580,7 +589,7 @@ policy_fields_filter({ItemKey, ItemValue}, Acc) ->
         "Path" ->
             maps:put(path, list_to_binary(ItemValue), Acc);
         "PolicyDocument" ->
-            maps:put(policy_document, base64:encode(ItemValue), Acc);
+            maps:put(policy_document, list_to_binary(ItemValue), Acc);
         "PolicyName" ->
             maps:put(policy_name, list_to_binary(ItemValue), Acc);
         CommonParameter when CommonParameter == "Action";

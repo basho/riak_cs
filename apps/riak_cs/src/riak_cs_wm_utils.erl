@@ -754,7 +754,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
     PermCtx = Ctx#rcs_web_context{bucket = Bucket,
                                   requested_perm = RequestedAccess},
-    case any_assumed_role_policies_or_halt(Ctx) of
+    case get_user_policies_or_halt(Ctx) of
         user_session_expired ->
             deny_access(RD, Ctx);
         SessionPolicies ->
@@ -771,8 +771,8 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
               Policies)
     end.
 
-any_assumed_role_policies_or_halt(#rcs_web_context{user_object = undefined,
-                                                   user = ?RCS_USER{key_id = KeyId}}) ->
+get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
+                                           user = ?RCS_USER{key_id = KeyId}}) ->
     case riak_cs_temp_sessions:get(KeyId) of
         {ok, S} ->
             riak_cs_temp_sessions:effective_policies(S);
@@ -783,8 +783,9 @@ any_assumed_role_policies_or_halt(#rcs_web_context{user_object = undefined,
             logger:notice("Denying an API request by user with key_id ~s as their session has (just!) expired", [KeyId]),
             user_session_expired
     end;
-any_assumed_role_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser}) ->
-    [].
+get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
+                                           user = ?RCS_USER{attached_policies = PP}}) ->
+    PP.
 
 
 handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
@@ -1215,7 +1216,7 @@ role_access_authorize_helper(Target, RD,
                                                     user = User}) ->
     Access = PolicyMod:reqdata_to_access(RD, Target,
                                          User?RCS_USER.canonical_id),
-    case any_assumed_role_policies_or_halt(Ctx) of
+    case get_user_policies_or_halt(Ctx) of
         user_session_expired ->
             deny_access(RD, Ctx);
         Policies ->

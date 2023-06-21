@@ -188,7 +188,7 @@
 -define(AMZ_POLICY, #amz_policy).
 
 -record(policy_v1, { arn :: flat_arn()
-                   , path :: binary()
+                   , path = <<"/">> :: binary()
                    , attachment_count = 0 :: non_neg_integer()
                    , create_date = os:system_time(millisecond) :: non_neg_integer()
                    , default_version_id = <<"v1">> :: binary()
@@ -229,7 +229,7 @@
 -define(IAM_ROLE_LAST_USED, #role_last_used).
 
 -record(role_v1, { arn :: flat_arn()
-                 , path :: binary()
+                 , path = <<"/">> :: binary()
                  , assume_role_policy_document :: binary()
                  , create_date = os:system_time(millisecond) :: non_neg_integer()
                  , description :: binary()

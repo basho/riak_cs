@@ -104,7 +104,7 @@ update_user(U = ?IAM_USER{key_id = KeyId}) ->
 
 -spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
 create_role(Specs) ->
-    Encoded = jsx:encode(Specs),
+    Encoded = riak_cs_json:to_json(exprec:frommap_role_v1(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_role(
                "application/json",
@@ -160,7 +160,8 @@ find_role(#{path := Path}, RcPid) ->
 create_policy(Specs = #{policy_document := D}) ->
     case riak_cs_aws_policy:policy_from_json(D) of
         {ok, _} ->
-            Encoded = jsx:encode(Specs),
+            ?LOG_DEBUG("Specs: ~p", [Specs]),
+            Encoded = riak_cs_json:to_json(exprec:frommap_policy_v1(Specs)),
             {ok, AdminCreds} = riak_cs_config:admin_creds(),
             Result = velvet:create_policy(
                        "application/json",
@@ -340,7 +341,7 @@ fix_permissions_boundary(Map) ->
 
 -spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
 create_saml_provider(Specs) ->
-    Encoded = jsx:encode(Specs),
+    Encoded = riak_cs_json:to_json(exprec:frommap_saml_provider_v1(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_saml_provider(
                "application/json",
@@ -465,7 +466,7 @@ exprec_role(Map) ->
                       permissions_boundary = PB0,
                       role_last_used = LU0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
-    TT = [exprec:frommap_tag(T) || T <- TT0],
+    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     LU = case LU0 of
              Undefined1 when Undefined1 =:= null;
                              Undefined1 =:= undefined ->
@@ -489,15 +490,17 @@ exprec_role(Map) ->
 exprec_policy(Map) ->
     Policy0 = ?IAM_POLICY{tags = TT0,
                           policy_document = D} = exprec:frommap_policy_v1(Map),
-    TT = [exprec:frommap_tag(T) || T <- TT0],
+    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     Policy0?IAM_POLICY{policy_document = base64:decode(D),
                        tags = TT}.
 
 -spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
 exprec_saml_provider(Map) ->
-    P0 = ?IAM_SAML_PROVIDER{tags = TT0} = exprec:frommap_saml_provider_v1(Map),
-    TT = [exprec:frommap_tag(T) || T <- TT0],
-    P0?IAM_SAML_PROVIDER{tags = TT}.
+    P0 = ?IAM_SAML_PROVIDER{tags = TT0,
+                           saml_metadata_document = D} = exprec:frommap_saml_provider_v1(Map),
+    TT = [exprec:frommap_tag(T) || T <- TT0, is_list(TT0)],
+    P0?IAM_SAML_PROVIDER{tags = TT,
+                         saml_metadata_document = base64:decode(D)}.
 
 
 handle_response({ok, Returnable}) ->

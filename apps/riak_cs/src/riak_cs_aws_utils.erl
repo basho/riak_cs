@@ -26,6 +26,7 @@
          make_unique_index_id/2,
          make_user_arn/2,
          make_role_arn/2,
+         make_policy_arn/2,
          make_provider_arn/1,
          make_assumed_role_user_arn/2,
          generate_access_creds/1,
@@ -120,6 +121,9 @@ make_user_arn(Name, Path) ->
 
 make_role_arn(Name, Path) ->
     iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":role", Path, $/, Name]).
+
+make_policy_arn(Name, Path) ->
+    iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":policy", Path, $/, Name]).
 
 make_provider_arn(Name) ->
     iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider/", Name]).

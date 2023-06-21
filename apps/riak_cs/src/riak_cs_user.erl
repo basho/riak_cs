@@ -24,8 +24,8 @@
 -module(riak_cs_user).
 
 %% Public API
--export([create_user/2,
-         create_user/4,
+-export([create_user/4,
+         create_user/6,
          display_name/1,
          is_admin/1,
          get_user/2,
@@ -50,25 +50,39 @@
 %% ===================================================================
 
 %% @doc Create a new Riak CS user
--spec create_user(string(), string()) -> {ok, rcs_user()} | {error, term()}.
-create_user(Name, Email) ->
+-spec create_user(binary(), binary(), binary(), binary()) ->
+          {ok, rcs_user()} | {error, term()}.
+create_user(Name, Email, Path, PermissionsBoundary) ->
     {KeyId, Secret} = riak_cs_aws_utils:generate_access_creds(Email),
-    create_user(Name, Email, KeyId, Secret).
+    create_user(Name, Email, Path, PermissionsBoundary, KeyId, Secret).
 
-%% @doc Create a new Riak CS user
--spec create_user(string(), string(), string(), string()) -> {ok, rcs_user()} | {error, term()}.
-create_user(Name, Email, KeyId, Secret) ->
+%% @doc Create a new Riak CS/IAM user
+-spec create_user(binary(), binary(), binary(), binary(), string(), string()) ->
+          {ok, rcs_user()} | {error, term()}.
+create_user(Name, Email, Path, PermissionsBoundary, KeyId, Secret) ->
     case validate_email(Email) of
         ok ->
             CanonicalId = riak_cs_aws_utils:generate_canonical_id(KeyId),
-            User = user_record(Name, Email, KeyId, Secret, CanonicalId),
-            create_credentialed_user(riak_cs_config:admin_creds(), User);
-        {error, _Reason}=Error ->
+            DisplayName = display_name(Email),
+            Arn = riak_cs_aws_utils:make_user_arn(Name, Path),
+            User = ?RCS_USER{arn = Arn,
+                             path = Path,
+                             name = Name,
+                             permissions_boundary = PermissionsBoundary,
+                             display_name = DisplayName,
+                             email = Email,
+                             key_id = KeyId,
+                             key_secret = Secret,
+                             canonical_id = CanonicalId,
+                             buckets = []},
+            create_credentialed_user(User);
+        {error, _Reason} = Error ->
             Error
     end.
 
-create_credentialed_user({ok, AdminCreds}, User) ->
+create_credentialed_user(User) ->
     %% Make a call to the user request serialization service.
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
     StatsKey = [velvet, create_user],
     _ = riak_cs_stats:inflow(StatsKey),
     StartTime = os:timestamp(),
@@ -89,6 +103,7 @@ handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
     end;
 handle_create_user({error, _} = Error, _User) ->
     Error.
+
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user(iodata(), riak_client()) ->
@@ -148,6 +163,11 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
     is_admin(User, riak_cs_config:admin_creds()).
+is_admin(?RCS_USER{key_id = KeyId, key_secret = KeySecret},
+         {ok, {KeyId, KeySecret}}) ->
+    true;
+is_admin(_, _) ->
+    false.
 
 -spec to_3tuple(rcs_user()) -> acl_owner().
 to_3tuple(U) ->
@@ -180,15 +200,7 @@ fetch_user_keys(RcPid) ->
 %% Internal functions
 %% ===================================================================
 
-%% @doc Determine if the specified user account is a system admin.
--spec is_admin(rcs_user(), {ok, {string(), string()}} |
-               {error, term()}) -> boolean().
-is_admin(?RCS_USER{key_id = KeyId, key_secret = KeySecret},
-         {ok, {KeyId, KeySecret}}) ->
-    true;
-is_admin(_, _) ->
-    false.
-
+%% @doc De
 validate_email(EmailAddr) ->
     case re:run(EmailAddr, "^[a-z0-9]+[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,17}$", [caseless]) of
         nomatch ->
@@ -208,19 +220,6 @@ update_user_record(User = #moss_user_v1{}) ->
               canonical_id=User#moss_user_v1.canonical_id,
               buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
                           Bucket <- User#moss_user_v1.buckets]}.
-
-user_record(Name, Email, KeyId, Secret, CanonicalId) ->
-    user_record(Name, Email, KeyId, Secret, CanonicalId, []).
-
-user_record(Name, Email, KeyId, Secret, CanonicalId, Buckets) ->
-    DisplayName = display_name(Email),
-    ?RCS_USER{name=Name,
-              display_name=DisplayName,
-              email=Email,
-              key_id=KeyId,
-              key_secret=Secret,
-              canonical_id=CanonicalId,
-              buckets=Buckets}.
 
 key_id(?RCS_USER{key_id=KeyId}) ->
     KeyId.
