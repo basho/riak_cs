@@ -125,6 +125,12 @@ to_xml(#delete_role_response{} = R) ->
     delete_role_response_to_xml(R);
 to_xml(#list_roles_response{} = R) ->
     list_roles_response_to_xml(R);
+to_xml(#create_policy_response{} = R) ->
+    create_policy_response_to_xml(R);
+to_xml(#get_policy_response{} = R) ->
+    get_policy_response_to_xml(R);
+to_xml(#delete_policy_response{} = R) ->
+    delete_policy_response_to_xml(R);
 to_xml(#create_saml_provider_response{} = R) ->
     create_saml_provider_response_to_xml(R);
 to_xml(#get_saml_provider_response{} = R) ->
@@ -472,6 +478,62 @@ list_roles_response_to_xml(#list_roles_response{roles = RR,
                                    [{'xmlns', ?IAM_XMLNS}],
                                    lists:flatten(C))], []).
 
+
+policy_node(?IAM_POLICY{arn = Arn,
+                        path = Path,
+                        attachment_count = AttachmentCount,
+                        create_date = CreateDate,
+                        description = Description,
+                        default_version_id = DefaultVersionId,
+                        is_attachable = IsAttachable,
+                        permissions_boundary_usage_count = PermissionsBoundaryUsageCount,
+                        policy_document = PolicyDocument,
+                        policy_id = PolicyId,
+                        policy_name = PolicyName,
+                        tags = Tags,
+                        update_date = UpdateDate}) ->
+    C = lists:flatten(
+          [{'Arn', [make_arn(Arn)]},
+           {'Path', [binary_to_list(Path)]},
+           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+           [{'Description', [binary_to_list(Description)]} || Description /= undefined],
+           {'DefaultVersionId', [binary_to_list(DefaultVersionId)]},
+           {'AttachmentCount', [integer_to_list(AttachmentCount)]},
+           {'IsAttachable', [IsAttachable]},
+           {'PermissionsBoundaryUsageCount', [integer_to_list(PermissionsBoundaryUsageCount)]},
+           {'PolicyDocument', [binary_to_list(PolicyDocument)]},
+           {'PolicyId', [binary_to_list(PolicyId)]},
+           {'PolicyName', [binary_to_list(PolicyName)]},
+           {'Tags', [tag_node(T) || T <- Tags]},
+           {'UpdateDate', [binary_to_list(rts:iso8601(UpdateDate))]}
+          ]),
+    {'Policy', C}.
+
+create_policy_response_to_xml(#create_policy_response{policy = Policy, request_id = RequestId}) ->
+    CreatePolicyResult = policy_node(Policy),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'CreatePolicyResult', [CreatePolicyResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('CreatePolicyResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+
+get_policy_response_to_xml(#get_policy_response{policy = Policy, request_id = RequestId}) ->
+    GetPolicyResult = policy_node(Policy),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'GetPolicyResult', [GetPolicyResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('GetPolicyResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+delete_policy_response_to_xml(#delete_policy_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('DeletePolicyResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
 
 attach_role_policy_response_to_xml(#attach_role_policy_response{request_id = RequestId}) ->
     ResponseMetadata = make_internal_node('RequestId', [RequestId]),

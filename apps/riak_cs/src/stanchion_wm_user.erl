@@ -90,9 +90,8 @@ content_types_accepted(RD, Ctx) ->
            #wm_reqdata{}, #stanchion_context{}}.
 accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
-    KeyId = wrq:path_info(key_id, RD),
     FF = jsx:decode(Body, [{labels, atom}]),
-    case stanchion_server:update_user(KeyId, FF) of
+    case stanchion_server:update_user(FF) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

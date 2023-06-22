@@ -35,7 +35,7 @@
          set_bucket_versioning/2,
          delete_bucket_policy/2,
          stop/1,
-         update_user/2,
+         update_user/1,
          create_role/1,
          update_role/1,
          delete_role/1,
@@ -54,6 +54,7 @@
          terminate/2,
          code_change/3]).
 
+-include("moss.hrl").
 -include("stanchion.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -207,15 +208,11 @@ delete_saml_provider(A) ->
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
-%% @doc Attempt to update a bucket
--spec update_user(string(), [{term(), term()}]) ->
-                         ok |
-                         {error, term()} |
-                         {error, stanchion_utils:riak_connect_failed()}.
-update_user(KeyId, UserData) ->
+-spec update_user(rcs_user()) -> ok | {error, term() | stanchion_utils:riak_connect_failed()}.
+update_user(A) ->
     ?MEASURE([user, update],
              gen_server:call(?MODULE,
-                             {update_user, KeyId, UserData},
+                             {update_user, A},
                              infinity)).
 
 -spec msgq_len() -> non_neg_integer().
@@ -249,10 +246,10 @@ handle_call({create_user, UserData},
             State=#state{pbc = Pbc}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:create_user(UserData, Pbc)),
     {reply, Result, State};
-handle_call({update_user, KeyId, UserData},
+handle_call({update_user, UserData},
             _From,
             State=#state{pbc = Pbc}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:update_user(KeyId, UserData, Pbc)),
+    Result = ?TURNAROUND_TIME(stanchion_utils:update_user(UserData, Pbc)),
     {reply, Result, State};
 handle_call({delete_bucket, Bucket, OwnerId},
             _From,

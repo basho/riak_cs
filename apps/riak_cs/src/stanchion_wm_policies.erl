@@ -101,9 +101,7 @@ do_create(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_policy(FF) of
         {ok, Policy} ->
-            Doc = jason:encode(Policy,
-                               [{records, [{policy_v1, record_info(fields, policy_v1)},
-                                           {tag, record_info(fields, tag)}]}]),
+            Doc = riak_cs_json:to_json(Policy),
             {true, wrq:set_resp_body(Doc, RD), Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)

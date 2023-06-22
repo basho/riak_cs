@@ -133,7 +133,7 @@ accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
                                    maps:get(email, FF, <<>>),
                                    maps:get(path, FF, <<"/">>),
-                                   maps:get(permissions_boundary, FF, <<>>)),
+                                   maps:get(permissions_boundary, FF, undefined)),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
@@ -167,6 +167,8 @@ accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
                           RD,
                           Ctx)
     end;
+accept_xml(RD, Ctx = #rcs_web_context{user_object = undefined}) ->
+    riak_cs_aws_response:api_error(no_updates_for_federated_users, RD, Ctx);
 accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
@@ -261,33 +263,34 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
 
 update_user(UpdateItems, User) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
-    UpdateUserResult = update_user_record(User, UpdateItems, false),
+    UpdateUserResult = update_user_record(User, UpdateItems, false, false),
     handle_update_result(UpdateUserResult).
 
-update_user_record(_User, [], RecordUpdated) ->
-    {RecordUpdated, _User};
-update_user_record(User, [{status, Status} | RestUpdates], _RecordUpdated) ->
-    update_user_record(User?RCS_USER{status = str_to_status(Status)}, RestUpdates, true);
-update_user_record(User, [{name, Name} | RestUpdates], _RecordUpdated) ->
-    update_user_record(User?RCS_USER{name = Name}, RestUpdates, true);
-update_user_record(User, [{email, Email} | RestUpdates], _RecordUpdated) ->
+update_user_record(User, [], U1, U2) ->
+    {U1, U2, User};
+update_user_record(User, [{status, Status} | RestUpdates], _, U2) ->
+    update_user_record(User?RCS_USER{status = str_to_status(Status)}, RestUpdates, true, U2);
+update_user_record(User, [{name, Name} | RestUpdates], _, U2) ->
+    update_user_record(User?RCS_USER{name = Name}, RestUpdates, true, U2);
+update_user_record(User = ?RCS_USER{email = Email0}, [{email, Email} | RestUpdates], _, _) ->
     DisplayName = riak_cs_user:display_name(Email),
-    update_user_record(User?RCS_USER{email = Email, display_name=DisplayName},
+    update_user_record(User?RCS_USER{email = Email,
+                                     display_name = DisplayName},
                        RestUpdates,
-                       true);
-update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
-    update_user_record(riak_cs_user:update_key_secret(User), RestUpdates, true);
-update_user_record(_User, [_ | RestUpdates], _RecordUpdated) ->
-    update_user_record(_User, RestUpdates, _RecordUpdated).
+                       true, (Email0 /= Email));
+update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _, U2) ->
+    update_user_record(riak_cs_user:update_key_secret(User), RestUpdates, true, U2);
+update_user_record(User, [_ | RestUpdates], U1, U2) ->
+    update_user_record(User, RestUpdates, U1, U2).
 
 str_to_status(<<"enabled">>) -> enabled;
 str_to_status(<<"disabled">>) -> disabled.
 
 
-handle_update_result({false, _User}) ->
+handle_update_result({false, _, _User}) ->
     {halt, 200};
-handle_update_result({true, User}) ->
-    riak_cs_iam:update_user(User).
+handle_update_result({true, EmailUpdated, User}) ->
+    riak_cs_iam:update_user(User, EmailUpdated).
 
 set_resp_data(ContentType, RD, #rcs_web_context{user = User}) ->
     UserDoc = format_user_record(User, ContentType),

@@ -36,7 +36,7 @@
 
 -spec authenticate(term(), [string()]) -> ok | {error, atom()}.
 authenticate(RD, [KeyId, Signature]) ->
-    case stanchion_utils:get_admin_creds() of
+    case riak_cs_config:admin_creds() of
         {ok, {AdminKeyId, AdminSecret}} ->
             case KeyId == AdminKeyId andalso
                 check_auth(Signature, signature(AdminSecret, RD)) of

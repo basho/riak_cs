@@ -47,9 +47,12 @@
          detach_user_policy/3,
 
          fix_permissions_boundary/1,
+         exprec_user/1,
+         exprec_bucket/1,
          exprec_role/1,
          exprec_policy/1,
-         exprec_saml_provider/1
+         exprec_saml_provider/1,
+         unarm/1
         ]).
 
 -include("moss.hrl").
@@ -160,8 +163,7 @@ find_role(#{path := Path}, RcPid) ->
 create_policy(Specs = #{policy_document := D}) ->
     case riak_cs_aws_policy:policy_from_json(D) of
         {ok, _} ->
-            ?LOG_DEBUG("Specs: ~p", [Specs]),
-            Encoded = riak_cs_json:to_json(exprec:frommap_policy_v1(Specs)),
+            Encoded = riak_cs_json:to_json(exprec_policy(Specs)),
             {ok, AdminCreds} = riak_cs_config:admin_creds(),
             Result = velvet:create_policy(
                        "application/json",
@@ -260,7 +262,7 @@ detach_role_policy(PolicyArn, RoleName, RcPid) ->
           ok | {error, error_reason()}.
 attach_user_policy(PolicyArn, UserName, RcPid) ->
     case find_user(#{name => UserName}, RcPid) of
-        {ok, User = ?RCS_USER{attached_policies = PP}} ->
+        {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 true ->
                     ok;
@@ -460,10 +462,51 @@ from_riakc_obj(Obj) ->
     end.
 
 
+-spec exprec_user(maps:map()) -> ?IAM_USER{}.
+exprec_user(Map) ->
+    U0 = ?IAM_USER{status = S,
+                   attached_policies = AP0,
+                   password_last_used = PLU0,
+                   permissions_boundary = PB0,
+                   tags = TT0,
+                   buckets = BB} = exprec:frommap_rcs_user_v3(Map),
+    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
+    PB = case PB0 of
+             Undefined when Undefined =:= null;
+                            Undefined =:= undefined ->
+                 undefined;
+             _ ->
+                 exprec:frommap_permissions_boundary(PB0)
+         end,
+    U0?IAM_USER{status = status_from_binary(S),
+                attached_policies = [A || AP0 /= <<>>, A <- AP0],
+                password_last_used = maybe_int(PLU0),
+                permissions_boundary = PB,
+                tags = TT,
+                buckets = [exprec_bucket(B) || BB /= <<>>, B <- BB]}.
+status_from_binary(<<"enabled">>) -> enabled;
+status_from_binary(<<"disabled">>) -> disabled.
+maybe_int(none) -> undefined;
+maybe_int(undefined) -> undefined;
+maybe_int(A) -> A.
+
+
+-spec exprec_bucket(maps:map()) -> ?RCS_BUCKET{}.
+exprec_bucket(Map) ->
+    B0 = ?RCS_BUCKET{last_action = LA0,
+                     acl = A0} = exprec:frommap_moss_bucket_v1(Map),
+    B0?RCS_BUCKET{last_action = last_action_from_binary(LA0),
+                  acl = maybe_exprec_acl(A0)}.
+last_action_from_binary(<<"undefined">>) -> undefined;
+last_action_from_binary(<<"created">>) -> created;
+last_action_from_binary(<<"deleted">>) -> deleted.
+maybe_exprec_acl(undefined) -> undefined;
+maybe_exprec_acl(A) -> exprec:frommap_acl_v3(A).
+
+
 -spec exprec_role(maps:map()) -> ?IAM_ROLE{}.
 exprec_role(Map) ->
-    Role0 = ?IAM_ROLE{assume_role_policy_document = D,
-                      permissions_boundary = PB0,
+    Role0 = ?IAM_ROLE{permissions_boundary = PB0,
                       role_last_used = LU0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
@@ -481,26 +524,34 @@ exprec_role(Map) ->
              _ ->
                  exprec:frommap_permissions_boundary(PB0)
          end,
-    Role0?IAM_ROLE{assume_role_policy_document = base64:decode(D),
-                   permissions_boundary = PB,
+    Role0?IAM_ROLE{permissions_boundary = PB,
                    role_last_used = LU,
                    tags = TT}.
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
 exprec_policy(Map) ->
-    Policy0 = ?IAM_POLICY{tags = TT0,
-                          policy_document = D} = exprec:frommap_policy_v1(Map),
+    Policy0 = ?IAM_POLICY{tags = TT0} = exprec:frommap_policy_v1(Map),
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
-    Policy0?IAM_POLICY{policy_document = base64:decode(D),
-                       tags = TT}.
+    Policy0?IAM_POLICY{tags = TT}.
 
 -spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
 exprec_saml_provider(Map) ->
-    P0 = ?IAM_SAML_PROVIDER{tags = TT0,
-                           saml_metadata_document = D} = exprec:frommap_saml_provider_v1(Map),
+    P0 = ?IAM_SAML_PROVIDER{tags = TT0} = exprec:frommap_saml_provider_v1(Map),
     TT = [exprec:frommap_tag(T) || T <- TT0, is_list(TT0)],
-    P0?IAM_SAML_PROVIDER{tags = TT,
-                         saml_metadata_document = base64:decode(D)}.
+    P0?IAM_SAML_PROVIDER{tags = TT}.
+
+-spec unarm(A) -> A when A :: rcs_user() | role() | policy() | saml_provider().
+unarm(A = ?IAM_USER{}) ->
+    A;
+unarm(A = ?IAM_POLICY{policy_document = D}) ->
+    A?IAM_POLICY{policy_document = base64:decode(D)};
+unarm(A = ?IAM_ROLE{assume_role_policy_document = D})
+  when is_binary(D), size(D) > 0 ->
+    A?IAM_ROLE{assume_role_policy_document = base64:decode(D)};
+unarm(A = ?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
+    A?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(D)}.
+
+
 
 
 handle_response({ok, Returnable}) ->

@@ -42,7 +42,7 @@ dispatch_table() ->
      {["users"], stanchion_wm_users, [{auth_bypass, AuthBypass}]},
      {["roles", arn], stanchion_wm_roles, [{auth_bypass, AuthBypass}]},
      {["roles"], stanchion_wm_roles, [{auth_bypass, AuthBypass}]},
-     {["policies", arn], stanchion_wm_roles, [{auth_bypass, AuthBypass}]},
+     {["policies", arn], stanchion_wm_policies, [{auth_bypass, AuthBypass}]},
      {["policies"], stanchion_wm_policies, [{auth_bypass, AuthBypass}]},
      {["samlproviders"], stanchion_wm_samlprovider, [{auth_bypass, AuthBypass}]},
      {["samlproviders", arn], stanchion_wm_samlprovider, [{auth_bypass, AuthBypass}]},

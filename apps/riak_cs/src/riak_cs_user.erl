@@ -73,8 +73,7 @@ create_user(Name, Email, Path, PermissionsBoundary, KeyId, Secret) ->
                              email = Email,
                              key_id = KeyId,
                              key_secret = Secret,
-                             canonical_id = CanonicalId,
-                             buckets = []},
+                             canonical_id = CanonicalId},
             create_credentialed_user(User);
         {error, _Reason} = Error ->
             Error

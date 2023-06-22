@@ -200,9 +200,7 @@ delete_bucket_policy(Bucket, Requester, Options) ->
     end.
 
 %% @doc Update a user record
--spec update_user(string(),
-                  string(),
-                  string(),
+-spec update_user(string(), binary(), binary(),
                   [{atom(), term()}]) -> ok | {error, term()}.
 update_user(ContentType, KeyId, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
@@ -347,7 +345,7 @@ update_role(ContentType, Arn, Doc, Options) ->
     case AuthCreds of
         {_, _} ->
             Headers =
-                [{"Authorization", auth_header('POST',
+                [{"Authorization", auth_header('PUT',
                                                ContentType,
                                                Headers0,
                                                Path,
@@ -356,8 +354,8 @@ update_role(ContentType, Arn, Doc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(post, Path, [201], ContentType, Headers, Doc) of
-        {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
+    case request(put, Path, [204], ContentType, Headers, Doc) of
+        {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
@@ -386,8 +384,8 @@ create_policy(ContentType, Doc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
-            Role = riak_cs_iam:exprec_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
-            {ok, Role};
+            Policy = riak_cs_iam:exprec_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            {ok, Policy};
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
@@ -429,7 +427,7 @@ update_policy(ContentType, Arn, Doc, Options) ->
     case AuthCreds of
         {_, _} ->
             Headers =
-                [{"Authorization", auth_header('POST',
+                [{"Authorization", auth_header('PUT',
                                                ContentType,
                                                Headers0,
                                                Path,
@@ -438,8 +436,8 @@ update_policy(ContentType, Arn, Doc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(post, Path, [201], ContentType, Headers, Doc) of
-        {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
+    case request(put, Path, [204], ContentType, Headers, Doc) of
+        {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
@@ -579,25 +577,17 @@ requester_qs(Requester) ->
     "?requester=" ++
         mochiweb_util:quote_plus(Requester).
 
-users_path(User) ->
-    stringy(["/users",
-             ["/" ++ User || User /= []]
-            ]).
+users_path(A) ->
+    stringy(["/users", ["/" ++ A || A /= []]]).
 
 roles_path(A) ->
-    stringy(["/roles",
-             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
-            ]).
+    stringy(["/roles", ["/" ++ mochiweb_util:quote_plus(A) || A /= []]]).
 
 policies_path(A) ->
-    stringy(["/policies",
-             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
-            ]).
+    stringy(["/policies", ["/" ++ mochiweb_util:quote_plus(A) || A /= []]]).
 
 saml_provider_path(A) ->
-    stringy(["/samlproviders",
-             ["/" ++ mochiweb_util:quote_plus(A) || A /= []]
-            ]).
+    stringy(["/samlproviders", ["/" ++ mochiweb_util:quote_plus(A) || A /= []]]).
 
-stringy(List) ->
-    lists:flatten(List).
+stringy(A) ->
+    binary_to_list(iolist_to_binary(A)).

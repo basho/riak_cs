@@ -27,7 +27,7 @@
 -export([create_bucket/2,
          delete_bucket/3,
          create_user/2,
-         update_user/3,
+         update_user/2,
          create_role/2,
          update_role/2,
          delete_role/2,
@@ -41,8 +41,7 @@
          set_bucket_versioning/3,
          delete_bucket_policy/3
         ]).
--export([get_admin_creds/0,
-         get_manifests_raw/4,
+-export([get_manifests_raw/4,
          get_pbc/0,
          has_tombstone/1,
          make_pbc/0,
@@ -115,7 +114,7 @@ create_bucket(#{bucket := Bucket,
                         {error, temp_users_create_bucket_restriction};
                     {ok, {User, UserObj}} ->
                         UpdUser = update_user_buckets(add, User, BucketRecord),
-                        save_user(false, UpdUser, UserObj, Pbc)
+                        save_user(UpdUser, UserObj, Pbc)
                 end
             after
                 riak_cs_riak_client:checkin(RcPid)
@@ -145,7 +144,7 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
             {ok, {UserObj, KDB}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
             User = riak_cs_user:from_riakc_obj(UserObj, KDB),
             UpdUser = update_user_buckets(delete, User, BucketRecord),
-            save_user(false, UpdUser, UserObj, Pbc);
+            save_user(UpdUser, UserObj, Pbc);
         {error, _} ->
             OpResult1
     end.
@@ -156,22 +155,71 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
 create_user(FF = #{email := Email}, Pbc) ->
     case email_available(Email, Pbc) of
         true ->
-            User = exprec:frommap_rcs_user_v3(FF#{status => enabled, buckets => []}),
+            User = riak_cs_iam:unarm(
+                     riak_cs_iam:exprec_user(FF)),
             save_user(User, Pbc);
         {false, _} ->
             logger:info("Refusing to create an existing user with email ~s", [Email]),
             {error, user_already_exists}
     end.
 
+-spec update_user(maps:map(), pid()) -> ok | {error, term()}.
+update_user(FF, Pbc) ->
+    User = ?IAM_USER{arn = Arn,
+                     email = Email} =
+        riak_cs_iam:exprec_user(FF),
+    {ok, RcPid} = riak_cs_riak_client:checkout(),
+    try
+        {ok, {_OldUser, Obj}} = riak_cs_iam:get_user(Arn, RcPid),
+        CanProceed =
+            case riak_cs_iam:find_user(#{email => Email}, RcPid) of
+                {ok, {?IAM_USER{arn = Arn}, _}} ->
+                    true;  %% found self
+                {ok, {?IAM_USER{email = Email}, _}} ->
+                    false; %% found some other user with this email
+                {error, notfound} ->
+                    true
+            end,
+        if CanProceed ->
+                save_user(User, Obj, Pbc);
+           el/=se ->
+                {error, user_already_exists}
+        end
+    after
+        riak_cs_riak_client:checkin(RcPid)
+    end.
+
+
+%% @doc Determine if a user with the specified email
+%% address already exists. There could be consistency
+%% issues here since secondary index queries use
+%% coverage and only consult a single vnode
+%% for a particular key.
+%% @TODO Consider other options that would give more
+%% assurance that a particular email address is available.
+email_available(Email, Pbc) ->
+    case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            true;
+        {ok, _} ->
+            {false, user_already_exists};
+        {error, Reason} ->
+            %% @TODO Maybe bubble up this error info
+            logger:warning("Error occurred trying to check if the address ~p has been registered. Reason: ~p",
+                           [Email, Reason]),
+            {false, Reason}
+    end.
+
 
 -spec create_role(maps:map(), pid()) -> {ok, role()} | {error, already_exists|term()}.
 create_role(Fields, Pbc) ->
-    Role = ?IAM_ROLE{role_name = Name} =
-        riak_cs_iam:exprec_role(
-          riak_cs_iam:fix_permissions_boundary(Fields)),
+    R = ?IAM_ROLE{role_name = Name} =
+        riak_cs_iam:unarm(
+          riak_cs_iam:exprec_role(
+            riak_cs_iam:fix_permissions_boundary(Fields))),
     case role_name_available(Name) of
         true ->
-            save_role(Role, Pbc);
+            save_role(R, Pbc);
         false ->
             {error, role_already_exists}
     end.
@@ -238,10 +286,12 @@ delete_role(Arn, Pbc) ->
 
 -spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
 create_policy(Fields, Pbc) ->
-    Policy = ?IAM_POLICY{policy_name = Name} = riak_cs_iam:exprec_policy(Fields),
+    P = ?IAM_POLICY{policy_name = Name} =
+        riak_cs_iam:unarm(
+          riak_cs_iam:exprec_policy(Fields)),
     case policy_name_available(Name) of
         true ->
-            save_policy(Policy, Pbc);
+            save_policy(P, Pbc);
         false ->
             {error, policy_already_exists}
     end.
@@ -252,11 +302,11 @@ update_policy(Fields, Pbc) ->
     save_policy_directly(Policy, Pbc).
 
 policy_name_available(Name) ->
-    {ok, Pbc} = riak_cs_riak_client:checkout(),
+    {ok, RcPid} = riak_cs_riak_client:checkout(),
     try
-        {error, notfound} == riak_cs_iam:find_policy(#{name => Name}, Pbc)
+        {error, notfound} == riak_cs_iam:find_policy(#{name => Name}, RcPid)
     after
-        riak_cs_riak_client:checkin(Pbc)
+        riak_cs_riak_client:checkin(RcPid)
     end.
 
 save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
@@ -311,7 +361,8 @@ delete_policy(Arn, Pbc) ->
 -spec create_saml_provider(maps:map(), pid()) -> {ok, {string(), [tag()]}} | {error, term()}.
 create_saml_provider(Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{name = Name} =
-        riak_cs_iam:exprec_saml_provider(Fields),
+        riak_cs_iam:unarm(
+          riak_cs_iam:exprec_saml_provider(Fields)),
     case riak_cs_iam:parse_saml_provider_idp_metadata(P0) of
         {ok, P9} ->
             case saml_provider_name_available(Name) of
@@ -363,25 +414,6 @@ delete_saml_provider(Arn, Pbc) ->
             ER
     end.
 
-
-
-
-%% @doc Return the credentials of the admin user
--spec get_admin_creds() -> {ok, {string(), string()}} | {error, term()}.
-get_admin_creds() ->
-    case application:get_env(riak_cs, admin_key) of
-        {ok, KeyId} ->
-            case application:get_env(riak_cs, admin_secret) of
-                {ok, Secret} ->
-                    {ok, {KeyId, Secret}};
-                undefined ->
-                    logger:warning("The admin user's secret has not been defined."),
-                    {error, secret_undefined}
-            end;
-        undefined ->
-            logger:warning("The admin user's key id has not been defined."),
-            {error, key_id_undefined}
-    end.
 
 %% @doc
 -spec get_manifests(pid(), binary(), binary(), binary()) ->
@@ -468,19 +500,6 @@ to_bucket_name(Type, Bucket) ->
     end,
     BucketHash = md5(Bucket),
     <<Prefix/binary, BucketHash/binary>>.
-
--spec update_user(string(), proplists:proplist(), pid()) -> ok | {error, term()}.
-update_user(KeyId, UserFields, Pbc) ->
-    case riak_cs_iam:find_user(#{key_id => KeyId}, Pbc) of
-        {ok, {User, Obj}} ->
-            {UpdUser, EmailUpdated} =
-                update_user_record(UserFields, User, false),
-            save_user(EmailUpdated,
-                      UpdUser, Obj,
-                      Pbc);
-        {error, _}=Error ->
-            Error
-    end.
 
 
 sha_mac(KeyData, STS) ->
@@ -775,26 +794,6 @@ close_riak_connection(Pid) ->
 
 
 
-%% @doc Determine if a user with the specified email
-%% address already exists. There could be consistency
-%% issues here since secondary index queries use
-%% coverage and only consult a single vnode
-%% for a particular key.
-%% @TODO Consider other options that would give more
-%% assurance that a particular email address is available.
-email_available(Email, Pbc) ->
-    case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
-        {ok, ?INDEX_RESULTS{keys=[]}} ->
-            true;
-        {ok, _} ->
-            {false, user_already_exists};
-        {error, Reason} ->
-            %% @TODO Maybe bubble up this error info
-            logger:warning("Error occurred trying to check if the address ~p has been registered. Reason: ~p",
-                           [Email, Reason]),
-            {false, Reason}
-    end.
-
 %% internal fun to retrieve the riak object
 %% at a bucket/key
 -spec get_manifests_raw(pid(), binary(), binary(), binary()) ->
@@ -807,75 +806,16 @@ get_manifests_raw(Pbc, Bucket, Key, Vsn) ->
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
 
-save_user(?IAM_USER{arn = Arn,
-                    name = Name} = User, Pbc) ->
-    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
-    Obj = riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)),
-    UserObj = riakc_obj:update_metadata(Obj, Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UserObj)),
-    case Res of
-        ok ->
-            stanchion_stats:update([riakc, put_cs_user], TAT);
-        {error, Reason} ->
-            logger:error("Failed to save user ~s: ~p", [Name, Reason]),
-            Res
-    end.
+save_user(?IAM_USER{arn = Arn} = User, Pbc) ->
+    save_user(User, riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)), Pbc).
 
-save_user(true = _EmailUpdated, User = ?RCS_USER{email = Email}, UserObj, Pbc) ->
-    case email_available(Email, Pbc) of
-        true ->
-            MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
-            UpdUserObj = riakc_obj:update_metadata(
-                           riakc_obj:update_value(UserObj,
-                                                  term_to_binary(User)),
-                           MD),
-            {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UpdUserObj)),
-            stanchion_stats:update([riakc, put_cs_user], TAT),
-            Res;
-        {false, Reason} ->
-            {error, Reason}
-    end;
-save_user(false = _EmailUpdated, User, UserObj, Pbc) ->
-    MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(UserObj,
-                                          term_to_binary(User)),
-                   MD),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, UpdUserObj)),
+save_user(User, Obj0, Pbc) ->
+    Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
+    Obj = riakc_obj:update_metadata(
+           Obj0, Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj)),
     stanchion_stats:update([riakc, put_cs_user], TAT),
     Res.
-
-
-update_user_record([], User, EmailUpdated) ->
-    {User, EmailUpdated};
-update_user_record([{name, Name} | RestUserFields], User, EmailUpdated) ->
-    update_user_record(RestUserFields,
-                       User?RCS_USER{name = binary_to_list(Name)}, EmailUpdated);
-update_user_record([{email, Email} | RestUserFields],
-                   User, _) ->
-    UpdEmail = binary_to_list(Email),
-    EmailUpdated = not (User?RCS_USER.email =:= UpdEmail),
-    update_user_record(RestUserFields,
-                       User?RCS_USER{email = UpdEmail}, EmailUpdated);
-update_user_record([{display_name, Name} | RestUserFields], User, EmailUpdated) ->
-    update_user_record(RestUserFields,
-                       User?RCS_USER{display_name = binary_to_list(Name)}, EmailUpdated);
-update_user_record([{key_secret, KeySecret} | RestUserFields], User, EmailUpdated) ->
-    update_user_record(RestUserFields,
-                       User?RCS_USER{key_secret = binary_to_list(KeySecret)}, EmailUpdated);
-update_user_record([{status, Status} | RestUserFields], User, EmailUpdated) ->
-    case Status of
-        <<"enabled">> ->
-            update_user_record(RestUserFields,
-                               User?RCS_USER{status = enabled}, EmailUpdated);
-        <<"disabled">> ->
-            update_user_record(RestUserFields,
-                               User?RCS_USER{status = disabled}, EmailUpdated);
-        _ ->
-            update_user_record(RestUserFields, User, EmailUpdated)
-    end;
-update_user_record([_ | RestUserFields], User, EmailUpdated) ->
-    update_user_record(RestUserFields, User, EmailUpdated).
 
 
 update_user_buckets(add, User, Bucket) ->

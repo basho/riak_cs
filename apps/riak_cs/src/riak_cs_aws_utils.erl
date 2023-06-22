@@ -117,20 +117,26 @@ make_id(Length, Prefix, CharSet) ->
     iolist_to_binary([Prefix, fill(Length - length(Prefix), [], CharSet)]).
 
 make_user_arn(Name, Path) ->
-    iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":user", Path, $/, Name]).
+    single_slash(
+      iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":user", Path, $/, Name])).
 
 make_role_arn(Name, Path) ->
-    iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":role", Path, $/, Name]).
+    single_slash(
+      iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":role", Path, $/, Name])).
 
 make_policy_arn(Name, Path) ->
-    iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":policy", Path, $/, Name]).
+    single_slash(
+      iolist_to_binary(["arn:aws:iam::", fill(12, [], "0123456789"), ":policy", Path, $/, Name])).
 
 make_provider_arn(Name) ->
-    iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider/", Name]).
+    single_slash(
+      iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider", Name])).
 
 make_assumed_role_user_arn(RoleName, SessionName) ->
-    iolist_to_binary(["arn:aws:sts::", fill(12, "", "0123456789"), ":assumed-role/", RoleName, $/, SessionName]).
-
+    single_slash(
+      iolist_to_binary(["arn:aws:sts::", fill(12, "", "0123456789"), ":assumed-role", RoleName, $/, SessionName])).
+single_slash(A) ->
+    iolist_to_binary(re:replace(A, <<"/+">>, <<"/">>)).
 
 %% @doc Generate a new set of access credentials for user.
 -spec generate_access_creds(binary()) -> {iodata(), iodata()}.

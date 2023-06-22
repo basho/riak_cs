@@ -102,17 +102,11 @@ do_create(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case stanchion_server:create_role(FF) of
         {ok, Role} ->
-            Doc = jason:encode(armor_json_in_arpd(Role),
-                               [{records, [{role_v1, record_info(fields, role_v1)},
-                                           {permissions_boundary, record_info(fields, permissions_boundary)},
-                                           {role_last_used, record_info(fields, role_last_used)},
-                                           {tag, record_info(fields, tag)}]}]),
+            Doc = riak_cs_json:to_json(Role),
             {true, wrq:set_resp_body(Doc, RD), Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)
     end.
-armor_json_in_arpd(Role = ?IAM_ROLE{assume_role_policy_document = ARP}) ->
-    Role?IAM_ROLE{assume_role_policy_document = base64:encode(ARP)}.
 
 do_update(RD, Ctx) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),

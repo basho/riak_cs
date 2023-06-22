@@ -51,6 +51,11 @@ duration_metrics() ->
 
      [role, create],
      [role, delete],
+     [role, update],
+
+     [policy, create],
+     [policy, delete],
+     [policy, update],
 
      [saml_provider, create],
      [saml_provider, delete],
