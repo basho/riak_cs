@@ -22,7 +22,7 @@
 
 -export([create/6,
          get/1, get/2,
-         effective_policies/1,
+         effective_policies/2,
          close_session/1
         ]).
 
@@ -81,12 +81,12 @@ create(?IAM_ROLE{role_id = RoleId,
     end.
 
 
--spec effective_policies(#temp_session{}) -> [policy()].
+-spec effective_policies(#temp_session{}, pid()) -> [policy()].
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
-                                 role_arn = RoleArn}) ->
+                                 assumed_role_user = #assumed_role_user{arn = RoleArn}}, RcPid) ->
     RoleAttachedPolicies =
-        case riak_cs_iam:get_role(RoleArn) of
+        case riak_cs_iam:get_role(RoleArn, RcPid) of
             {ok, ?IAM_ROLE{attached_policies = PP}} ->
                 PP;
             _ ->
@@ -96,7 +96,7 @@ effective_policies(#temp_session{inline_policy = InlinePolicy,
     lists:flatten(
       [InlinePolicy |
        [begin
-            case riak_cs_iam:get_policy(Arn) of
+            case riak_cs_iam:get_policy(Arn, RcPid) of
                 {ok, Policy} ->
                     Policy;
                 _ ->

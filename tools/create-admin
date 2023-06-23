@@ -31,9 +31,10 @@ def main():
         if o == "-q":
             quiet = True
 
-    res = admin_user = create_user("127.0.0.1", port, admin_name, admin_email)
-    pprint.pp(res)
+    res = create_user("127.0.0.1", port, admin_name, admin_email)
+    print("%s %s %s" % (res['key_id'], res['key_secret'], res['canonical_id']))
 
+    #boto3.set_stream_logger('')
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
     config = Config(signature_version = 's3v4')
     iam_client = boto3.client('iam',

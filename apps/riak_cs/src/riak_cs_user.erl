@@ -117,7 +117,7 @@ get_user(KeyId_, RcPid) ->
                            canonical_id = CanonicalId,
                            subject = Subject} = Session} ->
             {ok, {?RCS_USER{arn = AssumedRoleUserArn,
-                            attached_policies = riak_cs_temp_sessions:effective_policies(Session),
+                            attached_policies = riak_cs_temp_sessions:effective_policies(Session, RcPid),
                             name = binary_to_list(Subject),
                             display_name = binary_to_list(Subject),
                             email = lists:flatten(io_lib:format("~s@some.idp", [Subject])),

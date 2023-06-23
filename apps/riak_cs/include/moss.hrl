@@ -116,7 +116,6 @@
                       , credentials :: credentials()
                       , duration_seconds :: non_neg_integer()
                       , created = os:system_time(millisecond) :: non_neg_integer()
-                      , role_arn :: flat_arn()
                       , inline_policy :: undefined | flat_arn()
                       , session_policies :: [flat_arn()]
                       , subject :: binary()

@@ -343,7 +343,7 @@ fix_permissions_boundary(Map) ->
 
 -spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
 create_saml_provider(Specs) ->
-    Encoded = riak_cs_json:to_json(exprec:frommap_saml_provider_v1(Specs)),
+    Encoded = riak_cs_json:to_json(exprec_saml_provider(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_saml_provider(
                "application/json",
@@ -537,7 +537,7 @@ exprec_policy(Map) ->
 -spec exprec_saml_provider(maps:map()) -> ?IAM_SAML_PROVIDER{}.
 exprec_saml_provider(Map) ->
     P0 = ?IAM_SAML_PROVIDER{tags = TT0} = exprec:frommap_saml_provider_v1(Map),
-    TT = [exprec:frommap_tag(T) || T <- TT0, is_list(TT0)],
+    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     P0?IAM_SAML_PROVIDER{tags = TT}.
 
 -spec unarm(A) -> A when A :: rcs_user() | role() | policy() | saml_provider().

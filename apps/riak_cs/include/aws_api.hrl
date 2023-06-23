@@ -246,7 +246,7 @@
 -define(IAM_ROLE, #role_v1).
 
 -record(saml_provider_v1, { arn :: flat_arn()
-                          , saml_metadata_document :: string()
+                          , saml_metadata_document :: binary()
                           , tags :: [tag()]
                           , name :: binary()
                           %% fields populated with values extracted from MD document
