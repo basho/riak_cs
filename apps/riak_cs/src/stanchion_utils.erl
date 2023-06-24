@@ -140,11 +140,15 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
     OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete, Pbc),
     case OpResult1 of
         ok ->
-            BucketRecord = bucket_record(Bucket, delete),
-            {ok, {UserObj, KDB}} = riak_cs_riak_client:get_user_with_pbc(Pbc, OwnerId),
-            User = riak_cs_user:from_riakc_obj(UserObj, KDB),
-            UpdUser = update_user_buckets(delete, User, BucketRecord),
-            save_user(UpdUser, UserObj, Pbc);
+            {ok, RcPid} = riak_cs_riak_client:checkout(),
+            try
+                BucketRecord = bucket_record(Bucket, delete),
+                {ok, {User, UserObj}} = riak_cs_iam:find_user(#{key_id => OwnerId}, RcPid),
+                UpdUser = update_user_buckets(delete, User, BucketRecord),
+                save_user(UpdUser, UserObj, Pbc)
+            after
+                ok = riak_cs_riak_client:checkin(RcPid)
+            end;
         {error, _} ->
             OpResult1
     end.
@@ -812,8 +816,9 @@ save_user(?IAM_USER{arn = Arn} = User, Pbc) ->
 save_user(User, Obj0, Pbc) ->
     Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
     Obj = riakc_obj:update_metadata(
-           Obj0, Meta),
-    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj)),
+            riakc_obj:update_value(Obj0, term_to_binary(User)),
+            Meta),
+    {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     stanchion_stats:update([riakc, put_cs_user], TAT),
     Res.
 

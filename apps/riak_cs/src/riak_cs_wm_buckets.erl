@@ -35,6 +35,7 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_web.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -spec stats_prefix() -> service.
 stats_prefix() -> service.
