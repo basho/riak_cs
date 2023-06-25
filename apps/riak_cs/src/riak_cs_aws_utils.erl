@@ -130,11 +130,11 @@ make_policy_arn(Name, Path) ->
 
 make_provider_arn(Name) ->
     single_slash(
-      iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider", Name])).
+      iolist_to_binary(["arn:aws:iam::", fill(12, "", "0123456789"), ":saml-provider/", Name])).
 
 make_assumed_role_user_arn(RoleName, SessionName) ->
     single_slash(
-      iolist_to_binary(["arn:aws:sts::", fill(12, "", "0123456789"), ":assumed-role", RoleName, $/, SessionName])).
+      iolist_to_binary(["arn:aws:sts::", fill(12, "", "0123456789"), ":assumed-role/", RoleName, $/, SessionName])).
 single_slash(A) ->
     iolist_to_binary(re:replace(A, <<"/+">>, <<"/">>)).
 

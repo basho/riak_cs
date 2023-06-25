@@ -115,7 +115,7 @@ update_user(U = ?IAM_USER{key_id = KeyId}) ->
 
 -spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
 create_role(Specs) ->
-    Encoded = riak_cs_json:to_json(exprec:frommap_role_v1(Specs)),
+    Encoded = riak_cs_json:to_json(exprec_role(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:create_role(
                "application/json",
