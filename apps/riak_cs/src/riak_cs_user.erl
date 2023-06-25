@@ -115,12 +115,14 @@ get_user(KeyId_, RcPid) ->
         {ok, #temp_session{assumed_role_user = #assumed_role_user{arn = AssumedRoleUserArn},
                            credentials = #credentials{secret_access_key = SecretKey},
                            canonical_id = CanonicalId,
-                           subject = Subject} = Session} ->
+                           subject = Subject,
+                           source_identity = SourceIdentity,
+                           email = Email} = Session} ->
             {ok, {?RCS_USER{arn = AssumedRoleUserArn,
                             attached_policies = riak_cs_temp_sessions:effective_policies(Session, RcPid),
                             name = binary_to_list(Subject),
+                            email = select_email([SourceIdentity, Email]),
                             display_name = binary_to_list(Subject),
-                            email = lists:flatten(io_lib:format("~s@some.idp", [Subject])),
                             canonical_id = binary_to_list(CanonicalId),
                             key_id = KeyId,
                             key_secret = binary_to_list(SecretKey),
@@ -129,6 +131,7 @@ get_user(KeyId_, RcPid) ->
         {error, notfound} ->
             get_cs_user(KeyId, RcPid)
     end.
+
 
 get_cs_user(KeyId, RcPid) ->
     riak_cs_iam:find_user(#{key_id => KeyId}, RcPid).
@@ -199,13 +202,22 @@ fetch_user_keys(RcPid) ->
 %% Internal functions
 %% ===================================================================
 
-%% @doc De
 validate_email(EmailAddr) ->
     case re:run(EmailAddr, "^[a-z0-9]+[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,17}$", [caseless]) of
         nomatch ->
             {error, invalid_email_address};
         _ ->
             ok
+    end.
+
+select_email([]) ->
+    <<"unspecified">>;
+select_email([A|T]) ->
+    case validate_email(A) of
+        ok ->
+            A;
+        _ ->
+            select_email(T)
     end.
 
 update_user_record(User = ?RCS_USER{buckets = Buckets}) ->

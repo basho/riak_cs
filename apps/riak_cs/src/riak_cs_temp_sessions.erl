@@ -20,7 +20,7 @@
 
 -module(riak_cs_temp_sessions).
 
--export([create/6,
+-export([create/8,
          get/1, get/2,
          effective_policies/2,
          close_session/1
@@ -32,11 +32,11 @@
 -define(USER_ID_LENGTH, 16).  %% length("ARO456EXAMPLE789").
 
 
--spec create(role(), binary(), non_neg_integer(), binary(), [binary()], pid()) ->
+-spec create(role(), binary(), binary(), binary(), non_neg_integer(), binary(), [binary()], pid()) ->
           {ok, temp_session()} | {error, term()}.
 create(?IAM_ROLE{role_id = RoleId,
                  role_name = RoleName},
-       Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) ->
+       Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy, PolicyArns, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
 
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, ?USER_ID_PREFIX),
@@ -59,6 +59,8 @@ create(?IAM_ROLE{role_id = RoleId,
                                                        session_token = make_session_token()},
                             duration_seconds = DurationSeconds,
                             subject = Subject,
+                            source_identity = SourceIdentity,
+                            email = Email,
                             user_id = UserId,
                             canonical_id = CanonicalId,
                             inline_policy = InlinePolicy,

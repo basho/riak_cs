@@ -200,6 +200,9 @@ parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
     Role =
         proplists:get_value("https://aws.amazon.com/SAML/Attributes/Role",
                             Attributes, []),
+    Email =
+        proplists:get_value("mail",
+                            Attributes, []),
 
     Audience = proplists:get_value(audience, Conditions),
 
@@ -210,6 +213,7 @@ parse_saml_assertion_claims(#esaml_response{issuer = Issuer,
                      audience => list_to_binary(Audience)},
     maybe_update_state_with([{role_session_name, maybe_list_to_binary(RoleSessionName)},
                              {source_identity, maybe_list_to_binary(SourceIdentity)},
+                             {email, maybe_list_to_binary(Email)},
                              {session_duration, maybe_list_to_integer(SessionDuration)},
                              {claims_role, [maybe_list_to_binary(A) || A <- Role]}], State1).
 
@@ -267,11 +271,12 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
                                       subject_type := SubjectType,
                                       riak_client := RcPid} = State) ->
     SourceIdentity = maps:get(source_identity, State, <<>>),
+    Email = maps:get(email, State, <<>>),
     InlinePolicy = maps:get(policy, Specs, undefined),
     PolicyArns = maps:get(policy_arns, Specs, []),
 
     case riak_cs_temp_sessions:create(
-           Role, Subject, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of
+           Role, Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of
         {ok, #temp_session{assumed_role_user = AssumedRoleUser,
                            credentials = Credentials}} ->
             State#{status => ok,

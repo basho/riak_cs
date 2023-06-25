@@ -119,6 +119,8 @@
                       , inline_policy :: undefined | flat_arn()
                       , session_policies :: [flat_arn()]
                       , subject :: binary()
+                      , source_identity :: binary()  %% both this and the following can provide the email
+                      , email :: binary()            %% for our internal rcs_user
                       , user_id :: binary()
                       , canonical_id :: binary()
                       }
