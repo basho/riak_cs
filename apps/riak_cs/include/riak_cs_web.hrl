@@ -267,6 +267,31 @@
 
 %% === IAM ===
 
+-record(create_user_response, { user :: rcs_user()
+                              , request_id :: string()
+                              }
+       ).
+-record(get_user_response, { user :: rcs_user()
+                           , request_id :: string()
+                           }
+       ).
+-record(delete_user_response, { request_id :: string()
+                              }
+       ).
+-record(list_users_request, { max_items = 1000 :: non_neg_integer()
+                            , path_prefix :: binary() | undefined
+                            , marker :: binary() | undefined
+                            , request_id :: string()
+                            }
+       ).
+-record(list_users_response, { marker :: binary() | undefined
+                             , is_truncated :: boolean()
+                             , users :: [rcs_user()]
+                             , request_id :: string()
+                             }
+       ).
+
+
 -record(create_role_response, { role :: role()
                               , request_id :: string()
                               }

@@ -20,7 +20,8 @@
 
 -module(riak_cs_iam).
 
--export([get_user/2,
+-export([create_user/1,
+         get_user/2,
          find_user/2,
          update_user/1,
 
@@ -62,6 +63,13 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+
+-spec create_user(maps:map()) -> {ok, rcs_user()} | {error, already_exists | term()}.
+create_user(Specs = #{user_name := Name,
+                      email := Email}) ->
+    Path = maps:get(path, Specs, <<"/">>),
+    PermissionsBoundary = maps:get(permissions_boundary, Specs, undefined),
+    riak_cs_user:create_user(Name, Email, Path, PermissionsBoundary).
 
 -spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 get_user(Arn, RcPid) ->

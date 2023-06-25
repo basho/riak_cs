@@ -78,6 +78,8 @@
 -export([map_keys_and_manifests/3,
          maybe_process_resolved/3,
          reduce_keys_and_manifests/2,
+         map_users/3,
+         reduce_users/2,
          map_roles/3,
          reduce_roles/2,
          map_policies/3,
@@ -236,6 +238,25 @@ reduce_keys_and_manifests(Acc, _) ->
     Acc.
 
 
+map_users({error, notfound}, _, _) ->
+    [];
+map_users(Object, _2, Args) ->
+    #{path_prefix := PathPrefix} = Args,
+    case riak_object:get_values(Object) of
+        [] ->
+            [];
+        [<<>>|_] ->
+            [];
+        [RBin|_] ->
+            ?IAM_USER{path = Path} = R = binary_to_term(RBin),
+            case binary:longest_common_prefix([Path, PathPrefix]) of
+                0 ->
+                    [];
+                _ ->
+                    [R]
+            end
+    end.
+
 map_roles({error, notfound}, _, _) ->
     [];
 map_roles(Object, _2, Args) ->
@@ -255,6 +276,8 @@ map_roles(Object, _2, Args) ->
             end
     end.
 
+reduce_users(Acc, _) ->
+    Acc.
 reduce_roles(Acc, _) ->
     Acc.
 

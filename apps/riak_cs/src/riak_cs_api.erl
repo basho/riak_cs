@@ -23,6 +23,7 @@
 
 -export([list_buckets/1,
          list_objects/6,
+         list_users/2,
          list_roles/2,
          list_policies/2,
          list_saml_providers/2
@@ -54,6 +55,26 @@ list_objects(ReqType, _UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
         {error, _} = Error ->
             Error
     end.
+
+-spec list_users(riak_client(), #list_users_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_users(RcPid, #list_users_request{path_prefix = PathPrefix,
+                                      max_items = MaxItems,
+                                      marker = Marker}) ->
+    Arg = #{path_prefix => PathPrefix,
+            max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_USER_BUCKET, mapred_query(users, Arg)) of
+        {ok, Batches} ->
+            {ok, #{users => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
+    end.
+
 
 -spec list_roles(riak_client(), #list_roles_request{}) ->
           {ok, maps:map()} | {error, term()}.
@@ -120,6 +141,11 @@ extract_objects([], Q) ->
 extract_objects([{_N, RR}|Rest], Q) ->
     extract_objects(Rest, Q ++ RR).
 
+mapred_query(users, Arg) ->
+    [{map, {modfun, riak_cs_utils, map_users},
+      Arg, false},
+     {reduce, {modfun, riak_cs_utils, reduce_users},
+      Arg, true}];
 mapred_query(roles, Arg) ->
     [{map, {modfun, riak_cs_utils, map_roles},
       Arg, false},

@@ -100,9 +100,7 @@ create_bucket(BucketData) ->
 
 %% @doc Attempt to create a bucket
 -spec create_user([{term(), term()}]) ->
-                         ok |
-                         {error, term()} |
-                         {error, stanchion_utils:riak_connect_failed()}.
+          ok | {error, term() | stanchion_utils:riak_connect_failed()}.
 create_user(UserData) ->
     ?MEASURE([user, create],
              gen_server:call(?MODULE,

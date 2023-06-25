@@ -117,6 +117,14 @@ to_xml(?IAM_SAML_PROVIDER{} = P) ->
 to_xml({saml_providers, PP}) ->
     saml_provider_records_to_xml(PP);
 
+to_xml(#create_user_response{} = R) ->
+    create_user_response_to_xml(R);
+to_xml(#get_user_response{} = R) ->
+    get_user_response_to_xml(R);
+to_xml(#delete_user_response{} = R) ->
+    delete_user_response_to_xml(R);
+to_xml(#list_users_response{} = R) ->
+    list_users_response_to_xml(R);
 to_xml(#create_role_response{} = R) ->
     create_role_response_to_xml(R);
 to_xml(#get_role_response{} = R) ->
@@ -350,13 +358,13 @@ user_records_to_xml(Users) ->
     UserNodes = [user_node(User) || User <- Users],
     export_xml([make_internal_node('Users', UserNodes)]).
 
-user_node(?RCS_USER{email=Email,
-                    display_name=DisplayName,
-                    name=Name,
-                    key_id=KeyID,
-                    key_secret=KeySecret,
-                    canonical_id=CanonicalID,
-                    status=Status}) ->
+user_node(?RCS_USER{name = Name,
+                    email = Email,
+                    display_name = DisplayName,
+                    key_id = KeyID,
+                    key_secret = KeySecret,
+                    canonical_id = CanonicalID,
+                    status = Status}) ->
     StatusStr = case Status of
                     enabled ->
                         "enabled";
@@ -366,12 +374,78 @@ user_node(?RCS_USER{email=Email,
     Content = [make_external_node(K, V)
                || {K, V} <- [{'Email', Email},
                              {'DisplayName', DisplayName},
+                             {'Path', Name},
                              {'Name', Name},
                              {'KeyId', KeyID},
                              {'KeySecret', KeySecret},
                              {'Id', CanonicalID},
                              {'Status', StatusStr}]],
     make_internal_node('User', Content).
+
+
+%% we stick to IAM specs with this one, in contrast to user_node which
+%% serves CS-specific, legacy get_user call over plain http.
+iam_user_node(?IAM_USER{arn = Arn,
+                        name = UserName,
+                        create_date = CreateDate,
+                        path = Path,
+                        canonical_id = UserId,
+                        password_last_used = PasswordLastUsed,
+                        tags = Tags}) ->
+    C = lists:flatten(
+          [{'Arn', [make_arn(Arn)]},
+           {'Path', [binary_to_list(Path)]},
+           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+           {'UserName', [binary_to_list(UserName)]},
+           {'UserId', [binary_to_list(UserId)]},
+           [{'PasswordLastUsed', [binary_to_list(rts:iso8601(PasswordLastUsed))]}
+            || PasswordLastUsed /= undefined],
+           {'Tags', [tag_node(T) || T <- Tags]}
+          ]),
+    {'User', C}.
+
+create_user_response_to_xml(#create_user_response{user = User, request_id = RequestId}) ->
+    CreateUserResult = iam_user_node(User),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'CreateUserResult', [CreateUserResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('CreateUserResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+
+get_user_response_to_xml(#get_user_response{user = User, request_id = RequestId}) ->
+    GetUserResult = iam_user_node(User),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'GetUserResult', [GetUserResult]},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('GetUserResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+delete_user_response_to_xml(#delete_user_response{request_id = RequestId}) ->
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('DeleteUserResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   C)], []).
+
+list_users_response_to_xml(#list_users_response{users = RR,
+                                                request_id = RequestId,
+                                                is_truncated = IsTruncated,
+                                                marker = Marker}) ->
+    ListUsersResult =
+        lists:flatten(
+          [{'Users', [iam_user_node(R) || R <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ListUsersResult', ListUsersResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListUsersResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
+
 
 
 role_record_to_xml(Role) ->

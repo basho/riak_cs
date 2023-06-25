@@ -251,21 +251,112 @@ finish_request(RD, Ctx=#rcs_web_context{riak_client=RcPid}) ->
 %% Internal functions
 %% -------------------------------------------------------------------
 
-do_action("CreateRole",
+do_action("CreateUser",
           Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
     Specs = finish_tags(
-              lists:foldl(fun role_fields_filter/2, #{}, Form)),
-    case riak_cs_iam:create_role(Specs) of
-        {ok, Role} ->
+              lists:foldl(fun create_user_fields_filter/2, #{}, Form)),
+    case create_user_require_fields(Specs) of
+        false ->
+            ResponseMod:api_error(missing_parameter, RD, Ctx);
+        true ->
+            case riak_cs_iam:create_user(Specs) of
+                {ok, User} ->
+                    RequestId = riak_cs_wm_utils:make_request_id(),
+                    logger:info("Created user ~s \"~s\" (~s) on request_id ~s",
+                                [User?IAM_USER.canonical_id, User?IAM_USER.name, User?IAM_USER.arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #create_user_response{user = User,
+                                                  request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end
+    end;
+
+do_action("GetUser",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    UserName = proplists:get_value("UserName", Form),
+    case riak_cs_iam:find_user(#{name => UserName}, RcPid) of
+        {ok, User} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created role ~s \"~s\" (~s) on request_id ~s",
-                        [Role?IAM_ROLE.role_id, Role?IAM_ROLE.role_name, Role?IAM_ROLE.arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
-                    #create_role_response{role = Role,
-                                          request_id = RequestId}),
+                    #get_user_response{user = User,
+                                       request_id = RequestId}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_user, RD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("DeleteUser",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    Name = proplists:get_value("UserName", Form),
+    case riak_cs_iam:find_user(#{name => list_to_binary(Name)}, RcPid) of
+        {ok, ?IAM_ROLE{arn = Arn}} ->
+            case riak_cs_iam:delete_user(Arn) of
+                ok ->
+                    RequestId = riak_cs_wm_utils:make_request_id(),
+                    logger:info("Deleted user \"~s\" (~s) on request_id ~s", [Name, Arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #delete_user_response{request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end;
+        {error, notfound} ->
+            ResponseMod:api_error(no_such_user, RD, Ctx);
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+do_action("ListUsers",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod}) ->
+    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
+    MaxItems = proplists:get_value("MaxItems", Form),
+    Marker = proplists:get_value("Marker", Form),
+    case riak_cs_api:list_users(
+           RcPid, #list_users_request{path_prefix = list_to_binary(PathPrefix),
+                                      max_items = MaxItems,
+                                      marker = Marker}) of
+        {ok, #{users := Users,
+               marker := NewMarker,
+               is_truncated := IsTruncated}} ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            Doc = riak_cs_xml:to_xml(
+                    #list_users_response{users = Users,
+                                         request_id = RequestId,
+                                         marker = NewMarker,
+                                         is_truncated = IsTruncated}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
+
+do_action("CreateRole",
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+    Specs = finish_tags(
+              lists:foldl(fun create_role_fields_filter/2, #{}, Form)),
+    case create_role_require_fields(Specs) of
+        false ->
+            ResponseMod:api_error(missing_parameter, RD, Ctx);
+        true ->
+            case riak_cs_iam:create_role(Specs) of
+                {ok, Role} ->
+                    RequestId = riak_cs_wm_utils:make_request_id(),
+                    logger:info("Created role ~s \"~s\" (~s) on request_id ~s",
+                                [Role?IAM_ROLE.role_id, Role?IAM_ROLE.role_name, Role?IAM_ROLE.arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #create_role_response{role = Role,
+                                                  request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end
     end;
 
 do_action("GetRole",
@@ -334,18 +425,23 @@ do_action("ListRoles",
 
 do_action("CreatePolicy",
           Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
-    Specs = lists:foldl(fun policy_fields_filter/2, #{}, Form),
-    case riak_cs_iam:create_policy(Specs) of
-        {ok, Policy} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
-            logger:info("Created managed policy \"~s\" (~s) on request_id ~s",
-                        [Policy?IAM_POLICY.policy_id, Policy?IAM_POLICY.arn, RequestId]),
-            Doc = riak_cs_xml:to_xml(
-                    #create_policy_response{policy = Policy,
-                                            request_id = RequestId}),
-            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, Reason} ->
-            ResponseMod:api_error(Reason, RD, Ctx)
+    Specs = lists:foldl(fun create_policy_fields_filter/2, #{}, Form),
+    case create_policy_require_fields(Specs) of
+        false ->
+            ResponseMod:api_error(missing_parameter, RD, Ctx);
+        true ->
+            case riak_cs_iam:create_policy(Specs) of
+                {ok, Policy} ->
+                    RequestId = riak_cs_wm_utils:make_request_id(),
+                    logger:info("Created managed policy \"~s\" (~s) on request_id ~s",
+                                [Policy?IAM_POLICY.policy_id, Policy?IAM_POLICY.arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #create_policy_response{policy = Policy,
+                                                    request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end
     end;
 
 do_action("GetPolicy",
@@ -486,19 +582,23 @@ do_action("CreateSAMLProvider",
           Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
     Specs = finish_tags(
               lists:foldl(fun create_saml_provider_fields_filter/2, #{}, Form)),
-    RequestId = riak_cs_wm_utils:make_request_id(),
-
-    case riak_cs_iam:create_saml_provider(Specs#{request_id => RequestId}) of
-        {ok, {Arn, Tags}} ->
-            logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
-                        [maps:get(name, Specs), Arn, RequestId]),
-            Doc = riak_cs_xml:to_xml(
-                    #create_saml_provider_response{saml_provider_arn = Arn,
-                                                   tags = Tags,
-                                                   request_id = RequestId}),
-            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
-        {error, Reason} ->
-            ResponseMod:api_error(Reason, RD, Ctx)
+    case create_saml_provider_require_fields(Specs) of
+        false ->
+            ResponseMod:api_error(missing_parameter, RD, Ctx);
+        true ->
+            RequestId = riak_cs_wm_utils:make_request_id(),
+            case riak_cs_iam:create_saml_provider(Specs#{request_id => RequestId}) of
+                {ok, {Arn, Tags}} ->
+                    logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
+                                [maps:get(name, Specs), Arn, RequestId]),
+                    Doc = riak_cs_xml:to_xml(
+                            #create_saml_provider_response{saml_provider_arn = Arn,
+                                                           tags = Tags,
+                                                           request_id = RequestId}),
+                    {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end
     end;
 
 do_action("GetSAMLProvider",
@@ -558,22 +658,46 @@ do_action(Unsupported, _Form, RD, Ctx = #rcs_web_context{response_module = Respo
     ResponseMod:api_error(invalid_action, RD, Ctx).
 
 
-role_fields_filter({ItemKey, ItemValue}, Acc) ->
-    case ItemKey of
-        "AssumeRolePolicyDocument" ->
-            maps:put(assume_role_policy_document, list_to_binary(ItemValue), Acc);
-        "Description" ->
-            maps:put(description, list_to_binary(ItemValue), Acc);
-        "MaxSessionDuration" ->
-            maps:put(max_session_duration, list_to_integer(ItemValue), Acc);
+create_user_fields_filter({K, V}, Acc) ->
+    case K of
         "Path" ->
-            maps:put(path, list_to_binary(ItemValue), Acc);
+            maps:put(path, list_to_binary(V), Acc);
         "PermissionsBoundary" ->
-            maps:put(permissions_boundary, list_to_binary(ItemValue), Acc);
-        "RoleName" ->
-            maps:put(role_name, list_to_binary(ItemValue), Acc);
+            maps:put(permissions_boundary, list_to_binary(V), Acc);
+        "UserName" ->
+            maps:put(user_name, list_to_binary(V), Acc);
+        "Email" ->  %% an extra field; not in IAM specs
+            maps:put(email, list_to_binary(V), Acc);
         "Tags.member." ++ TagMember ->
-            add_tag(TagMember, ItemValue, Acc);
+            add_tag(TagMember, V, Acc);
+        CommonParameter when CommonParameter == "Action";
+                             CommonParameter == "Version" ->
+            Acc;
+        Unrecognized ->
+            logger:warning("Unrecognized parameter for CreateUser: ~s", [Unrecognized]),
+            Acc
+    end.
+create_user_require_fields(FF) ->
+    lists:all(fun(A) -> lists:member(A, maps:keys(FF)) end,
+              [user_name,
+               email]).
+
+create_role_fields_filter({K, V}, Acc) ->
+    case K of
+        "AssumeRolePolicyDocument" ->
+            maps:put(assume_role_policy_document, list_to_binary(V), Acc);
+        "Description" ->
+            maps:put(description, list_to_binary(V), Acc);
+        "MaxSessionDuration" ->
+            maps:put(max_session_duration, list_to_integer(V), Acc);
+        "Path" ->
+            maps:put(path, list_to_binary(V), Acc);
+        "PermissionsBoundary" ->
+            maps:put(permissions_boundary, list_to_binary(V), Acc);
+        "RoleName" ->
+            maps:put(role_name, list_to_binary(V), Acc);
+        "Tags.member." ++ TagMember ->
+            add_tag(TagMember, V, Acc);
         CommonParameter when CommonParameter == "Action";
                              CommonParameter == "Version" ->
             Acc;
@@ -581,17 +705,21 @@ role_fields_filter({ItemKey, ItemValue}, Acc) ->
             logger:warning("Unrecognized parameter for CreateRole: ~s", [Unrecognized]),
             Acc
     end.
+create_role_require_fields(FF) ->
+    lists:all(fun(A) -> lists:member(A, maps:keys(FF)) end,
+             [assume_role_policy_document,
+              role_name]).
 
-policy_fields_filter({ItemKey, ItemValue}, Acc) ->
-    case ItemKey of
+create_policy_fields_filter({K, V}, Acc) ->
+    case K of
         "Description" ->
-            maps:put(description, list_to_binary(ItemValue), Acc);
+            maps:put(description, list_to_binary(V), Acc);
         "Path" ->
-            maps:put(path, list_to_binary(ItemValue), Acc);
+            maps:put(path, list_to_binary(V), Acc);
         "PolicyDocument" ->
-            maps:put(policy_document, list_to_binary(ItemValue), Acc);
+            maps:put(policy_document, list_to_binary(V), Acc);
         "PolicyName" ->
-            maps:put(policy_name, list_to_binary(ItemValue), Acc);
+            maps:put(policy_name, list_to_binary(V), Acc);
         CommonParameter when CommonParameter == "Action";
                              CommonParameter == "Version" ->
             Acc;
@@ -599,15 +727,19 @@ policy_fields_filter({ItemKey, ItemValue}, Acc) ->
             logger:warning("Unrecognized parameter for CreatePolicy: ~s", [Unrecognized]),
             Acc
     end.
+create_policy_require_fields(FF) ->
+    lists:all(fun(A) -> lists:member(A, maps:keys(FF)) end,
+              [policy_name,
+               policy_document]).
 
-create_saml_provider_fields_filter({ItemKey, ItemValue}, Acc) ->
-    case ItemKey of
+create_saml_provider_fields_filter({K, V}, Acc) ->
+    case K of
         "Name" ->
-            maps:put(name, list_to_binary(ItemValue), Acc);
+            maps:put(name, list_to_binary(V), Acc);
         "SAMLMetadataDocument" ->
-            maps:put(saml_metadata_document, list_to_binary(ItemValue), Acc);
+            maps:put(saml_metadata_document, list_to_binary(V), Acc);
         "Tags.member." ++ TagMember ->
-            add_tag(TagMember, ItemValue, Acc);
+            add_tag(TagMember, V, Acc);
         CommonParameter when CommonParameter == "Action";
                              CommonParameter == "Version" ->
             Acc;
@@ -615,6 +747,10 @@ create_saml_provider_fields_filter({ItemKey, ItemValue}, Acc) ->
             logger:warning("Unrecognized parameter in call to CreateSAMLProvider: ~s", [Unrecognized]),
             Acc
     end.
+create_saml_provider_require_fields(FF) ->
+    lists:all(fun(A) -> lists:member(A, maps:keys(FF)) end,
+              [name,
+               saml_metadata_document]).
 
 add_tag(A, V, Acc) ->
     Tags0 = maps:get(tags, Acc, []),
