@@ -514,8 +514,7 @@ maybe_exprec_acl(A) -> exprec:frommap_acl_v3(A).
 
 -spec exprec_role(maps:map()) -> ?IAM_ROLE{}.
 exprec_role(Map) ->
-    Role0 = ?IAM_ROLE{permissions_boundary = PB0,
-                      role_last_used = LU0,
+    Role0 = ?IAM_ROLE{role_last_used = LU0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     LU = case LU0 of
@@ -525,15 +524,7 @@ exprec_role(Map) ->
              _ ->
                  exprec:frommap_role_last_used(LU0)
          end,
-    PB = case PB0 of
-             Undefined2 when Undefined2 =:= null;
-                             Undefined2 =:= undefined ->
-                 undefined;
-             _ ->
-                 exprec:frommap_permissions_boundary(PB0)
-         end,
-    Role0?IAM_ROLE{permissions_boundary = PB,
-                   role_last_used = LU,
+    Role0?IAM_ROLE{role_last_used = LU,
                    tags = TT}.
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
