@@ -290,4 +290,6 @@
 -define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
 -define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
 
+-define(IAM_CREATE_USER_DEFAULT_EMAIL_HOST, "my-riak-cs-megacorp.com").
+
 -endif.

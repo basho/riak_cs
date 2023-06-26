@@ -27,7 +27,8 @@
          is_authorized/2,
          create_path/2,
          content_types_accepted/2,
-         accept_body/2
+         accept_body/2,
+         delete_resource/2
         ]).
 
 -ignore_xref([init/1,
@@ -36,7 +37,8 @@
               is_authorized/2,
               create_path/2,
               content_types_accepted/2,
-              accept_body/2
+              accept_body/2,
+              delete_resource/2
              ]).
 
 -include("stanchion.hrl").
@@ -55,7 +57,7 @@ service_available(RD, Ctx) ->
 
 -spec allowed_methods(#wm_reqdata{}, #stanchion_context{}) -> {[atom()], #wm_reqdata{}, #stanchion_context{}}.
 allowed_methods(RD, Ctx) ->
-    {['PUT'], RD, Ctx}.
+    {['PUT', 'DELETE'], RD, Ctx}.
 
 %% @doc Check that the request is from the admin user
 -spec is_authorized(#wm_reqdata{}, #stanchion_context{}) -> {boolean(), #wm_reqdata{}, #stanchion_context{}}.
@@ -92,6 +94,17 @@ accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
     FF = jsx:decode(Body, [{labels, atom}]),
     case stanchion_server:update_user(FF) of
+        ok ->
+            {true, RD, Ctx};
+        {error, Reason} ->
+            stanchion_response:api_error(Reason, RD, Ctx)
+    end.
+
+-spec delete_resource(#wm_reqdata{}, #stanchion_context{}) ->
+          {boolean() | {halt, term()}, #wm_reqdata{}, #stanchion_context{}}.
+delete_resource(RD, Ctx) ->
+    TransArn = mochiweb_util:unquote(wrq:path_info(key_id, RD)),
+    case stanchion_server:delete_user(TransArn) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

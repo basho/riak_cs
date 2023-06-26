@@ -794,6 +794,13 @@ handle_bucket_acl_policy_response({error, notfound}, _, _, RD, Ctx) ->
 handle_bucket_acl_policy_response({error, Reason}, _, _, RD, Ctx) ->
     ResponseMod = Ctx#rcs_web_context.response_module,
     ResponseMod:api_error(Reason, RD, Ctx);
+handle_bucket_acl_policy_response(Arn, _AccessType, _DeleteEligible, RD,
+                                  Ctx = #rcs_web_context{riak_client = RcPid})
+  when is_binary(Arn) ->
+    {ok, Policy} = riak_cs_iam:get_policy(Arn, RcPid),
+    ?LOG_DEBUG("STUB ~p", [Policy]),
+    
+    {false, RD, Ctx};
 handle_bucket_acl_policy_response({Acl, Policy}, AccessType, DeleteEligible, RD, Ctx) ->
     #rcs_web_context{bucket = Bucket,
                      riak_client = RcPid,

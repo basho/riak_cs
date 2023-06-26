@@ -25,6 +25,7 @@
 
 -export([create_bucket/3,
          create_user/3,
+         delete_user/2,
          delete_bucket/3,
 %%         set_bucket_acl/4,
          set_bucket_policy/4,
@@ -103,6 +104,32 @@ create_user(ContentType, UserDoc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, UserDoc) of
         {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
+            ok;
+        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
+            {error, {error_status, StatusCode, Reason, RespBody}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec delete_user(binary(), proplists:proplist()) -> ok | {error, term()}.
+delete_user(TransKeyId, Options) ->
+    AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
+    Path = users_path(binary_to_list(TransKeyId)),
+    Headers0 = [{"Date", httpd_util:rfc1123_date()}],
+    case AuthCreds of
+        {_, _} ->
+            Headers =
+                [{"Authorization", auth_header('DELETE',
+                                               "",
+                                               Headers0,
+                                               Path,
+                                               AuthCreds)} |
+                 Headers0];
+        no_auth_creds ->
+            Headers = Headers0
+    end,
+    case request(delete, Path, [204], Headers) of
+        {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
@@ -578,7 +605,7 @@ requester_qs(Requester) ->
         mochiweb_util:quote_plus(Requester).
 
 users_path(A) ->
-    stringy(["/users", ["/" ++ A || A /= []]]).
+    stringy(["/users", ["/" ++ mochiweb_util:quote_plus(A) || A /= []]]).
 
 roles_path(A) ->
     stringy(["/roles", ["/" ++ mochiweb_util:quote_plus(A) || A /= []]]).

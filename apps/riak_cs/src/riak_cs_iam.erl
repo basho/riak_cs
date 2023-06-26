@@ -21,6 +21,7 @@
 -module(riak_cs_iam).
 
 -export([create_user/1,
+         delete_user/1,
          get_user/2,
          find_user/2,
          update_user/1,
@@ -65,11 +66,21 @@
 
 
 -spec create_user(maps:map()) -> {ok, rcs_user()} | {error, already_exists | term()}.
-create_user(Specs = #{user_name := Name,
-                      email := Email}) ->
+create_user(Specs = #{user_name := Name}) ->
     Path = maps:get(path, Specs, <<"/">>),
     PermissionsBoundary = maps:get(permissions_boundary, Specs, undefined),
+    Email = iolist_to_binary([Name, $@, riak_cs_config:iam_create_user_default_email_host()]),
     riak_cs_user:create_user(Name, Email, Path, PermissionsBoundary).
+
+-spec delete_user(rcs_user()) -> ok | {error, term()}.
+delete_user(?IAM_USER{attached_policies = PP}) when PP /= [] ->
+    {error, user_has_attached_policies};
+delete_user(?IAM_USER{buckets = BB}) when BB /= [] ->
+    {error, user_has_buckets};
+delete_user(?IAM_USER{arn = TransKeyId}) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    Result = velvet:delete_user(TransKeyId, [{auth_creds, AdminCreds}]),
+    handle_response(Result).
 
 -spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 get_user(Arn, RcPid) ->
@@ -343,7 +354,8 @@ update_policy(A = ?IAM_POLICY{arn = Arn}) ->
 %% CreateRole takes a string for PermissionsBoundary parameter, which
 %% needs to become part of a structure (and handled and exported thus), so:
 -spec fix_permissions_boundary(maps:map()) -> maps:map().
-fix_permissions_boundary(#{permissions_boundary := A} = Map) when not is_map(A) ->
+fix_permissions_boundary(#{permissions_boundary := A} = Map) when A /= null,
+                                                                  A /= undefined ->
     maps:update(permissions_boundary, #{permissions_boundary_arn => A}, Map);
 fix_permissions_boundary(Map) ->
     Map.
@@ -514,9 +526,16 @@ maybe_exprec_acl(A) -> exprec:frommap_acl_v3(A).
 
 -spec exprec_role(maps:map()) -> ?IAM_ROLE{}.
 exprec_role(Map) ->
-    Role0 = ?IAM_ROLE{role_last_used = LU0,
+    Role0 = ?IAM_ROLE{permissions_boundary = PB0,
+                      role_last_used = LU0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
-    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
+    PB = case PB0 of
+             Undefined when Undefined =:= null;
+                            Undefined =:= undefined ->
+                 undefined;
+             _ ->
+                 exprec:frommap_permissions_boundary(PB0)
+         end,
     LU = case LU0 of
              Undefined1 when Undefined1 =:= null;
                              Undefined1 =:= undefined ->
@@ -524,7 +543,9 @@ exprec_role(Map) ->
              _ ->
                  exprec:frommap_role_last_used(LU0)
          end,
-    Role0?IAM_ROLE{role_last_used = LU,
+    TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
+    Role0?IAM_ROLE{permissions_boundary = PB,
+                   role_last_used = LU,
                    tags = TT}.
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.

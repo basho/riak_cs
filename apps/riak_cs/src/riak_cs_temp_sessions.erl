@@ -40,12 +40,8 @@ create(?IAM_ROLE{role_id = RoleId,
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
 
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, ?USER_ID_PREFIX),
-    {KeyIdS, AccessKeyS} = riak_cs_aws_utils:generate_access_creds(UserId),
-    CanonicalIdS = riak_cs_aws_utils:generate_canonical_id(KeyIdS),
-    {KeyId, AccessKey, CanonicalId} =
-        {list_to_binary(KeyIdS),
-         list_to_binary(AccessKeyS),
-         list_to_binary(CanonicalIdS)},
+    {KeyId, AccessKey} = riak_cs_aws_utils:generate_access_creds(UserId),
+    CanonicalId = riak_cs_aws_utils:generate_canonical_id(KeyId),
 
     SessionName = riak_cs_aws_utils:make_id(16),
     Arn = riak_cs_aws_utils:make_assumed_role_user_arn(RoleName, SessionName),

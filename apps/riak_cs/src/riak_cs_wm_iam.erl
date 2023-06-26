@@ -295,8 +295,8 @@ do_action("DeleteUser",
                                            response_module = ResponseMod}) ->
     Name = proplists:get_value("UserName", Form),
     case riak_cs_iam:find_user(#{name => list_to_binary(Name)}, RcPid) of
-        {ok, ?IAM_ROLE{arn = Arn}} ->
-            case riak_cs_iam:delete_user(Arn) of
+        {ok, {?IAM_USER{arn = Arn} = User, _}} ->
+            case riak_cs_iam:delete_user(User) of
                 ok ->
                     RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Deleted user \"~s\" (~s) on request_id ~s", [Name, Arn, RequestId]),
@@ -315,7 +315,7 @@ do_action("DeleteUser",
 do_action("ListUsers",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
+    PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_users(
@@ -401,7 +401,7 @@ do_action("DeleteRole",
 do_action("ListRoles",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
+    PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_roles(
@@ -480,7 +480,7 @@ do_action("DeletePolicy",
 do_action("ListPolicies",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod}) ->
-    PathPrefix = proplists:get_value("PathPrefix", Form, ""),
+    PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     OnlyAttached = proplists:get_value("OnlyAttached", Form, "false"),
     PolicyUsageFilter = proplists:get_value("PolicyUsageFilter", Form, "All"),
     MaxItems = proplists:get_value("MaxItems", Form),
@@ -666,8 +666,6 @@ create_user_fields_filter({K, V}, Acc) ->
             maps:put(permissions_boundary, list_to_binary(V), Acc);
         "UserName" ->
             maps:put(user_name, list_to_binary(V), Acc);
-        "Email" ->  %% an extra field; not in IAM specs
-            maps:put(email, list_to_binary(V), Acc);
         "Tags.member." ++ TagMember ->
             add_tag(TagMember, V, Acc);
         CommonParameter when CommonParameter == "Action";
@@ -679,8 +677,7 @@ create_user_fields_filter({K, V}, Acc) ->
     end.
 create_user_require_fields(FF) ->
     lists:all(fun(A) -> lists:member(A, maps:keys(FF)) end,
-              [user_name,
-               email]).
+              [user_name]).
 
 create_role_fields_filter({K, V}, Acc) ->
     case K of

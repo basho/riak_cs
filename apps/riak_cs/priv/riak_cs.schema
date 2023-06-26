@@ -174,6 +174,18 @@
   {datatype, string}
 ]}.
 
+%% @doc Per
+%% https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateUser.html,
+%% CreateUser IAM call has no "Email" parameter. Because in Riak CS,
+%% users do have email as a required parameter, we need to provide a
+%% valid email, which we can construct from the user name @ the email
+%% domain.
+{mapping, "iam_create_user_default_email_host", "riak_cs.iam_create_user_default_email_host", [
+  {default, "my-riak-cs-megacorp.com"},
+  {datatype, string}
+]}.
+
+
 %% @doc Fixed pool size of primary connection pool which is used
 %% to service the majority of API requests related to the upload
 %%  or retrieval of objects.

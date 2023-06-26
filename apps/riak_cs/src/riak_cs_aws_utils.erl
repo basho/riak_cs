@@ -151,9 +151,10 @@ generate_canonical_id(KeyID) ->
     Bytes = 16,
     Id1 = riak_cs_utils:md5(KeyID),
     Id2 = riak_cs_utils:md5(uuid:get_v4()),
-    riak_cs_utils:binary_to_hexlist(
-      iolist_to_binary(<< Id1:Bytes/binary,
-                          Id2:Bytes/binary >>)).
+    list_to_binary(
+      riak_cs_utils:binary_to_hexlist(
+        iolist_to_binary(<< Id1:Bytes/binary,
+                            Id2:Bytes/binary >>))).
 
 %% @doc Generate an access key for a user
 -spec generate_key(binary()) -> [byte()].
@@ -161,22 +162,21 @@ generate_key(UserName) ->
     Ctx = crypto:mac_init(hmac, sha, UserName),
     Ctx1 = crypto:mac_update(Ctx, uuid:get_v4()),
     Key = crypto:mac_finalN(Ctx1, 15),
-    string:to_upper(base64url:encode_to_string(Key)).
+    list_to_binary(string:to_upper(base64url:encode_to_string(Key))).
 
 %% @doc Generate a secret access token for a user
 -spec generate_secret(binary(), string()) -> iodata().
 generate_secret(UserName, Key) ->
     Bytes = 14,
     Ctx = crypto:mac_init(hmac, sha, UserName),
-    Ctx1 = crypto:mac_update(Ctx, list_to_binary(Key)),
+    Ctx1 = crypto:mac_update(Ctx, Key),
     SecretPart1 = crypto:mac_finalN(Ctx1, Bytes),
     Ctx2 = crypto:mac_init(hmac, sha, UserName),
     Ctx3 = crypto:mac_update(Ctx2, uuid:get_v4()),
     SecretPart2 = crypto:mac_finalN(Ctx3, Bytes),
-    base64url:encode_to_string(
-      iolist_to_binary(<< SecretPart1:Bytes/binary,
-                          SecretPart2:Bytes/binary >>)).
-
+    base64url:encode(
+      << SecretPart1:Bytes/binary,
+         SecretPart2:Bytes/binary >>).
 
 
 fill(0, Q, _) ->

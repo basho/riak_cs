@@ -29,6 +29,7 @@
 -export([start_link/0,
          create_bucket/1,
          create_user/1,
+         delete_user/1,
          delete_bucket/2,
          set_bucket_acl/2,
          set_bucket_policy/2,
@@ -105,6 +106,14 @@ create_user(UserData) ->
     ?MEASURE([user, create],
              gen_server:call(?MODULE,
                              {create_user, UserData},
+                             infinity)).
+
+-spec delete_user([{term(), term()}]) ->
+          ok | {error, term() | stanchion_utils:riak_connect_failed()}.
+delete_user(A) ->
+    ?MEASURE([user, delete],
+             gen_server:call(?MODULE,
+                             {delete_user, A},
                              infinity)).
 
 %% @doc Attempt to delete a bucket
@@ -243,6 +252,11 @@ handle_call({create_user, UserData},
             _From,
             State=#state{pbc = Pbc}) ->
     Result = ?TURNAROUND_TIME(stanchion_utils:create_user(UserData, Pbc)),
+    {reply, Result, State};
+handle_call({delete_user, UserData},
+            _From,
+            State=#state{pbc = Pbc}) ->
+    Result = ?TURNAROUND_TIME(stanchion_utils:delete_user(UserData, Pbc)),
     {reply, Result, State};
 handle_call({update_user, UserData},
             _From,

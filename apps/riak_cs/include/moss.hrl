@@ -36,12 +36,12 @@
                    , buckets = []
                    }).
 
--record(moss_user_v1, { name :: string()
-                      , display_name :: string()
-                      , email :: string()
-                      , key_id :: string()
-                      , key_secret :: string()
-                      , canonical_id :: string()
+-record(moss_user_v1, { name :: binary()
+                      , display_name :: binary()
+                      , email :: binary()
+                      , key_id :: binary()
+                      , key_secret :: binary()
+                      , canonical_id :: binary()
                       , buckets = [] :: [cs_bucket()]
                       }).
 

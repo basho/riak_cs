@@ -43,6 +43,7 @@
 
 -include("stanchion.hrl").
 -include_lib("webmachine/include/webmachine.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 
 init(Config) ->

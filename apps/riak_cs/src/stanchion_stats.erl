@@ -47,6 +47,7 @@ duration_metrics() ->
      [bucket, delete_policy],
      [bucket, set_versioning],
      [user, create],
+     [user, delete],
      [user, update],
 
      [role, create],
@@ -66,6 +67,7 @@ duration_metrics() ->
      [riakc, get_cs_user],
      [riakc, get_cs_user_strong],
      [riakc, put_cs_user],
+     [riakc, delete_cs_user],
      [riakc, get_manifest],
      [riakc, get_cs_role],
      [riakc, get_cs_role_strong],

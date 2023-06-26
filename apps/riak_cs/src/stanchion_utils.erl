@@ -27,6 +27,7 @@
 -export([create_bucket/2,
          delete_bucket/3,
          create_user/2,
+         delete_user/2,
          update_user/2,
          create_role/2,
          update_role/2,
@@ -165,6 +166,17 @@ create_user(FF = #{email := Email}, Pbc) ->
         {false, _} ->
             logger:info("Refusing to create an existing user with email ~s", [Email]),
             {error, user_already_exists}
+    end.
+
+-spec delete_user(flat_arn(), pid()) -> ok | {error, term()}.
+delete_user(Arn, Pbc) ->
+    case ?TURNAROUND_TIME(
+            riakc_pb_socket:delete(Pbc, ?USER_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
+        {ok, TAT} ->
+            stanchion_stats:update([riakc, delete_cs_user], TAT);
+        {error, Reason} = ER ->
+            logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
+            ER
     end.
 
 -spec update_user(maps:map(), pid()) -> ok | {error, term()}.

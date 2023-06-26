@@ -42,6 +42,10 @@ error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
     "The email address you provided is not a valid.";
+error_message(user_has_buckets) ->
+    "User has buckets and cannot be deleted.";
+error_message(user_has_attached_policies) ->
+    "User has attached policies and cannot be deleted.";
 error_message(access_denied) ->
     "Access Denied";
 error_message(copy_source_access_denied) ->
@@ -130,6 +134,8 @@ error_message(ErrorName) ->
 
 -spec error_code(error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
+error_code(user_has_buckets) -> "DeleteConflict";
+error_code(user_has_attached_policies) -> "DeleteConflict";
 error_code(access_denied) -> "AccessDenied";
 error_code(copy_source_access_denied) -> "AccessDenied";
 error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
@@ -201,6 +207,8 @@ error_code(ErrorName) ->
 -spec status_code(error_reason()) -> pos_integer().
 status_code(invalid_access_key_id)         -> 403;
 status_code(invalid_email_address)         -> 400;
+status_code(user_has_buckets)              -> 409;
+status_code(user_has_attached_policies)    -> 409;
 status_code(access_denied)                 -> 403;
 status_code(copy_source_access_denied)     -> 403;
 status_code(reqtime_tooskewed)             -> 403;
