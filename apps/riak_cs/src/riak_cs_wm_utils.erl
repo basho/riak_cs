@@ -89,16 +89,26 @@
 %% Public API
 %% ===================================================================
 
+-spec aws_service_from_host(string()) -> string().
+aws_service_from_host(Host) ->
+    case lists:reverse(
+           string:split(string:to_lower(Host), ".", all)) of
+        ["com", "amazonaws", A] when A /= "s3" ->
+            A;
+        _ ->
+            "s3"
+    end.
+
 -spec aws_service_action(#wm_reqdata{}, action_target()) -> aws_action() | no_action.
 aws_service_action(RD, Target) ->
-    Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
-    case proplists:get_value("Action", Form) of
-        undefined ->
+    Path = wrq:path(RD),
+    case aws_service_from_host(Path) of
+        "s3" ->
             make_s3_action(wrq:method(RD), Target);
-        Defined ->
-            Path = wrq:path(RD),
-            Service = hd(string:tokens(Path, ".")),
-            list_to_atom(Service ++ ":" ++ Defined)
+        ServiceDoingOnlyPOSTs ->
+            Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
+            Action = proplists:get_value("Action", Form),
+            list_to_atom(ServiceDoingOnlyPOSTs ++ ":" ++ Action)
     end.
 
 make_s3_action(Method, Target) ->
