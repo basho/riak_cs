@@ -24,7 +24,7 @@
 -include("manifest.hrl").
 -include("moss.hrl").
 -include("aws_api.hrl").
--include_lib("webmachine/include/wm_reqdata.hrl").
+-include_lib("webmachine/include/webmachine.hrl").
 
 -type mochiweb_headers() :: gb_trees:tree().
 

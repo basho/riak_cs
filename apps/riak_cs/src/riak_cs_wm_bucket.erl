@@ -112,20 +112,14 @@ to_xml(RD, Ctx) ->
 %% @private
 handle_read_request(RD, Ctx=#rcs_web_context{user = User,
                                              bucket = Bucket}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_head">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     %% override the content-type on HEAD
     HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
     StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
                B?RCS_BUCKET.name =:= StrBucket] of
         [] ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>,
-                                               [404], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 404}, HeadRD, Ctx};
         [_BucketRecord] ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_head">>,
-                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, HeadRD, Ctx}
     end.
 
@@ -137,8 +131,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        bucket = Bucket,
                                        response_module = ResponseMod,
                                        riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put">>,
-                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     BagId = riak_cs_mb_helper:choose_bag_id(manifest, Bucket),
     case riak_cs_bucket:create_bucket(User,
                                       UserObj,
@@ -147,13 +139,9 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                       ACL,
                                       RcPid) of
         ok ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put">>,
-                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
             Code = ResponseMod:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put">>,
-                                              [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
@@ -165,19 +153,13 @@ delete_resource(RD, Ctx = #rcs_web_context{user = User,
                                            response_module = ResponseMod,
                                            bucket = Bucket,
                                            riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_delete">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_bucket:delete_bucket(User,
                                       UserObj,
                                       Bucket,
                                       RcPid) of
         ok ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
-                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {true, RD, Ctx};
         {error, Reason} ->
             Code = ResponseMod:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_delete">>,
-                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.

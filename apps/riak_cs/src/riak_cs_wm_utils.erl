@@ -76,6 +76,7 @@
         ]).
 
 -include("riak_cs.hrl").
+-include_lib("webmachine/include/wm_reqstate.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -define(QS_KEYID, "AWSAccessKeyId").
@@ -272,14 +273,10 @@ handle_auth_admin(RD, Ctx, User, false) ->
     case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
             %% admin account is allowed
-            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                        [], [<<"false">>, Admin]),
             {false, RD, Ctx};
         _ ->
             %% non-admin account is not allowed -> 403
-            Res = deny_access(RD, Ctx),
-            riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>, [], [<<"true">>]),
-            Res
+            deny_access(RD, Ctx)
     end.
 
 %% @doc Look for an Authorization header in the request, and validate
@@ -406,8 +403,6 @@ streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start([object, get], StartTime),
             riak_cs_riak_client:checkin(RcPool, RcPid),
-            riak_cs_dtrace:dt_object_return(riak_cs_wm_object, <<"object_get">>,
-                                            [], [UserName, BFile_str]),
             {Chunk, done};
         {chunk, Chunk} ->
             {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}

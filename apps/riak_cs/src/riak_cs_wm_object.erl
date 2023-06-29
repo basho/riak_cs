@@ -196,11 +196,6 @@ produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
     BFile_str = bfile_str(Bucket, File, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(User),
     Method = wrq:method(RD),
-    Func = case Method of
-               'HEAD' -> <<"object_head">>;
-               _ -> <<"object_get">>
-           end,
-    riak_cs_dtrace:dt_object_entry(?MODULE, Func, [], [UserName, BFile_str]),
     LastModified = riak_cs_wm_utils:to_rfc_1123(Created),
     ETag = riak_cs_manifest:etag(Mfst),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
@@ -227,12 +222,6 @@ produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
                                   RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
                         end}}
         end,
-    if Method == 'HEAD' ->
-            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_head">>,
-                                            [], [UserName, BFile_str]);
-       true ->
-            ok
-    end,
     {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, NewCtx}.
 
 parse_range(RD, ResourceLength) ->
@@ -261,19 +250,15 @@ delete_resource(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
     BFile_str = bfile_str(Bucket, Key, ObjVsn),
     UserName = riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user),
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_delete">>,
-                                   [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, Key, ObjVsn, RcPid),
     handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
 
 %% @private
-handle_delete_object({error, Error}, UserName, BFile_str, RD, Ctx) ->
+handle_delete_object({error, Error}, _UserName, _BFile_str, RD, Ctx) ->
     logger:error("delete object failed with reason: ~p", [Error]),
-    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [0], [UserName, BFile_str]),
     {false, RD, Ctx};
-handle_delete_object({ok, _UUIDsMarkedforDelete}, UserName, BFile_str, RD, Ctx) ->
-    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_delete">>, [1], [UserName, BFile_str]),
+handle_delete_object({ok, _UUIDsMarkedforDelete}, _UserName, _BFile_str, RD, Ctx) ->
     {true, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
@@ -318,7 +303,8 @@ accept_body(RD, Ctx = #rcs_web_context{riak_client=RcPid,
                                        response_module=ResponseMod})
   when LocalCtx#key_context.update_metadata == true ->
     %% zero-body put copy - just updating metadata
-    #key_context{bucket=Bucket, key=Key, obj_vsn = ObjVsn, manifest=Mfst} = LocalCtx,
+    #key_context{bucket = Bucket, key = Key, obj_vsn = ObjVsn,
+                 manifest = Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
     NewAcl = Acl?ACL{creation_time = erlang:timestamp()},
     {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
@@ -343,11 +329,8 @@ accept_body(RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
                             SrcBucket, SrcKey, SrcObjVsn)
     end.
 
--spec handle_normal_put(#wm_reqdata{}, #rcs_web_context{}) ->
-    {{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 handle_normal_put(RD, Ctx0) ->
     #rcs_web_context{local_context = LocalCtx,
-                     user = User,
                      acl = ACL,
                      riak_client = RcPid} = Ctx0,
     #key_context{bucket = Bucket,
@@ -356,14 +339,9 @@ handle_normal_put(RD, Ctx0) ->
                  putctype = ContentType,
                  size = Size,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
-
     EventualVsn = determine_object_version(SuppliedVsn, Bucket, Key, RcPid),
     Ctx1 = Ctx0#rcs_web_context{local_context = LocalCtx#key_context{obj_vsn = EventualVsn}},
 
-    BFile_str = bfile_str(Bucket, Key, EventualVsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put">>,
-                                   [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Metadata = riak_cs_wm_utils:extract_user_metadata(RD),
     BlockSize = riak_cs_lfs_utils:block_size(),
@@ -404,8 +382,6 @@ determine_object_version(Vsn0, Bucket, Key, RcPid) ->
     end.
 
 %% @doc the head is PUT copy path
--spec handle_copy_put(#wm_reqdata{}, #rcs_web_context{}, binary(), binary(), binary()) ->
-          {boolean()|{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
     #rcs_web_context{local_context = LocalCtx,
                      response_module = ResponseMod,
@@ -485,17 +461,7 @@ accept_streambody(RD,
                   Pid,
                   {_Data, _Next}) ->
     finalize_request(RD, Ctx, Pid);
-accept_streambody(RD,
-                  Ctx = #rcs_web_context{local_context = LocalCtx,
-                                         user = User},
-                  Pid,
-                  {Data, Next}) ->
-    #key_context{bucket = Bucket,
-                 key = Key,
-                 obj_vsn = ObjVsn} = LocalCtx,
-    BFile_str = bfile_str(Bucket, Key, ObjVsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
+accept_streambody(RD, Ctx, Pid, {Data, Next}) ->
     riak_cs_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
             accept_streambody(RD, Ctx, Pid, Next());
@@ -509,16 +475,10 @@ accept_streambody(RD,
 -spec finalize_request(#wm_reqdata{}, #rcs_web_context{}, pid()) -> {{halt, 200}, #wm_reqdata{}, #rcs_web_context{}}.
 finalize_request(RD,
                  Ctx = #rcs_web_context{local_context = LocalCtx,
-                                        response_module = ResponseMod,
-                                        user = User},
+                                        response_module = ResponseMod},
                  Pid) ->
-    #key_context{bucket = Bucket,
-                 key = Key,
-                 obj_vsn = Vsn,
+    #key_context{obj_vsn = Vsn,
                  size = S} = LocalCtx,
-    BFile_str = bfile_str(Bucket, Key, Vsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
     ContentMD5 = wrq:get_req_header("content-md5", RD),
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
@@ -534,9 +494,6 @@ finalize_request(RD,
             {error, Reason} ->
                 ResponseMod:api_error(Reason, RD, Ctx)
         end,
-
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finalize_request">>, [S], [UserName, BFile_str]),
-    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_put">>, [S], [UserName, BFile_str]),
     Response.
 
 check_0length_metadata_update(Length, RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
