@@ -33,7 +33,7 @@
 api_error(Error, RD, Ctx) ->
     StatusCode = riak_cs_aws_response:status_code(Error),
     ErrorDesc = jsx:encode(#{error_tag => base64:encode(term_to_binary(Error)),
-                             resource => wrq:path(RD)}),
+                             resource => list_to_binary(wrq:path(RD))}),
     {{halt, StatusCode}, wrq:set_resp_body(ErrorDesc, RD), Ctx}.
 
 
