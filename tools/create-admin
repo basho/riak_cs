@@ -33,6 +33,7 @@ def main():
 
     res = create_user("127.0.0.1", port, admin_name, admin_email)
     print("%s %s %s" % (res['key_id'], res['key_secret'], res['canonical_id']))
+    admin_arn = res['arn']
 
     #boto3.set_stream_logger('')
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
@@ -46,6 +47,7 @@ def main():
     policy = json.dumps({
         "Version": "2012-10-17",
         "Statement": {
+            "Principal": "*",
             "Effect": "Allow",
             "Action": ["sts:*", "iam:*", "s3:*"]
         }

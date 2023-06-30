@@ -35,8 +35,6 @@
          reqdata_to_access/3,
          policy_from_json/1,
          policy_to_json_term/1,
-         supported_object_action/0,
-         supported_bucket_action/0,
          log_supported_actions/0
         ]).
 
@@ -60,8 +58,6 @@
         ]).
 -endif.
 
--define(AMZ_POLICY_OLD_VERSION, <<"2008-10-17">>).
--define(AMZ_DEFAULT_VERSION, <<"2012-10-17">>).
 -define(POLICY_UNDEF, {error, policy_undefined}).
 
 %% ===================================================================
@@ -97,7 +93,6 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 -spec check_policy(access(), amz_policy()) -> ok | {error, atom()}.
 check_policy(#access_v1{bucket=B} = _Access,
              Policy) ->
-
     case check_version(Policy) of
         false -> {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
         true ->
@@ -115,14 +110,16 @@ check_policy(#access_v1{bucket=B} = _Access,
             end
     end.
 
--spec check_version(amz_policy()) -> boolean().
-check_version(?AMZ_POLICY{version = ?AMZ_DEFAULT_VERSION}) ->
-    true;
-check_version(?AMZ_POLICY{version = ?AMZ_POLICY_OLD_VERSION}) ->
-    true;
-check_version(?AMZ_POLICY{version = Version}) ->
-    logger:info("unknown version: ~p", [Version]),
-    false.
+check_version(?AMZ_POLICY{version = V}) ->
+    case lists:member(V, [?AMZ_POLICY_VERSION_2008,
+                          ?AMZ_POLICY_VERSION_2012,
+                          ?AMZ_POLICY_VERSION_2020]) of
+        true ->
+            true;
+        false ->
+            logger:notice("Unknown policy version: ~p", [V]),
+            false
+    end.
 
 % @doc confirm if forbidden action included in policy
 % s3:CreateBucket and s3:ListAllMyBuckets are prohibited at S3
@@ -130,11 +127,11 @@ check_version(?AMZ_POLICY{version = Version}) ->
 check_actions([]) -> true;
 check_actions([Stmt|Stmts]) ->
     case Stmt#statement.action of
-        '*' -> check_actions(Stmts);
+        "s3:*" -> check_actions(Stmts);
         Actions ->
-            case not lists:member('s3:CreateBucket', Actions) of
+            case not lists:member("s3:CreateBucket", Actions) of
                 true ->
-                    case not lists:member('s3:ListAllMyBuckets', Actions) of
+                    case not lists:member("s3:ListAllMyBuckets", Actions) of
                         true -> check_actions(Stmts);
                         false -> false
                     end;
@@ -197,69 +194,64 @@ reqdata_to_access(RD, Target, ID) ->
 
 -spec policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
 policy_from_json(JSON) ->
-    case catch jsx:decode(JSON) of
-        #{<<"Version">> := Version,
-          <<"Statement">> := Stmts0} = Map ->
-            ID = maps:get(<<"ID">>, Map, <<"undefined">>),
-            case catch lists:map(fun(S) ->
-                                         statement_from_pairs(maps:to_list(S), #statement{})
-                                 end, Stmts0) of
-                       [] ->
-                         {error, malformed_policy_missing};
-                       Stmts ->
-                         case {Version, ID} of
-                             {undefined, <<"undefined">>} ->
-                                 {ok, ?AMZ_POLICY{statement = Stmts}};
-                             {undefined, _} ->
-                                 {ok, ?AMZ_POLICY{id = ID, statement = Stmts}};
-                             {_, <<"undefined">>} ->
-                                 {ok, ?AMZ_POLICY{version = Version, statement = Stmts}};
-                             _ ->
-                                 {ok, ?AMZ_POLICY{id = ID, version = Version, statement = Stmts}}
-                         end
-                 end;
-        #{} ->
-            logger:warning("Policy document missing required fields: ~s", [JSON]),
-            {error, malformed_policy_json};
-        {'EXIT', _} ->
-            logger:warning("Malformed Policy JSON: ~s", [JSON]),
-            {error, malformed_policy_json}
+    try
+        case jsx:decode(JSON) of
+            #{<<"Version">> := Version,
+              <<"Statement">> := Stmts0} = Map ->
+                ID = maps:get(<<"ID">>, Map, <<"undefined">>),
+                case statement_from_pairs(maps:to_list(Stmts0), #statement{}) of
+                    [] ->
+                        {error, malformed_policy_missing};
+                    Stmts ->
+                        case {Version, ID} of
+                            {undefined, <<"undefined">>} ->
+                                {ok, ?AMZ_POLICY{statement = Stmts}};
+                            {undefined, _} ->
+                                {ok, ?AMZ_POLICY{id = ID, statement = Stmts}};
+                            {_, <<"undefined">>} ->
+                                {ok, ?AMZ_POLICY{version = Version, statement = Stmts}};
+                            _ ->
+                                {ok, ?AMZ_POLICY{id = ID, version = Version, statement = Stmts}}
+                        end
+                end;
+            #{} ->
+                logger:warning("Policy document missing required fields: ~s", [JSON]),
+                {error, malformed_policy_json}
+        end
+    catch
+        throw:{error, SpecificError} ->
+            logger:notice("Bad policy JSON (~p): ~s", [SpecificError, JSON]),
+            {error, SpecificError}
     end.
 
 -spec policy_to_json_term(amz_policy()) -> JSON::binary().
 policy_to_json_term(?AMZ_POLICY{version = Version,
                                 id = ID, statement = Stmts0})
-  when Version =:= ?AMZ_POLICY_OLD_VERSION;
-       Version =:= ?AMZ_DEFAULT_VERSION ->
+  when Version =:= ?AMZ_POLICY_VERSION_2008;
+       Version =:= ?AMZ_POLICY_VERSION_2012;
+       Version =:= ?AMZ_POLICY_VERSION_2020 ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
-    % hope no unicode included
-    Policy = [{<<"Version">>, Version},
-              {<<"Id">>, ID},
-              {<<"Statement">>, Stmts}],
+    Policy = #{<<"Version">> => Version,
+               <<"Id">> => ID,
+               <<"Statement">> => Stmts},
     jsx:encode(Policy).
 
-
--spec supported_object_action() -> [s3_object_action()].
-supported_object_action() -> ?SUPPORTED_OBJECT_ACTION.
-
--spec supported_bucket_action() -> [s3_bucket_action()].
-supported_bucket_action() -> ?SUPPORTED_BUCKET_ACTION.
 
 %% @doc put required atoms into atom table
 %% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
 -spec log_supported_actions() -> ok.
 log_supported_actions() ->
     logger:info("supported object actions: ~p",
-                [lists:map(fun atom_to_list/1, supported_object_action())]),
+                [lists:map(fun atom_to_list/1, ?SUPPORTED_OBJECT_ACTIONS)]),
     logger:info("supported bucket actions: ~p",
-                [lists:map(fun atom_to_list/1, supported_bucket_action())]),
+                [lists:map(fun atom_to_list/1, ?SUPPORTED_BUCKET_ACTIONS)]),
     ok.
 
 %% @doc Fetch the policy for a bucket
--type policy_from_meta_result() :: {'ok', amz_policy()} | {'error', 'policy_undefined'}.
+-type policy_from_meta_result() :: {ok, amz_policy()} | {error, policy_undefined}.
 -type bucket_policy_result() :: policy_from_meta_result() |
-                                {'error', 'notfound'} |
-                                {'error', 'multiple_bucket_owners'}.
+                                {error, notfound} |
+                                {error, multiple_bucket_owners}.
 -spec fetch_bucket_policy(binary(), riak_client()) -> bucket_policy_result().
 fetch_bucket_policy(Bucket, RcPid) ->
     case riak_cs_bucket:fetch_bucket_object(Bucket, RcPid) of
@@ -270,8 +262,8 @@ fetch_bucket_policy(Bucket, RcPid) ->
             Contents = riakc_obj:get_contents(Obj),
             bucket_policy_from_contents(Bucket, Contents);
         {error, Reason} ->
-            ?LOG_DEBUG("Failed to fetch policy. Bucket ~p does not exist. Reason: ~p",
-                       [Bucket, Reason]),
+            logger:warning("Failed to fetch policy. Bucket ~p does not exist. Reason: ~p",
+                           [Bucket, Reason]),
             {error, notfound}
     end.
 
@@ -339,7 +331,7 @@ policy_from_meta([_ | RestMD]) ->
 %% ===================================================================
 %% internal API
 
-resource_matches(_, _, #statement{resource='*'} = _Stmt ) -> true;
+resource_matches(_, _, #statement{resource = '*'} = _Stmt ) -> true;
 resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
   when KeyBin =:= undefined orelse is_binary(KeyBin) ->
     Bucket = binary_to_list(BucketBin),
@@ -350,11 +342,10 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
                 _ when is_binary(KeyBin) ->
                     unicode:characters_to_list(<<BucketBin/binary, "/", KeyBin/binary>>, unicode)
             end,
-    lists:any(fun(#arn_v1{path="*"}) ->    true;
-                 (#arn_v1{path=Path}) ->
+    lists:any(fun(#arn_v1{path = "*"}) ->    true;
+                 (#arn_v1{path = Path}) ->
                       case Path of
                           Bucket -> true;
-
                           %% only prefix matching
                           Path ->
                               [B|_] = string:tokens(Path, "*"),
@@ -367,13 +358,20 @@ resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.
 eval_statement(#access_v1{req = Req,
-                          bucket = B, key = K,
+                          bucket = B,
+                          key = K,
                           action = A},
-               #statement{effect = E, condition_block = Conds, action = As} = Stmt) ->
+               #statement{effect = E,
+                          condition_block = Conds,
+                          action = As,
+                          not_action = NAs} = Stmt) ->
     ResourceMatch = resource_matches(B, K, Stmt),
-    IsRelated = (As =:= '*')
-        orelse (A =:= As)
-        orelse (is_list(As) andalso lists:member(A, As)),
+    IsRelated = (lists:member(<<"s3:*">>, As)
+                 orelse (lists:member(<<"s3:Get*">>, As))
+                 orelse (lists:member(A, As)) andalso not (lists:member(A, NAs)
+                                                           orelse lists:member(<<"s3:*">>, As)
+                                                           orelse lists:member(<<"s3:Get*">>, As))
+                ),
     case {IsRelated, ResourceMatch} of
         {false, _} -> undefined;
         {_, false} -> undefined;
@@ -511,11 +509,13 @@ statement_to_pairs(#statement{sid=Sid, effect=E, principal=P, action=A,
                 deny  -> <<"Deny">>
             end,
     Conds = lists:map(fun condition_block_from_condition_pair/1, Cs),
-    [{<<"Sid">>, Sid}, {<<"Effect">>, AtomE},
-     {<<"Principal">>, print_principal(P)},
-     {<<"Action">>, A}, {<<"NotAction">>, NA},
-     {<<"Resource">>, print_arns(R)},
-     {<<"Condition">>, Conds}].
+    #{<<"Sid">> => Sid,
+      <<"Effect">> => AtomE,
+      <<"Principal">> => print_principal(P),
+      <<"Action">> => A,
+      <<"NotAction">> => NA,
+      <<"Resource">> => print_arns(R),
+      <<"Condition">> => Conds}.
 
 condition_block_from_condition_pair({AtomKey, Conds})->
     Fun = fun({'aws:SourceIp', IPs}) when is_list(IPs) ->
@@ -598,11 +598,16 @@ statement_from_pairs([{<<"Action">>, As} | T], Stmt) ->
                 As when is_list(As) ->
                     lists:map(fun binary_to_action/1, As);
                 Bin when is_binary(Bin) ->
-                    binary_to_existing_atom(Bin, latin1)
+                    [binary_to_action(Bin)]
             end,
     statement_from_pairs(T, Stmt#statement{action=Atoms});
-statement_from_pairs([{<<"NotAction">>, As} | T], Stmt) when is_list(As) ->
-    Atoms = lists:map(fun binary_to_action/1, As),
+statement_from_pairs([{<<"NotAction">>, As} | T], Stmt) ->
+    Atoms = case As of
+                As when is_list(As) ->
+                    lists:map(fun binary_to_action/1, As);
+                Bin when is_binary(Bin) ->
+                    [binary_to_action(Bin)]
+            end,
     statement_from_pairs(T, Stmt#statement{not_action = Atoms});
 
 statement_from_pairs([{<<"Resource">>, R} | T], Stmt) ->
@@ -622,7 +627,18 @@ statement_from_pairs([{<<"Condition">>, Cs} | T], Stmt) ->
     statement_from_pairs(T, Stmt#statement{condition_block = Conditions}).
 
 binary_to_action(Bin) ->
-    binary_to_existing_atom(Bin, latin1).
+    A = binary_to_atom(Bin, latin1),
+    case lists:member(A, ?SUPPORTED_ACTIONS) of
+        true ->
+            A;
+        false ->
+            case re:run(Bin, <<"(s3|iam|sts):[a-zA-Z]*\\*">>) of
+                {match, _} ->
+                    Bin;
+                nomatch ->
+                    throw({error, malformed_policy_action})
+            end
+    end.
 
 parse_principal(<<"*">>) -> '*';
 parse_principal(List) when is_list(List) ->

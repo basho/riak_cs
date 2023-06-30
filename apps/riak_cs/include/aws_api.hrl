@@ -45,11 +45,12 @@
                         %%| 's3:GetObjectVersionTorrent'  we never do this
                           | 's3:RestoreObject'.
 
--define(SUPPORTED_OBJECT_ACTION,
+-define(SUPPORTED_OBJECT_ACTIONS,
         [ 's3:GetObject', 's3:GetObjectAcl', 's3:PutObject', 's3:PutObjectAcl',
           's3:DeleteObject',
           's3:ListObjectVersions',
-          's3:ListMultipartUploadParts', 's3:AbortMultipartUpload' ]).
+          's3:ListMultipartUploadParts', 's3:AbortMultipartUpload'
+        ]).
 
 -type s3_bucket_action() :: 's3:CreateBucket'
                           | 's3:DeleteBucket'
@@ -67,7 +68,7 @@
                           | 's3:GetBucketWebsite' | 's3:PutBucketWebsite' | 's3:DeleteBucketWebsite'
                           | 's3:GetLifecycleConfiguration' | 's3:PutLifecycleConfiguration'.
 
--define(SUPPORTED_BUCKET_ACTION,
+-define(SUPPORTED_BUCKET_ACTIONS,
         [ 's3:CreateBucket', 's3:DeleteBucket', 's3:ListBucket', 's3:ListAllMyBuckets',
           's3:GetBucketAcl', 's3:PutBucketAcl',
           's3:GetBucketPolicy', 's3:DeleteBucketPolicy', 's3:PutBucketPolicy',
@@ -76,14 +77,19 @@
 
 -type s3_action() :: s3_bucket_action() | s3_object_action().
 
+-define(SUPPORTED_S3_ACTIONS, ?SUPPORTED_BUCKET_ACTIONS ++ ?SUPPORTED_OBJECT_ACTIONS ++ ['s3:*']).
 
--type iam_action() :: 'iam:CreateRole' | 'iam:GetRole' | 'iam:DeleteRole' | 'iam:ListRoles'
+
+-type iam_action() :: 'iam:CreateUser' | 'iam:GetUser' | 'iam:DeleteUser' | 'iam:ListUsers'
+                    | 'iam:CreateRole' | 'iam:GetRole' | 'iam:DeleteRole' | 'iam:ListRoles'
                     | 'iam:CreatePolicy' | 'iam:GetPolicy' | 'iam:DeletePolicy' | 'iam:ListPolicies'
                     | 'iam:AttachRolePolicy' | 'iam:DetachRolePolicy'
                     | 'iam:AttachUserPolicy' | 'iam:DetachUserPolicy'
                     | 'iam:CreateSAMLProvider' | 'iam:GetSAMLProvider' | 'iam:DeleteSAMLProvider' | 'iam:ListSAMLProviders'.
--define(SUPPORTED_IAM_ACTION,
-        [ 'iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:ListRoles'
+
+-define(SUPPORTED_IAM_ACTIONS,
+        [ 'iam:CreateUser', 'iam:GetUser', 'iam:DeleteUser', 'iam:ListUsers'
+        , 'iam:CreateRole', 'iam:GetRole', 'iam:DeleteRole', 'iam:ListRoles'
         , 'iam:CreatePolicy', 'iam:GetPolicy', 'iam:DeletePolicy', 'iam:ListPolicies'
         , 'iam:AttachRolePolicy', 'iam:DetachRolePolicy'
         , 'iam:AttachUserPolicy', 'iam:DetachUserPolicy'
@@ -91,14 +97,17 @@
         ]
        ).
 
--type sts_action() :: 'sts:AssumeRoleWithSAML'.
--define(SUPPORTED_STS_ACTION,
+-type sts_action() :: 'sts:AssumeRoleWithSAML'
+                    | 'sts:*'.
+
+-define(SUPPORTED_STS_ACTIONS,
         [ 'sts:AssumeRoleWithSAML'
         ]
        ).
 
 -type aws_action() :: s3_action() | iam_action() | sts_action().
 
+-define(SUPPORTED_ACTIONS, ?SUPPORTED_S3_ACTIONS ++ ?SUPPORTED_IAM_ACTIONS ++ ?SUPPORTED_STS_ACTIONS).
 
 
 % one of string, numeric, date&time, boolean, IP address, ARN and existence of condition keys
@@ -171,15 +180,19 @@
 -record(statement, { sid = undefined :: undefined | binary() % had better use uuid: should be UNIQUE
                    , effect = deny :: allow | deny
                    , principal  = [] :: principal()
-                   , action     = [] :: [ s3_object_action() | s3_bucket_action() ] | '*'
-                   , not_action = [] :: [ s3_object_action() | s3_bucket_action() ] | '*'
+                   , action     = [] :: [ aws_action() | binary() ]
+                   , not_action = [] :: [ aws_action() | binary() ]
                    , resource   = [] :: [ flat_arn() ] | '*'
                    , condition_block = [] :: [ condition_pair() ]
                    }
        ).
 -define(S3_STATEMENT, #statement).
 
--record(amz_policy, { version = <<"2008-10-17">> :: binary()  % no other value is allowed than default
+-define(AMZ_POLICY_VERSION_2008, <<"2008-10-17">>).
+-define(AMZ_POLICY_VERSION_2012, <<"2012-10-17">>).
+-define(AMZ_POLICY_VERSION_2020, <<"2020-10-17">>).
+
+-record(amz_policy, { version = ?AMZ_POLICY_VERSION_2020 :: binary()
                     , id = undefined :: undefined | binary()  % had better use uuid: should be UNIQUE
                     , statement = [] :: [#statement{}]
                     , creation_time = os:system_time(millisecond) :: non_neg_integer()
