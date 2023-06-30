@@ -199,7 +199,7 @@ policy_from_json(JSON) ->
             #{<<"Version">> := Version,
               <<"Statement">> := Stmts0} = Map ->
                 ID = maps:get(<<"ID">>, Map, <<"undefined">>),
-                case statement_from_pairs(maps:to_list(Stmts0), #statement{}) of
+                case [statement_from_pairs(maps:to_list(S), #statement{}) || S <- Stmts0] of
                     [] ->
                         {error, malformed_policy_missing};
                     Stmts ->
