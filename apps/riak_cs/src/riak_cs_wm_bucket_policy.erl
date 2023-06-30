@@ -78,14 +78,10 @@ authorize(RD, Ctx) ->
 
 -spec to_json(#wm_reqdata{}, #rcs_web_context{}) ->
           {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-to_json(RD, Ctx = #rcs_web_context{user = User,
-                                   bucket = Bucket,
+to_json(RD, Ctx = #rcs_web_context{bucket = Bucket,
                                    response_module = RespMod,
                                    policy_module = PolicyMod,
                                    riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_policy">>,
-                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-
     case PolicyMod:fetch_bucket_policy(Bucket, RcPid) of
         {ok, PolicyJson} ->
             {PolicyJson, RD, Ctx};
@@ -93,11 +89,7 @@ to_json(RD, Ctx = #rcs_web_context{user = User,
             % S3 error: 404 (NoSuchBucketPolicy): The bucket policy does not exist
             RespMod:api_error(no_such_bucket_policy, RD, Ctx);
         {error, Reason} ->
-            Code = RespMod:status_code(Reason),
-            X = RespMod:api_error(Reason, RD, Ctx),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_get_policy">>,
-                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            X
+            RespMod:api_error(Reason, RD, Ctx)
     end.
 
 %% @doc Process request body on `PUT' request.
@@ -109,9 +101,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        policy_module = PolicyMod,
                                        response_module = RespMod,
                                        riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_policy">>,
-                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
-
     PolicyJson = wrq:req_body(RD),
     case PolicyMod:policy_from_json(PolicyJson) of
         {ok, Policy} ->
@@ -120,13 +109,8 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                 ok ->
                     case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) of
                         ok ->
-                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                                            [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                             {{halt, 200}, RD, Ctx};
                         {error, Reason} ->
-                            Code = RespMod:status_code(Reason),
-                            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                             RespMod:api_error(Reason, RD, Ctx)
                     end;
                 {error, Reason} -> %% good JSON, but bad as IAM policy
@@ -145,17 +129,9 @@ delete_resource(RD, Ctx = #rcs_web_context{user = User,
                                            bucket = Bucket,
                                            response_module = RespMod,
                                            riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"bucket_policy_delete">>,
-                                   [], [RD, Ctx, RcPid]),
-
     case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket, RcPid) of
         ok ->
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                            [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
-            Code = RespMod:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_policy">>,
-                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             RespMod:api_error(Reason, RD, Ctx)
     end.

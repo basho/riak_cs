@@ -49,8 +49,6 @@
 
 
 init(Config) ->
-    %% Check if authentication is disabled and
-    %% set that in the context.
     AuthBypass = proplists:get_value(auth_bypass, Config),
     {ok, #stanchion_context{auth_bypass=AuthBypass}}.
 
@@ -88,9 +86,6 @@ content_types_provided(RD, Ctx) ->
     %% @TODO Add JSON support
     {[{"application/xml", to_xml}], RD, Ctx}.
 
-%% @spec content_types_accepted(reqdata(), context()) ->
-%%          {[{ContentType::string(), Acceptor::atom()}],
-%%           reqdata(), context()}
 content_types_accepted(RD, Ctx) ->
     case wrq:get_req_header("content-type", RD) of
         undefined ->
@@ -106,27 +101,6 @@ to_xml(RD, Ctx) ->
     Bucket = wrq:path_info(bucket, RD),
     stanchion_response:list_buckets_response(Bucket, RD, Ctx).
 
-%% SLF: Dialyzer note: As far as I can tell, the func
-%%      stanchion_utils:update_bucket_owner() has never existed.
-%%      So this function is darn broken, so I'm commenting the
-%%      whole thing out so that the breakage is even more visible
-%%      at runtime.
-
-%% TODO:
-%% Add content_types_accepted when we add
-%% in PUT and POST requests.
-%% accept_body(ReqData, Ctx) ->
-%%     Bucket = wrq:path_info(bucket, ReqData),
-%%     NewOwnerId = list_to_binary(wrq:get_qs_value("owner", "", ReqData)),
-%%     case stanchion_utils:update_bucket_owner(Bucket,
-%%                                                   NewOwnerId) of
-%%         ok ->
-%%             {true, ReqData, Ctx};
-%%         {error, Reason} ->
-%%             stanchion_response:api_error(Reason, ReqData, Ctx)
-%%     end.
-
-%% @doc Callback for deleting a bucket.
 -spec delete_resource(term(), term()) -> {'true' | {'halt', term()}, #wm_reqdata{}, term()}.
 delete_resource(ReqData, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, ReqData)),

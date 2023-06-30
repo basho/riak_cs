@@ -325,14 +325,8 @@ prepare_part_upload(RD, #rcs_web_context{riak_client = RcPid,
 accept_streambody(RD, Ctx = #rcs_web_context{local_context = #key_context{size = 0}},
                   Pid, {_Data, _Next}) ->
     finalize_request(RD, Ctx, Pid);
-accept_streambody(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
-                                             user = User},
+accept_streambody(RD, Ctx,
                   Pid, {Data, Next}) ->
-    #key_context{bucket=Bucket,
-                 key=Key} = LocalCtx,
-    BFile_str = [Bucket, $,, Key],
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_streambody">>, [size(Data)], [UserName, BFile_str]),
     riak_cs_put_fsm:augment_data(Pid, Data),
     if is_function(Next) ->
             accept_streambody(RD, Ctx, Pid, Next());

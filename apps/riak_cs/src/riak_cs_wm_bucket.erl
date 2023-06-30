@@ -141,7 +141,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->
-            Code = ResponseMod:status_code(Reason),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
@@ -160,6 +159,5 @@ delete_resource(RD, Ctx = #rcs_web_context{user = User,
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->
-            Code = ResponseMod:status_code(Reason),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
