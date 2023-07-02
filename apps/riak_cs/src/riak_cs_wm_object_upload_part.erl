@@ -149,7 +149,7 @@ process_post(RD, Ctx = #rcs_web_context{riak_client = RcPid,
                    RcPid) of
                 {ok, NewManifest} ->
                     ETag = riak_cs_manifest:etag(NewManifest),
-                    ?LOG_DEBUG("checksum of all parts checksum: ~p", [ETag]),
+                    ?LOG_DEBUG("checksum of all parts: ~p", [ETag]),
                     XmlDoc = {'CompleteMultipartUploadResult',
                               [{'xmlns', "http://s3.amazonaws.com/doc/2006-03-01/"}],
                               [
@@ -242,7 +242,6 @@ parse_body(Body0) ->
           {{halt, integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 accept_body(RD, Ctx0 = #rcs_web_context{local_context = LocalCtx0}) ->
     catch riak_cs_get_fsm:stop(LocalCtx0#key_context.get_fsm_pid),
-
     try
         {t, {ok, UploadId}} =
             {t, riak_cs_utils:safe_base64url_decode(

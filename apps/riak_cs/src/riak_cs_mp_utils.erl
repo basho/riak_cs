@@ -316,7 +316,7 @@ write_new_manifest(?MANIFEST{bkey = {Bucket, Key},
             Else
     end.
 
-new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
+new_manifest(Bucket, Key, Vsn, ContentType, Owner, Opts) ->
     UUID = uuid:get_v4(),
     %% TODO: add object metadata here, e.g. content-disposition et al.
     MetaData = case proplists:get_value(meta_data, Opts) of
@@ -345,7 +345,7 @@ new_manifest(Bucket, Key, Vsn, ContentType, {_, _, _} = Owner, Opts) ->
     M9.
 
 
-do_part_common(Op, Bucket, Key, ObjVsn, UploadId, {_,_,CallerKeyId} = _Caller, Props, RcPidUnW) ->
+do_part_common(Op, Bucket, Key, ObjVsn, UploadId, #{key_id := CallerKeyId}, Props, RcPidUnW) ->
     case wrap_riak_client(RcPidUnW) of
         {ok, RcPid} ->
             try
@@ -356,7 +356,7 @@ do_part_common(Op, Bucket, Key, ObjVsn, UploadId, {_,_,CallerKeyId} = _Caller, P
                                 {error, notfound};
                             M when M?MANIFEST.state == writing ->
                                 MpM = get_mp_manifest(M),
-                                {_, _, MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
+                                #{key_id := MpMOwner} = MpM?MULTIPART_MANIFEST.owner,
                                 case CallerKeyId == MpMOwner of
                                     true ->
                                         do_part_common2(Op, ?PID(RcPid),
@@ -552,7 +552,7 @@ update_manifest_with_confirmation(RcPid, M = ?MANIFEST{bkey = {Bucket, Key},
 make_2i_key(Bucket) ->
     make_2i_key2(Bucket, "").
 
-make_2i_key(Bucket, {_, _, OwnerStr}) ->
+make_2i_key(Bucket, #{key_id := OwnerStr}) ->
     make_2i_key2(Bucket, OwnerStr).
 
 make_2i_key2(Bucket, OwnerStr) ->

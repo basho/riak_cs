@@ -50,6 +50,7 @@
              ]).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(RIAKCPOOL, bucket_list_pool).
 

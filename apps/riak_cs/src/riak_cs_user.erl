@@ -172,10 +172,13 @@ is_admin(_, _) ->
     false.
 
 -spec to_3tuple(rcs_user()) -> acl_owner().
-to_3tuple(U) ->
+to_3tuple(?RCS_USER{display_name = DisplayName,
+                    canonical_id = CanonicalId,
+                    key_id = KeyId}) ->
     %% acl_owner3: {display name, canonical id, key id}
-    {U?RCS_USER.display_name, U?RCS_USER.canonical_id,
-     U?RCS_USER.key_id}.
+    #{display_name => DisplayName,
+      canonical_id => CanonicalId,
+      key_id => KeyId}.
 
 
 %% @doc Generate a new `key_secret' for a user record.

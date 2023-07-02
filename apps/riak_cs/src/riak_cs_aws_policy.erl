@@ -199,7 +199,7 @@ policy_from_json(JSON) ->
             #{<<"Version">> := Version,
               <<"Statement">> := Stmts0} = Map ->
                 ID = maps:get(<<"ID">>, Map, <<"undefined">>),
-                case [statement_from_pairs(maps:to_list(S), #statement{}) || S <- Stmts0] of
+                case statement_from_pairs(maps:to_list(Stmts0), #statement{}) of
                     [] ->
                         {error, malformed_policy_missing};
                     Stmts ->
@@ -220,8 +220,10 @@ policy_from_json(JSON) ->
         end
     catch
         throw:{error, SpecificError} ->
-            logger:notice("Bad policy JSON (~p): ~s", [SpecificError, JSON]),
-            {error, SpecificError}
+            logger:notice("Bad Policy JSON (~p): ~s", [SpecificError, JSON]),
+            {error, SpecificError};
+        T:E:ST ->
+            ?LOG_DEBUG("Argh ~p:~p:~p", [T, E, ST])
     end.
 
 -spec policy_to_json_term(amz_policy()) -> JSON::binary().
