@@ -199,9 +199,9 @@ policy_from_json(JSON) ->
             #{<<"Version">> := Version,
               <<"Statement">> := Stmts0} = Map ->
                 ID = maps:get(<<"ID">>, Map, <<"undefined">>),
-                case statement_from_pairs(maps:to_list(Stmts0), #statement{}) of
+                case [statement_from_pairs(maps:to_list(S), #statement{}) || S <- Stmts0] of
                     [] ->
-                        {error, malformed_policy_missing};
+                        {error, missing_principal};
                     Stmts ->
                         case {Version, ID} of
                             {undefined, <<"undefined">>} ->
@@ -575,7 +575,7 @@ statement_from_pairs([], Stmt) ->
         [] ->
             %% TODO: there're a lot to do: S3 describes the
             %% details of error, in xml. with <Code>, <Message> and <Detail>
-            throw({error, malformed_policy_missing});
+            throw({error, missing_principal});
         _ ->
             Stmt
     end;
