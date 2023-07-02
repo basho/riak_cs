@@ -163,8 +163,8 @@ create_user(FF = #{email := Email}, Pbc) ->
             User = riak_cs_iam:unarm(
                      riak_cs_iam:exprec_user(FF)),
             save_user(User, Pbc);
-        {false, _} ->
-            logger:info("Refusing to create an existing user with email ~s", [Email]),
+        {false, Reason} ->
+            logger:info("Refusing to create a user with email ~s: ~s", [Email, Reason]),
             {error, user_already_exists}
     end.
 
@@ -214,10 +214,12 @@ update_user(FF, Pbc) ->
 %% @TODO Consider other options that would give more
 %% assurance that a particular email address is available.
 email_available(Email, Pbc) ->
+    ?LOG_DEBUG("What Email? ~p", [Email]),
     case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             true;
-        {ok, _} ->
+        {ok, ?INDEX_RESULTS{keys = [KK]}} ->
+            ?LOG_DEBUG("Whos there? ~p", [KK]),
             {false, user_already_exists};
         {error, Reason} ->
             %% @TODO Maybe bubble up this error info
@@ -826,6 +828,7 @@ save_user(?IAM_USER{arn = Arn} = User, Pbc) ->
     save_user(User, riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)), Pbc).
 
 save_user(User, Obj0, Pbc) ->
+    ?LOG_DEBUG("Save him ~p", [User]),
     Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
     Obj = riakc_obj:update_metadata(
             riakc_obj:update_value(Obj0, term_to_binary(User)),

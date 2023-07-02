@@ -24,8 +24,8 @@
 -module(riak_cs_user).
 
 %% Public API
--export([create_user/4,
-         create_user/6,
+-export([create_user/3,
+         create_user/5,
          display_name/1,
          is_admin/1,
          get_user/2,
@@ -50,25 +50,27 @@
 %% ===================================================================
 
 %% @doc Create a new Riak CS user
--spec create_user(binary(), binary(), binary(), binary()) ->
+-spec create_user(binary(), binary(), maps:map()) ->
           {ok, rcs_user()} | {error, term()}.
-create_user(Name, Email, Path, PermissionsBoundary) ->
+create_user(Name, Email, IAMExtra) ->
     {KeyId, Secret} = riak_cs_aws_utils:generate_access_creds(Email),
-    create_user(Name, Email, Path, PermissionsBoundary, KeyId, Secret).
+    create_user(Name, Email, KeyId, Secret, IAMExtra).
 
 %% @doc Create a new Riak CS/IAM user
--spec create_user(binary(), binary(), binary(), binary(), string(), string()) ->
+-spec create_user(binary(), binary(), binary(), binary(), maps:map()) ->
           {ok, rcs_user()} | {error, term()}.
-create_user(Name, Email, Path, PermissionsBoundary, KeyId, Secret) ->
+create_user(Name, Email, KeyId, Secret, IAMExtra) ->
     case validate_email(Email) of
         ok ->
             CanonicalId = riak_cs_aws_utils:generate_canonical_id(KeyId),
             DisplayName = display_name(Email),
+            Path = maps:get(path, IAMExtra, <<"/">>),
             Arn = riak_cs_aws_utils:make_user_arn(Name, Path),
             User = ?RCS_USER{arn = Arn,
-                             path = Path,
                              name = Name,
-                             permissions_boundary = PermissionsBoundary,
+                             path = Path,
+                             permissions_boundary = maps:get(permissions_boundary, IAMExtra, undefined),
+                             tags = [exprec:frommap_tag(T) || T <- maps:get(tags, IAMExtra, [])],
                              display_name = DisplayName,
                              email = Email,
                              key_id = KeyId,

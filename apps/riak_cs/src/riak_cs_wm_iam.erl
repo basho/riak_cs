@@ -278,7 +278,7 @@ do_action("GetUser",
                                            response_module = ResponseMod}) ->
     UserName = proplists:get_value("UserName", Form),
     case riak_cs_iam:find_user(#{name => UserName}, RcPid) of
-        {ok, User} ->
+        {ok, {User, _}} ->
             RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_user_response{user = User,

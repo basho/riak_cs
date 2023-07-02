@@ -67,10 +67,8 @@
 
 -spec create_user(maps:map()) -> {ok, rcs_user()} | {error, already_exists | term()}.
 create_user(Specs = #{user_name := Name}) ->
-    Path = maps:get(path, Specs, <<"/">>),
-    PermissionsBoundary = maps:get(permissions_boundary, Specs, undefined),
     Email = iolist_to_binary([Name, $@, riak_cs_config:iam_create_user_default_email_host()]),
-    riak_cs_user:create_user(Name, Email, Path, PermissionsBoundary).
+    riak_cs_user:create_user(Name, Email, Specs).
 
 -spec delete_user(rcs_user()) -> ok | {error, term()}.
 delete_user(?IAM_USER{attached_policies = PP}) when PP /= [] ->

@@ -130,10 +130,12 @@ create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
+    IAMExtra = #{path => maps:get(path, FF, <<"/">>),
+                 permissions_boundary => maps:get(permissions_boundary, FF, undefined),
+                 tags => maps:get(tags, FF, [])},
     Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
                                    maps:get(email, FF, <<>>),
-                                   maps:get(path, FF, <<"/">>),
-                                   maps:get(permissions_boundary, FF, undefined)),
+                                   IAMExtra),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
