@@ -178,7 +178,7 @@ find_role(#{path := Path}, RcPid) ->
 
 -spec create_policy(maps:map()) -> {ok, policy()} | {error, already_exists | term()}.
 create_policy(Specs = #{policy_document := D}) ->
-    case riak_cs_aws_policy:policy_from_json(D) of
+    case riak_cs_aws_policy:policy_from_json(D) of  %% this is to validate PolicyDocument
         {ok, _} ->
             Encoded = riak_cs_json:to_json(exprec_policy(Specs)),
             {ok, AdminCreds} = riak_cs_config:admin_creds(),

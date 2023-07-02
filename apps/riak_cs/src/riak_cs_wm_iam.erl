@@ -425,7 +425,8 @@ do_action("ListRoles",
 
 do_action("CreatePolicy",
           Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
-    Specs = lists:foldl(fun create_policy_fields_filter/2, #{}, Form),
+    Specs = finish_tags(
+              lists:foldl(fun create_policy_fields_filter/2, #{}, Form)),
     case create_policy_require_fields(Specs) of
         false ->
             ResponseMod:api_error(missing_parameter, RD, Ctx);
@@ -717,6 +718,8 @@ create_policy_fields_filter({K, V}, Acc) ->
             maps:put(policy_document, list_to_binary(V), Acc);
         "PolicyName" ->
             maps:put(policy_name, list_to_binary(V), Acc);
+        "Tags.member." ++ TagMember ->
+            add_tag(TagMember, V, Acc);
         CommonParameter when CommonParameter == "Action";
                              CommonParameter == "Version" ->
             Acc;

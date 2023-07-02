@@ -125,6 +125,7 @@ to_xml(#delete_user_response{} = R) ->
     delete_user_response_to_xml(R);
 to_xml(#list_users_response{} = R) ->
     list_users_response_to_xml(R);
+
 to_xml(#create_role_response{} = R) ->
     create_role_response_to_xml(R);
 to_xml(#get_role_response{} = R) ->
@@ -133,12 +134,16 @@ to_xml(#delete_role_response{} = R) ->
     delete_role_response_to_xml(R);
 to_xml(#list_roles_response{} = R) ->
     list_roles_response_to_xml(R);
+
 to_xml(#create_policy_response{} = R) ->
     create_policy_response_to_xml(R);
 to_xml(#get_policy_response{} = R) ->
     get_policy_response_to_xml(R);
 to_xml(#delete_policy_response{} = R) ->
     delete_policy_response_to_xml(R);
+to_xml(#list_policies_response{} = R) ->
+    list_policies_response_to_xml(R);
+
 to_xml(#create_saml_provider_response{} = R) ->
     create_saml_provider_response_to_xml(R);
 to_xml(#get_saml_provider_response{} = R) ->
@@ -147,8 +152,7 @@ to_xml(#delete_saml_provider_response{} = R) ->
     delete_saml_provider_response_to_xml(R);
 to_xml(#list_saml_providers_response{} = R) ->
     list_saml_providers_response_to_xml(R);
-to_xml(#assume_role_with_saml_response{} = R) ->
-    assume_role_with_saml_response_to_xml(R);
+
 to_xml(#attach_role_policy_response{} = R) ->
     attach_role_policy_response_to_xml(R);
 to_xml(#detach_role_policy_response{} = R) ->
@@ -156,7 +160,10 @@ to_xml(#detach_role_policy_response{} = R) ->
 to_xml(#attach_user_policy_response{} = R) ->
     attach_user_policy_response_to_xml(R);
 to_xml(#detach_user_policy_response{} = R) ->
-    detach_user_policy_response_to_xml(R).
+    detach_user_policy_response_to_xml(R);
+
+to_xml(#assume_role_with_saml_response{} = R) ->
+    assume_role_with_saml_response_to_xml(R).
 
 
 
@@ -610,6 +617,25 @@ delete_policy_response_to_xml(#delete_policy_response{request_id = RequestId}) -
     export_xml([make_internal_node('DeletePolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
+
+list_policies_response_to_xml(#list_policies_response{policies = RR,
+                                                      request_id = RequestId,
+                                                      is_truncated = IsTruncated,
+                                                      marker = Marker}) ->
+    ListPoliciesResult =
+        lists:flatten(
+          [{'Policies', [policy_node(R) || R <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    C = [{'ListPoliciesResult', ListPoliciesResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListPoliciesResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
+
+
+
 
 attach_role_policy_response_to_xml(#attach_role_policy_response{request_id = RequestId}) ->
     ResponseMetadata = make_internal_node('RequestId', [RequestId]),
