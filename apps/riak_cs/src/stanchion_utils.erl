@@ -217,7 +217,7 @@ email_available(Email, Pbc) ->
     case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             true;
-        {ok, ?INDEX_RESULTS{keys = [KK]}} ->
+        {ok, ?INDEX_RESULTS{keys = [_|_]}} ->
             {false, user_already_exists};
         {error, Reason} ->
             %% @TODO Maybe bubble up this error info

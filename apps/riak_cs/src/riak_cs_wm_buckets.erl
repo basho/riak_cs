@@ -47,11 +47,7 @@ allowed_methods() ->
 
 -spec api_request(#wm_reqdata{}, #rcs_web_context{}) -> ?LBRESP{}.
 api_request(_RD, #rcs_web_context{user = User}) ->
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_service_entry(?MODULE, <<"service_get_buckets">>, [], [UserName]),
-    Res = riak_cs_api:list_buckets(User),
-    riak_cs_dtrace:dt_service_return(?MODULE, <<"service_get_buckets">>, [], [UserName]),
-    Res.
+    riak_cs_api:list_buckets(User).
 
 -spec anon_ok() -> boolean().
 anon_ok() ->
