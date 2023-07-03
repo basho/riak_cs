@@ -46,11 +46,13 @@ def main():
 
     policy = json.dumps({
         "Version": "2012-10-17",
-        "Statement": {
-            "Principal": "*",
-            "Effect": "Allow",
-            "Action": ["sts:*", "iam:*", "s3:*"]
-        }
+        "Statement": [
+            {
+                "Principal": "*",
+                "Effect": "Allow",
+                "Action": ["sts:*", "iam:*", "s3:*"]
+            }
+        ]
     })
     res = iam_client.create_policy(
         PolicyName = "AdminPolicy",

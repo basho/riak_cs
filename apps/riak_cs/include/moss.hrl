@@ -113,6 +113,7 @@
 %% federated users
 
 -record(temp_session, { assumed_role_user :: assumed_role_user()
+                      , role :: role()
                       , credentials :: credentials()
                       , duration_seconds :: non_neg_integer()
                       , created = os:system_time(millisecond) :: non_neg_integer()

@@ -35,8 +35,8 @@
 -spec create(role(), binary(), binary(), binary(), non_neg_integer(), binary(), [binary()], pid()) ->
           {ok, temp_session()} | {error, term()}.
 create(?IAM_ROLE{role_id = RoleId,
-                 role_name = RoleName},
-       Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy, PolicyArns, RcPid) ->
+                 role_name = RoleName} = Role,
+       Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy_, PolicyArns, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
 
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, ?USER_ID_PREFIX),
@@ -48,7 +48,14 @@ create(?IAM_ROLE{role_id = RoleId,
     AssumedRoleUser = #assumed_role_user{arn = Arn,
                                          assumed_role_id = <<RoleId/binary, $:, SessionName/binary>>},
 
+    InlinePolicy = case InlinePolicy_ of
+                       undefined ->
+                           undefined;
+                       _ ->
+                           base64:decode(InlinePolicy_)
+                   end,
     Session = #temp_session{assumed_role_user = AssumedRoleUser,
+                            role = Role,
                             credentials = #credentials{access_key_id = KeyId,
                                                        secret_access_key = AccessKey,
                                                        expiration = os:system_time(second) + DurationSeconds,
@@ -82,6 +89,7 @@ create(?IAM_ROLE{role_id = RoleId,
 -spec effective_policies(#temp_session{}, pid()) -> [policy()].
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
+                                 role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument},
                                  assumed_role_user = #assumed_role_user{arn = RoleArn}}, RcPid) ->
     RoleAttachedPolicies =
         case riak_cs_iam:get_role(RoleArn, RcPid) of
@@ -91,19 +99,23 @@ effective_policies(#temp_session{inline_policy = InlinePolicy,
                 logger:notice("Assumed role ~s deleted while temp session is still open", [RoleArn]),
                 []
         end,
-    lists:flatten(
-      [InlinePolicy |
-       [begin
-            case riak_cs_iam:get_policy(Arn, RcPid) of
-                {ok, Policy} ->
-                    Policy;
-                _ ->
-                    logger:notice("Managed policy ~p previously attached to role "
-                                  "or referenced as session policy, is not available", [Arn]),
-                    []
-            end
-        end || Arn <- SessionPolicies ++ RoleAttachedPolicies]]
-     ).
+    Res = lists:filter(
+            fun(P) -> P /= undefined end,
+            lists:flatten(
+              [InlinePolicy, AssumeRolePolicyDocument |
+               [begin
+                    case riak_cs_iam:get_policy(Arn, RcPid) of
+                        {ok, Policy} ->
+                            Policy;
+                        _ ->
+                            logger:notice("Managed policy ~p previously attached to role "
+                                          "or referenced as session policy, is not available", [Arn]),
+                            []
+                    end
+                end || Arn <- SessionPolicies ++ RoleAttachedPolicies]]
+             )),
+    ?LOG_DEBUG("Effective policies: ~p", [Res]),
+    Res.
 
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.

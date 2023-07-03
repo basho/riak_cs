@@ -75,6 +75,7 @@ eval(Access, JSON) when is_binary(JSON) ->
         {error, _} = E -> E
     end;
 eval(Access, ?AMZ_POLICY{statement=Stmts} = Policy) ->
+    ?LOG_DEBUG("Evaluating policy: ~p", [Policy]),
     case check_version(Policy) of
         true -> aggregate_evaluation(Access, Stmts);
         false -> false

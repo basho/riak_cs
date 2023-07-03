@@ -90,20 +90,15 @@
 %% Public API
 %% ===================================================================
 
--spec aws_service_from_host(string()) -> string().
-aws_service_from_host(Host) ->
-    case lists:reverse(
-           string:split(string:to_lower(Host), ".", all)) of
-        ["com", "amazonaws", A] when A /= "s3" ->
-            A;
-        _ ->
-            "s3"
-    end.
+-spec aws_service_from_path(string()) -> string().
+aws_service_from_path("/iam") -> "iam";
+aws_service_from_path("/sts") -> "sts";
+aws_service_from_path(_) -> "s3".
 
 -spec aws_service_action(#wm_reqdata{}, action_target()) -> aws_action() | no_action.
 aws_service_action(RD, Target) ->
     Path = wrq:path(RD),
-    case aws_service_from_host(Path) of
+    case aws_service_from_path(Path) of
         "s3" ->
             make_s3_action(wrq:method(RD), Target);
         ServiceDoingOnlyPOSTs ->
@@ -777,10 +772,11 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     end.
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
-                                           user = ?RCS_USER{key_id = KeyId}}) ->
+                                           user = ?RCS_USER{key_id = KeyId},
+                                           riak_client = RcPid}) ->
     case riak_cs_temp_sessions:get(KeyId) of
         {ok, S} ->
-            riak_cs_temp_sessions:effective_policies(S);
+            riak_cs_temp_sessions:effective_policies(S, RcPid);
         {error, notfound} ->
             %% there was a call to temp_sessions:get a fraction of a
             %% second ago as part of webmachine's serving of this
