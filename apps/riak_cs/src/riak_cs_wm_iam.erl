@@ -81,7 +81,7 @@ init(Config) ->
                            auth_module = AuthModule,
                            response_module = RespModule,
                            stats_prefix = StatsPrefix,
-                           request_id = riak_cs_aws_utils:make_id(16),
+                           request_id = riak_cs_wm_utils:make_request_id(),
                            api = Api},
     {ok, Ctx}.
 
@@ -252,7 +252,8 @@ finish_request(RD, Ctx=#rcs_web_context{riak_client=RcPid}) ->
 %% -------------------------------------------------------------------
 
 do_action("CreateUser",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Specs = finish_tags(
               lists:foldl(fun create_user_fields_filter/2, #{}, Form)),
     case create_user_require_fields(Specs) of
@@ -261,7 +262,6 @@ do_action("CreateUser",
         true ->
             case riak_cs_iam:create_user(Specs) of
                 {ok, User} ->
-                    RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Created user ~s \"~s\" (~s) on request_id ~s",
                                 [User?IAM_USER.canonical_id, User?IAM_USER.name, User?IAM_USER.arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
@@ -275,11 +275,11 @@ do_action("CreateUser",
 
 do_action("GetUser",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     UserName = proplists:get_value("UserName", Form),
     case riak_cs_iam:find_user(#{name => UserName}, RcPid) of
         {ok, {User, _}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_user_response{user = User,
                                        request_id = RequestId}),
@@ -292,13 +292,13 @@ do_action("GetUser",
 
 do_action("DeleteUser",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Name = proplists:get_value("UserName", Form),
     case riak_cs_iam:find_user(#{name => list_to_binary(Name)}, RcPid) of
         {ok, {?IAM_USER{arn = Arn} = User, _}} ->
             case riak_cs_iam:delete_user(User) of
                 ok ->
-                    RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Deleted user \"~s\" (~s) on request_id ~s", [Name, Arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
                             #delete_user_response{request_id = RequestId}),
@@ -314,7 +314,8 @@ do_action("DeleteUser",
 
 do_action("ListUsers",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
@@ -325,7 +326,6 @@ do_action("ListUsers",
         {ok, #{users := Users,
                marker := NewMarker,
                is_truncated := IsTruncated}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_users_response{users = Users,
                                          request_id = RequestId,
@@ -338,7 +338,8 @@ do_action("ListUsers",
 
 
 do_action("CreateRole",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Specs = finish_tags(
               lists:foldl(fun create_role_fields_filter/2, #{}, Form)),
     case create_role_require_fields(Specs) of
@@ -347,7 +348,6 @@ do_action("CreateRole",
         true ->
             case riak_cs_iam:create_role(Specs) of
                 {ok, Role} ->
-                    RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Created role ~s \"~s\" (~s) on request_id ~s",
                                 [Role?IAM_ROLE.role_id, Role?IAM_ROLE.role_name, Role?IAM_ROLE.arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
@@ -361,11 +361,11 @@ do_action("CreateRole",
 
 do_action("GetRole",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     RoleName = proplists:get_value("RoleName", Form),
     case riak_cs_iam:find_role(#{name => RoleName}, RcPid) of
         {ok, Role} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_role_response{role = Role,
                                        request_id = RequestId}),
@@ -378,13 +378,13 @@ do_action("GetRole",
 
 do_action("DeleteRole",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Name = proplists:get_value("RoleName", Form),
     case riak_cs_iam:find_role(#{name => list_to_binary(Name)}, RcPid) of
         {ok, ?IAM_ROLE{arn = Arn}} ->
             case riak_cs_iam:delete_role(Arn) of
                 ok ->
-                    RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Deleted role \"~s\" (~s) on request_id ~s", [Name, Arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
                             #delete_role_response{request_id = RequestId}),
@@ -400,7 +400,8 @@ do_action("DeleteRole",
 
 do_action("ListRoles",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
@@ -411,7 +412,6 @@ do_action("ListRoles",
         {ok, #{roles := Roles,
                marker := NewMarker,
                is_truncated := IsTruncated}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_roles_response{roles = Roles,
                                          request_id = RequestId,
@@ -424,7 +424,8 @@ do_action("ListRoles",
 
 
 do_action("CreatePolicy",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Specs = finish_tags(
               lists:foldl(fun create_policy_fields_filter/2, #{}, Form)),
     case create_policy_require_fields(Specs) of
@@ -433,7 +434,6 @@ do_action("CreatePolicy",
         true ->
             case riak_cs_iam:create_policy(Specs) of
                 {ok, Policy} ->
-                    RequestId = riak_cs_wm_utils:make_request_id(),
                     logger:info("Created managed policy \"~s\" (~s) on request_id ~s",
                                 [Policy?IAM_POLICY.policy_id, Policy?IAM_POLICY.arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
@@ -447,11 +447,11 @@ do_action("CreatePolicy",
 
 do_action("GetPolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Arn = proplists:get_value("PolicyArn", Form),
     case riak_cs_iam:get_policy(list_to_binary(Arn), RcPid) of
         {ok, Policy} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_policy_response{policy = Policy,
                                          request_id = RequestId}),
@@ -463,11 +463,11 @@ do_action("GetPolicy",
     end;
 
 do_action("DeletePolicy",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Arn = proplists:get_value("PolicyArn", Form),
     case riak_cs_iam:delete_policy(list_to_binary(Arn)) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Deleted policy with arn ~s on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_policy_response{request_id = RequestId}),
@@ -480,7 +480,8 @@ do_action("DeletePolicy",
 
 do_action("ListPolicies",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     OnlyAttached = proplists:get_value("OnlyAttached", Form, "false"),
     PolicyUsageFilter = proplists:get_value("PolicyUsageFilter", Form, "All"),
@@ -495,7 +496,6 @@ do_action("ListPolicies",
         {ok, #{policies := Policies,
                marker := NewMarker,
                is_truncated := IsTruncated}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_policies_response{policies = Policies,
                                             request_id = RequestId,
@@ -508,13 +508,13 @@ do_action("ListPolicies",
 
 do_action("AttachRolePolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     RoleName = proplists:get_value("RoleName", Form),
     case riak_cs_iam:attach_role_policy(list_to_binary(PolicyArn),
                                         list_to_binary(RoleName), RcPid) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Attached policy ~s to role ~s on request_id ~s",
                         [PolicyArn, RoleName, RequestId]),
             Doc = riak_cs_xml:to_xml(
@@ -526,13 +526,13 @@ do_action("AttachRolePolicy",
 
 do_action("AttachUserPolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     UserName = proplists:get_value("UserName", Form),
     case riak_cs_iam:attach_user_policy(list_to_binary(PolicyArn),
                                         list_to_binary(UserName), RcPid) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Attached policy ~s to user ~s on request_id ~s",
                         [PolicyArn, UserName, RequestId]),
             Doc = riak_cs_xml:to_xml(
@@ -544,13 +544,13 @@ do_action("AttachUserPolicy",
 
 do_action("DetachRolePolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     RoleName = proplists:get_value("RoleName", Form),
     case riak_cs_iam:detach_role_policy(list_to_binary(PolicyArn),
                                         list_to_binary(RoleName), RcPid) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Detached policy ~s from role ~s on request_id ~s",
                         [PolicyArn, RoleName, RequestId]),
             Doc = riak_cs_xml:to_xml(
@@ -562,13 +562,13 @@ do_action("DetachRolePolicy",
 
 do_action("DetachUserPolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     UserName = proplists:get_value("UserName", Form),
     case riak_cs_iam:detach_user_policy(list_to_binary(PolicyArn),
                                         list_to_binary(UserName), RcPid) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Detached policy ~s from user ~s on request_id ~s",
                         [PolicyArn, UserName, RequestId]),
             Doc = riak_cs_xml:to_xml(
@@ -580,14 +580,14 @@ do_action("DetachUserPolicy",
 
 
 do_action("CreateSAMLProvider",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Specs = finish_tags(
               lists:foldl(fun create_saml_provider_fields_filter/2, #{}, Form)),
     case create_saml_provider_require_fields(Specs) of
         false ->
             ResponseMod:api_error(missing_parameter, RD, Ctx);
         true ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             case riak_cs_iam:create_saml_provider(Specs#{request_id => RequestId}) of
                 {ok, {Arn, Tags}} ->
                     logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
@@ -604,13 +604,13 @@ do_action("CreateSAMLProvider",
 
 do_action("GetSAMLProvider",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
     case riak_cs_iam:get_saml_provider(list_to_binary(Arn), RcPid) of
         {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
                                 valid_until = ValidUntil,
                                 tags = Tags}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #get_saml_provider_response{create_date = CreateDate,
                                                 valid_until = ValidUntil,
@@ -624,11 +624,11 @@ do_action("GetSAMLProvider",
     end;
 
 do_action("DeleteSAMLProvider",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod}) ->
+          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
     case riak_cs_iam:delete_saml_provider(list_to_binary(Arn)) of
         ok ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             logger:info("Deleted SAML Provider with arn ~s on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(
                     #delete_saml_provider_response{request_id = RequestId}),
@@ -641,11 +641,11 @@ do_action("DeleteSAMLProvider",
 
 do_action("ListSAMLProviders",
           _Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                            response_module = ResponseMod}) ->
+                                            response_module = ResponseMod,
+                                            request_id = RequestId}) ->
     case riak_cs_api:list_saml_providers(
            RcPid, #list_saml_providers_request{}) of
         {ok, #{saml_providers := PP}} ->
-            RequestId = riak_cs_wm_utils:make_request_id(),
             Doc = riak_cs_xml:to_xml(
                     #list_saml_providers_response{saml_provider_list = PP,
                                                   request_id = RequestId}),

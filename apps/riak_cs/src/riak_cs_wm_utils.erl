@@ -1254,7 +1254,7 @@ make_final_rd(Body, RD) ->
                 "Content-Type", ?XML_TYPE, RD))).
 
 make_request_id() ->
-    uuid:uuid_to_string(uuid:get_v4()).
+    list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
 etag(Body) ->
         riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).

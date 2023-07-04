@@ -81,7 +81,7 @@ init(Config) ->
                            auth_module = AuthModule,
                            response_module = RespModule,
                            stats_prefix = StatsPrefix,
-                           request_id = riak_cs_aws_utils:make_id(16),
+                           request_id = riak_cs_wm_utils:make_request_id(),
                            api = Api},
     {ok, Ctx}.
 
@@ -265,8 +265,8 @@ finish_request(RD, Ctx=#rcs_web_context{riak_client = RcPid}) ->
 
 do_action("AssumeRoleWithSAML",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
-                                           response_module = ResponseMod}) ->
-    RequestId = riak_cs_wm_utils:make_request_id(),
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2,
                         #{request_id => RequestId}, Form),
     case riak_cs_sts:assume_role_with_saml(Specs, RcPid) of

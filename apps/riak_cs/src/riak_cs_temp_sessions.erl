@@ -108,7 +108,7 @@ effective_policies(#temp_session{inline_policy = InlinePolicy,
                         {ok, Policy} ->
                             Policy;
                         _ ->
-                            logger:notice("Managed policy ~p previously attached to role "
+                            logger:notice("Managed policy ~s previously attached to role "
                                           "or referenced as session policy, is not available", [Arn]),
                             []
                     end

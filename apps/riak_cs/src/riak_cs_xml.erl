@@ -414,7 +414,7 @@ iam_user_node(?IAM_USER{arn = Arn,
 
 create_user_response_to_xml(#create_user_response{user = User, request_id = RequestId}) ->
     CreateUserResult = iam_user_node(User),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'CreateUserResult', [CreateUserResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('CreateUserResponse',
@@ -424,7 +424,7 @@ create_user_response_to_xml(#create_user_response{user = User, request_id = Requ
 
 get_user_response_to_xml(#get_user_response{user = User, request_id = RequestId}) ->
     GetUserResult = iam_user_node(User),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'GetUserResult', [GetUserResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('GetUserResponse',
@@ -432,7 +432,7 @@ get_user_response_to_xml(#get_user_response{user = User, request_id = RequestId}
                                    C)], []).
 
 delete_user_response_to_xml(#delete_user_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DeleteUserResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
@@ -447,7 +447,7 @@ list_users_response_to_xml(#list_users_response{users = RR,
           [{'Users', [iam_user_node(R) || R <- RR]},
            {'IsTruncated', [atom_to_list(IsTruncated)]},
            [{'Marker', Marker} || Marker /= undefined]]),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ListUsersResult', ListUsersResult},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('ListUsersResponse',
@@ -521,7 +521,7 @@ make_permissions_boundary(?IAM_PERMISSION_BOUNDARY{permissions_boundary_arn = Pe
 
 create_role_response_to_xml(#create_role_response{role = Role, request_id = RequestId}) ->
     CreateRoleResult = role_node(Role),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'CreateRoleResult', [CreateRoleResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('CreateRoleResponse',
@@ -531,7 +531,7 @@ create_role_response_to_xml(#create_role_response{role = Role, request_id = Requ
 
 get_role_response_to_xml(#get_role_response{role = Role, request_id = RequestId}) ->
     GetRoleResult = role_node(Role),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'GetRoleResult', [GetRoleResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('GetRoleResponse',
@@ -539,7 +539,7 @@ get_role_response_to_xml(#get_role_response{role = Role, request_id = RequestId}
                                    C)], []).
 
 delete_role_response_to_xml(#delete_role_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DeleteRoleResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
@@ -554,7 +554,7 @@ list_roles_response_to_xml(#list_roles_response{roles = RR,
           [{'Roles', [role_node(R) || R <- RR]},
            {'IsTruncated', [atom_to_list(IsTruncated)]},
            [{'Marker', Marker} || Marker /= undefined]]),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ListRolesResult', ListRolesResult},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('ListRolesResponse',
@@ -594,7 +594,7 @@ policy_node(?IAM_POLICY{arn = Arn,
 
 create_policy_response_to_xml(#create_policy_response{policy = Policy, request_id = RequestId}) ->
     CreatePolicyResult = policy_node(Policy),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'CreatePolicyResult', [CreatePolicyResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('CreatePolicyResponse',
@@ -604,7 +604,7 @@ create_policy_response_to_xml(#create_policy_response{policy = Policy, request_i
 
 get_policy_response_to_xml(#get_policy_response{policy = Policy, request_id = RequestId}) ->
     GetPolicyResult = policy_node(Policy),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'GetPolicyResult', [GetPolicyResult]},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('GetPolicyResponse',
@@ -612,7 +612,7 @@ get_policy_response_to_xml(#get_policy_response{policy = Policy, request_id = Re
                                    C)], []).
 
 delete_policy_response_to_xml(#delete_policy_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DeletePolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
@@ -627,7 +627,7 @@ list_policies_response_to_xml(#list_policies_response{policies = RR,
           [{'Policies', [policy_node(R) || R <- RR]},
            {'IsTruncated', [atom_to_list(IsTruncated)]},
            [{'Marker', Marker} || Marker /= undefined]]),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ListPoliciesResult', ListPoliciesResult},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('ListPoliciesResponse',
@@ -638,28 +638,28 @@ list_policies_response_to_xml(#list_policies_response{policies = RR,
 
 
 attach_role_policy_response_to_xml(#attach_role_policy_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('AttachRolePolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
 
 detach_role_policy_response_to_xml(#detach_role_policy_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DetachRolePolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
 
 attach_user_policy_response_to_xml(#attach_user_policy_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('AttachUserPolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
 
 detach_user_policy_response_to_xml(#detach_user_policy_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DetachUserPolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
@@ -710,7 +710,7 @@ create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provide
                                                                     tags = Tags,
                                                                     request_id = RequestId}) ->
     CreateSAMLProviderResult = saml_provider_node_for_create(BareArn, Tags),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [CreateSAMLProviderResult,
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('CreateSAMLProviderResponse',
@@ -722,7 +722,7 @@ get_saml_provider_response_to_xml(#get_saml_provider_response{create_date = Crea
                                                               tags = Tags,
                                                               request_id = RequestId}) ->
     GetSAMLProviderResult = saml_provider_node_for_get(CreateDate, ValidUntil, Tags),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [GetSAMLProviderResult,
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('GetSAMLProviderResponse',
@@ -730,7 +730,7 @@ get_saml_provider_response_to_xml(#get_saml_provider_response{create_date = Crea
                                    C)], []).
 
 delete_saml_provider_response_to_xml(#delete_saml_provider_response{request_id = RequestId}) ->
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('DeleteSAMLProviderResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
@@ -743,7 +743,7 @@ list_saml_providers_response_to_xml(#list_saml_providers_response{saml_provider_
                                || #saml_provider_v1{arn = Arn,
                                                     create_date = CreateDate,
                                                     valid_until = ValidUntil} <- RR]}],
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ListSAMLProvidersResult', ListSAMLProvidersResult},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('ListRolesResponse',
@@ -772,7 +772,7 @@ assume_role_with_saml_response_to_xml(#assume_role_with_saml_response{assumed_ro
            {'Subject', [binary_to_list(Subject)]},
            {'SubjectType', [binary_to_list(SubjectType)]}
           ]),
-    ResponseMetadata = make_internal_node('RequestId', [RequestId]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'AssumeRoleWithSAMLResult', AssumeRoleWithSAMLResult},
          {'ResponseMetadata', [ResponseMetadata]}],
     export_xml([make_internal_node('AssumeRoleWithSAMLResponse',
