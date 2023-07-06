@@ -112,8 +112,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        bucket = Bucket,
                                        response_module = ResponseMod,
                                        riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_versioning">>,
-                                   [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     {ok, OldV} = riak_cs_bucket:get_bucket_versioning(Bucket, RcPid),
     case riak_cs_xml:scan(binary_to_list(wrq:req_body(RD))) of
         {ok, Doc} ->
@@ -125,23 +123,13 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                 true ->
                     riak_cs_bucket:set_bucket_versioning(
                       User, UserObj, Bucket, NewV, RcPid),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     {{halt, 200}, RD, Ctx};
                 false ->
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->
-                    Code = ResponseMod:status_code(Reason),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                                    [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     ResponseMod:api_error(Reason, RD, Ctx)
             end;
         {error, Reason} ->
-            Code = ResponseMod:status_code(Reason),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_versioning">>,
-                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 

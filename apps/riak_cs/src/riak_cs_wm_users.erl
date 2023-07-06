@@ -66,7 +66,6 @@ allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD'], RD, Ctx}.
 
 forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 content_types_provided(RD, Ctx) ->

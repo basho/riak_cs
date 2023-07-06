@@ -86,23 +86,13 @@ authorize(RD, Ctx) ->
 
 -spec to_xml(#wm_reqdata{}, #rcs_web_context{}) ->
           {binary() | {'halt', non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-to_xml(RD, Ctx = #rcs_web_context{user = User,
-                                  bucket = Bucket,
+to_xml(RD, Ctx = #rcs_web_context{bucket = Bucket,
                                   riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_get_acl">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     case riak_cs_acl:fetch_bucket_acl(Bucket, RcPid) of
         {ok, Acl} ->
-            X = {riak_cs_xml:to_xml(Acl), RD, Ctx},
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_acl_get">>,
-                                               [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            X;
+            {riak_cs_xml:to_xml(Acl), RD, Ctx};
         {error, Reason} ->
-            Code = riak_cs_aws_response:status_code(Reason),
-            X = riak_cs_aws_response:api_error(Reason, RD, Ctx),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_acl">>,
-                                               [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
-            X
+            riak_cs_aws_response:api_error(Reason, RD, Ctx)
     end.
 
 %% @doc Process request body on `PUT' request.
@@ -112,8 +102,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        acl = AclFromHeadersOrDefault,
                                        bucket = Bucket,
                                        riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"bucket_put_acl">>,
-                                      [], [riak_cs_wm_utils:extract_name(User), Bucket]),
     Body = binary_to_list(wrq:req_body(RD)),
     AclRes =
         case Body of
@@ -133,18 +121,10 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                                ACL,
                                                RcPid) of
                 ok ->
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
-                                                    [200], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->
-                    Code = riak_cs_aws_response:status_code(Reason),
-                    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
-                                                    [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
                     riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
         {error, Reason2} ->
-            Code = riak_cs_aws_response:status_code(Reason2),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"bucket_put_acl">>,
-                                            [Code], [riak_cs_wm_utils:extract_name(User), Bucket]),
             riak_cs_aws_response:api_error(Reason2, RD, Ctx)
     end.

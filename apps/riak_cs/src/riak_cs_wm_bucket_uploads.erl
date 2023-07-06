@@ -131,7 +131,6 @@ to_xml(RD, Ctx=#rcs_web_context{local_context = LocalCtx,
     end.
 
 finish_request(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx}.
 
 -spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) ->

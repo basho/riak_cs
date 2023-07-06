@@ -64,7 +64,6 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.storage_schedule"),
     cuttlefish_unit:assert_config(Config, "riak_cs.storage_archive_period", 86400),
     cuttlefish_unit:assert_config(Config, "riak_cs.usage_request_limit", 744),
-    cuttlefish_unit:assert_config(Config, "riak_cs.dtrace_support", false),
     cuttlefish_unit:assert_config(Config, "riak_cs.connection_pools",
                                               [{request_pool, {128, 0}},
                                                {bucket_list_pool, {5, 0}}]),

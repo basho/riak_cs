@@ -37,7 +37,6 @@
 -spec rewrite(atom(), atom(), {integer(), integer()}, mochiweb_headers(), string()) ->
                      {mochiweb_headers(), string()}.
 rewrite(Method, _Scheme, _Vsn, Headers, RawPath) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"rewrite">>),
     {Path, QueryString, _} = mochiweb_util:urlsplit_path(RawPath),
     {ApiVsn, Account, RestPath} = parse_path(Path),
     RewrittenHeaders = rewrite_headers(Headers, RawPath, ApiVsn, Account),

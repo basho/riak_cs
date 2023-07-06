@@ -39,8 +39,6 @@
 
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
-    catch dyntrace:p(),                    % NIF load trigger (R15B01+)
-
     riak_cs_stats:init(),
 
     RewriteMod = application:get_env(riak_cs, rewrite_module, ?AWS_API_MOD),

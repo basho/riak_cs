@@ -73,11 +73,7 @@ post_is_create(RD, Ctx) ->
 
 -spec process_post(#wm_reqdata{}, #rcs_web_context{}) -> {term(), #wm_reqdata{}, #rcs_web_context{}}.
 process_post(RD, Ctx = #rcs_web_context{bucket = Bucket,
-                                        riak_client = RcPid,
-                                        user = User}) ->
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"multiple_delete">>, [], [UserName, Bucket]),
-
+                                        riak_client = RcPid}) ->
     handle_with_bucket_obj(riak_cs_bucket:fetch_bucket_object(Bucket, RcPid), RD, Ctx).
 
 handle_with_bucket_obj({error, notfound}, RD,
@@ -122,7 +118,6 @@ handle_with_bucket_obj({ok, BucketObj},
             Xml = riak_cs_xml:to_xml([{'DeleteResult', [{'xmlns', ?S3_XMLNS}], Results}]),
 
             RD2 = wrq:set_resp_body(Xml, RD),
-            riak_cs_dtrace:dt_bucket_return(?MODULE, <<"multiple_delete">>, [200], []),
             {true, RD2, Ctx}
     end.
 

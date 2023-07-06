@@ -28,7 +28,6 @@
 -include("riak_cs.hrl").
 
 render_error(500, Req, Reason) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "text/html"),
     {Path,_} = Req:path(),
     logger:error("webmachine error: path=~p; ~p", [Path, Reason]),
@@ -40,12 +39,10 @@ render_error(500, Req, Reason) ->
     IOList = [ErrorOne, ErrorTwo, ErrorThree, ErrorFour],
     {erlang:iolist_to_binary(IOList), ReqState};
 render_error(405, Req, _Reason) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
     {Path,_} = Req:path(),
     {xml_error_body(Path, <<"MethodNotAllowed">>, <<"The specified method is not allowed against this resource.">>, <<"12345">>), ReqState};
 render_error(412, Req, _Reason) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     {ok, ReqState} = Req:add_response_header("Content-Type", "application/xml"),
     {Path,_} = Req:path(),
     {xml_error_body(Path,
@@ -53,7 +50,6 @@ render_error(412, Req, _Reason) ->
                     <<"At least one of the pre-conditions you specified did not hold">>,
                     <<"12345">>), ReqState};
 render_error(_Code, Req, _Reason) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"render_error">>),
     Req:response_body().
 
 xml_error_body(Resource, Code, Message, RequestId) ->

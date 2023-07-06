@@ -161,23 +161,14 @@ content_types_accepted(RD, Ctx = #rcs_web_context{local_context = LocalCtx0}) ->
 
 -spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
-                                        requested_perm = 'READ_ACP',
-                                        user = User}) ->
+                                        requested_perm = 'READ_ACP'}) ->
     #key_context{get_fsm_pid = GetFsmPid,
-                 manifest = ?MANIFEST{bkey = {Bucket, File},
-                                      vsn = Vsn,
-                                      acl = Acl}} = LocalCtx,
-    BFile_str = bfile_str(Bucket, File, Vsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_acl_get">>,
-                                   [], [UserName, BFile_str]),
+                 manifest = ?MANIFEST{acl = Acl}} = LocalCtx,
     riak_cs_get_fsm:stop(GetFsmPid),
-    {AclXml, DtraceTag} = case Acl of
-                              no_acl_yet -> {riak_cs_acl_utils:empty_acl_xml(), -1};
-                              _ -> {riak_cs_xml:to_xml(Acl), -2}
-                          end,
-    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_get">>,
-                                    [DtraceTag], [UserName, BFile_str]),
+    AclXml = case Acl of
+                 no_acl_yet -> riak_cs_acl_utils:empty_acl_xml();
+                 _ -> riak_cs_xml:to_xml(Acl)
+             end,
     {AclXml, RD, Ctx}.
 
 -spec accept_body(term(), term()) ->
@@ -194,10 +185,6 @@ accept_body(RD, Ctx = #rcs_web_context{local_context = #key_context{get_fsm_pid 
                                                                    Key /= undefined,
                                                                    Mfst /= undefined,
                                                                    RcPid /= undefined ->
-    BFile_str = bfile_str(Bucket, Key, Vsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_object_entry(?MODULE, <<"object_put_acl">>,
-                                      [], [UserName, BFile_str]),
     riak_cs_get_fsm:stop(GetFsmPid),
     Body = binary_to_list(wrq:req_body(RD)),
     AclRes =
@@ -216,23 +203,10 @@ accept_body(RD, Ctx = #rcs_web_context{local_context = #key_context{get_fsm_pid 
             %% Write new ACL to active manifest
             case riak_cs_utils:set_object_acl(Bucket, Key, Vsn, Mfst, Acl, RcPid) of
                 ok ->
-                    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
-                                                    [200], [UserName, BFile_str]),
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->
-                    Code = riak_cs_aws_response:status_code(Reason),
-                    riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
-                                                    [Code], [UserName, BFile_str]),
                     riak_cs_aws_response:api_error(Reason, RD, Ctx)
             end;
         {error, Reason2} ->
-            Code = riak_cs_aws_response:status_code(Reason2),
-            riak_cs_dtrace:dt_object_return(?MODULE, <<"object_acl_put">>,
-                                            [Code], [UserName, BFile_str]),
             riak_cs_aws_response:api_error(Reason2, RD, Ctx)
     end.
-
-bfile_str(B, K, ?LFS_DEFAULT_OBJECT_VERSION) ->
-    [B, $,, K];
-bfile_str(B, K, V) ->
-    [B, $,, K, $,, V].

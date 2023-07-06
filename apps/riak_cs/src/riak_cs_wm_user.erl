@@ -60,7 +60,6 @@
 %% -------------------------------------------------------------------
 
 init(Config) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     %% Check if authentication is disabled and
     %% set that in the context.
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
@@ -72,16 +71,13 @@ init(Config) ->
 
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     riak_cs_wm_utils:service_available(RD, Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
 
 forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     Method = wrq:method(RD),
     AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
               riak_cs_config:anonymous_user_creation())
@@ -97,28 +93,19 @@ forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     UserAuthResponse = riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next),
     handle_user_auth_response(UserAuthResponse).
 
-handle_user_auth_response({false, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                [], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"false">>]),
+handle_user_auth_response({false, _RD, _Ctx} = Ret) ->
     Ret;
-handle_user_auth_response({{halt, Code}, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"forbidden">>,
-                                [Code], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"true">>]),
+handle_user_auth_response({{halt, _Code}, _RD, _Ctx} = Ret) ->
     Ret;
-handle_user_auth_response({_Reason, _RD, Ctx} = Ret) ->
-    riak_cs_dtrace:dt_wm_return(
-      ?MODULE, <<"forbidden">>,
-      [-1], [riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user), <<"true">>]),
+handle_user_auth_response({_Reason, _RD, _Ctx} = Ret) ->
     Ret.
 
 -spec content_types_accepted(term(), term()) ->
     {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_accepted">>),
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
 
 content_types_provided(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
 post_is_create(RD, Ctx) -> {true, RD, Ctx}.
@@ -128,7 +115,6 @@ create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
 -spec accept_json(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     IAMExtra = #{path => maps:get(path, FF, <<"/">>),
                  permissions_boundary => maps:get(permissions_boundary, FF, undefined),
@@ -138,7 +124,6 @@ accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
                                    IAMExtra),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_json">>),
     Body = wrq:req_body(RD),
     case catch jsx:decode(Body, [{labels, atom}]) of
         UserItems when is_list(UserItems) ->
@@ -153,7 +138,6 @@ accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
@@ -172,7 +156,6 @@ accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
 accept_xml(RD, Ctx = #rcs_web_context{user_object = undefined}) ->
     riak_cs_aws_response:api_error(no_updates_for_federated_users, RD, Ctx);
 accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"accept_xml">>),
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
@@ -189,26 +172,21 @@ accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     end.
 
 produce_json(RD, Ctx = #rcs_web_context{user = User}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_json">>),
     Body = riak_cs_json:to_json(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 produce_xml(RD, Ctx = #rcs_web_context{user = User}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_xml">>),
     Body = riak_cs_xml:to_xml(User),
     Etag = etag(Body),
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
 finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(RcPid),
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
 %% -------------------------------------------------------------------
@@ -264,7 +242,6 @@ handle_get_user_result({error, Reason}, RD, Ctx) ->
     riak_cs_aws_response:api_error(invalid_access_key_id, RD, Ctx).
 
 update_user(UpdateItems, User) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"update_user">>),
     UpdateUserResult = update_user_record(User, UpdateItems, false),
     handle_update_result(UpdateUserResult).
 

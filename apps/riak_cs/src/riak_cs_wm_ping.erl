@@ -45,36 +45,30 @@
 %% -------------------------------------------------------------------
 
 init(_Config) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     {ok, #ping_context{}}.
 
 -spec service_available(#wm_reqdata{}, #ping_context{}) -> {boolean(), #wm_reqdata{}, #ping_context{}}.
 service_available(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     {Available, UpdCtx} = riak_ping(get_connection_pid(), Ctx),
     {Available, RD, UpdCtx}.
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"allowed_methods">>),
     {['GET', 'HEAD'], RD, Ctx}.
 
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
 finish_request(RD, Ctx=#ping_context{riak_client=undefined}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
                                      pool_pid=PoolPid}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     case PoolPid of
         true ->
             riak_cs_riak_client:checkin(RcPid);
         false ->
             riak_cs_riak_client:stop(RcPid)
     end,
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#ping_context{riak_client=undefined}}.
 
 %% -------------------------------------------------------------------

@@ -185,7 +185,6 @@ handle_cast({get_block, ReplyPid, Bucket, Key, ClusterID, UUID, BlockNumber},
     {noreply, State};
 handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
             State=#state{riak_client=RcPid}) ->
-    dt_entry(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     MD = make_md_usermeta([{?USERMETA_BUCKET, Bucket},
                            {?USERMETA_KEY, Key},
@@ -198,10 +197,8 @@ handle_cast({put_block, ReplyPid, Bucket, Key, UUID, BlockNumber, Value, BCSum},
     ok = do_put_block(FullBucket, FullKey, <<>>, Value, MD,
                       RcPid, [riakc, put_block], FailFun),
     riak_cs_put_fsm:block_written(ReplyPid, BlockNumber),
-    dt_return(<<"put_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#state{riak_client=RcPid}) ->
-    dt_entry(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     Timeout = riak_cs_config:get_block_timeout(),
 
@@ -223,7 +220,6 @@ handle_cast({delete_block, ReplyPid, Bucket, Key, UUID, BlockNumber}, State=#sta
             Result = format_delete_result(Error, {UUID, BlockNumber}),
             riak_cs_delete_fsm:block_deleted(ReplyPid, Result)
     end,
-    dt_return(<<"delete_block">>, [BlockNumber], [Bucket, Key]),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -268,15 +264,13 @@ do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, ProxyActive,
              UUID, BlockNumber, RcPid, MaxRetries, ErrorReasons) ->
     ok = sleep_retries(length(ErrorReasons)),
 
-    dt_entry(<<"get_block">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
 
     GetOptions1 = n_val_one_options(),
     GetOptions2 = r_one_options(),
 
     ProceedFun = fun(OkReply) ->
-            ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, OkReply),
-            dt_return(<<"get_block">>, [BlockNumber], [Bucket, Key])
+            ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, OkReply)
       end,
     RetryFun = fun(NewPause) ->
                        do_get_block(ReplyPid, Bucket, Key, ClusterID, UseProxyGet,
@@ -384,7 +378,6 @@ get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0, StatsKey) -
 %% to modify n-val per GET request.
 get_block_legacy(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
                  BlockNumber, RcPid) ->
-    dt_entry(<<"get_block_legacy">>, [BlockNumber], [Bucket, Key]),
     {FullBucket, FullKey} = full_bkey(Bucket, Key, UUID, BlockNumber),
     GetOptions = r_one_options(),
     ChunkValue =
@@ -398,8 +391,7 @@ get_block_legacy(ReplyPid, Bucket, Key, ClusterID, UseProxyGet, UUID,
                 get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions,
                                  [riakc, get_block_legacy_remote])
         end,
-    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue),
-    dt_return(<<"get_block_legacy">>, [BlockNumber], [Bucket, Key]).
+    ok = riak_cs_get_fsm:chunk(ReplyPid, {UUID, BlockNumber}, ChunkValue).
 
 delete_block(RcPid, ReplyPid, RiakObject, BlockId) ->
     Result = constrained_delete(RcPid, RiakObject, BlockId),
@@ -586,12 +578,6 @@ use_proxy_get(undefined, _BagId) ->
 use_proxy_get(SourceClusterId, BagId) when is_binary(SourceClusterId) ->
     LocalClusterID = riak_cs_mb_helper:cluster_id(BagId),
     LocalClusterID =/= SourceClusterId.
-
-dt_entry(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 1, Ints, ?MODULE, Func, Strings).
-
-dt_return(Func, Ints, Strings) ->
-    riak_cs_dtrace:dtrace(?DT_BLOCK_OP, 2, Ints, ?MODULE, Func, Strings).
 
 block_pbc(RcPid) ->
     {ok, BlockPbc} = riak_cs_riak_client:block_pbc(RcPid),

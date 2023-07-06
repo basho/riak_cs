@@ -62,18 +62,14 @@ authorize(RD, Ctx) ->
 api_request(RD, Ctx = #rcs_web_context{bucket = Bucket,
                                        riak_client = RcPid,
                                        user = User}) ->
-    UserName = riak_cs_wm_utils:extract_name(User),
-    riak_cs_dtrace:dt_bucket_entry(?MODULE, <<"list_key_versions">>, [], [UserName, Bucket]),
-    Res = riak_cs_api:list_objects(
-            versions,
-            [B || B <- riak_cs_bucket:get_buckets(User),
-                  B?RCS_BUCKET.name =:= Bucket],
-            Ctx#rcs_web_context.bucket,
-            get_max_keys(RD),
-            get_options(RD),
-            RcPid),
-    riak_cs_dtrace:dt_bucket_return(?MODULE, <<"list_key_versions">>, [200], [UserName, Bucket]),
-    Res.
+    riak_cs_api:list_objects(
+      versions,
+      [B || B <- riak_cs_bucket:get_buckets(User),
+            B?RCS_BUCKET.name =:= Bucket],
+      Ctx#rcs_web_context.bucket,
+      get_max_keys(RD),
+      get_options(RD),
+      RcPid).
 
 -spec get_options(#wm_reqdata{}) -> [{atom(), 'undefined' | binary()}].
 get_options(RD) ->

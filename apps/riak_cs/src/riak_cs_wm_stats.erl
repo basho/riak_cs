@@ -45,7 +45,6 @@
 -include("riak_cs.hrl").
 
 init(Props) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"init">>),
     AuthBypass = not proplists:get_value(admin_auth_enabled, Props),
     {ok, #rcs_web_context{auth_bypass = AuthBypass}}.
 
@@ -55,7 +54,6 @@ init(Props) ->
 %%      "identity" is provided for all methods, and "gzip" is
 %%      provided for GET as well
 encodings_provided(RD, Context) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"encodings_provided">>),
     case wrq:method(RD) of
         'GET' ->
             {[{"identity", fun(X) -> X end},
@@ -76,13 +74,11 @@ encodings_provided(RD, Context) ->
 %%            so s3cmd will only be able to get the JSON flavor.
 
 content_types_provided(RD, Context) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"content_types_provided">>),
     {[{"application/json", produce_body},
       {"text/plain", pretty_print}],
      RD, Context}.
 
 service_available(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"service_available">>),
     case riak_cs_config:riak_cs_stat() of
         false ->
             {false, RD, Ctx};
@@ -96,24 +92,18 @@ service_available(RD, Ctx) ->
     end.
 
 produce_body(RD, Ctx) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"produce_body">>),
     Body = mochijson2:encode(get_stats()),
     ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"produce_body">>),
     {Body, RD2, Ctx}.
 
 forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"forbidden">>),
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [0], []),
     {true, RD, Ctx};
 finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
-    riak_cs_dtrace:dt_wm_entry(?MODULE, <<"finish_request">>, [1], []),
     riak_cs_riak_client:checkin(RcPid),
-    riak_cs_dtrace:dt_wm_return(?MODULE, <<"finish_request">>, [1], []),
     {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
 %% @spec pretty_print(webmachine:wrq(), context()) ->
