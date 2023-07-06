@@ -9,7 +9,6 @@ sed -i \
     $ETC/riak.conf
 
 echo "
-buckets.default.allow_mult = true
 buckets.default.merge_strategy = 2" \
     >>$ETC/riak.conf
 
