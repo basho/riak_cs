@@ -501,7 +501,6 @@ ipv4_band({A,B,C,D}, {E,F,G,H}) ->
 ipv4_eq({A,B,C,D}, {E,F,G,H}) ->
     (A =:= E) andalso (B =:= F) andalso (C =:= G) andalso (D =:= H).
 
--type json_term() :: [{binary(), json_term()}] | integer() | float() | binary().
 % ===========================================
 % functions to convert policy record to JSON:
 

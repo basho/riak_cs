@@ -40,31 +40,6 @@
 
 -define(XML_SCHEMA_INSTANCE, "http://www.w3.org/2001/XMLSchema-instance").
 
--type xml_attributes() :: [{atom(), string()}].
--type xml_external_node() :: {atom(), [string()]}.
--type xml_internal_node() :: {atom(), [xml_internal_node() | xml_external_node()]} |
-                         {atom(), xml_attributes(), [xml_internal_node() | xml_external_node()]}.
-
-%% these types should be defined in xmerl.hrl or xmerl.erl
-%% for now they're defined here for convenience.
--type xmlElement() :: #xmlElement{}.
--type xmlText() :: #xmlText{}.
--type xmlComment() :: #xmlComment{}.
--type xmlPI() :: #xmlPI{}.
--type xmlDocument() :: #xmlDocument{}.
--type xmlNode() ::  xmlElement() | xmlText() | xmlComment() |
-                    xmlPI() | xmlDocument().
--export_type([xmlNode/0, xmlElement/0, xmlText/0]).
-
-%% Types for simple forms
--type xml_tag() :: atom().
--type xml_content() :: [xml_element()].
--type xml_element() :: {xml_tag(), xml_attributes(), xml_content()} |
-                   {xml_tag(), xml_content()} |
-                   xml_tag() |
-                   iodata() |
-                   integer() |
-                   float().         % Really Needed?
 
 %% ===================================================================
 %% Public API
@@ -80,7 +55,7 @@ find_elements(Name, EE) ->
 %% in R15B03 (and maybe later version), xmerl_scan:string/2 may return any
 %% xml nodes, such as defined as xmlNode() above. It it unsafe because
 %% `String' is the Body sent from client, which can be anything.
--spec scan(string()) -> {ok, xmlElement()} | {error, malformed_xml}.
+-spec scan(string()) -> {ok, #xmlElement{}} | {error, malformed_xml}.
 scan(String) ->
     case catch xmerl_scan:string(String) of
         {'EXIT', _E} ->  {error, malformed_xml};
