@@ -159,7 +159,7 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
         end,
     post_authentication(AuthResult, RD, Ctx, AnonOk).
 
-maybe_create_user({ok, {_, _}}=UserResult, _, _, _, _, _) ->
+maybe_create_user({ok, {_, _}} = UserResult, _, _, _, _, _) ->
     UserResult;
 maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RcPid)
   when NE =:= not_found;
@@ -168,7 +168,7 @@ maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RcPid)
     {Name, Email, UserId} = UserData,
     {_, Secret} = riak_cs_oos_utils:user_ec2_creds(UserId, KeyId),
     %% Attempt to create a Riak CS user to represent the OS tenant
-    _ = riak_cs_user:create_user(Name, Email, KeyId, Secret),
+    _ = riak_cs_user:create_user(Name, Email, KeyId, Secret, #{}),
     riak_cs_user:get_user(KeyId, RcPid);
 maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, RcPid)
   when NE =:= not_found;
@@ -177,7 +177,7 @@ maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, 
     {Name, Email, UserId} = UserData,
     {_, Secret} = riak_cs_oos_utils:user_ec2_creds(UserId, KeyId),
     %% Attempt to create a Riak CS user to represent the OS tenant
-    _ = riak_cs_user:create_user(Name, Email, KeyId, Secret),
+    _ = riak_cs_user:create_user(Name, Email, KeyId, Secret, #{}),
     riak_cs_user:get_user(KeyId, RcPid);
 maybe_create_user({error, no_user_key} = Error, _, _, _, _, _) ->
     %% Anonymous access may be authorized by ACL or policy afterwards,

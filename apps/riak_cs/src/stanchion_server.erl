@@ -296,7 +296,7 @@ handle_call({create_role, A},
 handle_call({update_role, A},
             _From,
             State=#state{pbc = Pbc}) ->
-    Result = ?TURNAROUND_TIME(stanchion_utils:updeate_role(A, Pbc)),
+    Result = ?TURNAROUND_TIME(stanchion_utils:update_role(A, Pbc)),
     {reply, Result, State};
 handle_call({delete_role, A},
             _From,
