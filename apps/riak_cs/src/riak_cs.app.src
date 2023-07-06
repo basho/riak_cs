@@ -23,7 +23,7 @@
 {application, riak_cs,
  [
   {description, "riak_cs"},
-  {vsn, "3.2"},
+  {vsn, "3.2pre1"},
   {modules, []},
   {registered, []},
   {applications,
@@ -31,7 +31,8 @@
     stdlib,
     inets,
     crypto,
-    ssh,
+    sasl,
+    syntax_tools,
     uuid,
     jsx,
     jason,
