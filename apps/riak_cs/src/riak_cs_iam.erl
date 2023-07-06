@@ -25,6 +25,7 @@
          get_user/2,
          find_user/2,
          update_user/1,
+         list_attached_user_policies/3,
 
          create_role/1,
          update_role/1,
@@ -89,7 +90,7 @@ get_user(Arn, RcPid) ->
             ER
     end.
 
--spec find_user(maps:map(), pid()) -> {ok, rcs_user()} | {error, notfound}.
+-spec find_user(maps:map(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 find_user(#{name := A}, RcPid) ->
     find_user(?USER_NAME_INDEX, A, RcPid);
 find_user(#{canonical_id := A}, RcPid) ->
@@ -120,6 +121,33 @@ update_user(U = ?IAM_USER{key_id = KeyId}) ->
                                 riak_cs_json:to_json(U),
                                 [{auth_creds, AdminCreds}]),
     handle_response(Result).
+
+-spec list_attached_user_policies(binary(), binary(), pid()) ->
+          {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
+list_attached_user_policies(UserName, PathPrefix, RcPid) ->
+    case find_user(#{name => UserName}, RcPid) of
+        {ok, {?IAM_USER{attached_policies = AA}, _}} ->
+            AANN = [begin
+                        try
+                            {ok, ?IAM_POLICY{path = Path,
+                                             policy_name = N}} = get_policy(A, RcPid),
+                            case 0 < binary:longest_common_prefix([Path, PathPrefix]) of
+                                true ->
+                                    {A, N};
+                                false ->
+                                    []
+                            end
+                        catch
+                            error:badmatch ->
+                                logger:error("Policy ~s not found while it is still attached to user ~s",
+                                             [A, UserName]),
+                                []
+                        end
+                    end || A <- AA],
+            {ok, lists:flatten(AANN)};
+        ER ->
+            ER
+    end.
 
 
 -spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
@@ -307,7 +335,7 @@ attach_user_policy(PolicyArn, UserName, RcPid) ->
           ok | {error, unmodifiable_entity}.
 detach_user_policy(PolicyArn, UserName, RcPid) ->
     case find_user(#{name => UserName}, RcPid) of
-        {ok, User = ?RCS_USER{attached_policies = PP}} ->
+        {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 false ->
                     ok;

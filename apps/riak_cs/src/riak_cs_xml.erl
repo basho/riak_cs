@@ -136,6 +136,8 @@ to_xml(#attach_user_policy_response{} = R) ->
     attach_user_policy_response_to_xml(R);
 to_xml(#detach_user_policy_response{} = R) ->
     detach_user_policy_response_to_xml(R);
+to_xml(#list_attached_user_policies_response{} = R) ->
+    list_attached_user_policies_response_to_xml(R);
 
 to_xml(#assume_role_with_saml_response{} = R) ->
     assume_role_with_saml_response_to_xml(R).
@@ -639,6 +641,32 @@ detach_user_policy_response_to_xml(#detach_user_policy_response{request_id = Req
     export_xml([make_internal_node('DetachUserPolicyResponse',
                                    [{'xmlns', ?IAM_XMLNS}],
                                    C)], []).
+
+
+policy_node_for_laup_result(Arn, Name) ->
+    C = lists:flatten(
+          [{'PolicyArn', [make_arn(Arn)]},
+           {'PolicyName', [binary_to_list(Name)]}
+          ]),
+    {'AttachedPolicies', C}.
+
+list_attached_user_policies_response_to_xml(#list_attached_user_policies_response{policies = RR,
+                                                                                  request_id = RequestId,
+                                                                                  is_truncated = IsTruncated,
+                                                                                  marker = Marker}) ->
+    ListAttachedUserPoliciesResult =
+        lists:flatten(
+          [{'AttachedPolicies', [policy_node_for_laup_result(A, N) || {A, N} <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
+    C = [{'ListAttachedUserPoliciesResult', ListAttachedUserPoliciesResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListAttachedUserPoliciesResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
+
+
 
 saml_provider_record_to_xml(P) ->
     export_xml([saml_provider_node(P)]).

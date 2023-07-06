@@ -399,4 +399,11 @@
                                      }
        ).
 
+-record(list_attached_user_policies_response, { policies :: [{flat_arn(), binary()}]
+                                              , marker :: binary() | undefined
+                                              , is_truncated :: boolean()
+                                              , request_id :: string()
+                                              }
+       ).
+
 -endif.
