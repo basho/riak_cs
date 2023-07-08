@@ -69,9 +69,9 @@
                      , name :: binary()
                      , display_name :: binary()
                      , email :: binary()
-                     , key_id :: string()
-                     , key_secret :: string()
-                     , canonical_id :: string()
+                     , key_id :: binary()
+                     , key_secret :: binary()
+                     , canonical_id :: binary()
                      , buckets = [] :: [cs_bucket()]
                      , status = enabled :: enabled | disabled
                      }).

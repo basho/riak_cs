@@ -85,9 +85,8 @@ accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
     %% @TODO Handle json decoding exceptions
     ParsedBody = mochijson2:decode(Body),
-    FieldList = stanchion_wm_utils:json_to_proplist(ParsedBody),
-    case stanchion_server:set_bucket_versioning(Bucket,
-                                                FieldList) of
+    FF = jsx:decode(ParsedBody, [{labels, atom}]),
+    case stanchion_server:set_bucket_versioning(Bucket, FF) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

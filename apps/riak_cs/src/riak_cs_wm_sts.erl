@@ -81,7 +81,6 @@ init(Config) ->
                            auth_module = AuthModule,
                            response_module = RespModule,
                            stats_prefix = StatsPrefix,
-                           request_id = riak_cs_wm_utils:make_request_id(),
                            api = Api},
     {ok, Ctx}.
 
@@ -135,9 +134,7 @@ forbidden(RD, Ctx=#rcs_web_context{auth_module = AuthMod,
                                     Error ->
                                         Error
                                 end
-                        end;
-                    Role ->
-                        riak_cs_wm_utils:eval_role_for_action(RD, Role)
+                        end
                 end,
             post_authentication(AuthResult, RD, Ctx, fun authorize/2)
     end.

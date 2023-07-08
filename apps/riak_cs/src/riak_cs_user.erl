@@ -126,12 +126,12 @@ get_user(KeyId_, RcPid) ->
                            email = Email} = Session} ->
             {ok, {?RCS_USER{arn = AssumedRoleUserArn,
                             attached_policies = riak_cs_temp_sessions:effective_policies(Session, RcPid),
-                            name = binary_to_list(Subject),
+                            name = Subject,
                             email = select_email([SourceIdentity, Email]),
-                            display_name = binary_to_list(Subject),
-                            canonical_id = binary_to_list(CanonicalId),
+                            display_name = Subject,
+                            canonical_id = CanonicalId,
                             key_id = KeyId,
-                            key_secret = binary_to_list(SecretKey),
+                            key_secret = SecretKey,
                             buckets = []},
                   _UserObject = undefined}};
         {error, notfound} ->

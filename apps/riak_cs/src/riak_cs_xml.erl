@@ -53,7 +53,7 @@ find_elements(Name, EE) ->
 
 %% @doc parse XML and produce xmlElement (other comments and else are bad)
 %% in R15B03 (and maybe later version), xmerl_scan:string/2 may return any
-%% xml nodes, such as defined as xmlNode() above. It it unsafe because
+%% xml nodes, such as defined as xmlNode() above. It is unsafe because
 %% `String' is the Body sent from client, which can be anything.
 -spec scan(string()) -> {ok, #xmlElement{}} | {error, malformed_xml}.
 scan(String) ->
@@ -69,8 +69,6 @@ to_xml(undefined) ->
 to_xml(SimpleForm) when is_list(SimpleForm) ->
     simple_form_to_xml(SimpleForm);
 to_xml(?ACL{}=Acl) ->
-    acl_to_xml(Acl);
-to_xml(#acl_v1{}=Acl) ->
     acl_to_xml(Acl);
 to_xml(?LBRESP{}=ListBucketsResp) ->
     list_buckets_response_to_xml(ListBucketsResp);
@@ -472,15 +470,15 @@ role_node(?IAM_ROLE{arn = Arn,
     {'Role', C}.
 
 make_arn(BareArn) when is_binary(BareArn) ->
-    binary_to_list(BareArn);
-make_arn(?S3_ARN{provider = Provider,
-                 service = Service,
-                 region = Region,
-                 id = Id,
-                 path = Path}) ->
-    binary_to_list(
-      iolist_to_binary(
-        [atom_to_list(Provider), $:, atom_to_list(Service), $:, Region, $:, Id, $/, Path])).
+    binary_to_list(BareArn).
+%% make_arn(?S3_ARN{provider = Provider,
+%%                  service = Service,
+%%                  region = Region,
+%%                  id = Id,
+%%                  path = Path}) ->
+%%     binary_to_list(
+%%       iolist_to_binary(
+%%         [atom_to_list(Provider), $:, atom_to_list(Service), $:, Region, $:, Id, $/, Path])).
 
 make_role_last_used(?IAM_ROLE_LAST_USED{last_used_date = LastUsedDate,
                                         region = Region}) ->

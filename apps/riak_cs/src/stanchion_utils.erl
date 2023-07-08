@@ -115,7 +115,9 @@ create_bucket(#{bucket := Bucket,
                         {error, temp_users_create_bucket_restriction};
                     {ok, {User, UserObj}} ->
                         UpdUser = update_user_buckets(add, User, BucketRecord),
-                        save_user(UpdUser, UserObj, Pbc)
+                        save_user(UpdUser, UserObj, Pbc);
+                    ER ->
+                        ER
                 end
             after
                 riak_cs_riak_client:checkin(RcPid)

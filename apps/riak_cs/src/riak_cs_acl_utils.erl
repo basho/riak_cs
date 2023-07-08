@@ -68,8 +68,8 @@ default_acl(Owner) ->
 -spec canned_acl(undefined | string(),
                  acl_owner(),
                  undefined | acl_owner()) -> acl().
-canned_acl(undefined, Owher, _) ->
-    default_acl(Owher);
+canned_acl(undefined, Owner, _) ->
+    default_acl(Owner);
 canned_acl(HeaderVal, Owner, BucketOwner) ->
     ?ACL{owner = Owner,
          grants = canned_acl_grants(HeaderVal,
@@ -528,10 +528,10 @@ process_grants([#xmlElement{content = Content,
                     {error, _} ->
                         Grant;
                     _ ->
-                        Acl?ACL{grants=add_grant(Grant, Acl?ACL.grants)}
+                        Acl?ACL{grants = add_grant(Grant, Acl?ACL.grants)}
                 end;
             _ ->
-                ?LOG_DEBUG("Encountered unexpected grants element: ~p", [ElementName]),
+                logger:warning("Encountered unexpected grants element: ~p", [ElementName]),
                 Acl
         end,
     case UpdAcl of
@@ -546,11 +546,9 @@ process_grants([ #xmlText{} | RestElements], Acl, RcPid) ->
 %% @doc Process an XML element containing the grants for the acl.
 process_grant([], Grant, _, _) ->
     Grant;
-process_grant([#xmlElement{content=Content,
-                           name=ElementName} |
+process_grant([#xmlElement{content = Content,
+                           name = ElementName} |
                RestElements], Grant, AclOwner, RcPid) ->
-    ?LOG_DEBUG("ElementName: ~p", [ElementName]),
-    ?LOG_DEBUG("Content: ~p", [Content]),
     UpdGrant =
         case ElementName of
             'Grantee' ->
@@ -559,10 +557,10 @@ process_grant([#xmlElement{content=Content,
                 process_permission(Content, Grant);
             _ ->
                 logger:warning("Encountered unexpected grant element: ~p", [ElementName]),
-                Grant
+                {error, invalid_argument}
         end,
     case UpdGrant of
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error;
         _ ->
             process_grant(RestElements, UpdGrant, AclOwner, RcPid)
@@ -589,7 +587,7 @@ process_grantee([], ?ACL_GRANT{grantee = #{display_name := undefined,
     case name_for_canonical(CanonicalId, RcPid) of
         {ok, DisplayName} ->
             G?ACL_GRANT{grantee = O#{display => DisplayName}};
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error
     end;
 process_grantee([], Grant, _, _) ->

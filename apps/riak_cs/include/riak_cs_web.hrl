@@ -43,10 +43,10 @@
 
 -type api() :: aws | oos.
 
--record(rcs_web_context, {start_time =  os:system_time(millisecond) :: non_neg_integer(),
-                          request_id :: binary(),
+-record(rcs_web_context, {start_time = os:system_time(millisecond) :: non_neg_integer(),
+                          request_id = riak_cs_wm_utils:make_request_id() :: binary(),
                           auth_bypass :: atom(),
-                          user :: undefined | admin | moss_user(),
+                          user :: undefined | admin | rcs_user(),
                           user_object :: undefined | riakc_obj:riakc_obj(),
                           role :: undefined | role(),
                           bucket :: undefined | binary(),
@@ -268,64 +268,64 @@
 %% === IAM ===
 
 -record(create_user_response, { user :: rcs_user()
-                              , request_id :: string()
+                              , request_id :: binary()
                               }
        ).
 -record(get_user_response, { user :: rcs_user()
-                           , request_id :: string()
+                           , request_id :: binary()
                            }
        ).
--record(delete_user_response, { request_id :: string()
+-record(delete_user_response, { request_id :: binary()
                               }
        ).
 -record(list_users_request, { max_items = 1000 :: non_neg_integer()
                             , path_prefix :: binary() | undefined
                             , marker :: binary() | undefined
-                            , request_id :: string()
+                            , request_id :: binary()
                             }
        ).
 -record(list_users_response, { marker :: binary() | undefined
                              , is_truncated :: boolean()
                              , users :: [rcs_user()]
-                             , request_id :: string()
+                             , request_id :: binary()
                              }
        ).
 
 
 -record(create_role_response, { role :: role()
-                              , request_id :: string()
+                              , request_id :: binary()
                               }
        ).
 -record(get_role_response, { role :: role()
-                           , request_id :: string()
+                           , request_id :: binary()
                            }
        ).
--record(delete_role_response, { request_id :: string()
+-record(delete_role_response, { request_id :: binary()
                               }
        ).
 -record(list_roles_request, { max_items = 1000 :: non_neg_integer()
                             , path_prefix :: binary() | undefined
                             , marker :: binary() | undefined
-                            , request_id :: string()
+                            , request_id :: binary()
                             }
        ).
 -record(list_roles_response, { marker :: binary() | undefined
                              , is_truncated :: boolean()
                              , roles :: [role()]
-                             , request_id :: string()
+                             , request_id :: binary()
                              }
        ).
 
 
 -record(create_policy_response, { policy :: policy()
-                                , request_id :: string()
+                                , request_id :: binary()
                                 }
        ).
 -record(get_policy_response, { policy :: policy()
-                             , request_id :: string()
+                             , request_id :: binary()
                              }
        ).
--record(delete_policy_response, { request_id :: string()
+-record(delete_policy_response, { request_id :: binary()
                                 }
        ).
 -record(list_policies_request, { max_items = 1000 :: non_neg_integer()
@@ -334,32 +334,32 @@
                                , scope = all :: 'All' | 'AWS' | 'Local'
                                , path_prefix :: binary() | undefined
                                , marker :: binary() | undefined
-                               , request_id :: string()
+                               , request_id :: binary()
                                }
        ).
 -record(list_policies_response, { marker :: binary() | undefined
                                 , is_truncated :: boolean()
                                 , policies :: [policy()]
-                                , request_id :: string()
+                                , request_id :: binary()
                                 }
        ).
 
 
 -record(create_saml_provider_response, { saml_provider_arn :: arn()
                                        , tags :: [tag()]
-                                       , request_id :: string()
+                                       , request_id :: binary()
                                        }
        ).
 -record(get_saml_provider_response, { create_date :: non_neg_integer()
                                     , valid_until :: non_neg_integer()
                                     , tags :: [tag()]
-                                    , request_id :: string()
+                                    , request_id :: binary()
                                     }
        ).
--record(delete_saml_provider_response, { request_id :: string()
+-record(delete_saml_provider_response, { request_id :: binary()
                                        }
        ).
--record(list_saml_providers_request, { request_id :: string()
+-record(list_saml_providers_request, { request_id :: binary()
                                      }
        ).
 -record(saml_provider_list_entry, { create_date :: non_neg_integer()
@@ -368,7 +368,7 @@
                                   }
        ).
 -record(list_saml_providers_response, { saml_provider_list :: [#saml_provider_list_entry{}]
-                                      , request_id :: string()
+                                      , request_id :: binary()
                                       }
        ).
 
@@ -381,28 +381,28 @@
                                         , source_identity :: binary()
                                         , subject :: binary()
                                         , subject_type :: binary()
-                                        , request_id :: string()
+                                        , request_id :: binary()
                                         }
        ).
 
--record(attach_role_policy_response, { request_id :: string()
+-record(attach_role_policy_response, { request_id :: binary()
                                      }
        ).
--record(detach_role_policy_response, { request_id :: string()
+-record(detach_role_policy_response, { request_id :: binary()
                                      }
        ).
 
--record(attach_user_policy_response, { request_id :: string()
+-record(attach_user_policy_response, { request_id :: binary()
                                      }
        ).
--record(detach_user_policy_response, { request_id :: string()
+-record(detach_user_policy_response, { request_id :: binary()
                                      }
        ).
 
 -record(list_attached_user_policies_response, { policies :: [{flat_arn(), binary()}]
                                               , marker :: binary() | undefined
                                               , is_truncated :: boolean()
-                                              , request_id :: string()
+                                              , request_id :: binary()
                                               }
        ).
 

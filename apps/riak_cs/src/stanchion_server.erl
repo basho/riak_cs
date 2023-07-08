@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -67,7 +67,7 @@
 
 -endif.
 
--record(state, {pbc :: pid()}).
+-record(state, {pbc :: undefined | pid()}).
 -type state() :: #state{}.
 
 %% This ?TURNAROUND_TIME has another ?TURNAROUND_TIME at gen_server
@@ -215,7 +215,7 @@ delete_saml_provider(A) ->
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
--spec update_user(rcs_user()) -> ok | {error, term() | stanchion_utils:riak_connect_failed()}.
+-spec update_user(maps:map()) -> ok | {error, term() | stanchion_utils:riak_connect_failed()}.
 update_user(A) ->
     ?MEASURE([user, update],
              gen_server:call(?MODULE,

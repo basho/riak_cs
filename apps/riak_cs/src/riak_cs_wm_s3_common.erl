@@ -90,7 +90,6 @@ init(Config) ->
                            exports_fun = ExportsFun,
                            stats_prefix = StatsPrefix,
                            submodule = Mod,
-                           request_id = riak_cs_aws_utils:make_id(16),
                            api = Api},
     resource_call(Mod, init, [Ctx], ExportsFun).
 

@@ -29,6 +29,10 @@
 -compile(nowarn_export_all).
 
 -dialyzer([ {nowarn_function, fromlist_access_v1/1}
+          , {nowarn_function, fromlist_acl_grant_v2/1}
+          , {nowarn_function, fromlist_arn_v1/1}
+          , {nowarn_function, fromlist_assumed_role_user/1}
+          , {nowarn_function, fromlist_credentials/1}
           , {nowarn_function, fromlist_lfs_manifest_v2/1}
           , {nowarn_function, fromlist_lfs_manifest_v3/1}
           , {nowarn_function, fromlist_moss_bucket/1}
@@ -39,8 +43,18 @@
           , {nowarn_function, fromlist_multipart_manifest_v1/1}
           , {nowarn_function, fromlist_part_descr_v1/1}
           , {nowarn_function, fromlist_part_manifest_v1/1}
+          , {nowarn_function, fromlist_permissions_boundary/1}
+          , {nowarn_function, fromlist_policy_v1/1}
           , {nowarn_function, fromlist_rcs_user_v3/1}
+          , {nowarn_function, fromlist_role_last_used/1}
+          , {nowarn_function, fromlist_role_v1/1}
+          , {nowarn_function, fromlist_saml_provider_v1/1}
+          , {nowarn_function, fromlist_tag/1}
           , {nowarn_function, frommap_access_v1/1}
+          , {nowarn_function, frommap_acl_grant_v2/1}
+          , {nowarn_function, frommap_arn_v1/1}
+          , {nowarn_function, frommap_assumed_role_user/1}
+          , {nowarn_function, frommap_credentials/1}
           , {nowarn_function, frommap_lfs_manifest_v2/1}
           , {nowarn_function, frommap_lfs_manifest_v3/1}
           , {nowarn_function, frommap_moss_bucket/1}
@@ -51,31 +65,57 @@
           , {nowarn_function, frommap_multipart_manifest_v1/1}
           , {nowarn_function, frommap_part_descr_v1/1}
           , {nowarn_function, frommap_part_manifest_v1/1}
+          , {nowarn_function, frommap_permissions_boundary/1}
+          , {nowarn_function, frommap_policy_v1/1}
           , {nowarn_function, frommap_rcs_user_v3/1}
-          , {nowarn_function, new_access_v1/1}
-          , {nowarn_function, new_lfs_manifest_v2/1}
-          , {nowarn_function, new_lfs_manifest_v3/1}
-          , {nowarn_function, new_moss_bucket/1}
-          , {nowarn_function, new_moss_bucket_v1/1}
-          , {nowarn_function, new_moss_user/1}
-          , {nowarn_function, new_moss_user_v1/1}
-          , {nowarn_function, new_multipart_descr_v1/1}
-          , {nowarn_function, new_multipart_manifest_v1/1}
-          , {nowarn_function, new_part_descr_v1/1}
-          , {nowarn_function, new_part_manifest_v1/1}
-          , {nowarn_function, new_rcs_user_v3/1}
+          , {nowarn_function, frommap_role_last_used/1}
+          , {nowarn_function, frommap_role_v1/1}
+          , {nowarn_function, frommap_saml_provider_v1/1}
+          , {nowarn_function, frommap_tag/1}
           , {nowarn_function, new_access_v1/0}
+          , {nowarn_function, new_access_v1/1}
+          , {nowarn_function, new_acl_grant_v2/0}
+          , {nowarn_function, new_acl_grant_v2/1}
+          , {nowarn_function, new_arn_v1/0}
+          , {nowarn_function, new_arn_v1/1}
+          , {nowarn_function, new_assumed_role_user/0}
+          , {nowarn_function, new_assumed_role_user/1}
+          , {nowarn_function, new_credentials/0}
+          , {nowarn_function, new_credentials/1}
           , {nowarn_function, new_lfs_manifest_v2/0}
+          , {nowarn_function, new_lfs_manifest_v2/1}
           , {nowarn_function, new_lfs_manifest_v3/0}
+          , {nowarn_function, new_lfs_manifest_v3/1}
           , {nowarn_function, new_moss_bucket/0}
+          , {nowarn_function, new_moss_bucket/1}
           , {nowarn_function, new_moss_bucket_v1/0}
+          , {nowarn_function, new_moss_bucket_v1/1}
           , {nowarn_function, new_moss_user/0}
+          , {nowarn_function, new_moss_user/1}
           , {nowarn_function, new_moss_user_v1/0}
+          , {nowarn_function, new_moss_user_v1/1}
           , {nowarn_function, new_multipart_descr_v1/0}
+          , {nowarn_function, new_multipart_descr_v1/1}
           , {nowarn_function, new_multipart_manifest_v1/0}
+          , {nowarn_function, new_multipart_manifest_v1/1}
           , {nowarn_function, new_part_descr_v1/0}
+          , {nowarn_function, new_part_descr_v1/1}
           , {nowarn_function, new_part_manifest_v1/0}
+          , {nowarn_function, new_part_manifest_v1/1}
+          , {nowarn_function, new_permissions_boundary/0}
+          , {nowarn_function, new_permissions_boundary/1}
+          , {nowarn_function, new_policy_v1/0}
+          , {nowarn_function, new_policy_v1/1}
           , {nowarn_function, new_rcs_user_v3/0}
+          , {nowarn_function, new_rcs_user_v3/1}
+          , {nowarn_function, new_role_last_used/0}
+          , {nowarn_function, new_role_last_used/1}
+          , {nowarn_function, new_role_v1/0}
+          , {nowarn_function, new_role_v1/1}
+          , {nowarn_function, new_saml_provider_v1/0}
+          , {nowarn_function, new_saml_provider_v1/1}
+          , {nowarn_function, new_tag/0}
+          , {nowarn_function, new_tag/1}
           ]).
 
 -define(ALL_RECORDS,
@@ -84,7 +124,6 @@
         , rcs_user_v3
         , moss_bucket
         , moss_bucket_v1
-        , acl_v1
         , acl_v3
         , acl_grant_v2
         , lfs_manifest_v2

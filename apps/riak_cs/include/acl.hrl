@@ -35,8 +35,8 @@
 %%-type acl_owner3() :: {string(), string(), string()}.
 %% -type acl_owner() :: acl_owner2() | acl_owner3().
 
--record(acl_v1, {owner={"", ""} :: acl_owner(),
-                 grants=[] :: [acl_grant()],
+-record(acl_v1, {owner = {"", ""} :: {string(), string()},
+                 grants = [] :: [acl_grant()],
                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
 %% %% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
@@ -44,12 +44,14 @@
 %%                  grants=[] :: [acl_grant()],
 %%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
--type acl_owner() :: maps:map().
+-type acl_owner() :: #{display_name => binary(),
+                       canonical_id => binary(),
+                       key_id => binary()}.
 
--type acl_grantee_v2() :: maps:map() | group_grant().
+-type acl_grantee() :: maps:map() | group_grant().
 
--record(acl_grant_v2, {grantee :: acl_grantee_v2(),
-                       perms :: acl_perms()
+-record(acl_grant_v2, {grantee :: acl_grantee(),
+                       perms :: undefined | acl_perms()
                       }).
 -type acl_grant() :: #acl_grant_v2{}.
 -define(ACL_GRANT, #acl_grant_v2).
@@ -58,7 +60,7 @@
                  grants = [] :: [#acl_grant_v2{}],
                  creation_time = os:system_time(millisecond) :: non_neg_integer()
                 }).
--type acl() :: #acl_v3{}.
+-type acl() :: #acl_v1{} | #acl_v3{}.
 -define(ACL, #acl_v3).
 
 -endif.
