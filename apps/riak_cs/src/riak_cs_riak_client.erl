@@ -37,7 +37,6 @@
          get_saml_provider/2,
          get_user/2,
          get_user_with_pbc/2,
-         save_user/3,
          set_manifest_bag/2,
          get_manifest_bag/1,
          set_manifest/2,
@@ -165,10 +164,6 @@ set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
 get_user(RcPid, UserKey) when is_binary(UserKey) ->
     gen_server:call(RcPid, {get_user, UserKey}, infinity).
 
--spec save_user(riak_client(), rcs_user(), riakc_obj:riakc_obj()) -> ok | {error, term()}.
-save_user(RcPid, User, OldUserObj) ->
-    gen_server:call(RcPid, {save_user, User, OldUserObj}, infinity).
-
 
 -spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.
 set_manifest(RcPid, Manifest) ->
@@ -234,14 +229,6 @@ handle_call({get_user, UserKey}, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc = MasterPbc} = NewState} ->
             Res = get_user_with_pbc(MasterPbc, UserKey),
-            {reply, Res, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
-handle_call({save_user, User, OldUserObj}, _From, State) ->
-    case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc} = NewState} ->
-            Res = save_user_with_pbc(MasterPbc, User, OldUserObj),
             {reply, Res, NewState};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -400,12 +387,3 @@ weak_get_user_with_pbc(MasterPbc, Key) ->
         {error, Reason} ->
             {error, Reason}
     end.
-
-save_user_with_pbc(MasterPbc, User, OldUserObj) ->
-    MD = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
-    UpdUserObj = riakc_obj:update_metadata(
-                   riakc_obj:update_value(OldUserObj,
-                                          riak_cs_utils:encode_term(User)),
-                   MD),
-    Timeout = riak_cs_config:put_user_timeout(),
-    riak_cs_pbc:put(MasterPbc, UpdUserObj, Timeout, [riakc, put_cs_user]).
