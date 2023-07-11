@@ -53,7 +53,7 @@
                           acl :: 'undefined' | acl(),
                           requested_perm :: undefined | acl_perm(),
                           riak_client :: undefined | pid(),
-                          rc_pool :: atom(),    % pool name which riak_client belongs to
+                          rc_pool = request_pool:: atom(),    % pool name which riak_client belongs to
                           auto_rc_close = true :: boolean(),
                           submodule :: module(),
                           exports_fun :: undefined | function(),

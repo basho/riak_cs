@@ -277,7 +277,8 @@ do_action("GetUser",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     UserName = proplists:get_value("UserName", Form),
-    case riak_cs_iam:find_user(#{name => UserName}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_user(#{name => UserName}, Pbc) of
         {ok, {User, _}} ->
             Doc = riak_cs_xml:to_xml(
                     #get_user_response{user = User,
@@ -294,7 +295,8 @@ do_action("DeleteUser",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     Name = proplists:get_value("UserName", Form),
-    case riak_cs_iam:find_user(#{name => list_to_binary(Name)}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_user(#{name => list_to_binary(Name)}, Pbc) of
         {ok, {?IAM_USER{arn = Arn} = User, _}} ->
             case riak_cs_iam:delete_user(User) of
                 ok ->
@@ -363,7 +365,8 @@ do_action("GetRole",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     RoleName = proplists:get_value("RoleName", Form),
-    case riak_cs_iam:find_role(#{name => RoleName}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_role(#{name => RoleName}, Pbc) of
         {ok, Role} ->
             Doc = riak_cs_xml:to_xml(
                     #get_role_response{role = Role,
@@ -380,7 +383,8 @@ do_action("DeleteRole",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     Name = proplists:get_value("RoleName", Form),
-    case riak_cs_iam:find_role(#{name => list_to_binary(Name)}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_role(#{name => list_to_binary(Name)}, Pbc) of
         {ok, ?IAM_ROLE{arn = Arn}} ->
             case riak_cs_iam:delete_role(Arn) of
                 ok ->
@@ -449,7 +453,8 @@ do_action("GetPolicy",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     Arn = proplists:get_value("PolicyArn", Form),
-    case riak_cs_iam:get_policy(list_to_binary(Arn), RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:get_policy(list_to_binary(Arn), Pbc) of
         {ok, Policy} ->
             Doc = riak_cs_xml:to_xml(
                     #get_policy_response{policy = Policy,
@@ -513,9 +518,10 @@ do_action("ListAttachedUserPolicies",
     UserName = proplists:get_value("UserName", Form),
     %% _MaxItems = proplists:get_value("MaxItems", Form),
     %% _Marker = proplists:get_value("Marker", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:list_attached_user_policies(
            list_to_binary(UserName),
-           list_to_binary(PathPrefix), RcPid) of
+           list_to_binary(PathPrefix), Pbc) of
         {ok, AANN} ->
             NewMarker = undefined,
             IsTruncated = false,
@@ -535,8 +541,9 @@ do_action("AttachRolePolicy",
                                            request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     RoleName = proplists:get_value("RoleName", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:attach_role_policy(list_to_binary(PolicyArn),
-                                        list_to_binary(RoleName), RcPid) of
+                                        list_to_binary(RoleName), Pbc) of
         ok ->
             logger:info("Attached policy ~s to role ~s on request_id ~s",
                         [PolicyArn, RoleName, RequestId]),
@@ -553,8 +560,9 @@ do_action("AttachUserPolicy",
                                            request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     UserName = proplists:get_value("UserName", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:attach_user_policy(list_to_binary(PolicyArn),
-                                        list_to_binary(UserName), RcPid) of
+                                        list_to_binary(UserName), Pbc) of
         ok ->
             logger:info("Attached policy ~s to user ~s on request_id ~s",
                         [PolicyArn, UserName, RequestId]),
@@ -571,8 +579,9 @@ do_action("DetachRolePolicy",
                                            request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     RoleName = proplists:get_value("RoleName", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:detach_role_policy(list_to_binary(PolicyArn),
-                                        list_to_binary(RoleName), RcPid) of
+                                        list_to_binary(RoleName), Pbc) of
         ok ->
             logger:info("Detached policy ~s from role ~s on request_id ~s",
                         [PolicyArn, RoleName, RequestId]),
@@ -589,8 +598,9 @@ do_action("DetachUserPolicy",
                                            request_id = RequestId}) ->
     PolicyArn = proplists:get_value("PolicyArn", Form),
     UserName = proplists:get_value("UserName", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:detach_user_policy(list_to_binary(PolicyArn),
-                                        list_to_binary(UserName), RcPid) of
+                                        list_to_binary(UserName), Pbc) of
         ok ->
             logger:info("Detached policy ~s from user ~s on request_id ~s",
                         [PolicyArn, UserName, RequestId]),
@@ -630,7 +640,8 @@ do_action("GetSAMLProvider",
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
     Arn = proplists:get_value("SAMLProviderArn", Form),
-    case riak_cs_iam:get_saml_provider(list_to_binary(Arn), RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:get_saml_provider(list_to_binary(Arn), Pbc) of
         {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
                                 valid_until = ValidUntil,
                                 tags = Tags}} ->

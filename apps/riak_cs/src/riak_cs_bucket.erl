@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -27,14 +27,14 @@
 %% Public API
 -export([
          fetch_bucket_object/2,
-         create_bucket/6,
+         create_bucket/5,
          delete_bucket/4,
          get_buckets/1,
-         set_bucket_acl/5,
-         set_bucket_policy/5,
-         delete_bucket_policy/4,
+         set_bucket_acl/4,
+         set_bucket_policy/4,
+         delete_bucket_policy/3,
          get_bucket_acl_policy/3,
-         set_bucket_versioning/5,
+         set_bucket_versioning/4,
          get_bucket_versioning/2,
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
@@ -62,9 +62,9 @@
 
 %% @doc Create a bucket in the global namespace or return
 %% an error if it already exists.
--spec create_bucket(rcs_user(), riakc_object:riakc_object(), binary(), bag_id(), acl(), riak_client()) ->
+-spec create_bucket(rcs_user(), riakc_object:riakc_object(), binary(), bag_id(), acl()) ->
           ok | {error, term()}.
-create_bucket(User, _UserObj, Bucket, BagId, ACL, _RcPid) ->
+create_bucket(User, _UserObj, Bucket, BagId, ACL) ->
     CurrentBuckets = get_buckets(User),
 
     %% Do not attempt to create bucket if the user already owns it
@@ -285,9 +285,9 @@ get_buckets(?RCS_USER{buckets=Buckets}) ->
 
 %% @doc Set the ACL for a bucket. Existing ACLs are only
 %% replaced, they cannot be updated.
--spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl(), riak_client()) ->
+-spec set_bucket_acl(rcs_user(), riakc_obj:riakc_obj(), binary(), acl()) ->
           ok | {error, term()}.
-set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
+set_bucket_acl(User, _UserObj, Bucket, ACL) ->
     serialized_bucket_op(Bucket,
                          ACL,
                          User,
@@ -295,9 +295,9 @@ set_bucket_acl(User, _UserObj, Bucket, ACL, _RcPid) ->
                          [velvet, set_bucket_acl]).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
--spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl(), riak_client()) ->
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl()) ->
           ok | {error, term()}.
-set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
+set_bucket_policy(User, _UserObj, Bucket, PolicyJson) ->
     serialized_bucket_op(Bucket,
                          PolicyJson,
                          User,
@@ -305,9 +305,9 @@ set_bucket_policy(User, _UserObj, Bucket, PolicyJson, _RcPid) ->
                          [velvet, set_bucket_policy]).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
--spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), riak_client()) ->
+-spec delete_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary()) ->
           ok | {error, term()}.
-delete_bucket_policy(User, _UserObj, Bucket, _RcPid) ->
+delete_bucket_policy(User, _UserObj, Bucket) ->
     serialized_bucket_op(Bucket,
                          [],
                          User,
@@ -347,9 +347,9 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
 -spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
-                            binary(), bucket_versioning(), riak_client()) ->
+                            binary(), bucket_versioning()) ->
           ok | {error, term()}.
-set_bucket_versioning(User, _UserObj, Bucket, Option, _RcPid) ->
+set_bucket_versioning(User, _UserObj, Bucket, Option) ->
     serialized_bucket_op(Bucket,
                          Option,
                          User,
@@ -449,7 +449,8 @@ bucket_empty_any_pred(RcPid, Bucket) ->
 -spec fetch_bucket_object(binary(), riak_client()) ->
           {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(BucketName, RcPid) ->
-    case fetch_bucket_object_raw(BucketName, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case fetch_bucket_object_raw(BucketName, Pbc) of
         {ok, Obj} ->
             [Value | _] = riakc_obj:get_values(Obj),
             case Value of
@@ -458,15 +459,13 @@ fetch_bucket_object(BucketName, RcPid) ->
                 _ ->
                     {ok, Obj}
             end;
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error
     end.
 
 %% @doc Fetches the bucket object, even it is marked as free
--spec fetch_bucket_object_raw(binary(), riak_client()) ->
-                                     {ok, riakc_obj:riakc_obj()} | {error, term()}.
-fetch_bucket_object_raw(BucketName, RcPid) ->
-    case riak_cs_riak_client:get_bucket(RcPid, BucketName) of
+fetch_bucket_object_raw(BucketName, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?BUCKETS_BUCKET, BucketName, get_cs_bucket) of
         {ok, Obj} ->
             Values = riakc_obj:get_values(Obj),
             maybe_log_sibling_warning(BucketName, Values),

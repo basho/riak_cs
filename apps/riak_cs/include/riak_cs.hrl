@@ -85,6 +85,8 @@
 -define(SAMLPROVIDER_NAME_INDEX, <<"samlprovider_name_bin">>).
 -define(SAMLPROVIDER_ENTITYID_INDEX, <<"samlprovider_entityid_bin">>).
 
+-define(CONSISTENT_READ_OPTIONS, [{r, all}, {pr, all}, {notfound_ok, false}]).
+-define(WEAK_READ_OPTIONS, [{r, quorum}, {pr, one}, {notfound_ok, false}]).
 -define(CONSISTENT_WRITE_OPTIONS, [{w, all}, {pw, all}]).
 -define(CONSISTENT_DELETE_OPTIONS, [{dw, all}]).
 

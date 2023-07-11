@@ -24,7 +24,7 @@
 -module(riak_cs_pbc).
 
 -export([ping/3,
-         get/6,
+         get/4, get/6,
          repl_get/7,
          put/4,
          put/5,
@@ -48,6 +48,7 @@
          list_keys_sans_stats/3
          ]).
 
+-include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -76,15 +77,52 @@ ping(PbcPid, Timeout, StatsKey) ->
 
 %% @doc Get an object from Riak
 -spec get_sans_stats(pid(), binary(), binary(), proplists:proplist(), timeout()) ->
-                        {ok, riakc_obj:riakc_obj()} | {error, term()}.
+          {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)  ->
     riakc_pb_socket:get(PbcPid, BucketName, Key, Opts, Timeout).
 
--spec get(pid(), binary(), binary(), proplists:proplist(), timeout(),
-          riak_cs_stats:key()) ->
-                            {ok, riakc_obj:riakc_obj()} | {error, term()}.
+
+%% @doc Perform an initial read attempt with R=PR=N.  If the initial
+%% read fails retry using R=quorum and PR=1, but indicate that read
+%% has not been consistent. This can then be used by the caller (notably,
+%% riak_cs_user:get_user, which in this case should not
+%% clean up deleted buckets).
+-spec get(pid(), binary(), binary(), proplists:proplist(), timeout(), riak_cs_stats:key()) ->
+          {ok, riakc_obj:riakc_obj()} | {error, term()}.
 get(PbcPid, BucketName, Key, Opts, Timeout, StatsKey) ->
     ?WITH_STATS(StatsKey, get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)).
+
+-spec get(pid(), binary(), binary(), timeout()) ->
+          {ok | weak_ok, riakc_obj:riakc_obj()} | {error, term()}.
+get(Pbc, Bucket, Key, StatsItem) ->
+    Timeout = riak_cs_config:get_bucket_timeout(),
+    Options =
+        case riak_cs_config:fast_user_get() of
+            true ->
+                ?WEAK_READ_OPTIONS;
+            false ->
+                ?CONSISTENT_READ_OPTIONS
+        end,
+    case get(Pbc, Bucket, Key, Options, Timeout,
+             [riakc, StatsItem]) of
+        {ok, Obj} ->
+            {ok, Obj};
+        {error, <<"{pr_val_unsatisfied,", _/binary>>}
+          when Options == ?CONSISTENT_READ_OPTIONS ->
+            logger:notice("Failed to read key ~s from bucket ~s with consistent options; "
+                          "retrying with weak options",
+                          [Key, Bucket]),
+            case get(Pbc, Bucket, Key, ?WEAK_READ_OPTIONS, Timeout, [riakc, StatsItem]) of
+                {ok, Obj} ->
+                    {weak_ok, Obj};
+                ER ->
+                    ER
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
 
 -spec repl_get(pid(), binary(), binary(), binary(),
                           proplists:proplist(), timeout(), riak_cs_stats:key()) ->

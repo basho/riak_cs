@@ -36,8 +36,7 @@
           {ok, temp_session()} | {error, term()}.
 create(?IAM_ROLE{role_id = RoleId,
                  role_name = RoleName} = Role,
-       Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy_, PolicyArns, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+       Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy_, PolicyArns, Pbc) ->
 
     UserId = riak_cs_aws_utils:make_id(?USER_ID_LENGTH, ?USER_ID_PREFIX),
     {KeyId, AccessKey} = riak_cs_aws_utils:generate_access_creds(UserId),
@@ -90,9 +89,9 @@ create(?IAM_ROLE{role_id = RoleId,
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
                                  role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument},
-                                 assumed_role_user = #assumed_role_user{arn = RoleArn}}, RcPid) ->
+                                 assumed_role_user = #assumed_role_user{arn = RoleArn}}, Pbc) ->
     RoleAttachedPolicies =
-        case riak_cs_iam:get_role(RoleArn, RcPid) of
+        case riak_cs_iam:get_role(RoleArn, Pbc) of
             {ok, ?IAM_ROLE{attached_policies = PP}} ->
                 PP;
             _ ->
@@ -104,7 +103,7 @@ effective_policies(#temp_session{inline_policy = InlinePolicy,
             lists:flatten(
               [InlinePolicy, AssumeRolePolicyDocument |
                [begin
-                    case riak_cs_iam:get_policy(Arn, RcPid) of
+                    case riak_cs_iam:get_policy(Arn, Pbc) of
                         {ok, Policy} ->
                             Policy;
                         _ ->
@@ -154,19 +153,16 @@ make_session_token() ->
 
 close_session(Id) ->
     {ok, Pbc} = riak_cs_utils:riak_connection(),
-    _ = case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, Id) of
-            {ok, Obj0} ->
-                Obj1 = riakc_obj:update_value(Obj0, ?DELETED_MARKER),
-                case riakc_pb_socket:put(Pbc, Obj1, [{dw, all}]) of
-                    ok ->
-                        logger:info("Deleted temp session for user with key_id ~s", [Id]),
-                        ok;
-                    {error, Reason} ->
-                        logger:warning("Failed to delete temp session with key_id ~s: ~p", [Id, Reason]),
-                        still_ok
-                end;
-            {error, _r} ->
-                nevermind
-        end,
-    riak_cs_utils:close_riak_connection(Pbc).
+    try
+        case riakc_pb_socket:delete(Pbc, ?TEMP_SESSIONS_BUCKET, Id, ?CONSISTENT_DELETE_OPTIONS) of
+            ok ->
+                logger:info("Deleted temp session for user with key_id ~s", [Id]),
+                ok;
+            {error, Reason} ->
+                logger:warning("Failed to delete temp session with key_id ~s: ~p", [Id, Reason]),
+                still_ok
+        end
+    after
+        riak_cs_utils:close_riak_connection(Pbc)
+    end.
 

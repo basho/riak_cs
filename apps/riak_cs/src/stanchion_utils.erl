@@ -106,21 +106,16 @@ create_bucket(#{bucket := Bucket,
     case OpResult1 of
         ok ->
             BucketRecord = bucket_record(Bucket, create),
-            {ok, RcPid} = riak_cs_riak_client:checkout(),
-            try
-                case riak_cs_user:get_user(OwnerId, RcPid) of
-                    {ok, {_FedereatedUser, undefined}} ->
-                        logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
-                                    [Bucket, OwnerId]),
-                        {error, temp_users_create_bucket_restriction};
-                    {ok, {User, UserObj}} ->
-                        UpdUser = update_user_buckets(add, User, BucketRecord),
-                        save_user(UpdUser, UserObj, Pbc);
-                    ER ->
-                        ER
-                end
-            after
-                riak_cs_riak_client:checkin(RcPid)
+            case riak_cs_iam:find_user(#{key_id => OwnerId}, Pbc) of
+                {ok, {_FedereatedUser, undefined}} ->
+                    logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
+                                [Bucket, OwnerId]),
+                    {error, temp_users_create_bucket_restriction};
+                {ok, {User, UserObj}} ->
+                    UpdUser = update_user_buckets(add, User, BucketRecord),
+                    save_user(UpdUser, UserObj, Pbc);
+                ER ->
+                    ER
             end;
         {error, _} ->
             OpResult1
@@ -143,15 +138,10 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
     OpResult1 = do_bucket_op(Bucket, OwnerId, [{acl, ?ACL{}}], delete, Pbc),
     case OpResult1 of
         ok ->
-            {ok, RcPid} = riak_cs_riak_client:checkout(),
-            try
-                BucketRecord = bucket_record(Bucket, delete),
-                {ok, {User, UserObj}} = riak_cs_iam:find_user(#{key_id => OwnerId}, RcPid),
-                UpdUser = update_user_buckets(delete, User, BucketRecord),
-                save_user(UpdUser, UserObj, Pbc)
-            after
-                ok = riak_cs_riak_client:checkin(RcPid)
-            end;
+            BucketRecord = bucket_record(Bucket, delete),
+            {ok, {User, UserObj}} = riak_cs_iam:find_user(#{key_id => OwnerId}, Pbc),
+            UpdUser = update_user_buckets(delete, User, BucketRecord),
+            save_user(UpdUser, UserObj, Pbc);
         {error, _} ->
             OpResult1
     end.
@@ -186,25 +176,20 @@ update_user(FF, Pbc) ->
     User = ?IAM_USER{arn = Arn,
                      email = Email} =
         riak_cs_iam:exprec_user(FF),
-    {ok, RcPid} = riak_cs_riak_client:checkout(),
-    try
-        {ok, {_OldUser, Obj}} = riak_cs_iam:get_user(Arn, RcPid),
-        CanProceed =
-            case riak_cs_iam:find_user(#{email => Email}, RcPid) of
-                {ok, {?IAM_USER{arn = Arn}, _}} ->
-                    true;  %% found self
-                {ok, {?IAM_USER{email = Email}, _}} ->
-                    false; %% found some other user with this email
-                {error, notfound} ->
-                    true
-            end,
-        if CanProceed ->
-                save_user(User, Obj, Pbc);
-           el/=se ->
-                {error, user_already_exists}
-        end
-    after
-        riak_cs_riak_client:checkin(RcPid)
+    {ok, {_OldUser, Obj}} = riak_cs_iam:get_user(Arn, Pbc),
+    CanProceed =
+        case riak_cs_iam:find_user(#{email => Email}, Pbc) of
+            {ok, {?IAM_USER{arn = Arn}, _}} ->
+                true;  %% found self
+            {ok, {?IAM_USER{email = Email}, _}} ->
+                false; %% found some other user with this email
+            {error, notfound} ->
+                true
+        end,
+    if CanProceed ->
+            save_user(User, Obj, Pbc);
+       el/=se ->
+            {error, user_already_exists}
     end.
 
 
@@ -235,7 +220,7 @@ create_role(Fields, Pbc) ->
         riak_cs_iam:unarm(
           riak_cs_iam:exprec_role(
             riak_cs_iam:fix_permissions_boundary(Fields))),
-    case role_name_available(Name) of
+    case role_name_available(Name, Pbc) of
         true ->
             save_role(R, Pbc);
         false ->
@@ -247,11 +232,8 @@ update_role(Fields, Pbc) ->
     Role = riak_cs_iam:exprec_role(Fields),
     save_role_directly(Role, Pbc).
 
-role_name_available(Name) ->
-    {ok, Pbc} = riak_cs_riak_client:checkout(),
-    Res = (riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound}),
-    riak_cs_riak_client:checkin(Pbc),
-    Res.
+role_name_available(Name, Pbc) ->
+    (riak_cs_iam:find_role(#{name => Name}, Pbc) == {error, notfound}).
 
 save_role(Role0 = ?IAM_ROLE{role_name = Name,
                             path = Path}, Pbc) ->
@@ -307,7 +289,7 @@ create_policy(Fields, Pbc) ->
     P = ?IAM_POLICY{policy_name = Name} =
         riak_cs_iam:unarm(
           riak_cs_iam:exprec_policy(Fields)),
-    case policy_name_available(Name) of
+    case policy_name_available(Name, Pbc) of
         true ->
             save_policy(P, Pbc);
         false ->
@@ -319,13 +301,8 @@ update_policy(Fields, Pbc) ->
     Policy = riak_cs_iam:exprec_policy(Fields),
     save_policy_directly(Policy, Pbc).
 
-policy_name_available(Name) ->
-    {ok, RcPid} = riak_cs_riak_client:checkout(),
-    try
-        {error, notfound} == riak_cs_iam:find_policy(#{name => Name}, RcPid)
-    after
-        riak_cs_riak_client:checkin(RcPid)
-    end.
+policy_name_available(Name, Pbc) ->
+    {error, notfound} == riak_cs_iam:find_policy(#{name => Name}, Pbc).
 
 save_policy(Policy0 = ?IAM_POLICY{policy_name = Name,
                                   path = Path}, Pbc) ->
@@ -383,7 +360,7 @@ create_saml_provider(Fields, Pbc) ->
           riak_cs_iam:exprec_saml_provider(Fields)),
     case riak_cs_iam:parse_saml_provider_idp_metadata(P0) of
         {ok, P9} ->
-            case saml_provider_name_available(Name) of
+            case saml_provider_name_available(Name, Pbc) of
                 true ->
                     save_saml_provider(P9, Pbc);
                 false ->
@@ -393,13 +370,8 @@ create_saml_provider(Fields, Pbc) ->
             ER
     end.
 
-saml_provider_name_available(Name) ->
-    {ok, Pbc} = riak_cs_riak_client:checkout(),
-    try
-        {error, notfound} == riak_cs_iam:find_saml_provider(#{name => Name}, Pbc)
-    after
-        riak_cs_riak_client:checkin(Pbc)
-    end.
+saml_provider_name_available(Name, Pbc) ->
+    {error, notfound} == riak_cs_iam:find_saml_provider(#{name => Name}, Pbc).
 
 save_saml_provider(P0 = ?IAM_SAML_PROVIDER{name = Name,
                                            tags = Tags}, Pbc) ->
@@ -859,5 +831,5 @@ update_user_buckets(delete, User, Bucket) ->
             User;
         [ExistingBucket] ->
             UpdBuckets = lists:delete(ExistingBucket, Buckets),
-            User?RCS_USER{buckets=UpdBuckets}
+            User?RCS_USER{buckets = UpdBuckets}
     end.

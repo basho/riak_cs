@@ -32,9 +32,6 @@
 -export([stop/1,
          get_bucket/2,
          set_bucket_name/2,
-         get_role/2,
-         get_policy/2,
-         get_saml_provider/2,
          get_user/2,
          get_user_with_pbc/2,
          set_manifest_bag/2,
@@ -177,18 +174,6 @@ set_manifest_bag(RcPid, ManifestBagId) ->
 get_manifest_bag(RcPid) ->
     gen_server:call(RcPid, get_manifest_bag).
 
--spec get_role(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_role(RcPid, A) ->
-    gen_server:call(RcPid, {get_role, A}, infinity).
-
--spec get_policy(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_policy(RcPid, A) ->
-    gen_server:call(RcPid, {get_policy, A}, infinity).
-
--spec get_saml_provider(riak_client(), binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_saml_provider(RcPid, Arn) ->
-    gen_server:call(RcPid, {get_saml_provider, Arn}, infinity).
-
 %% TODO: Using this function is more or less a cheat.
 %% It's better to export new  function to manipulate manifests
 %% from this module.
@@ -232,27 +217,6 @@ handle_call({get_user, UserKey}, _From, State) ->
             {reply, Res, NewState};
         {error, Reason} ->
             {reply, {error, Reason}, State}
-    end;
-handle_call({get_role, A}, _From, State0) ->
-    case do_get_from_bucket(?IAM_ROLE_BUCKET, A, get_cs_role, State0) of
-        {ok, Obj, State9} ->
-            {reply, {ok, Obj}, State9};
-        {error, Reason, State9} ->
-            {reply, {error, Reason}, State9}
-    end;
-handle_call({get_policy, A}, _From, State0) ->
-    case do_get_from_bucket(?IAM_POLICY_BUCKET, A, get_cs_policy, State0) of
-        {ok, Obj, State9} ->
-            {reply, {ok, Obj}, State9};
-        {error, Reason, State9} ->
-            {reply, {error, Reason}, State9}
-    end;
-handle_call({get_saml_provider, A}, _From, State0) ->
-    case do_get_from_bucket(?IAM_SAMLPROVIDER_BUCKET, A, get_cs_saml_provider, State0) of
-        {ok, Obj, State9} ->
-            {reply, {ok, Obj}, State9};
-        {error, Reason, State9} ->
-            {reply, {error, Reason}, State9}
     end;
 handle_call(master_pbc, _From, State) ->
     case ensure_master_pbc(State) of

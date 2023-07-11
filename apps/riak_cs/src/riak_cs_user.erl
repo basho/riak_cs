@@ -111,7 +111,7 @@ handle_create_user({error, _} = Error, _User) ->
 
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
--spec get_user(iodata(), riak_client()) ->
+-spec get_user(undefined | binary(), riak_client()) ->
           {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, no_user_key | term()}.
 get_user(undefined, _) ->
     {error, no_user_key};
@@ -140,7 +140,8 @@ get_user(KeyId_, RcPid) ->
 
 
 get_cs_user(KeyId, RcPid) ->
-    riak_cs_iam:find_user(#{key_id => KeyId}, RcPid).
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    riak_cs_iam:find_user(#{key_id => KeyId}, Pbc).
 
 
 -spec from_riakc_obj(riakc_obj:riakc_obj(), boolean()) -> rcs_user().

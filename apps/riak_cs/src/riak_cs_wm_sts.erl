@@ -266,7 +266,8 @@ do_action("AssumeRoleWithSAML",
                                            request_id = RequestId}) ->
     Specs = lists:foldl(fun assume_role_with_saml_fields_filter/2,
                         #{request_id => RequestId}, Form),
-    case riak_cs_sts:assume_role_with_saml(Specs, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_sts:assume_role_with_saml(Specs, Pbc) of
         {ok, #{assumed_role_user := #assumed_role_user{assumed_role_id = AssumedRoleId} = AssumedRoleUser,
                audience := Audience,
                credentials := Credentials,

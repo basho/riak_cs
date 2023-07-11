@@ -129,15 +129,10 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        acl = ACL,
                                        user_object = UserObj,
                                        bucket = Bucket,
-                                       response_module = ResponseMod,
-                                       riak_client = RcPid}) ->
+                                       response_module = ResponseMod}) ->
     BagId = riak_cs_mb_helper:choose_bag_id(manifest, Bucket),
-    case riak_cs_bucket:create_bucket(User,
-                                      UserObj,
-                                      Bucket,
-                                      BagId,
-                                      ACL,
-                                      RcPid) of
+    case riak_cs_bucket:create_bucket(
+           User, UserObj, Bucket, BagId, ACL) of
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->

@@ -38,10 +38,10 @@
                                      | region_disabled.
 
 -spec assume_role_with_saml(maps:map(), pid()) -> {ok, maps:map()} | {error, assume_role_with_saml_error()}.
-assume_role_with_saml(Specs, RcPid) ->
+assume_role_with_saml(Specs, Pbc) ->
     Res = lists:foldl(
             fun(StepF, State) -> StepF(State) end,
-            #{riak_client => RcPid,
+            #{pbc => Pbc,
               specs => Specs},
             [fun validate_args/1,
              fun check_role/1,
@@ -146,9 +146,9 @@ validate_saml_assertion(#{}) ->
 
 check_role(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-check_role(#{riak_client := RcPid,
+check_role(#{pbc := Pbc,
              specs := #{role_arn := RoleArn}} = State) ->
-    case riak_cs_iam:get_role(RoleArn, RcPid) of
+    case riak_cs_iam:get_role(RoleArn, Pbc) of
         {ok, Role} ->
             State#{status => ok,
                    role => Role};
@@ -229,12 +229,12 @@ amazonize(A) -> A.
 
 check_with_saml_provider(#{status := {error, _}} = PreviousStepFailed) ->
     PreviousStepFailed;
-check_with_saml_provider(#{riak_client := RcPid,
+check_with_saml_provider(#{pbc := Pbc,
                            response_doc := ResponseDoc,
                            specs := #{request_id := RequestId,
                                       principal_arn := PrincipalArn}
                           } = State) ->
-    case riak_cs_iam:get_saml_provider(PrincipalArn, RcPid) of
+    case riak_cs_iam:get_saml_provider(PrincipalArn, Pbc) of
         {ok, SP = ?IAM_SAML_PROVIDER{name = SAMLProviderName}} ->
             State#{status => validate_assertion(ResponseDoc, SP, RequestId),
                    saml_provider_name => SAMLProviderName};
@@ -269,14 +269,14 @@ create_session_and_issue_temp_creds(#{specs := #{duration_seconds := DurationSec
                                       role := Role,
                                       subject := Subject,
                                       subject_type := SubjectType,
-                                      riak_client := RcPid} = State) ->
+                                      pbc := Pbc} = State) ->
     SourceIdentity = maps:get(source_identity, State, <<>>),
     Email = maps:get(email, State, <<>>),
     InlinePolicy = maps:get(policy, Specs, undefined),
     PolicyArns = maps:get(policy_arns, Specs, []),
 
     case riak_cs_temp_sessions:create(
-           Role, Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy, PolicyArns, RcPid) of
+           Role, Subject, SourceIdentity, Email, DurationSeconds, InlinePolicy, PolicyArns, Pbc) of
         {ok, #temp_session{assumed_role_user = AssumedRoleUser,
                            credentials = Credentials}} ->
             State#{status => ok,

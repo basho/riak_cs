@@ -82,34 +82,34 @@ delete_user(?IAM_USER{arn = TransKeyId}) ->
     handle_response(Result).
 
 -spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
-get_user(Arn, RcPid) ->
-    case riak_cs_riak_client:get_user(RcPid, Arn) of
-        {ok, {Obj, KDB}} ->
-            {ok, {riak_cs_user:from_riakc_obj(Obj, KDB), Obj}};
+get_user(Arn, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?USER_BUCKET, Arn, get_cs_user) of
+        {ok, Obj} ->
+            {ok, {riak_cs_user:from_riakc_obj(Obj, _KeepDeletedBuckets = false), Obj}};
+        {weak_ok, Obj} ->
+            {ok, {riak_cs_user:from_riakc_obj(Obj, true), Obj}};
         ER ->
             ER
     end.
 
 -spec find_user(maps:map(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
-find_user(#{name := A}, RcPid) ->
-    find_user(?USER_NAME_INDEX, A, RcPid);
-find_user(#{canonical_id := A}, RcPid) ->
-    find_user(?USER_ID_INDEX, A, RcPid);
-find_user(#{key_id := A}, RcPid) ->
-    find_user(?USER_KEYID_INDEX, A, RcPid);
-find_user(#{email := A}, RcPid) ->
-    find_user(?USER_EMAIL_INDEX, A, RcPid).
+find_user(#{name := A}, Pbc) ->
+    find_user(?USER_NAME_INDEX, A, Pbc);
+find_user(#{canonical_id := A}, Pbc) ->
+    find_user(?USER_ID_INDEX, A, Pbc);
+find_user(#{key_id := A}, Pbc) ->
+    find_user(?USER_KEYID_INDEX, A, Pbc);
+find_user(#{email := A}, Pbc) ->
+    find_user(?USER_EMAIL_INDEX, A, Pbc).
 
-find_user(Index, A, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_user(Index, A, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, Index, A),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
-            get_user(Arn, RcPid);
+            get_user(Arn, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find user by index ~s with key ~s: ~p", [Index, A, Reason]),
             {error, Reason}
     end.
 
@@ -124,13 +124,13 @@ update_user(U = ?IAM_USER{key_id = KeyId}) ->
 
 -spec list_attached_user_policies(binary(), binary(), pid()) ->
           {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
-list_attached_user_policies(UserName, PathPrefix, RcPid) ->
-    case find_user(#{name => UserName}, RcPid) of
+list_attached_user_policies(UserName, PathPrefix, Pbc) ->
+    case find_user(#{name => UserName}, Pbc) of
         {ok, {?IAM_USER{attached_policies = AA}, _}} ->
             AANN = [begin
                         try
                             {ok, ?IAM_POLICY{path = Path,
-                                             policy_name = N}} = get_policy(A, RcPid),
+                                             policy_name = N}} = get_policy(A, Pbc),
                             case 0 < binary:longest_common_prefix([Path, PathPrefix]) of
                                 true ->
                                     {A, N};
@@ -167,39 +167,36 @@ delete_role(Arn) ->
     handle_response(Result).
 
 -spec get_role(binary(), pid()) -> {ok, ?IAM_ROLE{}} | {error, term()}.
-get_role(Arn, RcPid) ->
-    case riak_cs_riak_client:get_role(RcPid, Arn) of
-        {ok, Obj} ->
+get_role(Arn, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?IAM_ROLE_BUCKET, Arn, get_cs_role) of
+        {OK, Obj} when OK =:= ok;
+                       OK =:= weak_ok ->
             from_riakc_obj(Obj);
         Error ->
             Error
     end.
 
 -spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
-find_role(Name, RcPid) when is_binary(Name) ->
-    find_role(#{name => Name}, RcPid);
-find_role(#{name := Name}, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_role(Name, Pbc) when is_binary(Name) ->
+    find_role(#{name => Name}, Pbc);
+find_role(#{name := Name}, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_role(Key, RcPid);
+            get_role(Key, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find role by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end;
-find_role(#{path := Path}, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_role(#{path := Path}, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_PATH_INDEX, Path),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_role(Key, RcPid);
+            get_role(Key, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find role by path ~s: ~p", [Path, Reason]),
             {error, Reason}
     end.
 
@@ -226,40 +223,39 @@ delete_policy(Arn) ->
     handle_response(Result).
 
 -spec get_policy(binary(), pid()) -> {ok, ?IAM_POLICY{}} | {error, term()}.
-get_policy(Arn, RcPid) ->
-    case riak_cs_riak_client:get_policy(RcPid, Arn) of
-        {ok, Obj} ->
+get_policy(Arn, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?IAM_POLICY_BUCKET, Arn, get_cs_policy) of
+        {OK, Obj} when OK =:= ok;
+                       OK =:= weak_ok ->
             from_riakc_obj(Obj);
-        Error ->
-            Error
+        ER ->
+            ER
     end.
 
 -spec find_policy(maps:map() | Name::binary(), pid()) -> {ok, policy()} | {error, notfound | term()}.
-find_policy(Name, RcPid) when is_binary(Name) ->
-    find_policy(#{name => Name}, RcPid);
-find_policy(#{name := Name}, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_policy(Name, Pbc) when is_binary(Name) ->
+    find_policy(#{name => Name}, Pbc);
+find_policy(#{name := Name}, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_POLICY_BUCKET, ?POLICY_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_policy(Key, RcPid);
+            get_policy(Key, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find managed policy by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end.
 
 -spec attach_role_policy(binary(), binary(), pid()) ->
           ok | {error, error_reason()}.
-attach_role_policy(PolicyArn, RoleName, RcPid) ->
-    case find_role(#{name => RoleName}, RcPid) of
+attach_role_policy(PolicyArn, RoleName, Pbc) ->
+    case find_role(#{name => RoleName}, Pbc) of
         {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
             case lists:member(PolicyArn, PP) of
                 true ->
                     ok;
                 false ->
-                    case get_policy(PolicyArn, RcPid) of
+                    case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{is_attachable = true,
                                                   attachment_count = AC}} ->
                             case update_role(Role?IAM_ROLE{attached_policies = lists:usort([PolicyArn | PP])}) of
@@ -280,14 +276,14 @@ attach_role_policy(PolicyArn, RoleName, RcPid) ->
 
 -spec detach_role_policy(binary(), binary(), pid()) ->
           ok | {error, unmodifiable_entity}.
-detach_role_policy(PolicyArn, RoleName, RcPid) ->
-    case find_role(#{name => RoleName}, RcPid) of
+detach_role_policy(PolicyArn, RoleName, Pbc) ->
+    case find_role(#{name => RoleName}, Pbc) of
         {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
             case lists:member(PolicyArn, PP) of
                 false ->
                     ok;
                 true ->
-                    case get_policy(PolicyArn, RcPid) of
+                    case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
                             case update_role(Role?IAM_ROLE{attached_policies = lists:delete(PolicyArn, PP)}) of
                                 ok ->
@@ -305,14 +301,14 @@ detach_role_policy(PolicyArn, RoleName, RcPid) ->
 
 -spec attach_user_policy(binary(), binary(), pid()) ->
           ok | {error, error_reason()}.
-attach_user_policy(PolicyArn, UserName, RcPid) ->
-    case find_user(#{name => UserName}, RcPid) of
+attach_user_policy(PolicyArn, UserName, Pbc) ->
+    case find_user(#{name => UserName}, Pbc) of
         {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 true ->
                     ok;
                 false ->
-                    case get_policy(PolicyArn, RcPid) of
+                    case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{is_attachable = true,
                                                   attachment_count = AC}} ->
                             case update_user(User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
@@ -333,14 +329,14 @@ attach_user_policy(PolicyArn, UserName, RcPid) ->
 
 -spec detach_user_policy(binary(), binary(), pid()) ->
           ok | {error, unmodifiable_entity}.
-detach_user_policy(PolicyArn, UserName, RcPid) ->
-    case find_user(#{name => UserName}, RcPid) of
+detach_user_policy(PolicyArn, UserName, Pbc) ->
+    case find_user(#{name => UserName}, Pbc) of
         {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 false ->
                     ok;
                 true ->
-                    case get_policy(PolicyArn, RcPid) of
+                    case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
                             case update_user(User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
                                 ok ->
@@ -407,41 +403,39 @@ delete_saml_provider(Arn) ->
 
 
 -spec get_saml_provider(binary(), pid()) -> {ok, ?IAM_SAML_PROVIDER{}} | {error, term()}.
-get_saml_provider(Arn, RcPid) ->
-    case riak_cs_riak_client:get_saml_provider(RcPid, Arn) of
-        {ok, Obj} ->
+get_saml_provider(Arn, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, get_cs_saml_provider) of
+        {OK, Obj} when OK =:= ok;
+                       OK =:= weak_ok ->
             from_riakc_obj(Obj);
         Error ->
             Error
     end.
 
 -spec find_saml_provider(maps:map() | Arn::binary(), pid()) -> {ok, saml_provider()} | {error, notfound | term()}.
-find_saml_provider(Name, RcPid) when is_binary(Name) ->
-    find_saml_provider(#{name => Name}, RcPid);
-find_saml_provider(#{name := Name}, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_saml_provider(Name, Pbc) when is_binary(Name) ->
+    find_saml_provider(#{name => Name}, Pbc);
+find_saml_provider(#{name := Name}, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_NAME_INDEX, Name),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_saml_provider(Key, RcPid);
+            get_saml_provider(Key, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find SAML Provider by name ~s: ~p", [Name, Reason]),
             {error, Reason}
     end;
-find_saml_provider(#{entity_id := EntityID}, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+find_saml_provider(#{entity_id := EntityID}, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_SAMLPROVIDER_BUCKET, ?SAMLPROVIDER_ENTITYID_INDEX, EntityID),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_saml_provider(Key, RcPid);
+            get_saml_provider(Key, Pbc);
         {error, Reason} ->
-            logger:error("Failed to find SAML Provider by EntityID ~s: ~p", [EntityID, Reason]),
             {error, Reason}
     end.
+
 
 -spec parse_saml_provider_idp_metadata(saml_provider()) ->
           {ok, saml_provider()} | {error, invalid_metadata_document}.
@@ -608,10 +602,3 @@ handle_response({error, {error_status, _, _, ErrorDoc}}) ->
     riak_cs_aws_response:velvet_response(ErrorDoc);
 handle_response({error, _} = Error) ->
     Error.
-
-
-
--ifdef(TEST).
--compile([export_all, nowarn_export_all]).
--include_lib("eunit/include/eunit.hrl").
--endif.

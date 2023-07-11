@@ -37,8 +37,7 @@
 
 -include("riak_cs.hrl").
 
--record(ping_context, {pool_pid=true :: boolean(),
-                       riak_client :: undefined | riak_client()}).
+-record(ping_context, {riak_client :: undefined | pid()}).
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -59,51 +58,26 @@ allowed_methods(RD, Ctx) ->
 to_html(ReqData, Ctx) ->
     {"OK", ReqData, Ctx}.
 
-finish_request(RD, Ctx=#ping_context{riak_client=undefined}) ->
+finish_request(RD, Ctx = #ping_context{riak_client = undefined}) ->
     {true, RD, Ctx};
-finish_request(RD, Ctx=#ping_context{riak_client=RcPid,
-                                     pool_pid=PoolPid}) ->
-    case PoolPid of
-        true ->
-            riak_cs_riak_client:checkin(RcPid);
-        false ->
-            riak_cs_riak_client:stop(RcPid)
-    end,
-    {true, RD, Ctx#ping_context{riak_client=undefined}}.
+finish_request(RD, Ctx = #ping_context{riak_client = RcPid}) ->
+    riak_cs_riak_client:stop(RcPid),
+    {true, RD, Ctx#ping_context{riak_client = undefined}}.
 
 %% -------------------------------------------------------------------
 %% Internal functions
 %% -------------------------------------------------------------------
 
--spec get_connection_pid() -> {riak_client(), boolean()}.
 get_connection_pid() ->
-    case pool_checkout() of
-        full ->
-            non_pool_connection();
-        RcPid ->
-            {RcPid, true}
-    end.
-
--spec pool_checkout() -> full | riak_client().
-pool_checkout() ->
-    case riak_cs_riak_client:checkout(request_pool) of
-        {ok, RcPid} ->
-            RcPid;
-        {error, _Reason} ->
-            full
-    end.
-
--spec non_pool_connection() -> {undefined | riak_client(), false}.
-non_pool_connection() ->
     case riak_cs_riak_client:start_link([]) of
         {ok, RcPid} ->
-            {RcPid, false};
-        {error, _} ->
-            {undefined, false}
+            RcPid;
+        {error, Reason} ->
+            logger:error("Failed to obtain a riak_client: ~p", [Reason]),
+            undefined
     end.
 
--spec riak_ping({riak_client(), boolean()}, #ping_context{}) -> {boolean(), #ping_context{}}.
-riak_ping({RcPid, PoolPid}, Ctx) ->
+riak_ping(RcPid, Ctx) ->
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     Timeout = riak_cs_config:ping_timeout(),
     Available = case catch riak_cs_pbc:ping(MasterPbc, Timeout, [riakc, ping]) of
@@ -112,4 +86,4 @@ riak_ping({RcPid, PoolPid}, Ctx) ->
                     _ ->
                         false
                 end,
-    {Available, Ctx#ping_context{riak_client=RcPid, pool_pid=PoolPid}}.
+    {Available, Ctx}.
