@@ -55,7 +55,7 @@
 -define(WITH_STATS(StatsKey, Statement),
         begin
             _ = riak_cs_stats:inflow(StatsKey),
-            StartTime__with_stats = os:timestamp(),
+            StartTime__with_stats = os:system_time(millisecond),
             Result__with_stats = Statement,
             _ = riak_cs_stats:update_with_start(StatsKey, StartTime__with_stats,
                                                 Result__with_stats),
@@ -65,7 +65,7 @@
 -spec ping(pid(), timeout(), riak_cs_stats:key()) -> pong.
 ping(PbcPid, Timeout, StatsKey) ->
     _ = riak_cs_stats:inflow(StatsKey),
-    StartTime = os:timestamp(),
+    StartTime = os:system_time(millisecond),
     Result = riakc_pb_socket:ping(PbcPid, Timeout),
     case Result of
         pong ->
@@ -92,7 +92,7 @@ get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)  ->
 get(PbcPid, BucketName, Key, Opts, Timeout, StatsKey) ->
     ?WITH_STATS(StatsKey, get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)).
 
--spec get(pid(), binary(), binary(), timeout()) ->
+-spec get(pid(), binary(), binary(), atom()) ->
           {ok | weak_ok, riakc_obj:riakc_obj()} | {error, term()}.
 get(Pbc, Bucket, Key, StatsItem) ->
     Timeout = riak_cs_config:get_bucket_timeout(),
@@ -258,16 +258,16 @@ check_connection_status(Pbc, Where) ->
 -spec pause_to_reconnect(pid(), term(), non_neg_integer()) -> ok.
 pause_to_reconnect(Pbc, Reason, Timeout)
   when Reason =:= timeout orelse Reason =:= disconnected ->
-    pause_to_reconnect0(Pbc, Timeout, os:timestamp());
+    pause_to_reconnect0(Pbc, Timeout, os:system_time(millisecond));
 pause_to_reconnect(_Pbc, _Other, _Timeout) ->
     ok.
 
 pause_to_reconnect0(Pbc, Timeout, Start) ->
-    ?LOG_DEBUG("riak_cs_pbc:pause_to_reconnect0"),
+    logger:info("pausing to reconnect to riak"),
     case riakc_pb_socket:is_connected(Pbc, ?FIRST_RECONNECT_INTERVAL) of
         true -> ok;
         {false, _} ->
-            Remaining = Timeout - timer:now_diff(os:timestamp(), Start) div 1000,
+            Remaining = Timeout - (os:system_time(millisecond) - Start),
             case Remaining of
                 Positive when 0 < Positive ->
                     %% sleep to avoid busy-loop calls of `is_connected'

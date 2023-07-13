@@ -29,8 +29,8 @@
 -callback identify(#wm_reqdata{}, #rcs_web_context{}) ->
     failed |
     {failed, Reason::term()} |
-    {string() | undefined, string() | tuple()} |
-    {string(), undefined}.
+    {binary() | undefined, binary() | tuple()} |
+    {binary(), undefined}.
 
 -callback authenticate(rcs_user(), string() | {string(), term()} | undefined,
                        #wm_reqdata{}, #rcs_web_context{}) ->

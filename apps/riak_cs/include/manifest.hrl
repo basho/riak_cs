@@ -30,7 +30,7 @@
 -define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
 -define(PART_MANIFEST, #part_manifest_v2).
 -define(PART_MANIFEST_RECNAME, part_manifest_v2).
--define(MULTIPART_DESCR, #multipart_descr_v1).
+-define(MULTIPART_DESCR, #multipart_descr_v2).
 -define(PART_DESCR, #part_descr_v1).
 
 -define(LFS_DEFAULT_OBJECT_VERSION, <<"null">>).
@@ -325,7 +325,26 @@
     %% Time that the upload was initiated
     initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
 }).
--type multipart_descr() :: #multipart_descr_v1{}.
+
+-record(multipart_descr_v2, {
+    %% Object key for the multipart upload
+    key :: binary(),
+
+    %% UUID of the multipart upload
+    upload_id :: binary(),
+
+    %% User that initiated the upload
+    owner_display :: binary(),
+    owner_key_id :: binary(),
+
+    %% storage class: no real options here
+    storage_class = standard,
+
+    %% Time that the upload was initiated
+    initiated :: non_neg_integer()
+}).
+
+-type multipart_descr() :: #multipart_descr_v2{}.
 
 %% Basis of multipart list parts output
 -record(part_descr_v1, {

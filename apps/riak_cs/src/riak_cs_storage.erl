@@ -53,7 +53,7 @@
 sum_user(RcPid, User, Detailed, LeewayEdge) when is_binary(User) ->
     sum_user(RcPid, binary_to_list(User), Detailed, LeewayEdge);
 sum_user(RcPid, User, Detailed, LeewayEdge) when is_list(User) ->
-    case riak_cs_user:get_user(User, RcPid) of
+    case riak_cs_iam:find_user(#{key_id => User}, RcPid) of
         {ok, {UserRecord, _UserObj}} ->
             Buckets = riak_cs_bucket:get_buckets(UserRecord),
             BucketUsages = [maybe_sum_bucket(User, B, Detailed, LeewayEdge) ||
@@ -67,15 +67,7 @@ sum_user(RcPid, User, Detailed, LeewayEdge) when is_list(User) ->
 %%      This log is *very* important because unless this log
 %%      there are no other way for operator to know a calculation
 %%      which riak_cs_storage_d failed.
--spec maybe_sum_bucket(string(), cs_bucket(), boolean(), erlang:timestamp()) ->
-                              {binary(), [{binary(), integer()}]} |
-                              {binary(), binary()}.
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = Bucket, Detailed, LeewayEdge)
-  when is_list(Name) ->
-    maybe_sum_bucket(User, Bucket?RCS_BUCKET{name=list_to_binary(Name)},
-                     Detailed, LeewayEdge);
-maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
-  when is_binary(Name) ->
+maybe_sum_bucket(User, ?RCS_BUCKET{name = Name}, Detailed, LeewayEdge) ->
     case sum_bucket(Name, Detailed, LeewayEdge) of
         {struct, _} = BucketUsage -> {Name, BucketUsage};
         {error, _} = E ->
@@ -96,7 +88,7 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name=Name} = _Bucket, Detailed, LeewayEdge)
 %% which is the number of objects that were counted in the bucket, and
 %% `Bytes', which is the total size of all of those objects.  More
 %% fields are included for detailed calculation.
--spec sum_bucket(binary(), boolean(), erlang:timestamp()) ->
+-spec sum_bucket(binary(), boolean(), non_neg_integer()) ->
                         {struct, [{binary(), integer()}]}
                             | {error, term()}.
 sum_bucket(BucketName, Detailed, LeewayEdge) ->

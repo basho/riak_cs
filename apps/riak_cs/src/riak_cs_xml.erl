@@ -281,7 +281,7 @@ bucket_to_xml(Name, CreationDate) when is_binary(Name) ->
 bucket_to_xml(Name, CreationDate) ->
     make_internal_node('Bucket',
                        [make_external_node('Name', Name),
-                        make_external_node('CreationDate', CreationDate)]).
+                        make_external_node('CreationDate', binary_to_list(rts:iso8601(CreationDate)))]).
 
 user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
     make_internal_node('Owner', [make_external_node('ID', [CanonicalId]),
@@ -705,7 +705,7 @@ saml_provider_node_for_list(Arn, CreateDate, ValidUntil) ->
          {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
          {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]}
         ],
-    {'GetSAMLProviderResult', C}.
+    {'SAMLProviderListEntry', C}.
 
 create_saml_provider_response_to_xml(#create_saml_provider_response{saml_provider_arn = BareArn,
                                                                     tags = Tags,
@@ -741,9 +741,9 @@ list_saml_providers_response_to_xml(#list_saml_providers_response{saml_provider_
                                                                   request_id = RequestId}) ->
     ListSAMLProvidersResult =
         [{'SAMLProviderList', [saml_provider_node_for_list(Arn, CreateDate, ValidUntil)
-                               || #saml_provider_v1{arn = Arn,
-                                                    create_date = CreateDate,
-                                                    valid_until = ValidUntil} <- RR]}],
+                               || #saml_provider_list_entry{arn = Arn,
+                                                            create_date = CreateDate,
+                                                            valid_until = ValidUntil} <- RR]}],
     ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
     C = [{'ListSAMLProvidersResult', ListSAMLProvidersResult},
          {'ResponseMetadata', [ResponseMetadata]}],

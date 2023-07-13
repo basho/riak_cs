@@ -159,10 +159,10 @@ anonymous_user_creation() ->
     get_env(riak_cs, anonymous_user_creation, false).
 
 %% @doc Return the credentials of the admin user
--spec admin_creds() -> {ok, {string()|undefined, string()|undefined}}.
+-spec admin_creds() -> {ok, {binary()|undefined, binary()|undefined}}.
 admin_creds() ->
-    {ok, {get_env(riak_cs, admin_key, undefined),
-          get_env(riak_cs, admin_secret, undefined)}}.
+    {ok, {maybe_bin(get_env(riak_cs, admin_key, undefined)),
+          maybe_bin(get_env(riak_cs, admin_secret, undefined))}}.
 
 %% @doc Get the active version of Riak CS to use in checks to
 %% determine if new features should be enabled.
@@ -170,17 +170,15 @@ admin_creds() ->
 cs_version() ->
     get_env(riak_cs, cs_version, undefined).
 
--spec api() -> aws | oos.
+-spec api() -> api().
 api() ->
     api(get_env(riak_cs, rewrite_module, ?AWS_API_MOD)).
 
--spec api(atom() | undefined) -> s3 | oos | undefined.
+-spec api(atom() | undefined) -> api().
 api(?AWS_API_MOD) ->
     aws;
 api(?OOS_API_MOD) ->
-    oos;
-api(_) ->
-    undefined.
+    oos.
 
 -spec auth_bypass() -> boolean().
 auth_bypass() ->
@@ -648,3 +646,7 @@ get_env(App, Key, Default) ->
         _ ->
             Default
     end.
+
+
+maybe_bin(A) when is_list(A) -> list_to_binary(A);
+maybe_bin(A) -> A.

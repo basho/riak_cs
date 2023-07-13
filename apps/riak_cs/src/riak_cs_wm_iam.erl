@@ -127,7 +127,7 @@ forbidden(RD, #rcs_web_context{auth_module = AuthMod,
                         case riak_cs_user:get_user(UserKey, RcPid) of
                             {ok, {User, Obj}} ->
                                 authenticate(User, Obj, RD, Ctx, AuthData);
-                            Error ->
+                            {error, _} = Error ->
                                 Error
                         end
                 end
@@ -680,8 +680,14 @@ do_action("ListSAMLProviders",
     case riak_cs_api:list_saml_providers(
            RcPid, #list_saml_providers_request{}) of
         {ok, #{saml_providers := PP}} ->
+            PPEE = [#saml_provider_list_entry{arn = Arn,
+                                              create_date = CreateDate,
+                                              valid_until = ValidUntil}
+                    || ?IAM_SAML_PROVIDER{arn = Arn,
+                                          create_date = CreateDate,
+                                          valid_until = ValidUntil} <- PP],
             Doc = riak_cs_xml:to_xml(
-                    #list_saml_providers_response{saml_provider_list = PP,
+                    #list_saml_providers_response{saml_provider_list = PPEE,
                                                   request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->

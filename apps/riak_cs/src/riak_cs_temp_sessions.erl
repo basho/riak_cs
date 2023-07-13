@@ -85,36 +85,22 @@ create(?IAM_ROLE{role_id = RoleId,
     end.
 
 
--spec effective_policies(#temp_session{}, pid()) -> [policy()].
+-spec effective_policies(#temp_session{}, pid()) -> {[amz_policy()], PermissionsBoundary::amz_policy()}.
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
-                                 role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument},
-                                 assumed_role_user = #assumed_role_user{arn = RoleArn}}, Pbc) ->
-    RoleAttachedPolicies =
-        case riak_cs_iam:get_role(RoleArn, Pbc) of
-            {ok, ?IAM_ROLE{attached_policies = PP}} ->
-                PP;
-            _ ->
-                logger:notice("Assumed role ~s deleted while temp session is still open", [RoleArn]),
-                []
-        end,
-    Res = lists:filter(
-            fun(P) -> P /= undefined end,
-            lists:flatten(
-              [InlinePolicy, AssumeRolePolicyDocument |
-               [begin
-                    case riak_cs_iam:get_policy(Arn, Pbc) of
-                        {ok, Policy} ->
-                            Policy;
-                        _ ->
-                            logger:notice("Managed policy ~s previously attached to role "
-                                          "or referenced as session policy, is not available", [Arn]),
-                            []
-                    end
-                end || Arn <- SessionPolicies ++ RoleAttachedPolicies]]
-             )),
-    ?LOG_DEBUG("Effective policies: ~p", [Res]),
-    Res.
+                                 role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument,
+                                                  permissions_boundary = PermissionsBoundary,
+                                                  attached_policies = RoleAttachedPolicies}},
+                   Pbc) ->
+    Policies = lists:flatten(
+                 [maybe_include(AssumeRolePolicyDocument)
+                 | [maybe_include(InlinePolicy)
+                   | riak_cs_iam:express_policies(SessionPolicies ++ RoleAttachedPolicies, Pbc)]]),
+    ?LOG_DEBUG("Effective policies: ~p", [Policies]),
+    {Policies, PermissionsBoundary}.
+
+maybe_include(undefined) -> [];
+maybe_include(A) -> A.
 
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.

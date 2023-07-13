@@ -43,14 +43,16 @@
 
 -type api() :: aws | oos.
 
+-type policy_module() :: ?DEFAULT_POLICY_MODULE.
+
 -record(rcs_web_context, {start_time = os:system_time(millisecond) :: non_neg_integer(),
                           request_id = riak_cs_wm_utils:make_request_id() :: binary(),
-                          auth_bypass :: atom(),
+                          auth_bypass = false :: boolean(),
                           user :: undefined | admin | rcs_user(),
                           user_object :: undefined | riakc_obj:riakc_obj(),
                           role :: undefined | role(),
                           bucket :: undefined | binary(),
-                          acl :: 'undefined' | acl(),
+                          acl :: undefined | acl(),
                           requested_perm :: undefined | acl_perm(),
                           riak_client :: undefined | pid(),
                           rc_pool = request_pool:: atom(),    % pool name which riak_client belongs to
@@ -58,7 +60,7 @@
                           submodule :: module(),
                           exports_fun :: undefined | function(),
                           auth_module = ?DEFAULT_AUTH_MODULE :: module(),
-                          policy_module = ?DEFAULT_POLICY_MODULE :: module(),
+                          policy_module = ?DEFAULT_POLICY_MODULE :: policy_module(),
                           response_module = ?DEFAULT_RESPONSE_MODULE :: module(),
                           %% Key for API rate and latency stats.
                           %% If `stats_prefix' or `stats_key' is `no_stats', no stats
@@ -76,7 +78,7 @@
                           api :: atom()
                          }).
 
--record(key_context, {manifest :: undefined | 'notfound' | lfs_manifest(),
+-record(key_context, {manifest :: undefined | notfound | lfs_manifest(),
                       upload_id :: undefined | binary(),
                       part_number :: undefined | integer(),
                       part_uuid :: undefined | binary(),
@@ -86,7 +88,7 @@
                       bucket_object :: undefined | notfound | riakc_obj:riakc_obj(),
                       key :: undefined | binary(),
                       obj_vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
-                      owner :: undefined | string(),
+                      owner :: undefined | binary(),
                       size :: undefined | non_neg_integer(),
                       content_md5 :: undefined | binary(),
                       update_metadata = false :: boolean()}).
@@ -99,7 +101,7 @@
 
 -record(access_v1, { method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD'
                    , target :: action_target()
-                   , id :: string()
+                   , id :: binary()
                    , bucket :: binary()
                    , key = <<>> :: undefined | binary()
                    , action :: aws_action()
@@ -345,7 +347,7 @@
        ).
 
 
--record(create_saml_provider_response, { saml_provider_arn :: arn()
+-record(create_saml_provider_response, { saml_provider_arn :: flat_arn()
                                        , tags :: [tag()]
                                        , request_id :: binary()
                                        }
@@ -364,7 +366,7 @@
        ).
 -record(saml_provider_list_entry, { create_date :: non_neg_integer()
                                   , valid_until :: non_neg_integer()
-                                  , arn :: arn()
+                                  , arn :: flat_arn()
                                   }
        ).
 -record(list_saml_providers_response, { saml_provider_list :: [#saml_provider_list_entry{}]

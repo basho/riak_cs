@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -23,10 +23,10 @@
 
 -include("riak_cs.hrl").
 
--callback fetch_bucket_policy(binary(), pid()) -> {ok, policy()} | {error, term()}.
--callback bucket_policy(riakc_obj:riakc_obj()) -> {ok, policy()} | {error, term()}.
--callback eval(access(), policy() | undefined | binary() ) -> boolean() | undefined.
--callback check_policy(access(), policy()) -> ok | {error, atom()}.
+-callback fetch_bucket_policy(binary(), pid()) -> {ok, amz_policy()} | {error, term()}.
+-callback bucket_policy(riakc_obj:riakc_obj()) -> {ok, amz_policy()} | {error, term()}.
+-callback eval(access(), amz_policy() | undefined | binary() ) -> boolean() | undefined.
+-callback check_policy(access(), amz_policy()) -> ok | {error, atom()}.
 -callback reqdata_to_access(RD :: term(), Target::atom(), ID::string()|undefined) -> access().
--callback policy_from_json(JSON::binary()) -> {ok, policy()} | {error, term()}.
--callback policy_to_json_term(policy()) -> JSON::binary().
+-callback policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
+-callback policy_to_json_term(amz_policy()) -> JSON::binary().

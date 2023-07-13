@@ -83,6 +83,7 @@ forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
               riak_cs_config:anonymous_user_creation())
         orelse AuthBypass,
     Next = fun(NewRD, NewCtx = #rcs_web_context{user = User}) ->
+                   ?LOG_DEBUG("Are we ~p ~p", [User, user_key(RD)]),
                    forbidden(wrq:method(RD),
                              NewRD,
                              NewCtx,
@@ -193,7 +194,6 @@ finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
 %% Internal functions
 %% -------------------------------------------------------------------
 
--spec admin_check(boolean(), term(), term()) -> {boolean(), term(), term()}.
 admin_check(true, RD, Ctx) ->
     {false, RD, Ctx#rcs_web_context{user = undefined}};
 admin_check(false, RD, Ctx) ->
@@ -206,14 +206,14 @@ etag(Body) ->
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(_, _RD, _Ctx, undefined, [], true) ->
+forbidden(_, _RD, _Ctx, undefined, <<>>, true) ->
     {false, _RD, _Ctx};
 forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
     get_user({false, RD, Ctx}, UserPathKey);
-forbidden('POST', RD, Ctx, User, [], _) ->
+forbidden('POST', RD, Ctx, User, <<>>, _) ->
     %% Admin is creating a new user
     admin_check(riak_cs_user:is_admin(User), RD, Ctx);
-forbidden('PUT', RD, Ctx, User, [], _) ->
+forbidden('PUT', RD, Ctx, User, <<>>, _) ->
     admin_check(riak_cs_user:is_admin(User), RD, Ctx);
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
@@ -237,7 +237,7 @@ handle_get_user_result({ok, {User, UserObj}}, RD, Ctx) ->
     {false, RD, Ctx#rcs_web_context{user = User,
                                     user_object = UserObj}};
 handle_get_user_result({error, Reason}, RD, Ctx) ->
-    logger:warning("Failed to fetch user record. KeyId: ~p"
+    logger:warning("Failed to fetch user record. KeyId: ~s"
                    " Reason: ~p", [user_key(RD), Reason]),
     riak_cs_aws_response:api_error(invalid_access_key_id, RD, Ctx).
 
@@ -277,8 +277,8 @@ set_resp_data(ContentType, RD, #rcs_web_context{user = User}) ->
 
 user_key(RD) ->
     case wrq:path_tokens(RD) of
-        [KeyId|_] -> mochiweb_util:unquote(KeyId);
-        _         -> []
+        [KeyId|_] -> list_to_binary(mochiweb_util:unquote(KeyId));
+        _         -> <<>>
     end.
 
 user_xml_filter(#xmlText{}, Acc) ->

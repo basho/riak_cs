@@ -77,9 +77,8 @@ authorize(RD, Ctx) ->
 to_xml(RD, Ctx=#rcs_web_context{user = User,
                                 bucket = Bucket,
                                 riak_client = RcPid}) ->
-    StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
-               B?RCS_BUCKET.name =:= StrBucket] of
+               B?RCS_BUCKET.name =:= Bucket] of
         [] ->
             riak_cs_aws_response:api_error(no_such_bucket, RD, Ctx);
         [_BucketRecord] ->
@@ -122,7 +121,7 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
             case IsUpdated of
                 true ->
                     riak_cs_bucket:set_bucket_versioning(
-                      User, UserObj, Bucket, NewV, RcPid),
+                      User, UserObj, Bucket, NewV),
                     {{halt, 200}, RD, Ctx};
                 false ->
                     {{halt, 200}, RD, Ctx};

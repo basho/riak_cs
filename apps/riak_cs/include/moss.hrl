@@ -25,7 +25,7 @@
 -include("acl.hrl").
 -include("aws_api.hrl").
 
--define(RCS_BUCKET, #moss_bucket_v1).
+-define(RCS_BUCKET, #moss_bucket_v2).
 -define(MOSS_USER, #rcs_user_v2).
 -define(RCS_USER, #rcs_user_v3).
 
@@ -52,7 +52,7 @@
                      , key_secret :: string()
                      , canonical_id :: string()
                      , buckets = [] :: [cs_bucket()]
-                     , status = enabled :: enabled | disabled
+                     , status = enabled :: undefined | enabled | disabled
                      }).
 
 %% this now in part logically belongs in aws_api.hrl
@@ -64,7 +64,7 @@
                      , password_last_used :: undefined | non_neg_integer()
                      , permissions_boundary :: undefined | permissions_boundary()
                      , tags = [] :: [tag()]
-                     , attached_policies = [] :: [flat_arn()]
+                     , attached_policies = to_be_populated :: to_be_populated | [flat_arn()]
 
                      , name :: binary()
                      , display_name :: binary()
@@ -77,7 +77,7 @@
                      }).
 
 -type moss_user() :: #rcs_user_v2{} | #moss_user_v1{}.
--type rcs_user() :: #rcs_user_v3{} | #rcs_user_v2{} | #moss_user_v1{}.
+-type rcs_user() :: #rcs_user_v3{}.
 
 -define(IAM_USER, #rcs_user_v3).
 
@@ -94,7 +94,14 @@
                         , acl :: undefined | acl()
                         }).
 
--type cs_bucket() :: #moss_bucket_v1{}.
+-record(moss_bucket_v2, { name :: binary()
+                        , last_action :: undefined | created | deleted
+                        , creation_date = os:system_time(millisecond) :: non_neg_integer()
+                        , modification_time :: undefined | non_neg_integer()
+                        , acl :: undefined | acl()
+                        }).
+
+-type cs_bucket() :: #moss_bucket_v2{}.
 
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy | update_versioning.

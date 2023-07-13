@@ -29,7 +29,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 -spec api_error(error_reason(), #wm_reqdata{}, #stanchion_context{}) ->
-          {{halt, 400..599}, string(), #stanchion_context{}}.
+          {{halt, 400..599}, #wm_reqdata{}, #stanchion_context{}}.
 api_error(Error, RD, Ctx) ->
     StatusCode = riak_cs_aws_response:status_code(Error),
     ErrorDesc = jsx:encode(#{error_tag => base64:encode(term_to_binary(Error)),

@@ -42,6 +42,7 @@
          delete_saml_provider/2
         ]).
 
+-include("moss.hrl").
 -include("aws_api.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -52,9 +53,7 @@
 %% ===================================================================
 
 %% @doc Create a bucket for a requesting party.
--spec create_bucket(string(),
-                    string(),
-                    [{atom(), term()}]) -> ok | {error, term()}.
+-spec create_bucket(string(), binary(), proplists:proplist()) -> ok | {error, term()}.
 create_bucket(ContentType, BucketDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = buckets_path(<<>>),
@@ -82,9 +81,7 @@ create_bucket(ContentType, BucketDoc, Options) ->
     end.
 
 %% @doc Create a bucket for a requesting party.
--spec create_user(string(),
-                  string(),
-                  [{atom(), term()}]) -> ok | {error, term()}.
+-spec create_user(string(), binary(), proplists:proplist()) -> ok | {error, term()}.
 create_user(ContentType, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path([]),
@@ -139,9 +136,7 @@ delete_user(TransKeyId, Options) ->
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket(binary(),
-                    string(),
-                    [{atom(), term()}]) -> ok | {error, term()}.
+-spec delete_bucket(binary(), string(), proplists:proplist()) -> ok | {error, term()}.
 delete_bucket(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
@@ -168,38 +163,24 @@ delete_bucket(Bucket, Requester, Options) ->
             {error, Error}
     end.
 
-%% @doc Create a bucket for a requesting party.
--spec set_bucket_acl(binary(),
-                     string(),
-                     string(),
-                     [{atom(), term()}]) -> ok | {error, term()}.
+-spec set_bucket_acl(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
 set_bucket_acl(Bucket, ContentType, AclDoc, Options) ->
     Path = buckets_path(Bucket, acl),
     update_bucket(Path, ContentType, AclDoc, Options, 204).
 
-%% @doc Set bucket policy
--spec set_bucket_policy(binary(),
-                        string(),
-                        string(),
-                        proplists:proplist()) -> ok | {error, term()}.
+-spec set_bucket_policy(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
 set_bucket_policy(Bucket, ContentType, PolicyDoc, Options) ->
     Path = buckets_path(Bucket, policy),
     update_bucket(Path, ContentType, PolicyDoc, Options, 204).
 
-%% @doc Set bucket versioning
--spec set_bucket_versioning(binary(),
-                            string(),
-                            string(),
-                            proplists:proplist()) -> ok | {error, term()}.
+-spec set_bucket_versioning(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
 set_bucket_versioning(Bucket, ContentType, Doc, Options) ->
     Path = buckets_path(Bucket, versioning),
     update_bucket(Path, ContentType, Doc, Options, 204).
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket_policy(binary(),
-                           string(),
-                           [{atom(), term()}]) -> ok | {error, term()}.
+-spec delete_bucket_policy(binary(), string(), proplists:proplist()) -> ok | {error, term()}.
 delete_bucket_policy(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
@@ -228,7 +209,7 @@ delete_bucket_policy(Bucket, Requester, Options) ->
 
 %% @doc Update a user record
 -spec update_user(string(), binary(), binary(),
-                  [{atom(), term()}]) -> ok | {error, term()}.
+                  [{atom(), term()}]) -> {ok, rcs_user()} | {error, term()}.
 update_user(ContentType, KeyId, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path(KeyId),
@@ -247,8 +228,9 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
             Headers = Headers0
     end,
     case request(put, Path, [204], ContentType, Headers, UserDoc) of
-        {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
-            ok;
+        {ok, {{_, 204, _}, _RespHeaders, RespBody}} ->
+            User = riak_cs_iam:exprec_user(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            {ok, User};
         {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
             {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
@@ -262,10 +244,9 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
 
 % @doc send request to stanchion server
 % @TODO merge with create_bucket, create_user, delete_bucket
--spec update_bucket(string(),
-                    string(), string(), proplists:proplist(),
+-spec update_bucket(string(), string(), binary(), proplists:proplist(),
                     pos_integer()) ->
-                           ok | {error, term()}.
+          ok | {error, term()}.
 update_bucket(Path, ContentType, Doc, Options, Expect) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Headers0 = [{"Content-Md5", content_md5(Doc)},
@@ -307,7 +288,7 @@ buckets_path(Bucket, versioning) ->
 
 
 
--spec create_role(string(), string(), proplists:proplist()) -> {ok, role()} | {error, term()}.
+-spec create_role(string(), binary(), proplists:proplist()) -> {ok, role()} | {error, term()}.
 create_role(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path([]),
@@ -363,7 +344,7 @@ delete_role(Arn, Options) ->
             {error, Error}
     end.
 
--spec update_role(string(), string(), string(), proplists:proplist()) -> ok | {error, term()}.
+-spec update_role(string(), binary(), binary(), proplists:proplist()) -> ok | {error, term()}.
 update_role(ContentType, Arn, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path(Arn),
@@ -391,7 +372,7 @@ update_role(ContentType, Arn, Doc, Options) ->
     end.
 
 
--spec create_policy(string(), string(), proplists:proplist()) -> {ok, policy()} | {error, term()}.
+-spec create_policy(string(), binary(), proplists:proplist()) -> {ok, policy()} | {error, term()}.
 create_policy(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path([]),

@@ -51,7 +51,7 @@
 
 %% @doc Construct a default acl. The structure is the same for buckets
 %% and objects.
--spec default_acl(string(), string(), string()) -> acl().
+-spec default_acl(binary(), binary(), binary()) -> acl().
 default_acl(DisplayName, CanonicalId, KeyId) ->
     default_acl(#{display_name => DisplayName,
                   canonical_id => CanonicalId,

@@ -94,8 +94,9 @@ accept_body(RD, Ctx) ->
     Body = wrq:req_body(RD),
     FF = jsx:decode(Body, [{labels, atom}]),
     case stanchion_server:update_user(FF) of
-        ok ->
-            {true, RD, Ctx};
+        {ok, User} ->
+            Doc = riak_cs_json:to_json(User),
+            {true, wrq:set_resp_body(Doc, RD), Ctx};
         {error, Reason} ->
             stanchion_response:api_error(Reason, RD, Ctx)
     end.

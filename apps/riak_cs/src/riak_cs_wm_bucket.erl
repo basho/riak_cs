@@ -114,9 +114,8 @@ handle_read_request(RD, Ctx=#rcs_web_context{user = User,
                                              bucket = Bucket}) ->
     %% override the content-type on HEAD
     HeadRD = wrq:set_resp_header("content-type", "text/html", RD),
-    StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
-               B?RCS_BUCKET.name =:= StrBucket] of
+               B?RCS_BUCKET.name =:= Bucket] of
         [] ->
             {{halt, 404}, HeadRD, Ctx};
         [_BucketRecord] ->

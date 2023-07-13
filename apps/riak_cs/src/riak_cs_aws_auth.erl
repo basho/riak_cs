@@ -56,10 +56,11 @@
 %% ===================================================================
 
 -spec identify(#wm_reqdata{}, #rcs_web_context{}) ->
-          {string() | undefined,
-           string() | {v4, v4_attrs()} | undefined} |
+          {binary() | undefined,
+           binary() | {v4, v4_attrs()} | undefined} |
           {failed, Reason::atom()}.
 identify(RD, _Ctx) ->
+    ?LOG_DEBUG("Are we here?"),
     case wrq:get_req_header("authorization", RD) of
         undefined ->
             identify_by_query_string(RD);
@@ -124,7 +125,8 @@ parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
 parse_auth_header("AWS " ++ Key) ->
     case string:tokens(Key, ":") of
         [KeyId, KeyData] ->
-            {KeyId, KeyData};
+            {list_to_binary(KeyId),
+             list_to_binary(KeyData)};
         _ -> {undefined, undefined}
     end;
 parse_auth_header(_) ->
@@ -137,15 +139,15 @@ parse_auth_header(_) ->
 %% Idintify user by query string.
 %% Currently support signature v2 only, does NOT support signature v4.
 identify_by_query_string(RD) ->
-    {wrq:get_qs_value(?QS_KEYID, RD), wrq:get_qs_value(?QS_SIGNATURE, RD)}.
+    {list_to_binary(wrq:get_qs_value(?QS_KEYID, RD)),
+     list_to_binary(wrq:get_qs_value(?QS_SIGNATURE, RD))}.
 
--spec parse_auth_v4_header(string()) -> {string(), {v4, [{string(), string()}]}}.
 parse_auth_v4_header(String) ->
     KVs = string:tokens(String, ", "),
     parse_auth_v4_header(KVs, undefined, []).
 
 parse_auth_v4_header([], UserId, Acc) ->
-    {UserId, {v4, lists:reverse(Acc)}};
+    {list_to_binary(UserId), {v4, lists:reverse(Acc)}};
 parse_auth_v4_header([KV | KVs], UserId, Acc) ->
     %% ?LOG_DEBUG("Auth header ~p", [KV]),
     case string:tokens(KV, "=") of

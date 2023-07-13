@@ -107,14 +107,10 @@ create_bucket(#{bucket := Bucket,
         ok ->
             BucketRecord = bucket_record(Bucket, create),
             case riak_cs_iam:find_user(#{key_id => OwnerId}, Pbc) of
-                {ok, {_FedereatedUser, undefined}} ->
-                    logger:info("Refusing to create bucket ~s for a temp user (key_id: ~s) with assumed role",
-                                [Bucket, OwnerId]),
-                    {error, temp_users_create_bucket_restriction};
                 {ok, {User, UserObj}} ->
                     UpdUser = update_user_buckets(add, User, BucketRecord),
                     save_user(UpdUser, UserObj, Pbc);
-                ER ->
+                {error, _} = ER ->
                     ER
             end;
         {error, _} ->
@@ -128,7 +124,6 @@ bucket_record(Name, Operation) ->
              end,
     ?RCS_BUCKET{name = Name,
                 last_action = Action,
-                creation_date = riak_cs_wm_utils:iso_8601_datetime(),
                 modification_time = os:system_time(millisecond)}.
 
 
@@ -166,12 +161,12 @@ delete_user(Arn, Pbc) ->
             riakc_pb_socket:delete(Pbc, ?USER_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_user], TAT);
-        {error, Reason} = ER ->
+        {{error, Reason} = ER, _} ->
             logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
             ER
     end.
 
--spec update_user(maps:map(), pid()) -> ok | {error, term()}.
+-spec update_user(maps:map(), pid()) -> {ok, rcs_user()} | {error, term()}.
 update_user(FF, Pbc) ->
     User = ?IAM_USER{arn = Arn,
                      email = Email} =
@@ -187,7 +182,12 @@ update_user(FF, Pbc) ->
                 true
         end,
     if CanProceed ->
-            save_user(User, Obj, Pbc);
+            case save_user(User, Obj, Pbc) of
+                ok ->
+                    {ok, User};
+                ER ->
+                    ER
+            end;
        el/=se ->
             {error, user_already_exists}
     end.
@@ -278,7 +278,7 @@ delete_role(Arn, Pbc) ->
             riakc_pb_socket:delete(Pbc, ?IAM_ROLE_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_role], TAT);
-        {error, Reason} = ER ->
+        {{error, Reason} = ER, _} ->
             logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
             ER
     end.
@@ -347,13 +347,13 @@ delete_policy(Arn, Pbc) ->
             riakc_pb_socket:delete(Pbc, ?IAM_POLICY_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_policy], TAT);
-        {error, Reason} = ER ->
+        {{error, Reason} = ER, _} ->
             logger:error("Failed to delete managed policy object ~s: ~p", [Arn, Reason]),
             ER
     end.
 
 
--spec create_saml_provider(maps:map(), pid()) -> {ok, {string(), [tag()]}} | {error, term()}.
+-spec create_saml_provider(maps:map(), pid()) -> {ok, {flat_arn(), [tag()]}} | {error, term()}.
 create_saml_provider(Fields, Pbc) ->
     P0 = ?IAM_SAML_PROVIDER{name = Name} =
         riak_cs_iam:unarm(
@@ -399,7 +399,7 @@ delete_saml_provider(Arn, Pbc) ->
             riakc_pb_socket:delete(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, put_cs_samlprovider], TAT);
-        {error, Reason} = ER ->
+        {{error, Reason} = ER, _} ->
             logger:error("Failed to delete saml_provider object ~s: ~p", [Arn, Reason]),
             ER
     end.
@@ -448,8 +448,7 @@ list_keys(BucketName, Pbc) ->
         {{ok, Keys}, TAT} ->
             stanchion_stats:update([riakc, list_all_manifest_keys], TAT),
             {ok, lists:sort(Keys)};
-        {{error, _} = ER, TAT} ->
-            stanchion_stats:update([riakc, list_all_manifest_keys], TAT),
+        {{error, _} = ER, _} ->
             ER
     end.
 
@@ -806,7 +805,11 @@ save_user(User, Obj0, Pbc) ->
             Meta),
     {Res, TAT} = ?TURNAROUND_TIME(riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS)),
     stanchion_stats:update([riakc, put_cs_user], TAT),
-    Res.
+    normalize_ok(Res).
+
+normalize_ok(ok) -> ok;
+normalize_ok({ok, _}) -> ok.
+
 
 
 update_user_buckets(add, User, Bucket) ->

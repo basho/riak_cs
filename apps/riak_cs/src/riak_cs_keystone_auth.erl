@@ -40,9 +40,9 @@
 %% Public API
 %% ===================================================================
 
--spec identify(#wm_reqdata{}, #rcs_web_context{}) -> failed | {string() | undefined , string()}.
-identify(RD, #rcs_web_context{api = s3}) ->
-    validate_token(s3, RD);
+-spec identify(#wm_reqdata{}, #rcs_web_context{}) -> failed | {binary() | undefined , binary()}.
+identify(RD, #rcs_web_context{api = aws}) ->
+    validate_token(aws, RD);
 identify(RD, #rcs_web_context{api = oos}) ->
     validate_token(oos, wrq:get_req_header("x-auth-token", RD)).
 
@@ -79,7 +79,6 @@ token_names(Roles) ->
     ordsets:from_list(
       [proplists:get_value(<<"name">>, Role, []) || {struct, Role} <- Roles]).
 
--spec validate_token(s3 | oos, undefined | string()) -> failed | {term(), term()}.
 validate_token(_, undefined) ->
     failed;
 validate_token(Api, AuthToken) ->
@@ -92,12 +91,11 @@ validate_token(Api, AuthToken) ->
     handle_token_info_response(
       request_keystone_token_info(Api, AuthToken)).
 
--spec request_keystone_token_info(s3 | oos, string() | {term(), term()}) -> term().
 request_keystone_token_info(oos, AuthToken) ->
     RequestURI = riak_cs_config:os_tokens_url() ++ AuthToken,
     RequestHeaders = [{"X-Auth-Token", riak_cs_config:os_admin_token()}],
     httpc:request(get, {RequestURI, RequestHeaders}, [], []);
-request_keystone_token_info(s3, RD) ->
+request_keystone_token_info(aws, RD) ->
     {KeyId, Signature} =
         case wrq:get_req_header("authorization", RD) of
             undefined ->
@@ -143,7 +141,6 @@ parse_auth_header("AWS " ++ Key) ->
 parse_auth_header(_) ->
     {undefined, undefined}.
 
--spec calculate_sts(term()) -> binary().
 calculate_sts(RD) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),

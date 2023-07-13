@@ -226,8 +226,8 @@
 -define(IAM_PERMISSION_BOUNDARY, #permissions_boundary).
 
 
--record(tag, { key :: string()
-             , value :: string()
+-record(tag, { key :: binary()
+             , value :: binary()
              }
        ).
 -type tag() :: #tag{}.
@@ -247,7 +247,7 @@
                  , create_date = os:system_time(millisecond) :: non_neg_integer()
                  , description :: binary()
                  , max_session_duration :: non_neg_integer()
-                 , permissions_boundary :: permissions_boundary()
+                 , permissions_boundary :: flat_arn()  %% permissions_boundary()
                  , role_id :: binary()
                  , role_last_used :: role_last_used()
                  , role_name :: binary()

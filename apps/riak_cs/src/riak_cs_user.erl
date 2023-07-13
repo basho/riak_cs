@@ -90,7 +90,7 @@ create_credentialed_user(User) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     StatsKey = [velvet, create_user],
     _ = riak_cs_stats:inflow(StatsKey),
-    StartTime = os:timestamp(),
+    StartTime = os:system_time(millisecond),
     Result = velvet:create_user("application/json",
                                 riak_cs_json:to_json(User),
                                 [{auth_creds, AdminCreds}]),
@@ -112,20 +112,19 @@ handle_create_user({error, _} = Error, _User) ->
 
 %% @doc Retrieve a Riak CS user's information based on their id string.
 -spec get_user(undefined | binary(), riak_client()) ->
-          {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, no_user_key | term()}.
+          {ok, {rcs_user(), undefined | riakc_obj:riakc_obj()}} | {error, no_user_key | riak_obj_error()}.
 get_user(undefined, _) ->
     {error, no_user_key};
-get_user(KeyId_, RcPid) ->
-    KeyId = iolist_to_binary([KeyId_]),
+get_user(KeyId, RcPid) ->
     case riak_cs_temp_sessions:get(KeyId) of
         {ok, #temp_session{assumed_role_user = #assumed_role_user{arn = AssumedRoleUserArn},
                            credentials = #credentials{secret_access_key = SecretKey},
                            canonical_id = CanonicalId,
                            subject = Subject,
                            source_identity = SourceIdentity,
-                           email = Email} = Session} ->
+                           email = Email}} ->
             {ok, {?RCS_USER{arn = AssumedRoleUserArn,
-                            attached_policies = riak_cs_temp_sessions:effective_policies(Session, RcPid),
+                            attached_policies = [],
                             name = Subject,
                             email = select_email([SourceIdentity, Email]),
                             display_name = Subject,
@@ -171,6 +170,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
+    ?LOG_DEBUG("User ~p", [User]),
     is_admin(User, riak_cs_config:admin_creds()).
 is_admin(?RCS_USER{key_id = KeyId, key_secret = KeySecret},
          {ok, {KeyId, KeySecret}}) ->
@@ -192,11 +192,10 @@ to_3tuple(?RCS_USER{display_name = DisplayName,
 -spec update_key_secret(rcs_user()) -> rcs_user().
 update_key_secret(User = ?RCS_USER{email = Email,
                                    key_id = KeyId}) ->
-    EmailBin = list_to_binary(Email),
-    User?RCS_USER{key_secret = riak_cs_aws_utils:generate_secret(EmailBin, KeyId)}.
+    User?RCS_USER{key_secret = riak_cs_aws_utils:generate_secret(Email, KeyId)}.
 
 %% @doc Strip off the user name portion of an email address
--spec display_name(binary()) -> string().
+-spec display_name(binary()) -> binary().
 display_name(Email) ->
     hd(binary:split(Email, <<"@">>)).
 

@@ -132,13 +132,13 @@ anonymous_object_access(_BucketObj, ObjAcl, RequestedAccess, RcPid, _) ->
     end.
 
 %% @doc Determine if a user has the requested access to a bucket.
--spec bucket_access(binary(), atom(), string(), riak_client()) ->
-                           boolean() | {true, string()}.
+-spec bucket_access(binary(), atom(), binary(), riak_client()) ->
+          boolean() | {true, string()}.
 bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid) ->
     bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined).
 
--spec bucket_access(binary(), atom(), string(), riak_client(), acl()|undefined ) ->
-                           boolean() | {true, string()}.
+-spec bucket_access(binary(), atom(), binary(), riak_client(), acl() | undefined ) ->
+          boolean() | {true, string()}.
 bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
     false;
 bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined) ->
@@ -235,13 +235,13 @@ newer_acl(_, Acl2) ->
 %% @TODO Enhance when doing object-level ACL work. This is a bit
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client()) ->
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), binary(), riak_client()) ->
           boolean() | {true, string()}.
 object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid) ->
     object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, undefined).
 
 
--spec object_access(riakc_obj:riakc_obj(), acl(), atom(), string(), riak_client(), undefined|acl()) ->
+-spec object_access(riakc_obj:riakc_obj(), acl(), atom(), binary(), riak_client(), undefined|acl()) ->
           boolean() | {true, string()}.
 object_access(_BucketObj, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
@@ -294,7 +294,7 @@ object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
     end.
 
 %% @doc Get the canonical id of the owner of an entity.
--spec owner_id(acl(), riak_client()) -> string().
+-spec owner_id(acl(), riak_client()) -> binary().
 owner_id(?ACL{owner = #{key_id := OwnerKeyId}}, _) ->
     OwnerKeyId;
 owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
@@ -307,6 +307,7 @@ owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
             []
     end.
 
+-spec exprec_acl(maps:map()) -> ?ACL{}.
 exprec_acl(Map) ->
     Acl0 = ?ACL{grants = GG0} = exprec:frommap_acl_v3(Map),
     GG = [exprec_grant(G) || G <- GG0],
@@ -338,15 +339,11 @@ acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
 %% @doc Get the grants from an ACL
--spec acl_grants(acl()) -> [acl_grant()].
-acl_grants(?ACL{grants=Grants}) ->
-    Grants;
-acl_grants(#acl_v1{grants=Grants}) ->
+acl_grants(?ACL{grants = Grants}) ->
     Grants.
 
 %% @doc Iterate through a list of ACL grants and return
 %% any group grants.
--spec group_grants([acl_grant()], [acl_grant()]) -> [acl_grant()].
 group_grants([], GroupGrants) ->
     GroupGrants;
 group_grants([HeadGrant = ?ACL_GRANT{grantee = Grantee} | RestGrants],
@@ -357,7 +354,6 @@ group_grants([_ | RestGrants], _GroupGrants) ->
 
 %% @doc Determine if the ACL grants group access
 %% for the requestsed permission type.
--spec has_group_permission([{group_grant() | {term(), term()}, term()}], atom()) -> boolean().
 has_group_permission([], _RequestedAccess) ->
     false;
 has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
@@ -370,7 +366,6 @@ has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
 
 %% @doc Determine if the ACL grants anonymous access
 %% for the requestsed permission type.
--spec has_permission([acl_grant()], atom()) -> boolean().
 has_permission(Grants, RequestedAccess) ->
     GroupGrants = group_grants(Grants, []),
     case [Perms || ?ACL_GRANT{grantee = Grantee,
@@ -396,21 +391,13 @@ has_permission(Grants, RequestedAccess, CanonicalId) ->
     end.
 
 %% @doc Determine if a user is the owner of a system entity.
--spec is_owner(acl(), string()) -> boolean().
 is_owner(?ACL{owner = #{canonical_id := CanonicalId}}, CanonicalId) ->
     true;
 is_owner(?ACL{}, _) ->
-    false;
-is_owner(#acl_v1{owner={_, CanonicalId}}, CanonicalId) ->
-    true;
-%% is_owner(#acl_v2{owner={_, CanonicalId, _}}, CanonicalId) ->
-%%     true;
-is_owner(#acl_v1{}, _) ->
     false.
 
 %% @doc Check if a list of ACL permissions contains a specific permission
 %% or the `FULL_CONTROL' permission.
--spec check_permission(acl_perm(), acl_perms()) -> boolean().
 check_permission(_, []) ->
     false;
 check_permission(Permission, [Permission | _]) ->
@@ -423,12 +410,11 @@ check_permission(_Permission, [_ | RestPerms]) ->
 %% @doc Iterate through a list of ACL grants and determine
 %% if there is an entry for the specified user's id. Ignore
 %% any group grants.
--spec user_grant([acl_grant()], string()) -> undefined | acl_grant().
 user_grant([], _) ->
     undefined;
 user_grant([?ACL_GRANT{grantee = Grantee} | RestGrants], CanonicalId) when is_atom(Grantee) ->
     user_grant(RestGrants, CanonicalId);
-user_grant([HeadGrant=?ACL_GRANT{grantee = #{canonical_id := CanonicalId}} | _], CanonicalId) ->
+user_grant([HeadGrant = ?ACL_GRANT{grantee = #{canonical_id := CanonicalId}} | _], CanonicalId) ->
     HeadGrant;
 user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).

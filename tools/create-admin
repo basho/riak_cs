@@ -35,7 +35,7 @@ def main():
     print("%s %s %s" % (res['key_id'], res['key_secret'], res['canonical_id']))
     admin_arn = res['arn']
 
-    #boto3.set_stream_logger('')
+    boto3.set_stream_logger('')
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
     config = Config(signature_version = 's3v4')
     iam_client = boto3.client('iam',

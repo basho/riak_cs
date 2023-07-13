@@ -123,7 +123,7 @@ stream_users(Format, RcPid, Boundary, Status) ->
 
 wait_for_users(Format, RcPid, ReqId, Boundary, Status) ->
     _ = riak_cs_stats:inflow([riakc, list_users_receive_chunk]),
-    StartTime = os:timestamp(),
+    StartTime = os:system_time(millisecond),
     receive
         {ReqId, {keys, UserIds}} ->
             _ = riak_cs_stats:update_with_start(
@@ -156,8 +156,8 @@ users_doc(UserDocs, json, Boundary) ->
 
 %% @doc Return a fold function to retrieve and filter user accounts
 user_fold_fun(RcPid, Status) ->
-    fun(UserId, Users) ->
-            case riak_cs_user:get_user(binary_to_list(UserId), RcPid) of
+    fun(KeyId, Users) ->
+            case riak_cs_user:get_user(KeyId, RcPid) of
                 {ok, {User, _}} when User?RCS_USER.status =:= Status;
                                      Status =:= undefined ->
                     [User | Users];
@@ -165,8 +165,8 @@ user_fold_fun(RcPid, Status) ->
                     %% Status is defined and does not match the account status
                     Users;
                 {error, Reason} ->
-                    logger:warning("Failed to fetch user record. KeyId: ~p"
-                                   " Reason: ~p", [UserId, Reason]),
+                    logger:warning("Failed to fetch user record ~s"
+                                   " Reason: ~p", [KeyId, Reason]),
                     Users
             end
     end.

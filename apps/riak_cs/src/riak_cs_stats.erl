@@ -170,7 +170,7 @@ counting_subkeys() ->
 inflow(Key) ->
     safe_update([riak_cs, in | Key], 1).
 
--spec update_with_start(key(), erlang:timestamp(), ok_error_res()) -> ok.
+-spec update_with_start(key(), non_neg_integer(), ok_error_res()) -> ok.
 update_with_start(Key, StartTime, ok) ->
     update_with_start(Key, StartTime);
 update_with_start(Key, StartTime, {ok, _}) ->
@@ -178,13 +178,13 @@ update_with_start(Key, StartTime, {ok, _}) ->
 update_with_start(Key, StartTime, {error, _}) ->
     update_error_with_start(Key, StartTime).
 
--spec update_with_start(key(), erlang:timestamp()) -> ok.
+-spec update_with_start(key(), non_neg_integer()) -> ok.
 update_with_start(Key, StartTime) ->
-    update(Key, timer:now_diff(os:timestamp(), StartTime)).
+    update(Key, os:system_time(millisecond) - StartTime).
 
--spec update_error_with_start(key(), erlang:timestamp()) -> ok.
+-spec update_error_with_start(key(), non_neg_integer()) -> ok.
 update_error_with_start(Key, StartTime) ->
-    update([error | Key], timer:now_diff(os:timestamp(), StartTime)).
+    update([error | Key], os:system_time(millisecond) - StartTime).
 
 -spec countup(key()) -> ok.
 countup(Key) ->

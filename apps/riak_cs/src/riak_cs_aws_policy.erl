@@ -92,8 +92,7 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 % @doc  semantic validation of policy
 -spec check_policy(access(), amz_policy()) -> ok | {error, atom()}.
-check_policy(#access_v1{bucket=B} = _Access,
-             Policy) ->
+check_policy(#access_v1{bucket=B}, Policy) ->
     case check_version(Policy) of
         false -> {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
         true ->
@@ -166,16 +165,16 @@ check_all_resources(BucketBin, ?AMZ_POLICY{statement = Stmts} = _Policy) ->
                        check_all_resources(BucketBin, Stmt)
                end,
     lists:all(CheckFun, Stmts);
-check_all_resources(BucketBin, #statement{resource=Resources} = _Stmt) ->
+check_all_resources(BucketBin, #statement{resource = Resources}) ->
     CheckFun = fun(Resource) ->
                        check_all_resources(BucketBin, Resource)
                end,
     lists:all(CheckFun, Resources);
-check_all_resources(BucketBin, #arn_v1{path=Path} = _Resource) ->
+check_all_resources(BucketBin, #arn_v1{path = Path}) ->
     [B|_] = string:tokens(Path, "/"),
     B =:= binary_to_list(BucketBin).
 
--spec reqdata_to_access(#wm_reqdata{}, action_target(), ID::string()|undefined) -> access().
+-spec reqdata_to_access(#wm_reqdata{}, action_target(), binary() | undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->
     Key = case wrq:path_info(object, RD) of
               undefined -> undefined;

@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -58,9 +58,8 @@ authorize(RD, Ctx) ->
           {binary() | {'halt', term()}, #wm_reqdata{}, #rcs_web_context{}}.
 to_xml(RD, Ctx = #rcs_web_context{user = User,
                                   bucket = Bucket}) ->
-    StrBucket = binary_to_list(Bucket),
     case [B || B <- riak_cs_bucket:get_buckets(User),
-               B?RCS_BUCKET.name =:= StrBucket] of
+               B?RCS_BUCKET.name =:= Bucket] of
         [] ->
             riak_cs_aws_response:api_error(no_such_bucket, RD, Ctx);
         [_BucketRecord] ->

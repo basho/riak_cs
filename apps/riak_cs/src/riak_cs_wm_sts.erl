@@ -185,8 +185,7 @@ authenticate(User, UserObj, RD, Ctx = #rcs_web_context{auth_module = AuthMod}, A
         {error, _Reason} ->
             {error, bad_auth}
     end;
-authenticate(User, _UserObj, _RD, _Ctx, _AuthData)
-  when User?RCS_USER.status =/= enabled ->
+authenticate(_User, _UserObj, _RD, _Ctx, _AuthData) ->
     %% {ok, _} -> %% disabled account, we are going to 403
     {error, bad_auth}.
 

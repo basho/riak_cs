@@ -99,15 +99,14 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
                                        user_object = UserObj,
                                        bucket = Bucket,
                                        policy_module = PolicyMod,
-                                       response_module = RespMod,
-                                       riak_client = RcPid}) ->
+                                       response_module = RespMod}) ->
     PolicyJson = wrq:req_body(RD),
     case PolicyMod:policy_from_json(PolicyJson) of
         {ok, Policy} ->
             Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User?RCS_USER.canonical_id),
             case PolicyMod:check_policy(Access, Policy) of
                 ok ->
-                    case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson, RcPid) of
+                    case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson) of
                         ok ->
                             {{halt, 200}, RD, Ctx};
                         {error, Reason} ->
@@ -127,9 +126,8 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
 delete_resource(RD, Ctx = #rcs_web_context{user = User,
                                            user_object = UserObj,
                                            bucket = Bucket,
-                                           response_module = RespMod,
-                                           riak_client = RcPid}) ->
-    case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket, RcPid) of
+                                           response_module = RespMod}) ->
+    case riak_cs_bucket:delete_bucket_policy(User, UserObj, Bucket) of
         ok ->
             {{halt, 200}, RD, Ctx};
         {error, Reason} ->

@@ -133,6 +133,7 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
                                      submodule = Mod,
                                      riak_client = RcPid,
                                      exports_fun = ExportsFun}) ->
+    ?LOG_DEBUG("Are we ~p ~p", [user, user_key]),
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
             failed ->
@@ -141,6 +142,7 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
             {failed, Reason} ->
                 {{error, Reason}, false};
             {UserKey, AuthData} ->
+                ?LOG_DEBUG("eeee ~p ~p", [UserKey, AuthData]),
                 case maybe_create_user(
                        riak_cs_user:get_user(UserKey, RcPid),
                        UserKey,

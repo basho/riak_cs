@@ -146,7 +146,7 @@ generate_access_creds(UserId) ->
     {KeyId, Secret}.
 
 %% @doc Generate the canonical id for a user.
--spec generate_canonical_id(string()) -> string().
+-spec generate_canonical_id(binary()) -> binary().
 generate_canonical_id(KeyID) ->
     Bytes = 16,
     Id1 = riak_cs_utils:md5(KeyID),
@@ -157,7 +157,7 @@ generate_canonical_id(KeyID) ->
                             Id2:Bytes/binary >>))).
 
 %% @doc Generate an access key for a user
--spec generate_key(binary()) -> [byte()].
+-spec generate_key(binary()) -> binary().
 generate_key(UserName) ->
     Ctx = crypto:mac_init(hmac, sha, UserName),
     Ctx1 = crypto:mac_update(Ctx, uuid:get_v4()),
@@ -165,7 +165,7 @@ generate_key(UserName) ->
     list_to_binary(string:to_upper(base64url:encode_to_string(Key))).
 
 %% @doc Generate a secret access token for a user
--spec generate_secret(binary(), string()) -> iodata().
+-spec generate_secret(binary(), binary()) -> binary().
 generate_secret(UserName, Key) ->
     Bytes = 14,
     Ctx = crypto:mac_init(hmac, sha, UserName),

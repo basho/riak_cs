@@ -198,7 +198,7 @@ delete_policy(A) ->
                              {delete_policy, A},
                              infinity)).
 
--spec create_saml_provider(maps:map()) -> ok | {error, term()}.
+-spec create_saml_provider(maps:map()) -> {ok, {flat_arn(), [tag()]}} | {error, term()}.
 create_saml_provider(A) ->
     ?MEASURE([saml_provider, create],
              gen_server:call(?MODULE,
@@ -215,7 +215,7 @@ delete_saml_provider(A) ->
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
--spec update_user(maps:map()) -> ok | {error, term() | stanchion_utils:riak_connect_failed()}.
+-spec update_user(maps:map()) -> {ok, rcs_user()} | {error, term() | stanchion_utils:riak_connect_failed()}.
 update_user(A) ->
     ?MEASURE([user, update],
              gen_server:call(?MODULE,

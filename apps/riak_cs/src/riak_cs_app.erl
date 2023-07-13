@@ -56,21 +56,21 @@ stop(_State) ->
 -spec check_admin_creds() -> ok | {error, term()}.
 check_admin_creds() ->
     case riak_cs_config:admin_creds() of
-        {ok, {"admin-key", _}} ->
+        {ok, {<<"admin-key">>, _}} ->
             %% The default key
             logger:warning("admin.key is defined as default. Please create"
                            " admin user and configure it.", []),
-            application:set_env(riak_cs, admin_secret, "admin-secret"),
+            application:set_env(riak_cs, admin_secret, <<"admin-secret">>),
             ok;
         {ok, {undefined, _}} ->
             logger:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
-        {ok, {[], _}} ->
+        {ok, {<<>>, _}} ->
             logger:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {Key, undefined}} ->
             fetch_and_cache_admin_creds(Key);
-        {ok, {Key, []}} ->
+        {ok, {Key, <<>>}} ->
             fetch_and_cache_admin_creds(Key);
         {ok, {Key, _}} ->
             logger:warning("The admin user's secret is specified. Ignoring."),
@@ -89,7 +89,7 @@ fetch_and_cache_admin_creds(Key, Attempt, _Error) ->
         %% Do we count this into stats?; This is a startup query and
         %% system latency is expected to be low. So get timeout can be
         %% low like 10% of configuration value.
-        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, iolist_to_binary(Key),
+        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, Key,
                                         [{notfound_ok, false}],
                                         riak_cs_config:get_user_timeout() div 10) of
             {ok, Obj} ->

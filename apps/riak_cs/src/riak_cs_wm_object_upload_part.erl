@@ -339,7 +339,8 @@ to_xml(RD, Ctx = #rcs_web_context{local_context = #key_context{bucket = Bucket,
                                   riak_client = RcPid}) ->
     UploadId = base64url:decode(re:replace(wrq:path(RD), ".*/uploads/",
                                            "", [{return, binary}])),
-    {UserDisplay, _Canon, UserKeyId} = User =
+    #{display_name := UserDisplay,
+      key_id := UserKeyId} = User =
         riak_cs_user:to_3tuple(Ctx#rcs_web_context.user),
     case riak_cs_mp_utils:list_parts(Bucket, Key, Vsn, UploadId, User, [], RcPid) of
         {ok, Ps} ->

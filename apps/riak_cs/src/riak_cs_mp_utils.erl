@@ -641,13 +641,13 @@ handle_get_manifests_result({ok, _Obj, Manifests}) ->
                     is_multipart_manifest(M)].
 
 
--spec multipart_description(?MANIFEST{}) -> ?MULTIPART_DESCR{}.
 multipart_description(?MANIFEST{bkey = {_, Key},
                                 vsn = Vsn,
                                 uuid = UUID,
                                 props = Props,
                                 created = Created}) ->
-    ?MULTIPART_MANIFEST{owner = {OwnerDisplay, _, OwnerKeyId}} =
+    ?MULTIPART_MANIFEST{owner = #{display_name := OwnerDisplay,
+                                  key_id := OwnerKeyId}} =
         proplists:get_value(multipart, Props),
     ?MULTIPART_DESCR{
        key = rcs_common_manifest:make_versioned_key(Key, Vsn),

@@ -159,16 +159,12 @@
 -define(ATTR_START, 'StartTime').
 -define(ATTR_END, 'EndTime').
 
--record(ctx, {
-          auth_bypass = false :: boolean(),
-          riak_client :: undefined | pid(),
-          user :: undefined | rcs_user(),
-          admin_access=false :: boolean(),
-          start_time :: undefined | calendar:datetime(),
-          end_time :: undefined | calendar:datetime(),
-          body :: undefined | iodata(),
-          etag :: undefined | iolist()
-         }).
+-record(local_context, { start_time :: undefined | calendar:datetime()
+                       , end_time :: undefined | calendar:datetime()
+                       , body :: undefined | iodata()
+                       , etag :: undefined | iolist()
+                       }
+       ).
 
 on_load() ->
     %% put atoms into atom table, for binary_to_existing_atom/2 in xml_name/1
@@ -178,20 +174,19 @@ on_load() ->
     ok.
 
 init(Config) ->
-    %% Check if authentication is disabled and
-    %% set that in the context.
     AuthBypass = not proplists:get_value(admin_auth_enabled, Config),
-    {ok, #ctx{auth_bypass=AuthBypass}}.
+    {ok, #rcs_web_context{auth_bypass = AuthBypass,
+                          local_context = #local_context{}}}.
 
 service_available(RD, Ctx) ->
     case riak_cs_riak_client:checkout() of
         {ok, RcPid} ->
-            {true, RD, Ctx#ctx{riak_client=RcPid}};
+            {true, RD, Ctx#rcs_web_context{riak_client = RcPid}};
         {error, _} ->
             {false, error_msg(RD, <<"Usage database connection failed">>), Ctx}
     end.
 
-malformed_request(RD, Ctx) ->
+malformed_request(RD, #rcs_web_context{local_context = LCtx0} = Ctx) ->
     case parse_start_time(RD) of
         {ok, Start} ->
             case parse_end_time(RD, Start) of
@@ -202,9 +197,10 @@ malformed_request(RD, Ctx) ->
                              error_msg(RD, <<"Too much time requested">>),
                              Ctx};
                         false ->
+                            LCtx = LCtx0#local_context{start_time = lists:min([Start, End]),
+                                                       end_time = lists:max([Start, End])},
                             {false, RD,
-                             Ctx#ctx{start_time=lists:min([Start, End]),
-                                     end_time=lists:max([Start, End])}}
+                             Ctx#rcs_web_context{local_context = LCtx}}
                     end;
                 error ->
                     {true, error_msg(RD, <<"Invalid end-time format">>), Ctx}
@@ -213,10 +209,10 @@ malformed_request(RD, Ctx) ->
             {true, error_msg(RD, <<"Invalid start-time format">>), Ctx}
     end.
 
-resource_exists(RD, #ctx{riak_client=RcPid}=Ctx) ->
+resource_exists(RD, #rcs_web_context{riak_client = RcPid} = Ctx) ->
     case riak_cs_user:get_user(user_key(RD), RcPid) of
         {ok, {User, _UserObj}} ->
-            {true, RD, Ctx#ctx{user=User}};
+            {true, RD, Ctx#rcs_web_context{user = User}};
         {error, _} ->
             {false, error_msg(RD, <<"Unknown user">>), Ctx}
     end.
@@ -230,7 +226,7 @@ content_types_provided(RD, Ctx) ->
             end,
     {Types, RD, Ctx}.
 
-generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
+generate_etag(RD, #rcs_web_context{local_context = #local_context{etag = undefined} = LCtx} = Ctx) ->
     case content_types_provided(RD, Ctx) of
         {[{_Type, Producer}], _, _} -> ok;
         {Choices, _, _} ->
@@ -245,11 +241,12 @@ generate_etag(RD, #ctx{etag=undefined}=Ctx) ->
     end,
     {Body, NewRD, NewCtx} = ?MODULE:Producer(RD, Ctx),
     Etag = riak_cs_utils:etag_from_binary_no_quotes(riak_cs_utils:md5(Body)),
-    {Etag, NewRD, NewCtx#ctx{etag = Etag}};
-generate_etag(RD, #ctx{etag = Etag} = Ctx) ->
+    {Etag, NewRD, NewCtx#rcs_web_context{local_context = LCtx#local_context{etag = Etag}}};
+generate_etag(RD, #rcs_web_context{local_context = #local_context{etag = Etag}} = Ctx) ->
     {Etag, RD, Ctx}.
 
-forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
+forbidden(RD, #rcs_web_context{auth_bypass = AuthBypass,
+                               riak_client = RcPid} = Ctx) ->
     BogusContext = #rcs_web_context{auth_bypass = AuthBypass,
                                     riak_client = RcPid},
     Next = fun(NewRD, #rcs_web_context{user = User}) ->
@@ -260,7 +257,7 @@ forbidden(RD, #ctx{auth_bypass=AuthBypass, riak_client=RcPid}=Ctx) ->
 
 forbidden(RD, Ctx, _, true) ->
     %% Treat AuthBypass=true as same as admin access
-    {false, RD, Ctx#ctx{admin_access=true}};
+    {false, RD, Ctx#rcs_web_context{user = admin}};
 forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
@@ -268,7 +265,7 @@ forbidden(RD, Ctx, User, false) ->
     case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
             %% admin can access anyone's stats
-            {false, RD, Ctx#ctx{admin_access=true}};
+            {false, RD, Ctx#rcs_web_context{user = admin}};
         _ ->
             case user_key(RD) == User?RCS_USER.key_id of
                 true ->
@@ -281,62 +278,58 @@ forbidden(RD, Ctx, User, false) ->
             end
     end.
 
-finish_request(RD, #ctx{riak_client=undefined}=Ctx) ->
+finish_request(RD, #rcs_web_context{riak_client = undefined} = Ctx) ->
     {true, RD, Ctx};
-finish_request(RD, #ctx{riak_client=RcPid}=Ctx) ->
+finish_request(RD, #rcs_web_context{riak_client = RcPid} = Ctx) ->
     riak_cs_riak_client:checkin(RcPid),
-    {true, RD, Ctx#ctx{riak_client=undefined}}.
+    {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
 %% JSON Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-produce_json(RD, #ctx{body=undefined}=Ctx) ->
+produce_json(RD, #rcs_web_context{local_context = #local_context{body = undefined} = LCtx0} = Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
-    MJ = {struct, [{?KEY_ACCESS, mochijson_access(Access)},
-                   {?KEY_STORAGE, mochijson_storage(Storage)}]},
-    Body = mochijson2:encode(MJ),
-    {Body, RD, Ctx#ctx{body=Body}};
-produce_json(RD, #ctx{body=Body}=Ctx) ->
+    MJ = [{?KEY_ACCESS, json_access(Access)},
+          {?KEY_STORAGE, json_storage(Storage)}],
+    Body = jsx:encode(MJ),
+    {Body, RD, Ctx#rcs_web_context{local_context = LCtx0#local_context{body = Body}}};
+produce_json(RD, #rcs_web_context{local_context = #local_context{body = Body}} = Ctx) ->
     {Body, RD, Ctx}.
 
-mochijson_access(Msg) when is_atom(Msg) ->
+json_access(Msg) when is_atom(Msg) ->
     Msg;
-mochijson_access({Access, Errors}) ->
-    Nodes = [{struct, [{?KEY_NODE, Node},
-                       {?KEY_SAMPLES, [{struct, S} || S <- Samples]}]}
+json_access({Access, Errors}) ->
+    Nodes = [[{?KEY_NODE, Node}, {?KEY_SAMPLES, [S || S <- Samples]}]
              || {Node, Samples} <- Access],
-    Errs = [ {struct, mochijson_sample_error(E)} || E <- Errors ],
+    Errs = [ json_sample_error(E) || E <- Errors ],
     [{?KEY_NODES, Nodes},
      {?KEY_ERRORS, Errs}].
 
-mochijson_sample_error({{Start, End}, Reason}) ->
+json_sample_error({{Start, End}, Reason}) ->
     [{?START_TIME, rts:iso8601(Start)},
      {?END_TIME, rts:iso8601(End)},
-     {?KEY_REASON, mochijson_reason(Reason)}].
+     {?KEY_REASON, json_reason(Reason)}].
 
-mochijson_reason(Reason) ->
+json_reason(Reason) ->
     if is_atom(Reason) -> atom_to_binary(Reason, latin1);
        is_binary(Reason) -> Reason;
        true -> list_to_binary(io_lib:format("~p", [Reason]))
     end.
 
-mochijson_storage(Msg) when is_atom(Msg) ->
+json_storage(Msg) when is_atom(Msg) ->
     Msg;
-mochijson_storage({Storage, Errors}) ->
-    [{?KEY_SAMPLES, [ mochijson_storage_sample(S) || S <- Storage ]},
-     {?KEY_ERRORS, [ mochijson_sample_error(E)|| E <- Errors ]}].
-
-mochijson_storage_sample(Sample) ->
-    {struct, Sample}.
+json_storage({Storage, Errors}) ->
+    [{?KEY_SAMPLES, Storage},
+     {?KEY_ERRORS, [json_sample_error(E) || E <- Errors]}].
 
 %% XML Production %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-produce_xml(RD, #ctx{body=undefined}=Ctx) ->
+produce_xml(RD, #rcs_web_context{local_context = #local_context{body = undefined} = LCtx} = Ctx) ->
     Access = maybe_access(RD, Ctx),
     Storage = maybe_storage(RD, Ctx),
     Doc = [{?KEY_USAGE, [{?KEY_ACCESS, xml_access(Access)},
                          {?KEY_STORAGE, xml_storage(Storage)}]}],
     Body = riak_cs_xml:to_xml(Doc),
-    {Body, RD, Ctx#ctx{body=Body}};
-produce_xml(RD, #ctx{body=Body}=Ctx) ->
+    {Body, RD, Ctx#rcs_web_context{local_context = LCtx#local_context{body = Body}}};
+produce_xml(RD, #rcs_web_context{local_context = #local_context{body = Body}} = Ctx) ->
     {Body, RD, Ctx}.
 
 xml_access(Msg) when is_atom(Msg) ->
@@ -396,7 +389,7 @@ xml_storage({Storage, Errors}) ->
 %% Internals %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 user_key(RD) ->
     case path_tokens(RD) of
-        [KeyId|_] -> mochiweb_util:unquote(KeyId);
+        [KeyId|_] -> list_to_binary(mochiweb_util:unquote(KeyId));
         _         -> []
     end.
 
@@ -406,12 +399,14 @@ maybe_access(RD, Ctx) ->
 maybe_storage(RD, Ctx) ->
     usage_if(RD, Ctx, "b", riak_cs_storage).
 
-usage_if(RD, #ctx{riak_client=RcPid, admin_access=AdminAceess,
-                  start_time=Start, end_time=End},
+usage_if(RD, #rcs_web_context{riak_client = RcPid,
+                              user = User,
+                              local_context = #local_context{start_time = Start,
+                                                             end_time = End}},
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            Module:get_usage(RcPid, user_key(RD), AdminAceess, Start, End);
+            Module:get_usage(RcPid, user_key(RD), (User = admin), Start, End);
         false ->
             not_requested
     end.
@@ -467,7 +462,7 @@ time_param(RD, Param, N, Default) ->
     end.
 
 error_msg(RD, Message) ->
-    {CTP, _, _} = content_types_provided(RD, #ctx{}),
+    {CTP, _, _} = content_types_provided(RD, #rcs_web_context{}),
     PTypes = [Type || {Type,_Fun} <- CTP],
     AcceptHdr = wrq:get_req_header("accept", RD),
     case webmachine_util:choose_media_type(PTypes, AcceptHdr) of
@@ -495,7 +490,7 @@ xml_error_msg(Message) ->
           -> boolean().
 too_many_periods(Start, End) ->
     Seconds = calendar:datetime_to_gregorian_seconds(End)
-        -calendar:datetime_to_gregorian_seconds(Start),
+        - calendar:datetime_to_gregorian_seconds(Start),
     {ok, Limit} = application:get_env(riak_cs, usage_request_limit),
 
     {ok, Access} = riak_cs_access:archive_period(),
@@ -503,8 +498,8 @@ too_many_periods(Start, End) ->
 
     ((Seconds div Access) > Limit) orelse ((Seconds div Storage) > Limit).
 
--ifdef(TEST).
 
+-ifdef(TEST).
 
 datetime_test() ->
     true = proper:quickcheck(datetime_invalid_prop()).

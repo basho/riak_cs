@@ -48,6 +48,7 @@
          detach_role_policy/3,
          attach_user_policy/3,
          detach_user_policy/3,
+         express_policies/2,
 
          fix_permissions_boundary/1,
          exprec_user/1,
@@ -113,7 +114,7 @@ find_user(Index, A, Pbc) ->
             {error, Reason}
     end.
 
--spec update_user(rcs_user()) -> ok | {error, term()}.
+-spec update_user(rcs_user()) -> {ok, rcs_user()} | {error, term()}.
 update_user(U = ?IAM_USER{key_id = KeyId}) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
     Result = velvet:update_user("application/json",
@@ -312,7 +313,7 @@ attach_user_policy(PolicyArn, UserName, Pbc) ->
                         {ok, Policy = ?IAM_POLICY{is_attachable = true,
                                                   attachment_count = AC}} ->
                             case update_user(User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
-                                ok ->
+                                {ok, _UpdatedUser} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC + 1});
                                 ER1 ->
                                     ER1
@@ -339,7 +340,7 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
                     case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
                             case update_user(User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
-                                ok ->
+                                {ok, _} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC - 1});
                                 ER1 ->
                                     ER1
@@ -352,6 +353,7 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
             {error, no_such_user}
     end.
 
+-spec update_role(role()) -> ok | {error, term()}.
 update_role(R = ?IAM_ROLE{arn = Arn}) ->
     Encoded = riak_cs_json:to_json(R),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -362,6 +364,7 @@ update_role(R = ?IAM_ROLE{arn = Arn}) ->
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
 
+-spec update_policy(policy()) -> ok | {error, term()}.
 update_policy(A = ?IAM_POLICY{arn = Arn}) ->
     Encoded = riak_cs_json:to_json(A),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -371,6 +374,22 @@ update_policy(A = ?IAM_POLICY{arn = Arn}) ->
                Encoded,
                [{auth_creds, AdminCreds}]),
     handle_response(Result).
+
+
+-spec express_policies([flat_arn()], pid()) -> [amz_policy()].
+express_policies(AA, Pbc) ->
+    lists:flatten(
+      [begin
+           case get_policy(Arn, Pbc) of
+               {ok, PE} ->
+                   PE;
+               {error, _} ->
+                   logger:notice("Managed policy ~s previously attached to role "
+                                 "or referenced as session policy, is not available", [Arn]),
+                   []
+           end
+       end || Arn <- AA]
+     ).
 
 
 %% CreateRole takes a string for PermissionsBoundary parameter, which

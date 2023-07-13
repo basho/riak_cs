@@ -23,8 +23,8 @@
 -define(RCS_COMMON_ACL_HRL, included).
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
--type acl_perms() :: [acl_perm()].
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
+
 %% -type acl_grantee() :: {DisplayName :: string(),
 %%                         CanonicalID :: string()} |
 %%                        group_grant().
@@ -48,16 +48,19 @@
                        canonical_id => binary(),
                        key_id => binary()}.
 
+%% in the following definitions, maps:map() and binary() as
+%% alternative types are there to indicate intermediate types those
+%% fields briefly exist in withing exprec helpers.
 -type acl_grantee() :: maps:map() | group_grant().
 
 -record(acl_grant_v2, {grantee :: acl_grantee(),
-                       perms :: undefined | acl_perms()
+                       perms :: [binary()] | [acl_perm()]
                       }).
 -type acl_grant() :: #acl_grant_v2{}.
 -define(ACL_GRANT, #acl_grant_v2).
 
 -record(acl_v3, {owner :: maps:map(),
-                 grants = [] :: [#acl_grant_v2{}],
+                 grants = [] :: maps:map() | [#acl_grant_v2{}],
                  creation_time = os:system_time(millisecond) :: non_neg_integer()
                 }).
 -type acl() :: #acl_v1{} | #acl_v3{}.

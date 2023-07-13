@@ -74,14 +74,20 @@ get(undefined, _) ->
 get(not_found, _) ->
     {error, not_found}.
 
--spec to_json(term()) -> binary().
-to_json(?KEYSTONE_S3_AUTH_REQ{}=Req) ->
-    Inner = {struct, [{<<"access">>, Req?KEYSTONE_S3_AUTH_REQ.access},
-                      {<<"signature">>, Req?KEYSTONE_S3_AUTH_REQ.signature},
-                      {<<"token">>, Req?KEYSTONE_S3_AUTH_REQ.token}]},
-    iolist_to_binary(mochijson2:encode({struct, [{<<"credentials">>, Inner}]}));
+-spec to_json(tuple() | undefined | []) -> binary().
+to_json(?KEYSTONE_S3_AUTH_REQ{} = A) ->
+    jason:encode(A,
+                [{records, [{keystone_aws_auth_req_v1, record_info(fields, keystone_aws_auth_req_v1)}]}]);
 to_json(?RCS_USER{} = A) ->
     jason:encode(A,
+                 [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
+                             {permissions_boundary, record_info(fields, permissions_boundary)},
+                             {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
+                             {acl_grant_v2, record_info(fields, acl_grant_v2)},
+                             {acl_v3, record_info(fields, acl_v3)},
+                             {tag, record_info(fields, tag)}]}]);
+to_json({users, AA}) ->
+    jason:encode(AA,
                  [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
                              {permissions_boundary, record_info(fields, permissions_boundary)},
                              {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
@@ -103,9 +109,9 @@ to_json(?IAM_SAML_PROVIDER{saml_metadata_document = D} = A) ->
                  [{records, [{saml_provider_v1, record_info(fields, saml_provider_v1)},
                              {tag, record_info(fields, tag)}]}]);
 to_json(undefined) ->
-    [];
+    <<>>;
 to_json([]) ->
-    [].
+    <<>>.
 
 -spec value_or_default({ok, term()} | {error, term()}, term()) -> term().
 value_or_default({error, Reason}, Default) ->

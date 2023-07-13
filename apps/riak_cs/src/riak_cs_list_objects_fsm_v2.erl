@@ -64,12 +64,12 @@
         temp_fold_objects_request :: undefined |
                                      {Request :: {StartKey :: binary(),
                                                   EndKey :: binary()},
-                                      StartTime :: erlang:timestamp()},
+                                      StartTime :: non_neg_integer()},
         fold_objects_requests=[] :: [{Request :: {StartKey :: binary(),
                                                   EndKey :: binary()},
                                       NumKeysReturned :: non_neg_integer(),
-                                      Timing :: {StartTime :: erlang:timestamp(),
-                                                 EndTime :: erlang:timestamp()}}]}).
+                                      Timing :: {StartTime :: non_neg_integer(),
+                                                 EndTime :: non_neg_integer()}}]}).
 
 -type profiling() :: #profiling{}.
 
@@ -228,10 +228,6 @@ handle_done(State=#state{object_buffer=ObjectBuffer,
                                                object_buffer=[]},
     respond(NewStateData, NewManis, NewPrefixes).
 
--spec reached_end_of_keyspace(non_neg_integer(),
-                              undefined | pos_integer(),
-                              list(lfs_manifest()),
-                              undefined | binary()) -> boolean().
 reached_end_of_keyspace(BufferLength, NumKeysRequested, _, _)
   when BufferLength < NumKeysRequested ->
     true;
@@ -255,15 +251,11 @@ handle_error(Error, #state{profiling=Profiling} = State) ->
     _ = riak_cs_stats:update_error_with_start([riakc, fold_manifest_objs], StartTime),
     try_reply(Error, State).
 
--spec update_profiling_and_last_request(state(), list(), integer()) ->
-    state().
 update_profiling_and_last_request(State, ObjectBuffer, ObjectBufferLength) ->
-    State2 = update_profiling_state_with_end(State, os:timestamp(),
+    State2 = update_profiling_state_with_end(State, os:system_time(millisecond),
                                              ObjectBufferLength),
     update_last_request_state(State2, ObjectBuffer).
 
--spec respond(state(), list(), list_objects_common_prefixes()) ->
-    fsm_state_return().
 respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
                                             delimiter=Delimiter}},
         Manifests, Prefixes) ->
@@ -292,7 +284,6 @@ respond(StateData=#state{req=Request=?LOREQ{max_keys=UserMaxKeys,
             end
     end.
 
--spec truncated(non_neg_integer(), {list(), ordsets:ordset(term())}) -> boolean().
 truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     NumKeysRequested < riak_cs_list_objects_utils:manifests_and_prefix_length(ObjectsAndPrefixes) andalso
     %% this is because (strangely) S3 returns `false' for
@@ -300,7 +291,6 @@ truncated(NumKeysRequested, ObjectsAndPrefixes) ->
     %% The `Ceph' tests were nice to find this.
     NumKeysRequested =/= 0.
 
--spec enough_results(state()) -> boolean().
 %% @doc Return a `boolean' determining whether enough results have been
 %% returned from the fold objects queries to return to the user. In order
 %% to tell if the result-set is truncated, we either need one more result
@@ -314,9 +304,6 @@ enough_results(#state{req=?LOREQ{max_keys=UserMaxKeys},
     > UserMaxKeys
     orelse EndOfKeyspace.
 
--spec next_marker(undefined | binary(),
-                  riak_cs_list_objects_utils:tagged_item_list()) ->
-    next_marker().
 next_marker(undefined, _List) ->
     undefined;
 next_marker(_Delimiter, []) ->
@@ -324,8 +311,6 @@ next_marker(_Delimiter, []) ->
 next_marker(_Delimiter, List) ->
     next_marker_from_element(lists:last(List)).
 
--spec next_marker_from_element(riak_cs_list_objects_utils:tagged_item()) ->
-    next_marker().
 next_marker_from_element({prefix, Name}) ->
     Name;
 next_marker_from_element({manifest, ?MANIFEST{bkey={_Bucket, Key}}}) ->
@@ -354,7 +339,7 @@ make_2i_request(RcPid, State=#state{req = ?LOREQ{name = BucketName, prefix = Pre
     NewStateData2 = update_profiling_state_with_start(NewStateData,
                                                       StartKey,
                                                       EndKey,
-                                                      os:timestamp()),
+                                                      os:system_time(millisecond)),
     Opts = [{max_results, BatchSize},
             {start_key, StartKey},
             {end_key, EndKey},
@@ -365,14 +350,11 @@ make_2i_request(RcPid, State=#state{req = ?LOREQ{name = BucketName, prefix = Pre
                                                 Opts),
     {NewStateData2, FoldResult}.
 
--spec last_result_is_common_prefix(state()) -> boolean().
 last_result_is_common_prefix(#state{object_list_ranges=Ranges,
                                     req=Request}) ->
     Key = element(2, lists:last(Ranges)),
     key_is_common_prefix(Key, Request).
 
--spec key_is_common_prefix(binary(), list_object_request()) ->
-    boolean().
 key_is_common_prefix(_Key, ?LOREQ{delimiter=undefined}) ->
     false;
 key_is_common_prefix(Key, ?LOREQ{prefix=Prefix,
@@ -384,7 +366,6 @@ key_is_common_prefix(Key, ?LOREQ{prefix=Prefix,
             handle_prefix(Key, Prefix, Delimiter)
     end.
 
--spec handle_undefined_prefix(binary(), binary()) -> boolean().
 handle_undefined_prefix(Key, Delimiter) ->
     case binary:match(Key, [Delimiter]) of
         nomatch ->
@@ -393,7 +374,6 @@ handle_undefined_prefix(Key, Delimiter) ->
             true
     end.
 
--spec handle_prefix(binary(), binary(), binary()) -> boolean().
 handle_prefix(Key, Prefix, Delimiter) ->
     PrefixLen = byte_size(Prefix),
     case Key of
@@ -408,10 +388,6 @@ handle_prefix(Key, Prefix, Delimiter) ->
             false
     end.
 
--spec common_prefix_from_key(Key :: binary(),
-                             Prefix :: binary(),
-                             Delimiter :: binary()) ->
-    binary().
 %% @doc Extract common prefix from `Key'. `Key' must contain `Delimiter', so
 %% you must first check with `key_is_common_prefix'.
 common_prefix_from_key(Key, Prefix, Delimiter) ->
@@ -425,7 +401,6 @@ common_prefix_from_key(Key, Prefix, Delimiter) ->
             <<Prefix/binary, Group/binary>>
     end.
 
--spec make_start_key(state()) -> binary().
 make_start_key(#state{object_list_ranges=[], req=Request}) ->
     make_start_key_from_marker_and_prefix(Request);
 make_start_key(State=#state{object_list_ranges=PrevRanges,
@@ -446,7 +421,6 @@ make_start_key(State=#state{object_list_ranges=PrevRanges,
             Key
     end.
 
--spec make_start_key_from_marker_and_prefix(list_object_request()) -> binary().
 make_start_key_from_marker_and_prefix(?LOREQ{marker=undefined,
                                              prefix=undefined}) ->
     <<0:8/integer>>;
@@ -469,14 +443,11 @@ make_start_key_from_marker_and_prefix(?LOREQ{marker=Marker,
             Marker
     end.
 
--spec map_active_manifests([orddict:orddict()]) -> list(lfs_manifest()).
 map_active_manifests(Manifests) ->
     ActiveTuples = [rcs_common_manifest_utils:active_manifest(M) ||
             M <- Manifests],
     [A || {ok, A} <- ActiveTuples].
 
--spec exclude_key_from_state(state(), list(riakc_obj:riakc_obj())) ->
-    list(riakc_obj:riakc_obj()).
 exclude_key_from_state(_State, []) ->
     [];
 exclude_key_from_state(#state{object_list_ranges=[],
@@ -485,14 +456,11 @@ exclude_key_from_state(#state{object_list_ranges=[],
 exclude_key_from_state(#state{last_request_start_key=StartKey}, Objects) ->
     exclude_key(StartKey, Objects).
 
--spec exclude_marker(list_object_request(), list()) -> list().
 exclude_marker(?LOREQ{marker=undefined}, Objects) ->
     Objects;
 exclude_marker(?LOREQ{marker=Marker}, Objects) ->
     exclude_key(Marker, Objects).
 
--spec exclude_key(binary(), list(riakc_obj:riakc_obj())) ->
-    list(riakc_obj:riakc_obj()).
 exclude_key(Key, [H | T]=Objects) ->
     case riakc_obj:key(H) == Key of
         true ->
@@ -501,7 +469,6 @@ exclude_key(Key, [H | T]=Objects) ->
             Objects
     end.
 
--spec skip_past_prefix_and_delimiter(binary()) -> binary().
 skip_past_prefix_and_delimiter(<<>>) ->
     <<0:8/integer>>;
 skip_past_prefix_and_delimiter(Key) ->
@@ -548,10 +515,6 @@ update_last_request_state(State=#state{last_request_start_key=StartKey,
 %% Profiling helper functions
 %%--------------------------------------------------------------------
 
--spec update_profiling_state_with_start(state(), StartKey :: binary(),
-                                        EndKey :: binary(),
-                                        StartTime :: erlang:timestamp()) ->
-    state().
 update_profiling_state_with_start(State=#state{profiling=Profiling},
                                   StartKey, EndKey, StartTime) ->
     _ = riak_cs_stats:inflow([riakc, fold_manifest_objs]),
@@ -560,9 +523,6 @@ update_profiling_state_with_start(State=#state{profiling=Profiling},
     NewProfiling = Profiling#profiling{temp_fold_objects_request=TempData},
     State#state{profiling=NewProfiling}.
 
--spec update_profiling_state_with_end(state(), EndTime :: erlang:timestamp(),
-                                      NumKeysReturned :: non_neg_integer()) ->
-    state().
 update_profiling_state_with_end(State=#state{profiling=Profiling},
                                 EndTime, NumKeysReturned) ->
     {KeyRange, StartTime} = Profiling#profiling.temp_fold_objects_request,
@@ -574,18 +534,12 @@ update_profiling_state_with_end(State=#state{profiling=Profiling},
                                            [NewRequest | OldRequests]},
     State#state{profiling=NewProfiling}.
 
--spec extract_timings(list()) -> [{Millis :: number(),
-                                   NumResults :: non_neg_integer()}].
 extract_timings(Requests) ->
     [extract_timing(R) || R <- Requests].
 
 %% TODO: time to make legit types out of these
--spec extract_timing({term(), non_neg_integer(),
-                      {erlang:timestamp(), erlang:timestamp()}}) ->
-                            {number(), non_neg_integer()}.
 extract_timing({_Range, NumKeysReturned, {StartTime, EndTime}}) ->
-    MillisecondDiff = riak_cs_utils:timestamp_to_milliseconds(EndTime) -
-                      riak_cs_utils:timestamp_to_milliseconds(StartTime),
+    MillisecondDiff = EndTime - StartTime,
     {MillisecondDiff, NumKeysReturned}.
 
 format_profiling_from_state(#state{req = Request,

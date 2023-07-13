@@ -177,24 +177,24 @@ process_put_req(#rpbputreq{bucket = RiakBucket, key = VKey, return_body = 1} = _
 process_put_req(_RpbPutReq, State) ->
     {ok, State}.
 
-new_user(UserKeyBin) ->
-    UserKey = binary_to_list(UserKeyBin),
-    DisplayName = UserKey ++ "+DisplayName",
-    CanonicalId = UserKey ++ "+CanonicalId",
+new_user(UserKey) ->
+    Name = <<UserKey/binary, "+Name">>,
+    DisplayName = <<UserKey/binary, "+DisplayName">>,
+    CanonicalId = <<UserKey/binary, "+CanonicalId">>,
     DefaultAcl = default_acl(DisplayName, CanonicalId, UserKey),
-    {?RCS_USER{name = UserKey,
+    {?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(UserKey, <<"/">>),
+               name = Name,
                display_name = UserKey,
-               email = UserKey ++ "@example.com",
+               email = <<UserKey/binary, "@example.com">>,
                key_id = UserKey,
-               key_secret = UserKey ++ "+Secret",
+               key_secret = <<UserKey/binary, "+Secret">>,
                canonical_id = CanonicalId,
-               buckets=[#moss_bucket_v1{name = UserKey ++ "-yessir-bucket-1",
-                                        acl = DefaultAcl}]},
+               buckets = [?RCS_BUCKET{name = <<UserKey/binary, "-yessir-bucket-1">>,
+                                      acl = DefaultAcl}]},
      DefaultAcl}.
 
-user_to_robj(?RCS_USER{key_id = Key} = User) ->
-    UserKeyBin = list_to_binary(Key),
-    riakc_obj:new_obj(?USER_BUCKET, UserKeyBin, <<"vclock">>,
+user_to_robj(?RCS_USER{arn = Arn} = User) ->
+    riakc_obj:new_obj(?USER_BUCKET, Arn, <<"vclock">>,
                       [{dict:new(), term_to_binary(User)}]).
 
 default_acl(DisplayName, CannicalId, KeyId) ->

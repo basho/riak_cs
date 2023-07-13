@@ -29,18 +29,11 @@
 
 -include("riak_cs.hrl").
 
--spec respond(term(), #wm_reqdata{}, #rcs_web_context{}) ->
+-spec respond(?LBRESP{}, #wm_reqdata{}, #rcs_web_context{}) ->
           {string() | {halt, non_neg_integer()} , #wm_reqdata{}, #rcs_web_context{}}.
-respond(?LBRESP{}=Response, RD, Ctx) ->
+respond(?LBRESP{} = Response, RD, Ctx) ->
     BucketsDoc =
-        [begin
-             case is_binary(B?RCS_BUCKET.name) of
-                 true ->
-                     binary_to_list(B?RCS_BUCKET.name) ++ "\n";
-                 false ->
-                     B?RCS_BUCKET.name ++ "\n"
-             end
-         end || B <- Response?LBRESP.buckets],
+        [binary_to_list(B?RCS_BUCKET.name) ++ "\n" || B <- Response?LBRESP.buckets],
     UpdRD = wrq:set_resp_header("Content-Type",
                                 "text/plain",
                                 RD),

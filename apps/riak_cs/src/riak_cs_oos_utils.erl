@@ -108,7 +108,7 @@ ec2_creds_for_tenant(Creds, TenantId) ->
         {undefined, []} ->
             Res;
         {KeyBin, SecretBin} ->
-            {binary_to_list(KeyBin), binary_to_list(SecretBin)}
+            {KeyBin, SecretBin}
     end.
 
 %% ===================================================================

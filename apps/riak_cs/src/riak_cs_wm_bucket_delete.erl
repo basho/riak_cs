@@ -87,7 +87,7 @@ handle_with_bucket_obj({error, _} = Error, RD,
 
 handle_with_bucket_obj({ok, BucketObj},
                        RD, Ctx = #rcs_web_context{bucket = Bucket,
-                                                  user = User,
+                                                  user = ?IAM_USER{canonical_id = CanonicalId},
                                                   riak_client = RcPid,
                                                   response_module = ResponseMod,
                                                   policy_module = PolicyMod}) ->
@@ -102,7 +102,6 @@ handle_with_bucket_obj({ok, BucketObj},
             ?LOG_DEBUG("deleting keys at ~p: ~p", [Bucket, Keys]),
 
             Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
-            CanonicalId = riak_cs_wm_utils:extract_canonical_id(User),
             Access0 = PolicyMod:reqdata_to_access(RD, object, CanonicalId),
 
             %% map: keys => delete_results => xmlElements
@@ -121,9 +120,6 @@ handle_with_bucket_obj({ok, BucketObj},
             {true, RD2, Ctx}
     end.
 
--spec check_permission(riak_client(), binary(), binary(), binary(),
-                       access(), string(), policy()|undefined, atom(), riakc_obj:riakc_obj()) ->
-                              ok | {error, access_denied|notfound|no_active_manifest}.
 check_permission(RcPid, Bucket, Key, Vsn,
                  Access0, CanonicalId, Policy, PolicyMod, BucketObj) ->
     case riak_cs_manifest:fetch(RcPid, Bucket, Key, Vsn) of
@@ -142,9 +138,6 @@ check_permission(RcPid, Bucket, Key, Vsn,
     end.
 
 %% bucket/key => delete => xml indicating each result
--spec handle_key(riak_client(), binary(), {binary(), binary()},
-                ok | {error, access_denied|notfound|no_active_manifest}) ->
-                        {'Deleted', list(tuple())} | {'Error', list(tuple())}.
 handle_key(_RcPid, _Bucket, {Key, Vsn}, {error, notfound}) ->
     %% delete is RESTful, thus this is success
     {'Deleted', [{'Key', [Key]}, {'VersionId', [Vsn]}]};
