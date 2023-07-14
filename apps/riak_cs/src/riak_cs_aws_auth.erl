@@ -164,7 +164,7 @@ parse_auth_v4_header([KV | KVs], UserId, Acc) ->
             parse_auth_v4_header(KVs, UserId, Acc)
     end.
 
--spec calculate_signature_v2(string(), #wm_reqdata{}, sigv2_quirk()) -> string().
+-spec calculate_signature_v2(binary(), #wm_reqdata{}, sigv2_quirk()) -> string().
 calculate_signature_v2(KeyData, RD, Quirk) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
@@ -209,7 +209,7 @@ calculate_signature_v2(KeyData, RD, Quirk) ->
            Resource],
     %%?LOG_DEBUG("STS: ~p", [STS]),
 
-    base64:encode_to_string(riak_cs_utils:sha_mac(KeyData, STS)).
+    base64:encode_to_string(riak_cs_utils:sha_mac(binary_to_list(KeyData), STS)).
 
 apply_sigv2_quirk(boto3_1_26_36, {Path, QS}) ->
     logger:notice("applying boto3-1.26.36 quirk to QS ~p", [QS]),

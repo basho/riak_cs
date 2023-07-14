@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,7 +28,7 @@
 -include("stanchion.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--spec api_error(error_reason(), #wm_reqdata{}, #stanchion_context{}) ->
+-spec api_error(reportable_error_reason(), #wm_reqdata{}, #stanchion_context{}) ->
           {{halt, 400..599}, #wm_reqdata{}, #stanchion_context{}}.
 api_error(Error, RD, Ctx) ->
     StatusCode = riak_cs_aws_response:status_code(Error),

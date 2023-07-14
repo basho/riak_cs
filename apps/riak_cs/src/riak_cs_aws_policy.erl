@@ -91,10 +91,13 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 
 % @doc  semantic validation of policy
--spec check_policy(access(), amz_policy()) -> ok | {error, atom()}.
-check_policy(#access_v1{bucket=B}, Policy) ->
+-spec check_policy(access(), amz_policy()) ->
+          ok | {error, {malformed_policy_version, binary()}
+               | malformed_policy_resource | malformed_policy_action}.
+check_policy(#access_v1{bucket = B}, Policy) ->
     case check_version(Policy) of
-        false -> {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
+        false ->
+            {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
         true ->
             case check_all_resources(B, Policy) of
                 false -> {error, malformed_policy_resource};
@@ -127,7 +130,7 @@ check_version(?AMZ_POLICY{version = V}) ->
 check_actions([]) -> true;
 check_actions([Stmt|Stmts]) ->
     case Stmt#statement.action of
-        "s3:*" -> check_actions(Stmts);
+        <<"s3:*">> -> check_actions(Stmts);
         Actions ->
             case not lists:member("s3:CreateBucket", Actions) of
                 true ->
@@ -160,19 +163,19 @@ check_principal([_|T]) ->
     check_principal(T).
 
 % @doc check if the policy is set to proper bucket by checking arn
-check_all_resources(BucketBin, ?AMZ_POLICY{statement = Stmts} = _Policy) ->
+check_all_resources(Bucket, ?AMZ_POLICY{statement = Stmts}) ->
     CheckFun = fun(Stmt) ->
-                       check_all_resources(BucketBin, Stmt)
+                       check_all_resources(Bucket, Stmt)
                end,
     lists:all(CheckFun, Stmts);
-check_all_resources(BucketBin, #statement{resource = Resources}) ->
+check_all_resources(Bucket, #statement{resource = Resources}) ->
     CheckFun = fun(Resource) ->
-                       check_all_resources(BucketBin, Resource)
+                       check_all_resources(Bucket, Resource)
                end,
     lists:all(CheckFun, Resources);
-check_all_resources(BucketBin, #arn_v1{path = Path}) ->
-    [B|_] = string:tokens(Path, "/"),
-    B =:= binary_to_list(BucketBin).
+check_all_resources(Bucket, #arn_v1{path = Path}) ->
+    [B|_] = binary:split(Path, <<"/">>),
+    B =:= Bucket.
 
 -spec reqdata_to_access(#wm_reqdata{}, action_target(), binary() | undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->
@@ -708,9 +711,9 @@ parse_arn(Str) ->
         ["arn", "aws", "s3", Region, ID, Path] ->
             {ok, #arn_v1{provider = aws,
                          service  = s3,
-                         region   = Region,
+                         region   = list_to_binary(Region),
                          id       = list_to_binary(ID),
-                         path     = Path}};
+                         path     = list_to_binary(Path)}};
         _ ->
             {error, bad_arn}
     end.

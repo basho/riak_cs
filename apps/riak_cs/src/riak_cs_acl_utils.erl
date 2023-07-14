@@ -279,7 +279,7 @@ fail_either({ok, Val}, {_OkOrError, Acc}) ->
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string(), string(), riak_client()) -> {ok, acl()} |
+-spec acl_from_xml(string(), binary(), riak_client()) -> {ok, acl()} |
     {error, 'invalid_argument'} |
     {error, 'unresolved_grant_email'} |
     {error, 'malformed_acl_error'}.
@@ -522,7 +522,8 @@ process_grants([#xmlElement{content = Content,
             'Grant' ->
                 Grant = process_grant(
                           Content,
-                          ?ACL_GRANT{grantee = #{display_name => undefined}},
+                          ?ACL_GRANT{grantee = #{display_name => undefined},
+                                     perms = []},
                           Acl?ACL.owner, RcPid),
                 case Grant of
                     {error, _} ->
@@ -598,15 +599,13 @@ process_grantee([#xmlElement{content = [Content],
     Value = Content#xmlText.value,
     case ElementName of
         'ID' ->
-            ?LOG_DEBUG("ID value: ~p", [Value]),
             UpdGrant = G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
         'EmailAddress' ->
             ?LOG_DEBUG("Email value: ~p", [Value]),
             UpdGrant =
                 case canonical_for_email(Value, RcPid) of
-                    {ok, Id} ->
+                    {ok, _Id} ->
                         %% Get the canonical id for a given email address
-                        ?LOG_DEBUG("ID value: ~p", [Id]),
                         G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
                     {error, _}=Error ->
                         Error

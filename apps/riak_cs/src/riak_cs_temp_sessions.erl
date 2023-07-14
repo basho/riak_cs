@@ -85,22 +85,28 @@ create(?IAM_ROLE{role_id = RoleId,
     end.
 
 
--spec effective_policies(#temp_session{}, pid()) -> {[amz_policy()], PermissionsBoundary::amz_policy()}.
+-spec effective_policies(#temp_session{}, pid()) -> {[amz_policy()], PermissionsBoundary::amz_policy() | []}.
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
                                  role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument,
                                                   permissions_boundary = PermissionsBoundary,
                                                   attached_policies = RoleAttachedPolicies}},
                    Pbc) ->
-    Policies = lists:flatten(
-                 [maybe_include(AssumeRolePolicyDocument)
-                 | [maybe_include(InlinePolicy)
-                   | riak_cs_iam:express_policies(SessionPolicies ++ RoleAttachedPolicies, Pbc)]]),
-    ?LOG_DEBUG("Effective policies: ~p", [Policies]),
-    {Policies, PermissionsBoundary}.
+    AttachedPolicies =
+        riak_cs_iam:express_policies(SessionPolicies ++ RoleAttachedPolicies, Pbc),
+    AllPolicies = lists:flatten(
+                    [maybe_include(P) || P <- [AssumeRolePolicyDocument, InlinePolicy | AttachedPolicies]]),
+    ?LOG_DEBUG("Effective policies: ~p", [AllPolicies]),
+    {AllPolicies, maybe_include(PermissionsBoundary)}.
 
 maybe_include(undefined) -> [];
-maybe_include(A) -> A.
+maybe_include(A) ->
+    case riak_cs_aws_policy:policy_from_json(A) of
+        {ok, P} ->
+            P;
+        {error, _} ->
+            []
+    end.
 
 
 -spec get(binary(), pid()) -> {ok, temp_session()} | {error, term()}.

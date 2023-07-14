@@ -116,8 +116,7 @@ refresher() ->
 -spec allow(rcs_user(), access(), #rcs_web_context{}) ->
                    {ok, #wm_reqdata{}, #rcs_web_context{}} |
                    {error, {disk_quota, non_neg_integer(), non_neg_integer()}}.
-allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
-    OwnerKey = iolist_to_binary(riak_cs_user:key_id(Owner)),
+allow(?RCS_USER{key_id = OwnerKey}, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
     ?LOG_DEBUG("access => ~p", [OwnerKey]),
 
     {_, Usage} = case ets:lookup(?MODULE, OwnerKey) of
@@ -133,7 +132,7 @@ allow(Owner, #access_v1{req = RD, method = 'PUT'} = _Access, Ctx) ->
         Quota < 0 -> {ok, RD, Ctx};
         Usage < Quota -> {ok, RD, Ctx};
         true ->
-            logger:info("User ~s has exceeded it's quota: usage, quota = ~p, ~p (bytes)",
+            logger:info("User ~s has exceeded its quota: usage, quota = ~p, ~p (bytes)",
                         [OwnerKey, Usage, Quota]),
             {error, {disk_quota, Usage, Quota}}
     end;

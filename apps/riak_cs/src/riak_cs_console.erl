@@ -58,8 +58,8 @@ supps(Opts) ->
 
 
 test([]) ->
-    UserName = "ADMINTESTUSER",
-    Bucket = list_to_binary(rand_str(10)),
+    UserName = <<"ADMINTESTUSER">>,
+    Bucket = riak_cs_aws_utils:make_id(10),
     try
         {ok, RcPid} = riak_cs_riak_client:start_link([]),
         {User, UserObj} = get_test_user(UserName, RcPid),
@@ -73,7 +73,7 @@ test([]) ->
 
         io:format("creating bucket\n", []),
         ok = riak_cs_bucket:create_bucket(
-               User, UserObj, Bucket, BagId, Acl, RcPid),
+               User, UserObj, Bucket, BagId, Acl),
 
         Key = <<"testkey">>,
         Value = <<"testvalue">>,
@@ -96,7 +96,7 @@ test([]) ->
     end.
 
 get_test_user(Name, RcPid) ->
-    Email = Name ++ "@testusers.com",
+    Email = <<Name/binary, "@testusers.com">>,
     case riak_cs_user:create_user(Name, Email) of
         {ok, ?RCS_USER{key_id = KeyId}} ->
             {ok, UU} =
@@ -108,13 +108,10 @@ get_test_user(Name, RcPid) ->
             get_test_user(Name, RcPid);
         {error, user_already_exists} ->
             {ok, UU} =
-                riak_cs_iam:find_user(#{email => list_to_binary(Email)}, RcPid),
+                riak_cs_iam:find_user(#{email => Email}, RcPid),
             UU
     end.
 
-
-rand_str(N) ->
-    [$a + rand:uniform(22) || _X <- lists:seq(1, N)].
 
 put_object(Bucket, Key, Value, Acl, RcPid) ->
     Args = [{Bucket, Key, ?LFS_DEFAULT_OBJECT_VERSION,
@@ -224,12 +221,11 @@ ownership_from_users(RcPid) ->
     {ok, UserKeys} = riak_cs_user:fetch_user_keys(RcPid),
     lists:foldl(
       fun(UserKey, Ownership) ->
-              UserStr = binary_to_list(UserKey),
-              {ok, {RCSUser, _Obj}} = riak_cs_user:get_user(UserStr, RcPid),
-              ?RCS_USER{buckets=Buckets} = RCSUser,
+              {ok, {RCSUser, _Obj}} = riak_cs_user:get_user(UserKey, RcPid),
+              ?RCS_USER{buckets = Buckets} = RCSUser,
               lists:foldl(
-                fun(?RCS_BUCKET{name=BucketStr}, InnerOwnership) ->
-                        gb_sets:add_element({UserKey, list_to_binary(BucketStr)},
+                fun(?RCS_BUCKET{name = Bucket}, InnerOwnership) ->
+                        gb_sets:add_element({UserKey, Bucket},
                                             InnerOwnership)
                 end, Ownership, Buckets)
       end, gb_sets:new(), UserKeys).

@@ -118,8 +118,7 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
             case riak_cs_bucket:set_bucket_acl(User,
                                                UserObj,
                                                Bucket,
-                                               ACL,
-                                               RcPid) of
+                                               ACL) of
                 ok ->
                     {{halt, 200}, RD, Ctx};
                 {error, Reason} ->

@@ -25,10 +25,6 @@
 -include("acl.hrl").
 -include("aws_api.hrl").
 
--define(RCS_BUCKET, #moss_bucket_v2).
--define(MOSS_USER, #rcs_user_v2).
--define(RCS_USER, #rcs_user_v3).
-
 %% User
 -record(moss_user, { name :: string()
                    , key_id :: string()
@@ -78,8 +74,8 @@
 
 -type moss_user() :: #rcs_user_v2{} | #moss_user_v1{}.
 -type rcs_user() :: #rcs_user_v3{}.
-
 -define(IAM_USER, #rcs_user_v3).
+-define(RCS_USER, #rcs_user_v3).
 
 
 %% Bucket
@@ -102,6 +98,7 @@
                         }).
 
 -type cs_bucket() :: #moss_bucket_v2{}.
+-define(RCS_BUCKET, #moss_bucket_v2).
 
 -type bucket_operation() :: create | delete | update_acl | update_policy
                           | delete_policy | update_versioning.

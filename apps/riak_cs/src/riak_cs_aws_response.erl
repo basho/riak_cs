@@ -37,7 +37,7 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--spec error_message(error_reason()) -> string().
+-spec error_message(reportable_error_reason()) -> string().
 error_message(invalid_access_key_id) ->
     "The AWS Access Key Id you provided does not exist in our records.";
 error_message(invalid_email_address) ->
@@ -132,7 +132,7 @@ error_message(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
     "Please reduce your request rate.".
 
--spec error_code(error_reason()) -> string().
+-spec error_code(reportable_error_reason()) -> string().
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(user_has_buckets) -> "DeleteConflict";
 error_code(user_has_attached_policies) -> "DeleteConflict";
@@ -204,7 +204,7 @@ error_code(ErrorName) ->
 %% These should match:
 %% http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
 
--spec status_code(error_reason()) -> pos_integer().
+-spec status_code(reportable_error_reason()) -> pos_integer().
 status_code(invalid_access_key_id)         -> 403;
 status_code(invalid_email_address)         -> 400;
 status_code(user_has_buckets)              -> 409;
@@ -329,7 +329,7 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
              ],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
--spec velvet_response(string()) -> {error, error_reason()}.
+-spec velvet_response(string()) -> {error, reportable_error_reason()}.
 velvet_response(Response) ->
     ?LOG_DEBUG("AAAAaaa ~p", [Response]),
     #{error_tag := Tag,

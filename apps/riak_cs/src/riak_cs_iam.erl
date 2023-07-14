@@ -93,7 +93,7 @@ get_user(Arn, Pbc) ->
             ER
     end.
 
--spec find_user(maps:map(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
+-spec find_user(maps:map(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound | term()}.
 find_user(#{name := A}, Pbc) ->
     find_user(?USER_NAME_INDEX, A, Pbc);
 find_user(#{canonical_id := A}, Pbc) ->
@@ -111,6 +111,7 @@ find_user(Index, A, Pbc) ->
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
             get_user(Arn, Pbc);
         {error, Reason} ->
+            logger:notice("Riak client connection error while finding user ~s in : ~p", [A, Index, Reason]),
             {error, Reason}
     end.
 
@@ -180,24 +181,21 @@ get_role(Arn, Pbc) ->
 -spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
 find_role(Name, Pbc) when is_binary(Name) ->
     find_role(#{name => Name}, Pbc);
-find_role(#{name := Name}, Pbc) ->
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_NAME_INDEX, Name),
+find_role(#{name := A}, Pbc) ->
+    find_role(?ROLE_NAME_INDEX, A, Pbc);
+find_role(#{path := A}, Pbc) ->
+    find_role(?ROLE_PATH_INDEX, A, Pbc);
+find_role(#{id := A}, Pbc) ->
+    find_role(?ROLE_ID_INDEX, A, Pbc).
+find_role(Index, A, Pbc) ->
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, Index, A),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             {error, notfound};
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, Pbc);
         {error, Reason} ->
-            {error, Reason}
-    end;
-find_role(#{path := Path}, Pbc) ->
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, ?ROLE_PATH_INDEX, Path),
-    case Res of
-        {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
-        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_role(Key, Pbc);
-        {error, Reason} ->
+            logger:notice("Riak client connection error while finding role ~s in : ~p", [A, Index, Reason]),
             {error, Reason}
     end.
 
@@ -248,7 +246,7 @@ find_policy(#{name := Name}, Pbc) ->
     end.
 
 -spec attach_role_policy(binary(), binary(), pid()) ->
-          ok | {error, error_reason()}.
+          ok | {error, reportable_error_reason()}.
 attach_role_policy(PolicyArn, RoleName, Pbc) ->
     case find_role(#{name => RoleName}, Pbc) of
         {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
@@ -301,7 +299,7 @@ detach_role_policy(PolicyArn, RoleName, Pbc) ->
     end.
 
 -spec attach_user_policy(binary(), binary(), pid()) ->
-          ok | {error, error_reason()}.
+          ok | {error, reportable_error_reason()}.
 attach_user_policy(PolicyArn, UserName, Pbc) ->
     case find_user(#{name => UserName}, Pbc) of
         {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
@@ -381,11 +379,16 @@ express_policies(AA, Pbc) ->
     lists:flatten(
       [begin
            case get_policy(Arn, Pbc) of
-               {ok, PE} ->
-                   PE;
+               {ok, ?IAM_POLICY{policy_document = D}} ->
+                   case riak_cs_aws_policy:policy_from_json(D) of
+                       {ok, P} ->
+                           P;
+                       {error, _ReasonAlreadyReported} ->
+                           logger:notice("Managed policy ~s has invalid policy document", [Arn]),
+                           []
+                   end;
                {error, _} ->
-                   logger:notice("Managed policy ~s previously attached to role "
-                                 "or referenced as session policy, is not available", [Arn]),
+                   logger:notice("Managed policy ~s is not available", [Arn]),
                    []
            end
        end || Arn <- AA]

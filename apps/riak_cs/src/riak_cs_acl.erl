@@ -356,7 +356,7 @@ group_grants([_ | RestGrants], _GroupGrants) ->
 %% for the requestsed permission type.
 has_group_permission([], _RequestedAccess) ->
     false;
-has_group_permission([{_, Perms} | RestGrants], RequestedAccess) ->
+has_group_permission([?ACL_GRANT{perms = Perms} | RestGrants], RequestedAccess) ->
     case check_permission(RequestedAccess, Perms) of
         true ->
             true;

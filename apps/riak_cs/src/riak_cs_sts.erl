@@ -251,7 +251,7 @@ validate_assertion(ResponseDoc, ?IAM_SAML_PROVIDER{certificates = Certs,
                    entity_id = binary_to_list(EntityId),
                    idp_signs_assertions = false,
                    idp_signs_envelopes = false,
-                   consume_uri = ConsumeUri},
+                   consume_uri = binary_to_list(ConsumeUri)},
     case esaml_sp:validate_assertion(ResponseDoc, SP) of
         {ok, _} ->
             ok;

@@ -123,7 +123,6 @@ middle_chars(B) ->
     ByteSize = byte_size(B),
     [binary:at(B, Position) || Position <- lists:seq(1, ByteSize - 2)].
 
--spec is_bucket_ip_addr(string()) -> boolean().
 is_bucket_ip_addr(Bucket) ->
     case inet_parse:ipv4strict_address(Bucket) of
         {ok, _} ->
@@ -398,25 +397,26 @@ versioning_json_to_struct({struct, Doc}) ->
 %% @doc Generate a JSON document to use for a bucket
 %% ACL request.
 bucket_acl_json(ACL, KeyId) ->
-    jason:encode([{requester, KeyId},
-                  {acl, ACL}],
-                 [{records, [{acl_v3, record_info(fields, acl_v3)},
-                             {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]).
+    list_to_binary(
+      jason:encode([{requester, KeyId},
+                    {acl, ACL}],
+                   [{records, [{acl_v3, record_info(fields, acl_v3)},
+                               {acl_grant_v2, record_info(fields, acl_grant_v2)}]}])).
 
 %% @doc Generate a JSON document to use for a bucket
-bucket_policy_json(PolicyJson, KeyId)  ->
-    jason:encode([{requester, KeyId},
-                  {policy, base64:encode(PolicyJson)}]).
+bucket_policy_json(PolicyJson, KeyId) ->
+    list_to_binary(
+      jason:encode([{requester, KeyId},
+                    {policy, base64:encode(PolicyJson)}])).
 
 %% @doc Generate a JSON document to use in setting bucket versioning option
--spec bucket_versioning_json(bucket_versioning(), string()) -> string().
-bucket_versioning_json(BV, KeyId)  ->
-    jason:encode([{requester, KeyId},
-                  {versioning, BV}],
-                 [{records, [{bucket_versioning, record_info(fields, bucket_versioning)}]}]).
+bucket_versioning_json(BV, KeyId) ->
+    list_to_binary(
+      jason:encode([{requester, KeyId},
+                    {versioning, BV}],
+                   [{records, [{bucket_versioning, record_info(fields, bucket_versioning)}]}])).
 
 %% @doc Check if a bucket is empty
--spec bucket_empty(binary(), riak_client()) -> {ok, boolean()} | {error, term()}.
 bucket_empty(Bucket, RcPid) ->
     ManifestBucket = riak_cs_utils:to_bucket_name(objects, Bucket),
     %% @TODO Use `stream_list_keys' instead
@@ -494,7 +494,6 @@ maybe_log_bucket_owner_error(_, _) ->
 %% @doc Check if a bucket exists in a list of the user's buckets.
 %% @TODO This will need to change once globally unique buckets
 %% are enforced.
--spec bucket_exists([cs_bucket()], string()) -> boolean().
 bucket_exists(Buckets, CheckBucket) ->
     SearchResults = [Bucket || Bucket <- Buckets,
                                Bucket?RCS_BUCKET.name =:= CheckBucket andalso
@@ -559,7 +558,6 @@ bucket_fun(delete, Bucket, _BagId, _ACL, KeyId, AdminCreds) ->
 
 %% @doc Generate a JSON document to use for a bucket
 %% creation request.
--spec bucket_json(binary(), bag_id(), acl(), string()) -> string().
 bucket_json(Bucket, BagId, ACL, KeyId)  ->
     BagElement = case BagId of
                      undefined -> [];

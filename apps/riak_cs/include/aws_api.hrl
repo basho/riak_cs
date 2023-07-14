@@ -26,6 +26,7 @@
 
 -define(S3_ROOT_HOST, "s3.amazonaws.com").
 -define(IAM_ROOT_HOST, "iam.amazonaws.com").
+-define(STS_ROOT_HOST, "sts.amazonaws.com").
 
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
                        "policy", "requestPayment", "torrent", "uploadId", "uploads",
@@ -97,15 +98,15 @@
         ]
        ).
 
--type sts_action() :: 'sts:AssumeRoleWithSAML'
-                    | 'sts:*'.
+-type sts_action() :: 'sts:AssumeRoleWithSAML'.
 
 -define(SUPPORTED_STS_ACTIONS,
         [ 'sts:AssumeRoleWithSAML'
         ]
        ).
 
--type aws_action() :: s3_action() | iam_action() | sts_action().
+-type aws_action() :: s3_action() | iam_action() | sts_action()
+                    | binary().  %% actions like "s3:Get*'
 
 -define(SUPPORTED_ACTIONS, ?SUPPORTED_S3_ACTIONS ++ ?SUPPORTED_IAM_ACTIONS ++ ?SUPPORTED_STS_ACTIONS).
 
@@ -163,9 +164,9 @@
 
 -record(arn_v1, { provider = aws :: aws
                 , service  = s3  :: aws_service()
-                , region         :: string()
+                , region         :: binary()
                 , id             :: binary()
-                , path           :: string()
+                , path           :: binary()
                 }
        ).
 
@@ -175,13 +176,13 @@
 -type flat_arn() :: binary().
 
 -type principal() :: '*'
-                   | [{canonical_id, string()}|{aws, '*'}].
+                   | [{canonical_id, binary()} | {aws, '*'}].
 
 -record(statement, { sid = undefined :: undefined | binary() % had better use uuid: should be UNIQUE
                    , effect = deny :: allow | deny
                    , principal  = [] :: principal()
-                   , action     = [] :: [ aws_action() | binary() ]
-                   , not_action = [] :: [ aws_action() | binary() ]
+                   , action     = [] :: aws_action() | [aws_action()]
+                   , not_action = [] :: aws_action() | [aws_action()]
                    , resource   = [] :: [ flat_arn() ] | '*'
                    , condition_block = [] :: [ condition_pair() ]
                    }

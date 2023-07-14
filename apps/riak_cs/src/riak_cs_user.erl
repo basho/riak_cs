@@ -33,7 +33,6 @@
          from_riakc_obj/2,
          to_3tuple/1,
          update_key_secret/1,
-         key_id/1,
          fetch_user_keys/1
         ]).
 
@@ -231,15 +230,18 @@ select_email([A|T]) ->
 
 update_user_record(User = ?RCS_USER{buckets = Buckets}) ->
     User?RCS_USER{buckets = [riak_cs_bucket:update_bucket_record(Bucket) || Bucket <- Buckets]};
-update_user_record(User = #moss_user_v1{}) ->
-    ?RCS_USER{name=User#moss_user_v1.name,
-              display_name=User#moss_user_v1.display_name,
-              email=User#moss_user_v1.email,
-              key_id=User#moss_user_v1.key_id,
-              key_secret=User#moss_user_v1.key_secret,
-              canonical_id=User#moss_user_v1.canonical_id,
-              buckets=[riak_cs_bucket:update_bucket_record(Bucket) ||
-                          Bucket <- User#moss_user_v1.buckets]}.
-
-key_id(?RCS_USER{key_id=KeyId}) ->
-    KeyId.
+update_user_record(#moss_user_v1{name = Name,
+                                 display_name = DisplayName,
+                                 email = Email,
+                                 key_id = KeyId,
+                                 key_secret = KeySecret,
+                                 canonical_id = CanonicalId,
+                                 buckets = Buckets0}) ->
+    ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
+              name = Name,
+              display_name = DisplayName,
+              email = Email,
+              key_id = KeyId,
+              key_secret = KeySecret,
+              canonical_id = CanonicalId,
+              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets0]}.

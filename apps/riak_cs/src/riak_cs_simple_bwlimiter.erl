@@ -124,9 +124,8 @@ refresher() ->
     end.
 
 -spec allow(rcs_user(), access(), #rcs_web_context{}) -> {ok, #wm_reqdata{}, #rcs_web_context{}}.
-allow(Owner, #access_v1{req = RD} = _Access, Ctx) ->
+allow(?RCS_USER{key_id = OwnerKey}, #access_v1{req = RD} = _Access, Ctx) ->
 
-    OwnerKey = riak_cs_user:key_id(Owner),
     ?LOG_DEBUG("access => ~p", [OwnerKey]),
     UserState = case ets:lookup(?MODULE, OwnerKey) of
                     [UserState0] -> UserState0;

@@ -426,7 +426,7 @@ delete_policy(Arn, Options) ->
             {error, Error}
     end.
 
--spec update_policy(string(), string(), string(), proplists:proplist()) -> ok | {error, term()}.
+-spec update_policy(string(), binary(), binary(), proplists:proplist()) -> ok | {error, term()}.
 update_policy(ContentType, Arn, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path(Arn),

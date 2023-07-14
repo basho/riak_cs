@@ -172,11 +172,11 @@
 -define(VERSIONED_KEY_SEPARATOR, <<5>>).
 
 -type riak_obj_error() :: notfound | term().
--type error_reason() :: atom()
-                      | {riak_connect_failed, term()}
-                      | {malformed_policy_version, string()}
-                      | {invalid_argument, string()}
-                      | {key_too_long, pos_integer()}
-                      | {unsatisfied_constraint, string()}.
+-type reportable_error_reason() :: atom()
+                                 | {riak_connect_failed, term()}
+                                 | {malformed_policy_version, binary()}
+                                 | {invalid_argument, binary()}
+                                 | {key_too_long, pos_integer()}
+                                 | {unsatisfied_constraint, binary()}.
 
 -endif.

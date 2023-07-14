@@ -649,12 +649,11 @@ multipart_description(?MANIFEST{bkey = {_, Key},
     ?MULTIPART_MANIFEST{owner = #{display_name := OwnerDisplay,
                                   key_id := OwnerKeyId}} =
         proplists:get_value(multipart, Props),
-    ?MULTIPART_DESCR{
-       key = rcs_common_manifest:make_versioned_key(Key, Vsn),
-       upload_id = UUID,
-       owner_key_id = OwnerKeyId,
-       owner_display = OwnerDisplay,
-       initiated = Created}.
+    ?MULTIPART_DESCR{key = rcs_common_manifest:make_versioned_key(Key, Vsn),
+                     upload_id = UUID,
+                     owner_key_id = OwnerKeyId,
+                     owner_display = OwnerDisplay,
+                     initiated = calendar:rfc3339_to_system_time(Created, [{unit, millisecond}])}.
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 
