@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -98,13 +98,6 @@ create_credentialed_user(User) ->
 
 handle_create_user(ok, User) ->
     {ok, User};
-handle_create_user({error, {error_status, _, _, ErrorDoc}}, _User) ->
-    case riak_cs_config:api() of
-        aws ->
-            riak_cs_aws_response:velvet_response(ErrorDoc);
-        oos ->
-            {error, ErrorDoc}
-    end;
 handle_create_user({error, _} = Error, _User) ->
     Error.
 
@@ -169,7 +162,6 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
 %% @doc Determine if the specified user account is a system admin.
 -spec is_admin(rcs_user()) -> boolean().
 is_admin(User) ->
-    ?LOG_DEBUG("User ~p", [User]),
     is_admin(User, riak_cs_config:admin_creds()).
 is_admin(?RCS_USER{key_id = KeyId, key_secret = KeySecret},
          {ok, {KeyId, KeySecret}}) ->
@@ -228,15 +220,15 @@ select_email([A|T]) ->
             select_email(T)
     end.
 
-update_user_record(User = ?RCS_USER{buckets = Buckets}) ->
-    User?RCS_USER{buckets = [riak_cs_bucket:update_bucket_record(Bucket) || Bucket <- Buckets]};
+update_user_record(User = ?RCS_USER{}) ->
+    User;
 update_user_record(#moss_user_v1{name = Name,
                                  display_name = DisplayName,
                                  email = Email,
                                  key_id = KeyId,
                                  key_secret = KeySecret,
                                  canonical_id = CanonicalId,
-                                 buckets = Buckets0}) ->
+                                 buckets = Buckets}) ->
     ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
               name = Name,
               display_name = DisplayName,
@@ -244,4 +236,4 @@ update_user_record(#moss_user_v1{name = Name,
               key_id = KeyId,
               key_secret = KeySecret,
               canonical_id = CanonicalId,
-              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets0]}.
+              buckets = Buckets}.

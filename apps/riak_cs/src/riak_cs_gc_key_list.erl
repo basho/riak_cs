@@ -70,7 +70,6 @@ has_next(_) ->
     true.
 
 %% @doc Fetch next key list and returns it with updated state
--spec next_pool(gc_key_list_state()) -> {gc_key_list_result(), gc_key_list_state()|undefined}.
 next_pool(#gc_key_list_state{remaining_bags=[]}) ->
     {#gc_key_list_result{bag_id=undefined, batch=[]},
      undefined};
@@ -97,8 +96,6 @@ next_pool(#gc_key_list_state{
 
 %% @doc Fetch the list of keys for file manifests that are eligible
 %% for delete.
--spec fetch_eligible_manifest_keys(riak_client(), binary(), binary(), pos_integer(), continuation()) ->
-                                          {[index_result_keys()], continuation()}.
 fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, Continuation) ->
     UsePaginatedIndexes = riak_cs_config:gc_paginated_indexes(),
     QueryResults = gc_index_query(RcPid,
@@ -110,9 +107,6 @@ fetch_eligible_manifest_keys(RcPid, StartKey, EndKey, BatchSize, Continuation) -
     {eligible_manifest_keys(QueryResults, UsePaginatedIndexes, BatchSize),
      continuation(QueryResults)}.
 
--spec eligible_manifest_keys({{ok, index_results()} | {error, term()}, {binary(), binary()}},
-                             UsePaginatedIndexes::boolean(), pos_integer()) ->
-                                    [index_result_keys()].
 eligible_manifest_keys({{ok, ?INDEX_RESULTS{keys=Keys}}, _},
                        true, _) ->
     case Keys of
@@ -129,8 +123,6 @@ eligible_manifest_keys({{error, Reason}, {StartKey, EndKey}}, _, _) ->
 
 %% @doc Break a list of gc-eligible keys from the GC bucket into smaller sets
 %% to be processed by different GC workers.
--spec split_eligible_manifest_keys(non_neg_integer(), index_result_keys(), [index_result_keys()]) ->
-                                          [index_result_keys()].
 split_eligible_manifest_keys(_BatchSize, [], Acc) ->
     lists:reverse(Acc);
 split_eligible_manifest_keys(BatchSize, Keys, Acc) ->
@@ -144,18 +136,12 @@ split_at_most_n(0, L, Acc) ->
 split_at_most_n(N, [H|T], Acc) ->
     split_at_most_n(N-1, T, [H|Acc]).
 
--spec continuation({{ok, index_results()} | {error, term()},
-                    {binary(), binary()}}) ->
-                          continuation() | undefined.
 continuation({{ok, ?INDEX_RESULTS{continuation=Continuation}},
               _EndTime}) ->
     Continuation;
 continuation({{error, _}, _EndTime}) ->
     undefined.
 
--spec gc_index_query(riak_client(), binary(), binary(), non_neg_integer(), continuation(), boolean()) ->
-                            {{ok, index_results()} | {error, term()},
-                             {binary(), binary()}}.
 gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedIndexes) ->
     Options = case UsePaginatedIndexes of
                   true ->
@@ -186,15 +172,14 @@ gc_index_query(RcPid, StartKey, EndKey, BatchSize, Continuation, UsePaginatedInd
     {QueryResult, {StartKey, EndKey}}.
 
 -spec find_oldest_entries(BagId::binary()|master) ->
-                                 {ok, [{string(), [pos_integer()]}]} |
-                                 {error, term()}.
+          {ok, [{string(), [pos_integer()]}]} | {error, term()}.
 find_oldest_entries(BagId) ->
     %% walk around
     {ok, RcPid} = riak_cs_riak_client:start_link([]),
     try
         ok = riak_cs_riak_client:set_manifest_bag(RcPid, BagId),
         Start = riak_cs_gc:epoch_start(),
-        End = riak_cs_gc:default_batch_end(riak_cs_gc:timestamp(), 0),
+        End = riak_cs_gc:default_batch_end(os:system_time(millisecond), 0),
         {QueryResult, _} = gc_index_query(RcPid,
                                           int2bin(Start), int2bin(End),
                                           riak_cs_config:gc_batch_size(),
@@ -210,7 +195,6 @@ find_oldest_entries(BagId) ->
         riak_cs_riak_client:stop(RcPid)
     end.
 
--spec gc_key_to_datetime(binary()) -> {string(), integer()}.
 gc_key_to_datetime(Key) ->
     [Str|Suffix] = string:tokens(binary_to_list(Key), "_"),
     Datetime = binary_to_list(riak_cs_gc_console:human_time(list_to_integer(Str))),
@@ -228,7 +212,6 @@ correlate(Pairs) ->
         end,
     lists:reverse(lists:foldl(F, [], Pairs)).
 
--spec int2bin(non_neg_integer()) -> binary().
 int2bin(I) ->
     list_to_binary(integer_to_list(I)).
 

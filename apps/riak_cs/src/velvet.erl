@@ -26,12 +26,12 @@
 -export([create_bucket/3,
          create_user/3,
          delete_user/2,
+         update_user/4,
          delete_bucket/3,
          set_bucket_acl/4,
          set_bucket_policy/4,
          set_bucket_versioning/4,
          delete_bucket_policy/3,
-         update_user/4,
          create_role/3,
          delete_role/2,
          update_role/4,
@@ -43,6 +43,7 @@
         ]).
 
 -include("moss.hrl").
+-include("riak_cs.hrl").
 -include("aws_api.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -53,7 +54,8 @@
 %% ===================================================================
 
 %% @doc Create a bucket for a requesting party.
--spec create_bucket(string(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec create_bucket(string(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 create_bucket(ContentType, BucketDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = buckets_path(<<>>),
@@ -74,14 +76,15 @@ create_bucket(ContentType, BucketDoc, Options) ->
     case request(post, Path, [201], ContentType, Headers, BucketDoc) of
         {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
+
+
 %% @doc Create a bucket for a requesting party.
--spec create_user(string(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec create_user(string(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 create_user(ContentType, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path([]),
@@ -102,13 +105,12 @@ create_user(ContentType, UserDoc, Options) ->
     case request(post, Path, [201], ContentType, Headers, UserDoc) of
         {ok, {{_, 201, _}, _RespHeaders, _RespBody}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec delete_user(binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_user(binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_user(TransKeyId, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path(binary_to_list(TransKeyId)),
@@ -128,15 +130,14 @@ delete_user(TransKeyId, Options) ->
     case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket(binary(), string(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_bucket(binary(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_bucket(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
@@ -157,30 +158,32 @@ delete_bucket(Bucket, Requester, Options) ->
     case request(delete, Path ++ QS, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec set_bucket_acl(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec set_bucket_acl(binary(), string(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 set_bucket_acl(Bucket, ContentType, AclDoc, Options) ->
     Path = buckets_path(Bucket, acl),
     update_bucket(Path, ContentType, AclDoc, Options, 204).
 
--spec set_bucket_policy(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec set_bucket_policy(binary(), string(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 set_bucket_policy(Bucket, ContentType, PolicyDoc, Options) ->
     Path = buckets_path(Bucket, policy),
     update_bucket(Path, ContentType, PolicyDoc, Options, 204).
 
--spec set_bucket_versioning(binary(), string(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec set_bucket_versioning(binary(), string(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 set_bucket_versioning(Bucket, ContentType, Doc, Options) ->
     Path = buckets_path(Bucket, versioning),
     update_bucket(Path, ContentType, Doc, Options, 204).
 
 %% @doc Delete a bucket. The bucket must be owned by
 %% the requesting party.
--spec delete_bucket_policy(binary(), string(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_bucket_policy(binary(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_bucket_policy(Bucket, Requester, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     QS = requester_qs(Requester),
@@ -201,15 +204,13 @@ delete_bucket_policy(Bucket, Requester, Options) ->
     case request(delete, Path ++ QS, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
 %% @doc Update a user record
--spec update_user(string(), binary(), binary(),
-                  [{atom(), term()}]) -> {ok, rcs_user()} | {error, term()}.
+-spec update_user(string(), binary(), binary(), proplists:proplist()) ->
+          {ok, rcs_user()} | {error, reportable_error_reason()}.
 update_user(ContentType, KeyId, UserDoc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = users_path(KeyId),
@@ -231,8 +232,6 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
         {ok, {{_, 204, _}, _RespHeaders, RespBody}} ->
             User = riak_cs_iam:exprec_user(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
             {ok, User};
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
@@ -244,9 +243,8 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
 
 % @doc send request to stanchion server
 % @TODO merge with create_bucket, create_user, delete_bucket
--spec update_bucket(string(), string(), binary(), proplists:proplist(),
-                    pos_integer()) ->
-          ok | {error, term()}.
+-spec update_bucket(string(), string(), binary(), proplists:proplist(), pos_integer()) ->
+          ok | {error, reportable_error_reason()}.
 update_bucket(Path, ContentType, Doc, Options, Expect) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Headers0 = [{"Content-Md5", content_md5(Doc)},
@@ -266,8 +264,6 @@ update_bucket(Path, ContentType, Doc, Options, Expect) ->
     case request(put, Path, [Expect], ContentType, Headers, Doc) of
         {ok, {{_, Expect, _}, _RespHeaders, _RespBody}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
@@ -288,7 +284,8 @@ buckets_path(Bucket, versioning) ->
 
 
 
--spec create_role(string(), binary(), proplists:proplist()) -> {ok, role()} | {error, term()}.
+-spec create_role(string(), binary(), proplists:proplist()) ->
+          {ok, role()} | {error, reportable_error_reason()}.
 create_role(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path([]),
@@ -312,13 +309,12 @@ create_role(ContentType, Doc, Options) ->
                 riak_cs_iam:exprec_role(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
             Role = Role_?IAM_ROLE{assume_role_policy_document = base64:decode(A)},
             {ok, Role};
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec delete_role(binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_role(binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_role(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path(binary_to_list(Arn)),
@@ -344,7 +340,8 @@ delete_role(Arn, Options) ->
             {error, Error}
     end.
 
--spec update_role(string(), binary(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec update_role(string(), binary(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 update_role(ContentType, Arn, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = roles_path(Arn),
@@ -365,14 +362,13 @@ update_role(ContentType, Arn, Doc, Options) ->
     case request(put, Path, [204], ContentType, Headers, Doc) of
         {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
 
--spec create_policy(string(), binary(), proplists:proplist()) -> {ok, policy()} | {error, term()}.
+-spec create_policy(string(), binary(), proplists:proplist()) ->
+          {ok, policy()} | {error, reportable_error_reason()}.
 create_policy(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path([]),
@@ -394,13 +390,12 @@ create_policy(ContentType, Doc, Options) ->
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
             Policy = riak_cs_iam:exprec_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
             {ok, Policy};
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec delete_policy(binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_policy(binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_policy(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path(binary_to_list(Arn)),
@@ -420,13 +415,12 @@ delete_policy(Arn, Options) ->
     case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec update_policy(string(), binary(), binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec update_policy(string(), binary(), binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 update_policy(ContentType, Arn, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path(Arn),
@@ -447,15 +441,13 @@ update_policy(ContentType, Arn, Doc, Options) ->
     case request(put, Path, [204], ContentType, Headers, Doc) of
         {ok, {{_, 204, _}, _RespHeaders, _RespBody}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
 
 -spec create_saml_provider(string(), string(), proplists:proplist()) ->
-          {ok, {binary(), [tag()]}} | {error, term()}.
+          {ok, {binary(), [tag()]}} | {error, reportable_error_reason()}.
 create_saml_provider(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = "/samlproviders",
@@ -477,13 +469,12 @@ create_saml_provider(ContentType, Doc, Options) ->
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
             #{arn := Arn, tags := Tags_} = jason:decode(RespBody, [{mode, map}, {binary, v}]),
             {ok, {Arn, [#tag{key = K, value = V} || #{key := K, value := V} <- Tags_]}};
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
 
--spec delete_saml_provider(binary(), proplists:proplist()) -> ok | {error, term()}.
+-spec delete_saml_provider(binary(), proplists:proplist()) ->
+          ok | {error, reportable_error_reason()}.
 delete_saml_provider(Arn, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = saml_provider_path(binary_to_list(Arn)),
@@ -503,8 +494,6 @@ delete_saml_provider(Arn, Options) ->
     case request(delete, Path, [204], Headers) of
         {ok, {{_, 204, _}, _RespHeaders, _}} ->
             ok;
-        {error, {ok, {{_, StatusCode, Reason}, _RespHeaders, RespBody}}} ->
-            {error, {error_status, StatusCode, Reason, RespBody}};
         {error, Error} ->
             {error, Error}
     end.
@@ -543,16 +532,23 @@ request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
             Request = {Url, Headers}
     end,
     case httpc:request(Method, Request, [], []) of
-        Resp={ok, {{_, Status, _}, _RespHeaders, _RespBody}} ->
+        Resp = {ok, {{_, Status, _}, _RespHeaders, RespBody}} ->
             case lists:member(Status, Expect) of
-                true -> Resp;
-                false -> {error, Resp}
+                true ->
+                    Resp;
+                false ->
+                    #{error_tag := Tag_,
+                      resource := _Resource} = jsx:decode(list_to_binary(RespBody), [{labels, atom}]),
+                    Tag = binary_to_term(base64:decode(Tag_)),
+                    ?LOG_DEBUG("stanchion op non-success response, tag: ~p, resource: ~s", [Tag, _Resource]),
+                    {error, Tag}
             end;
         Error ->
             logger:warning("Error contacting stanchion at ~s: ~p; retrying...", [Url, Error]),
             ok = stanchion_migration:adopt_stanchion(),
             request(Method, Path, Expect, ContentType, Headers, Body, Attempt - 1)
     end.
+
 
 %% @doc Assemble the root URL for the given client
 root_url(Ip, Port, true) ->
@@ -576,8 +572,8 @@ auth_header(HttpVerb, ContentType, Headers, Path, {AuthKey, AuthSecret}) ->
                                               [{"content-type", ContentType} |
                                                Headers],
                                               Path,
-                                              AuthSecret),
-    "MOSS " ++ AuthKey ++ ":" ++ Signature.
+                                              binary_to_list(AuthSecret)),
+    lists:flatten(io_lib:format("MOSS ~s:~s", [AuthKey, Signature])).
 
 %% @doc Assemble a requester query string for
 %% user in a bucket deletion request.

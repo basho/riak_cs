@@ -57,9 +57,6 @@
          safe_base64url_decode/1,
          safe_list_to_integer/1,
          set_object_acl/6,
-         second_resolution_timestamp/1,
-         timestamp_to_seconds/1,
-         timestamp_to_milliseconds/1,
          update_obj_value/2,
          pid_to_binary/1,
          parse_x509_cert/1,
@@ -499,25 +496,6 @@ set_object_acl(Bucket, Key, Vsn, Manifest, Acl, RcPid) ->
     after
         riak_cs_manifest_fsm:stop(ManiPid)
     end.
-
--spec second_resolution_timestamp(erlang:timestamp()) -> non_neg_integer().
-%% @doc Return the number of seconds this timestamp represents. Truncated to
-%% seconds, as an integer.
-second_resolution_timestamp({MegaSecs, Secs, _MicroSecs}) ->
-    (MegaSecs * 1000000) + Secs.
-
-%% same as timestamp_to_milliseconds below
--spec timestamp_to_seconds(erlang:timestamp()) -> number().
-timestamp_to_seconds({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000) + Secs + (MicroSecs / 1000000).
-
-%% riak_cs_utils.erl:991: Invalid type specification for function riak_cs_utils:timestamp_to_milliseconds/1. The success typing is ({number(),number(),number()}) -> float()
-%% this is also a derp that dialyzer shows above message when defined
-%% like this, as manpage says it's three-integer tuple :
-%% -spec timestamp_to_milliseconds(erlang:timestamp()) -> integer().
--spec timestamp_to_milliseconds(erlang:timestamp()) -> number().
-timestamp_to_milliseconds(Timestamp) ->
-    timestamp_to_seconds(Timestamp) * 1000.
 
 %% Get the proper bucket name for either the Riak CS object
 %% bucket or the data block bucket.

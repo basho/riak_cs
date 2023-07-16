@@ -306,7 +306,7 @@ accept_body(RD, Ctx = #rcs_web_context{riak_client=RcPid,
     #key_context{bucket = Bucket, key = Key, obj_vsn = ObjVsn,
                  manifest = Mfst} = LocalCtx,
     Acl = Mfst?MANIFEST.acl,
-    NewAcl = Acl?ACL{creation_time = erlang:timestamp()},
+    NewAcl = Acl?ACL{creation_time = os:system_time(millisecond)},
     {ContentType, Metadata} = riak_cs_copy_object:new_metadata(Mfst, RD),
     case riak_cs_utils:set_object_acl(Bucket, Key, ObjVsn,
                                       Mfst?MANIFEST{metadata=Metadata, content_type=ContentType}, NewAcl,
@@ -415,7 +415,7 @@ handle_copy_put(RD, Ctx, SrcBucket, SrcKey, SrcObjVsn) ->
 
                         {ContentType, Metadata} =
                             riak_cs_copy_object:new_metadata(SrcManifest, RD),
-                        NewAcl = Acl?ACL{creation_time=os:timestamp()},
+                        NewAcl = Acl?ACL{creation_time = os:system_time(millisecond)},
                         {ok, PutFsmPid} = riak_cs_copy_object:start_put_fsm(
                                             Bucket, Key, ObjVsn, SrcManifest?MANIFEST.content_length,
                                             ContentType, Metadata, NewAcl, RcPid),

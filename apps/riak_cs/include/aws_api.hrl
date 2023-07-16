@@ -250,7 +250,7 @@
                  , max_session_duration :: non_neg_integer()
                  , permissions_boundary :: flat_arn()  %% permissions_boundary()
                  , role_id :: binary()
-                 , role_last_used :: role_last_used()
+                 , role_last_used :: undefined | role_last_used()
                  , role_name :: binary()
                  , tags :: [tag()]
                  , attached_policies :: [flat_arn()]

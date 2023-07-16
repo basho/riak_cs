@@ -102,12 +102,12 @@ to_xml(RD, Ctx) ->
     stanchion_response:list_buckets_response(Bucket, RD, Ctx).
 
 -spec delete_resource(term(), term()) -> {'true' | {'halt', term()}, #wm_reqdata{}, term()}.
-delete_resource(ReqData, Ctx) ->
-    Bucket = list_to_binary(wrq:path_info(bucket, ReqData)),
-    RequesterId = list_to_binary(wrq:get_qs_value("requester", "", ReqData)),
+delete_resource(RD, Ctx) ->
+    Bucket = list_to_binary(wrq:path_info(bucket, RD)),
+    RequesterId = list_to_binary(wrq:get_qs_value("requester", "", RD)),
     case stanchion_server:delete_bucket(Bucket, RequesterId) of
         ok ->
-            {true, ReqData, Ctx};
+            {true, RD, Ctx};
         {error, Reason} ->
-            stanchion_response:api_error(Reason, ReqData, Ctx)
+            stanchion_response:api_error(Reason, RD, Ctx)
     end.

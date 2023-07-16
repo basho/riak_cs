@@ -223,8 +223,8 @@ human_detail(Name, Value) ->
 
 -spec human_time(non_neg_integer()|undefined) -> binary().
 human_time(undefined) -> "unknown/never";
-human_time(Seconds) ->
-    Seconds0 = Seconds + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
+human_time(Millis) ->
+    Seconds0 = Millis div 1000 + ?DAYS_FROM_0_TO_1970*?SECONDS_PER_DAY,
     rts:iso8601(calendar:gregorian_seconds_to_datetime(Seconds0)).
 
 parse_batch_opts([Leeway]) ->
@@ -274,7 +274,6 @@ convert(Options) ->
                       error({bad_arg, BadArg})
               end, Options).
 
--spec iso8601_to_epoch(string()) -> non_neg_integer().
 iso8601_to_epoch(S) ->
     {ok, Datetime} = rts:datetime(S),
     GregorianSeconds = calendar:datetime_to_gregorian_seconds(Datetime),

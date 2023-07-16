@@ -46,7 +46,6 @@
          set_leeway_seconds/1,
          max_scheduled_delete_manifests/0,
          move_manifests_to_gc_bucket/2,
-         timestamp/0,
          default_batch_end/2]).
 
 %% export for repl debugging and testing
@@ -316,15 +315,6 @@ max_scheduled_delete_manifests() ->
             MaxCount
     end.
 
-%% @doc Generate a key for storing a set of manifests for deletion.
--spec timestamp() -> non_neg_integer().
-timestamp() ->
-    timestamp(os:timestamp()).
-
--spec timestamp(erlang:timestamp()) -> non_neg_integer().
-timestamp(ErlangTime) ->
-    riak_cs_utils:second_resolution_timestamp(ErlangTime).
-
 -spec default_batch_end(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
 default_batch_end(BatchStart, Leeway) ->
     BatchStart - Leeway.
@@ -336,8 +326,6 @@ default_batch_end(BatchStart, Leeway) ->
 %% @doc Mark a list of manifests as `pending_delete' based upon the
 %% UUIDs specified, and also add {deleted, true} to the props member
 %% to signify an actual delete, and not an overwrite.
--spec mark_as_deleted([binary()], riakc_obj:riakc_obj(), binary(), riak_client()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_deleted(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     mark_manifests(RiakObject, Bucket, UUIDsToMark,
                    fun rcs_common_manifest_utils:mark_deleted/2,
@@ -352,19 +340,15 @@ mark_as_pending_delete(UUIDsToMark, RiakObject, Bucket, RcPid) ->
 
 %% @doc Mark a list of manifests as `scheduled_delete' based upon the
 %% UUIDs specified.
--spec mark_as_scheduled_delete([cs_uuid()], riakc_obj:riakc_obj(), binary(), riak_client()) ->
-    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_as_scheduled_delete(UUIDsToMark, RiakObject, Bucket, RcPid) ->
     mark_manifests(RiakObject, Bucket, UUIDsToMark,
                    fun rcs_common_manifest_utils:mark_scheduled_delete/2,
-                         RcPid).
+                   RcPid).
 
 
 %% @doc Call a `riak_cs_manifest_utils' function on a set of manifests
 %% to update the state of the manifests specified by `UUIDsToMark'
 %% and then write the updated values to riak.
--spec mark_manifests(riakc_obj:riakc_obj(), binary(), [binary()], fun(), riak_client()) ->
-                    {ok, riakc_obj:riakc_obj()} | {error, term()}.
 mark_manifests(RiakObject, Bucket, UUIDsToMark, ManiFunction, RcPid) ->
     Manifests = riak_cs_manifest:manifests_from_riak_object(RiakObject),
     Marked = ManiFunction(Manifests, UUIDsToMark),
@@ -381,8 +365,6 @@ mark_manifests(RiakObject, Bucket, UUIDsToMark, ManiFunction, RcPid) ->
                     riak_cs_config:put_manifest_timeout(),
                     [riakc, put_manifest]).
 
--spec maybe_delete_small_objects([cs_uuid_and_manifest()], riak_client(), non_neg_integer()) ->
-                                        {[cs_uuid_and_manifest()], [cs_uuid()]}.
 maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
     {ok, BagId} = riak_cs_riak_client:get_manifest_bag(RcPid),
     DelFun= fun({UUID, Manifest = ?MANIFEST{state=pending_delete,
@@ -408,7 +390,6 @@ maybe_delete_small_objects(Manifests, RcPid, Threshold) ->
     %% Obtain a new history!
     lists:foldl(DelFun, {[], []}, Manifests).
 
--spec try_delete_blocks(binary(), cs_uuid_and_manifest()) -> ok | {error, term()}.
 try_delete_blocks(BagId, {UUID, _} = UUIDManifest) ->
     Args = [BagId, UUIDManifest, undefined,
             dummy_gc_key_in_sync_delete,
@@ -463,19 +444,17 @@ move_manifests_to_gc_bucket(Manifests, RcPid) ->
     Timeout1 = riak_cs_config:put_gckey_timeout(),
     riak_cs_pbc:put(ManifestPbc, ObjectToWrite, [], Timeout1, [riakc, put_gc_manifest_set]).
 
--spec build_manifest_set([cs_uuid_and_manifest()]) -> twop_set:twop_set().
 build_manifest_set(Manifests) ->
     lists:foldl(fun twop_set:add_element/2, twop_set:new(), Manifests).
 
 %% @doc Generate a key for storing a set of manifests in the
 %% garbage collection bucket.
--spec generate_key() -> binary().
 generate_key() ->
-    list_to_binary([integer_to_list(timestamp()),
+    A = os:system_time(millisecond),
+    list_to_binary([integer_to_list(A),
                     $_,
-                    key_suffix(os:timestamp())]).
+                    key_suffix(A)]).
 
--spec key_suffix(erlang:timestamp()) -> string().
 key_suffix(Time) ->
     _ = rand:seed(exsss, Time),
     integer_to_list(rand:uniform(riak_cs_config:gc_key_suffix_max())).

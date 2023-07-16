@@ -134,14 +134,14 @@ finished(Report) ->
 
 init([]) ->
     process_flag(trap_exit, true),
-    InitialDelay = riak_cs_gc:initial_gc_delay(),
+    InitialDelay = riak_cs_gc:initial_gc_delay() * 1000,
     State = case riak_cs_gc:gc_interval() of
                 infinity ->
                     #gc_manager_state{};
                 Interval when is_integer(Interval) ->
-                    Interval2 = Interval + InitialDelay,
-                    Next = riak_cs_gc:timestamp() + Interval2,
-                    TimerRef = erlang:send_after(Interval2 * 1000, self(), {start, []}),
+                    Interval2 = Interval * 1000 + InitialDelay,
+                    Next = os:system_time(millisecond) + Interval2,
+                    TimerRef = erlang:send_after(Interval2, self(), {start, []}),
                     logger:info("Scheduled next batch at ~s",
                                 [riak_cs_gc_console:human_time(Next)]),
 
@@ -270,7 +270,7 @@ start_batch(State, Options) ->
     %% All these Items should be non_neg_integer()
     MaxWorkers =  proplists:get_value('max-workers', Options,
                                      riak_cs_gc:gc_max_workers()),
-    BatchStart = riak_cs_gc:timestamp(),
+    BatchStart = os:system_time(millisecond),
     Leeway = proplists:get_value(leeway, Options,
                                  riak_cs_gc:leeway_seconds()),
     StartKey = proplists:get_value(start, Options,riak_cs_gc:epoch_start()),
@@ -337,7 +337,7 @@ schedule_next(#gc_manager_state{interval=infinity}=State) ->
     %% nothing to schedule, all triggers manual
     State#gc_manager_state{next=undefined};
 schedule_next(#gc_manager_state{interval=Interval}=State) ->
-    RevisedNext = riak_cs_gc:timestamp() + Interval,
+    RevisedNext = os:system_time(millisecond) + Interval,
     TimerValue = Interval * 1000,
     TimerRef = erlang:send_after(TimerValue, self(), {start, []}),
     logger:info("Scheduled next batch at ~s",

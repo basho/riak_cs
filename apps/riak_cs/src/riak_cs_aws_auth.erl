@@ -25,10 +25,10 @@
 
 -export([identify/2, authenticate/4]).
 -export([parse_auth_header/1]).
+-export([calculate_signature_v2/2]).  %% lend it to stanchion_auth
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--export([calculate_signature_v2/2]).
 -endif.
 
 -include("riak_cs.hrl").
@@ -115,6 +115,9 @@ authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
             authenticate_1(User, Signature, RD, _Ctx, MoreQuirks)
     end.
 
+-spec parse_auth_header(string()) ->
+          {binary(), binary()} | {undefined, undefined}
+              | {failed, {auth_not_supported, string()}}.
 parse_auth_header("AWS4-HMAC-SHA256 " ++ String) ->
     case riak_cs_config:auth_v4_enabled() of
         true ->
@@ -163,6 +166,10 @@ parse_auth_v4_header([KV | KVs], UserId, Acc) ->
             %% Zero or 2+ "=" characters, ignore the token
             parse_auth_v4_header(KVs, UserId, Acc)
     end.
+
+-spec calculate_signature_v2(binary(), #wm_reqdata{}) -> string().
+calculate_signature_v2(KeyData, RD) ->
+    calculate_signature_v2(KeyData, RD, none).
 
 -spec calculate_signature_v2(binary(), #wm_reqdata{}, sigv2_quirk()) -> string().
 calculate_signature_v2(KeyData, RD, Quirk) ->
@@ -429,9 +436,6 @@ hexdigit(C) when C < 16 -> $A + (C - 10).
 
 %% Test cases for the examples provided by Amazon here:
 %% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
-
-calculate_signature_v2(KeyData, RD) ->
-    calculate_signature_v2(KeyData, RD, none).
 
 auth_test_() ->
     {spawn,

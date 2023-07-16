@@ -353,13 +353,13 @@ check_grants(User, Bucket, RequestedAccess, RcPid, BucketAcl) ->
                               RcPid,
                               BucketAcl).
 
--spec validate_acl({ok, acl()} | {error, term()}, string()) ->
+-spec validate_acl({ok, acl()} | {error, term()}, binary()) ->
           {ok, acl()} | {error, access_denied}.
 validate_acl({ok, Acl = ?ACL{owner = #{canonical_id := Id}}}, Id) ->
     {ok, Acl};
 validate_acl({ok, _}, _) ->
     {error, access_denied};
-validate_acl({error, _}=Error, _) ->
+validate_acl({error, _} = Error, _) ->
     Error.
 
 

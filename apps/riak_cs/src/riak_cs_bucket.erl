@@ -38,7 +38,6 @@
          get_bucket_versioning/2,
          maybe_log_bucket_owner_error/2,
          resolve_buckets/3,
-         update_bucket_record/1,
          delete_all_uploads/2,
          delete_old_uploads/3,
          fold_all_buckets/3,
@@ -161,7 +160,7 @@ delete_bucket(User, _UserObj, Bucket, RcPid) ->
 
     %% Buckets can only be deleted if they exist
     {AttemptDelete, LocalError} =
-        case bucket_exists(CurrentBuckets, binary_to_list(Bucket)) of
+        case bucket_exists(CurrentBuckets, Bucket) of
             true ->
                 case bucket_empty(Bucket, RcPid) of
                     {ok, true}  -> {true, ok};
@@ -294,7 +293,7 @@ set_bucket_acl(User, _UserObj, Bucket, ACL) ->
                          [velvet, set_bucket_acl]).
 
 %% @doc Set the policy for a bucket. Existing policy is only overwritten.
--spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), []|policy()|acl()) ->
+-spec set_bucket_policy(rcs_user(), riakc_obj:riakc_obj(), binary(), binary()) ->
           ok | {error, term()}.
 set_bucket_policy(User, _UserObj, Bucket, PolicyJson) ->
     serialized_bucket_op(Bucket,
@@ -426,10 +425,6 @@ bucket_empty(Bucket, RcPid) ->
                                            [riakc, list_all_manifest_keys]),
     {ok, bucket_empty_handle_list_keys(RcPid, Bucket, ListKeysResult)}.
 
--spec bucket_empty_handle_list_keys(riak_client(), binary(),
-                                    {ok, list()} |
-                                    {error, term()}) ->
-                                           boolean().
 bucket_empty_handle_list_keys(RcPid, Bucket, {ok, Keys}) ->
     AnyPred = bucket_empty_any_pred(RcPid, Bucket),
     %% `lists:any/2' will break out early as soon
@@ -438,8 +433,6 @@ bucket_empty_handle_list_keys(RcPid, Bucket, {ok, Keys}) ->
 bucket_empty_handle_list_keys(_RcPid, _Bucket, _Error) ->
     false.
 
--spec bucket_empty_any_pred(riak_client(), Bucket :: binary()) ->
-                                   fun((Key :: binary()) -> boolean()).
 bucket_empty_any_pred(RcPid, Bucket) ->
     fun (Key) ->
             riak_cs_utils:key_exists(RcPid, Bucket, Key)
@@ -563,10 +556,12 @@ bucket_json(Bucket, BagId, ACL, KeyId)  ->
                      undefined -> [];
                      _ -> [{bag, BagId}]
                  end,
-    jason:encode([{bucket, Bucket},
-                  {requester, KeyId},
-                  {acl, ACL}] ++ BagElement, [{records, [{acl_v3, record_info(fields, acl_v3)},
-                                                         {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]).
+    list_to_binary(
+      jason:encode([{bucket, Bucket},
+                    {requester, KeyId},
+                    {acl, ACL}] ++ BagElement,
+                   [{records, [{acl_v3, record_info(fields, acl_v3)},
+                               {acl_grant_v2, record_info(fields, acl_grant_v2)}]}])).
 
 %% @doc Check for and resolve any conflict between
 %% a bucket record from a user record sibling and
@@ -607,14 +602,13 @@ bucket_sorter(?RCS_BUCKET{name=Bucket1},
 -spec cleanup_bucket(cs_bucket()) -> boolean().
 cleanup_bucket(?RCS_BUCKET{last_action=created}) ->
     false;
-cleanup_bucket(?RCS_BUCKET{last_action=deleted,
-                           modification_time=ModTime}) ->
+cleanup_bucket(?RCS_BUCKET{last_action = deleted,
+                           modification_time = ModTime}) ->
     %% the prune-time is specified in seconds, so we must
     %% convert Erlang timestamps to seconds first
-    NowSeconds = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
-    ModTimeSeconds = riak_cs_utils:second_resolution_timestamp(ModTime),
-    (NowSeconds - ModTimeSeconds) >
-        riak_cs_config:user_buckets_prune_time().
+    Now = os:system_time(millisecond),
+    (Now - ModTime) >
+        riak_cs_config:user_buckets_prune_time() * 1000.
 
 %% @doc Determine if an existing bucket from the resolution list
 %% should be kept or replaced when a conflict occurs.
@@ -660,7 +654,7 @@ serialized_bucket_op(Bucket, Arg, User, BucketOp, StatKey) ->
     serialized_bucket_op(Bucket, undefined, Arg, User, BucketOp, StatKey).
 
 serialized_bucket_op(Bucket, BagId, Arg, User, BucketOp, StatsKey) ->
-    StartTime = os:timestamp(),
+    StartTime = os:system_time(millisecond),
     _ = riak_cs_stats:inflow(StatsKey),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
 
@@ -673,49 +667,8 @@ serialized_bucket_op(Bucket, BagId, Arg, User, BucketOp, StatsKey) ->
     %% Make a call to the request serialization service.
     OpResult = BucketFun(),
     _ = riak_cs_stats:update_with_start(StatsKey, StartTime, OpResult),
-    case OpResult of
-        {error, {error_status, Status, _, ErrorDoc}} ->
-            handle_stanchion_response(Status, ErrorDoc, BucketOp, Bucket);
-        Other ->
-            Other
-    end.
+    OpResult.
 
-%% @doc needs retry for delete op.  409 assumes
-%% MultipartUploadRemaining for now if a new feature that needs retry
-%% could come up, add branch here. See tests in
-%% tests/riak_cs_bucket_test.erl
--spec handle_stanchion_response(200..503, string(), delete|create, binary()) ->
-                                       {error, remaining_multipart_upload} |
-                                       {error, atom()}.
-handle_stanchion_response(409, ErrorDoc, Op, Bucket)
-  when Op =:= delete orelse Op =:= create ->
-
-    {error, Tag} = riak_cs_aws_response:velvet_response(ErrorDoc),
-    case {Tag, Op} of
-        {remaining_multipart_upload, delete} ->
-            logger:error("Concurrent multipart upload might have"
-                         " happened on deleting bucket '~s'.", [Bucket]),
-            {error, remaining_multipart_upload};
-        {remaining_multipart_upload, create} ->
-            %% might be security issue
-            logger:critical("Multipart upload remains in deleted bucket (~s)"
-                            " Clean up the deleted buckets now.", [Bucket]),
-            %% Broken, returns 500
-            throw({remaining_multipart_upload_on_deleted_bucket, Bucket});
-        _Other ->
-            riak_cs_aws_response:velvet_response(ErrorDoc)
-    end;
-handle_stanchion_response(_C, ErrorDoc, _M, _) ->
-    %% logger:error("unexpected errordoc: (~p, ~p) ~s", [_C, _M, ErrorDoc]),
-    riak_cs_aws_response:velvet_response(ErrorDoc).
-
-%% @doc Update a bucket record to convert the name from binary
-%% to string if necessary.
--spec update_bucket_record(term()) -> cs_bucket().
-update_bucket_record(Bucket=?RCS_BUCKET{name=Name}) when is_binary(Name) ->
-    Bucket?RCS_BUCKET{name=binary_to_list(Name)};
-update_bucket_record(Bucket) ->
-    Bucket.
 
 %% @doc Grab the whole list of Riak CS bucket keys.
 -spec fetch_bucket_keys(riak_client()) -> {ok, [binary()]} | {error, term()}.

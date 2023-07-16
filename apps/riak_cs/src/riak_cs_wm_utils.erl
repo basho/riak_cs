@@ -223,6 +223,13 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#rcs_web_context{user = User,
                                  user_object = UserObj});
+handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    logger:notice("given keyid was found, but signature didn't match; ignore anonymous_user_creation"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
+    %% no keyid was given, proceed anonymously
+    ?LOG_DEBUG("anonymous_user_creation is enabled, skipping auth", []),
+    Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
     ?LOG_DEBUG("No user key, deny"),
@@ -231,14 +238,6 @@ handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
     ?LOG_DEBUG("key_id not found"),
     deny_access(RD, Conv2KeyCtx(Ctx));
-handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
-    %% given keyid was found, but signature didn't match
-    ?LOG_DEBUG("bad_auth"),
-    deny_access(RD, Conv2KeyCtx(Ctx));
-handle_validation_response({error, Reason}, RD, Ctx, Next, _, true) ->
-    %% no keyid was given, proceed anonymously
-    ?LOG_DEBUG("No user key: ~p", [Reason]),
-    Next(RD, Ctx);
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
     ?LOG_DEBUG("Authentication error: ~p", [Reason]),
@@ -1073,7 +1072,7 @@ fetch_bucket_owner(Bucket, RcPid) ->
         {ok, Acl} ->
             Acl?ACL.owner;
         {error, Reason} ->
-            ?LOG_DEBUG("Failed to retrieve owner info for bucket ~p. Reason ~p", [Bucket, Reason]),
+            logger:warning("Failed to retrieve owner info for bucket ~p: ~p", [Bucket, Reason]),
             undefined
     end.
 

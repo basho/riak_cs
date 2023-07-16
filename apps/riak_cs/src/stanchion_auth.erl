@@ -37,8 +37,8 @@
 -spec authenticate(term(), [string()]) -> ok | {error, atom()}.
 authenticate(RD, [KeyId, Signature]) ->
     {ok, {AdminKeyId, AdminSecret}} = riak_cs_config:admin_creds(),
-    case (KeyId == AdminKeyId) andalso
-        check_auth(Signature, signature(AdminSecret, RD)) of
+    case (list_to_binary(KeyId) == AdminKeyId) andalso
+        check_auth(Signature, signature(binary_to_list(AdminSecret), RD)) of
         true ->
             ok;
         _ ->

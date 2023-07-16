@@ -427,7 +427,7 @@ get_manifests(RiakcPid, Bucket, Key, Vsn) ->
             %% commented out because we don't have the
             %% riak_cs_gc module
             Pruned = rcs_common_manifest_utils:prune(
-                       Resolved, erlang:timestamp(),
+                       Resolved, os:system_time(millisecond),
                        50,  %% riak_cs defaults for max_scheduled_delete_manifests and
                        86400),  %% leeway_seconds
             {ok, Object, Pruned};
@@ -666,18 +666,12 @@ replace_meta(Key, NewValue, MetaVals) ->
 %% returns error to the client (maybe 500?)  Or fallback to heavy
 %% abort-all-multipart and then deletes bucket?  This will be a big
 %% TODO.
--spec is_bucket_ready_to_delete(binary(), pid(), riakc_obj()) ->
-                                       {false, remaining_multipart_upload|bucket_not_empty} |
-                                       {true, riakc_obj()}.
 is_bucket_ready_to_delete(Bucket, Pbc, BucketObj) ->
     is_bucket_clean(Bucket, Pbc, BucketObj).
 
 %% @doc ensure there are no multipart uploads in creation time because
 %% multipart uploads remains in deleted buckets in former versions
 %% before 1.5.0 (or 1.4.6) where the bug (identified in riak_cs/#475).
--spec is_bucket_ready_to_create(binary(), pid(), riakc_obj()) ->
-                                       {false, remaining_multipart_upload|bucket_not_empty} |
-                                       {true, riakc_obj()}.
 is_bucket_ready_to_create(Bucket, Pbc, BucketObj) ->
     is_bucket_clean(Bucket, Pbc, BucketObj).
 

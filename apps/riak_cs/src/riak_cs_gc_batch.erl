@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -177,7 +177,7 @@ handle_info(_Info, StateName, State) ->
 %% middle of running a gc batch
 terminate(normal, _StateName, State) ->
     logger:info("Finished garbage collection: "
-                "~b seconds, ~p batch_count, ~p batch_skips, "
+                "~b msec, ~p batch_count, ~p batch_skips, "
                 "~p manif_count, ~p block_count",
                 [elapsed(State?STATE.batch_start), State?STATE.batch_count,
                  State?STATE.batch_skips, State?STATE.manif_count,
@@ -185,7 +185,7 @@ terminate(normal, _StateName, State) ->
     riak_cs_gc_manager:finished(State);
 terminate(cancel, _StateName, State) ->
     logger:warning("Garbage collection has been canceled: "
-                   "~b seconds, ~p batch_count, ~p batch_skips, "
+                   "~b msec, ~p batch_count, ~p batch_skips, "
                    "~p manif_count, ~p block_count",
                    [elapsed(State?STATE.batch_start), State?STATE.batch_count,
                     State?STATE.batch_skips, State?STATE.manif_count,
@@ -235,10 +235,8 @@ fetch_first_keys(?STATE{batch_start=_BatchStart,
                 bag_id=BagId}.
 
 %% @doc Handle a `batch_complete' event from a GC worker process.
--spec handle_batch_complete(pid(), #gc_worker_state{}, ?STATE{}) -> ?STATE{}.
 handle_batch_complete(WorkerPid, WorkerState, State) ->
-    ?STATE{
-           worker_pids=WorkerPids,
+    ?STATE{worker_pids=WorkerPids,
            batch_count=BatchCount,
            batch_skips=BatchSkips,
            manif_count=ManifestCount,
@@ -251,8 +249,7 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
     UpdWorkerPids = lists:delete(WorkerPid, WorkerPids),
     %% @TODO Workout the terminiology for these stats. i.e. Is batch
     %% count just an increment or represenative of something else.
-    State?STATE{
-                worker_pids=UpdWorkerPids,
+    State?STATE{worker_pids=UpdWorkerPids,
                 batch_count=BatchCount + WorkerBatchCount,
                 batch_skips=BatchSkips + WorkerBatchSkips,
                 manif_count=ManifestCount + WorkerManifestCount,
@@ -260,7 +257,6 @@ handle_batch_complete(WorkerPid, WorkerState, State) ->
 
 %% @doc Start a GC worker and return the apprpriate next state and
 %% updated state record.
--spec start_worker(?STATE{}) -> ?STATE{}.
 start_worker(?STATE{batch=[NextBatch|RestBatches],
                     bag_id=BagId,
                     worker_pids=WorkerPids} = State) ->
@@ -274,15 +270,13 @@ start_worker(?STATE{batch=[NextBatch|RestBatches],
     end.
 
 %% @doc Cancel the current batch of files set for garbage collection.
--spec cancel_batch(?STATE{}) -> any().
 cancel_batch(?STATE{batch_start=BatchStart,
                     worker_pids=WorkerPids}=_State) ->
     %% Interrupt the batch of deletes
-    logger:info("Canceled garbage collection batch after ~b seconds.",
+    logger:info("Canceled garbage collection batch after ~b msec",
                 [elapsed(BatchStart)]),
     [riak_cs_gc_worker:stop(P) || P <- WorkerPids].
 
--spec ok_reply(atom(), ?STATE{}) -> {reply, ok, atom(), ?STATE{}}.
 ok_reply(NextState, NextStateData) ->
     {reply, ok, NextState, NextStateData}.
 
@@ -331,11 +325,10 @@ status_data(State) ->
                   end}].
 
 %% @doc How many seconds have passed from `Time' to now.
--spec elapsed(undefined | non_neg_integer()) -> non_neg_integer().
 elapsed(undefined) ->
-    riak_cs_gc:timestamp();
+    os:system_time(millisecond);
 elapsed(Time) ->
-    Now = riak_cs_gc:timestamp(),
+    Now = os:system_time(millisecond),
     case (Diff = Now - Time) > 0 of
         true ->
             Diff;

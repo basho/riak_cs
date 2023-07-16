@@ -60,7 +60,7 @@
                      , password_last_used :: undefined | non_neg_integer()
                      , permissions_boundary :: undefined | permissions_boundary()
                      , tags = [] :: [tag()]
-                     , attached_policies = to_be_populated :: to_be_populated | [flat_arn()]
+                     , attached_policies = [] :: [flat_arn()]
 
                      , name :: binary()
                      , display_name :: binary()
@@ -91,7 +91,7 @@
                         }).
 
 -record(moss_bucket_v2, { name :: binary()
-                        , last_action :: undefined | created | deleted
+                        , last_action :: created | deleted | binary()
                         , creation_date = os:system_time(millisecond) :: non_neg_integer()
                         , modification_time :: undefined | non_neg_integer()
                         , acl :: undefined | acl()

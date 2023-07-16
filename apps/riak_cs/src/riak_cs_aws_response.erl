@@ -27,7 +27,6 @@
          respond/4,
          error_message/1,
          error_code/1,
-         velvet_response/1,
          copy_object_response/3,
          copy_part_response/3,
          no_such_upload_response/3,
@@ -120,7 +119,7 @@ error_message(invalid_metadata_document) -> "IdP provided invalid or unacceptabl
 error_message(idp_rejected_claim) -> "The IdP reported that authentication failed, or the certificate in the SAML assertion is invalid";
 error_message(remaining_multipart_upload) -> "Concurrent multipart upload initiation detected. Please stop it to delete bucket.";
 error_message(disconnected) -> "Please contact administrator.";
-error_message(stanchion_recovery_failure) -> "Bucket and user operations are temporarily unavailable because the node running stanchion is currently unreachable. Please report this to your administrator.";
+error_message(stanchion_recovery_failure) -> "Service is temporarily unavailable because the node running stanchion is unreachable. Please report this to your administrator.";
 error_message(invalid_action) -> "This Action is invalid or not yet supported";
 error_message(invalid_parameter_value) -> "Unacceptable parameter value";
 error_message(missing_parameter) -> "Missing parameter";
@@ -328,13 +327,6 @@ error_response(StatusCode, Code, Message, RD, Ctx) ->
                         ] ++ common_response_items(Ctx)}
              ],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
-
--spec velvet_response(string()) -> {error, reportable_error_reason()}.
-velvet_response(Response) ->
-    ?LOG_DEBUG("AAAAaaa ~p", [Response]),
-    #{error_tag := Tag,
-      resource := _Resource} = jsx:decode(list_to_binary(Response), [{labels, atom}]),
-    {error, binary_to_term(base64:decode(Tag))}.
 
 
 %% error_resource(Tag, RD)

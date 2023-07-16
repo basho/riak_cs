@@ -126,23 +126,21 @@ check_version(?AMZ_POLICY{version = V}) ->
 
 % @doc confirm if forbidden action included in policy
 % s3:CreateBucket and s3:ListAllMyBuckets are prohibited at S3
--spec check_actions([#statement{}]) -> boolean().
 check_actions([]) -> true;
 check_actions([Stmt|Stmts]) ->
     case Stmt#statement.action of
-        <<"s3:*">> -> check_actions(Stmts);
+        Globbing when is_binary(Globbing) ->
+            check_actions(Stmts);
         Actions ->
-            case not lists:member("s3:CreateBucket", Actions) of
+            case lists:member('s3:CreateBucket', Actions) orelse
+                lists:member('s3:ListAllMyBuckets', Actions) of
                 true ->
-                    case not lists:member("s3:ListAllMyBuckets", Actions) of
-                        true -> check_actions(Stmts);
-                        false -> false
-                    end;
-                false -> false
+                    false;
+                false ->
+                    check_actions(Stmts)
             end
     end.
 
--spec check_principals([#statement{}]) -> boolean().
 check_principals([]) -> false;
 check_principals([Stmt|Stmts]) ->
     case check_principal(Stmt#statement.principal) of
@@ -150,7 +148,6 @@ check_principals([Stmt|Stmts]) ->
         false -> check_principals(Stmts)
     end.
 
--spec check_principal(any()) -> boolean().
 check_principal('*') ->
     true;
 check_principal([]) ->
@@ -176,6 +173,7 @@ check_all_resources(Bucket, #statement{resource = Resources}) ->
 check_all_resources(Bucket, #arn_v1{path = Path}) ->
     [B|_] = binary:split(Path, <<"/">>),
     B =:= Bucket.
+
 
 -spec reqdata_to_access(#wm_reqdata{}, action_target(), binary() | undefined) -> access().
 reqdata_to_access(RD, Target, ID) ->

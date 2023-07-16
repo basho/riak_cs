@@ -332,13 +332,12 @@ start_batch(Options, Time, State) ->
     Recalc = true == proplists:get_value(recalc, Options),
     Detailed = proplists:get_value(detailed, Options,
                                    riak_cs_config:detailed_storage_calc()),
-    Now = riak_cs_utils:second_resolution_timestamp(os:timestamp()),
-    LeewayEdgeTs = Now - riak_cs_gc:leeway_seconds(),
-    LeewayEdge = {LeewayEdgeTs div 1000000, LeewayEdgeTs rem 1000000, 0},
+    Now = os:system_time(millisecond),
+    LeewayEdge = Now - riak_cs_gc:leeway_seconds() * 1000,
     case Detailed of
         true ->
             logger:info("Starting storage calculation: recalc=~p, detailed=~p, leeway edge=~p",
-                        [Recalc, Detailed, calendar:now_to_universal_time(LeewayEdge)]);
+                        [Recalc, Detailed, calendar:system_time_to_universal_time(LeewayEdge, millisecond)]);
         _ ->
             logger:info("Starting storage calculation: recalc=~p", [Recalc])
     end,

@@ -79,8 +79,7 @@ delete_user(?IAM_USER{buckets = BB}) when BB /= [] ->
     {error, user_has_buckets};
 delete_user(?IAM_USER{arn = TransKeyId}) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_user(TransKeyId, [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:delete_user(TransKeyId, [{auth_creds, AdminCreds}]).
 
 -spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 get_user(Arn, Pbc) ->
@@ -115,14 +114,13 @@ find_user(Index, A, Pbc) ->
             {error, Reason}
     end.
 
--spec update_user(rcs_user()) -> {ok, rcs_user()} | {error, term()}.
+-spec update_user(rcs_user()) -> {ok, rcs_user()} | {error, reportable_error_reason()}.
 update_user(U = ?IAM_USER{key_id = KeyId}) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:update_user("application/json",
-                                KeyId,
-                                riak_cs_json:to_json(U),
-                                [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:update_user("application/json",
+                       KeyId,
+                       riak_cs_json:to_json(U),
+                       [{auth_creds, AdminCreds}]).
 
 -spec list_attached_user_policies(binary(), binary(), pid()) ->
           {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
@@ -152,23 +150,20 @@ list_attached_user_policies(UserName, PathPrefix, Pbc) ->
     end.
 
 
--spec create_role(maps:map()) -> {ok, role()} | {error, already_exists | term()}.
+-spec create_role(maps:map()) -> {ok, role()} | {error, reportable_error_reason()}.
 create_role(Specs) ->
     Encoded = riak_cs_json:to_json(exprec_role(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:create_role(
-               "application/json",
-               Encoded,
-               [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:create_role("application/json",
+                       Encoded,
+                       [{auth_creds, AdminCreds}]).
 
--spec delete_role(binary()) -> ok | {error, term()}.
+-spec delete_role(binary()) -> ok | {error, reportable_error_reason()}.
 delete_role(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_role(Arn, [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:delete_role(Arn, [{auth_creds, AdminCreds}]).
 
--spec get_role(binary(), pid()) -> {ok, ?IAM_ROLE{}} | {error, term()}.
+-spec get_role(binary(), pid()) -> {ok, role()} | {error, term()}.
 get_role(Arn, Pbc) ->
     case riak_cs_pbc:get(Pbc, ?IAM_ROLE_BUCKET, Arn, get_cs_role) of
         {OK, Obj} when OK =:= ok;
@@ -200,26 +195,23 @@ find_role(Index, A, Pbc) ->
     end.
 
 
--spec create_policy(maps:map()) -> {ok, policy()} | {error, already_exists | term()}.
+-spec create_policy(maps:map()) -> {ok, policy()} | {error, reportable_error_reason()}.
 create_policy(Specs = #{policy_document := D}) ->
     case riak_cs_aws_policy:policy_from_json(D) of  %% this is to validate PolicyDocument
         {ok, _} ->
             Encoded = riak_cs_json:to_json(exprec_policy(Specs)),
             {ok, AdminCreds} = riak_cs_config:admin_creds(),
-            Result = velvet:create_policy(
-                       "application/json",
-                       Encoded,
-                       [{auth_creds, AdminCreds}]),
-            handle_response(Result);
-        ER ->
+            velvet:create_policy("application/json",
+                                 Encoded,
+                                 [{auth_creds, AdminCreds}]);
+        {error, _} = ER ->
             ER
     end.
 
--spec delete_policy(binary()) -> ok | {error, term()}.
+-spec delete_policy(binary()) -> ok | {error, reportable_error_reason()}.
 delete_policy(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_policy(Arn, [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:delete_policy(Arn, [{auth_creds, AdminCreds}]).
 
 -spec get_policy(binary(), pid()) -> {ok, ?IAM_POLICY{}} | {error, term()}.
 get_policy(Arn, Pbc) ->
@@ -311,10 +303,10 @@ attach_user_policy(PolicyArn, UserName, Pbc) ->
                         {ok, Policy = ?IAM_POLICY{is_attachable = true,
                                                   attachment_count = AC}} ->
                             case update_user(User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
-                                {ok, _UpdatedUser} ->
+                                {ok, _} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC + 1});
-                                ER1 ->
-                                    ER1
+                                {error, _} = ER ->
+                                    ER
                             end;
                         {ok, ?IAM_POLICY{}} ->
                             {error, policy_not_attachable};
@@ -340,8 +332,8 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
                             case update_user(User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
                                 {ok, _} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC - 1});
-                                ER1 ->
-                                    ER1
+                                {error, _} = ER ->
+                                    ER
                             end;
                         {error, notfound} ->
                             {error, no_such_policy}
@@ -351,27 +343,23 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
             {error, no_such_user}
     end.
 
--spec update_role(role()) -> ok | {error, term()}.
+-spec update_role(role()) -> ok | {error, reportable_error_reason()}.
 update_role(R = ?IAM_ROLE{arn = Arn}) ->
     Encoded = riak_cs_json:to_json(R),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:update_role(
-               "application/json",
-               Arn,
-               Encoded,
-               [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:update_role("application/json",
+                       Arn,
+                       Encoded,
+                       [{auth_creds, AdminCreds}]).
 
--spec update_policy(policy()) -> ok | {error, term()}.
+-spec update_policy(policy()) -> ok | {error, reportable_error_reason()}.
 update_policy(A = ?IAM_POLICY{arn = Arn}) ->
     Encoded = riak_cs_json:to_json(A),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:update_policy(
-               "application/json",
-               Arn,
-               Encoded,
-               [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:update_policy("application/json",
+                         Arn,
+                         Encoded,
+                         [{auth_creds, AdminCreds}]).
 
 
 -spec express_policies([flat_arn()], pid()) -> [amz_policy()].
@@ -405,26 +393,22 @@ fix_permissions_boundary(Map) ->
     Map.
 
 
--spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, term()}.
+-spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, reportable_error_reason()}.
 create_saml_provider(Specs) ->
     Encoded = riak_cs_json:to_json(exprec_saml_provider(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:create_saml_provider(
-               "application/json",
-               Encoded,
-               [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:create_saml_provider("application/json",
+                                Encoded,
+                                [{auth_creds, AdminCreds}]).
 
 
--spec delete_saml_provider(binary()) -> ok | {error, term()}.
+-spec delete_saml_provider(binary()) -> ok | {error, reportable_error_reason()}.
 delete_saml_provider(Arn) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    Result = velvet:delete_saml_provider(
-               Arn, [{auth_creds, AdminCreds}]),
-    handle_response(Result).
+    velvet:delete_saml_provider(Arn, [{auth_creds, AdminCreds}]).
 
 
--spec get_saml_provider(binary(), pid()) -> {ok, ?IAM_SAML_PROVIDER{}} | {error, term()}.
+-spec get_saml_provider(binary(), pid()) -> {ok, saml_provider()} | {error, term()}.
 get_saml_provider(Arn, Pbc) ->
     case riak_cs_pbc:get(Pbc, ?IAM_SAMLPROVIDER_BUCKET, Arn, get_cs_saml_provider) of
         {OK, Obj} when OK =:= ok;
@@ -434,7 +418,8 @@ get_saml_provider(Arn, Pbc) ->
             Error
     end.
 
--spec find_saml_provider(maps:map() | Arn::binary(), pid()) -> {ok, saml_provider()} | {error, notfound | term()}.
+-spec find_saml_provider(maps:map() | Arn::binary(), pid()) ->
+          {ok, saml_provider()} | {error, notfound | term()}.
 find_saml_provider(Name, Pbc) when is_binary(Name) ->
     find_saml_provider(#{name => Name}, Pbc);
 find_saml_provider(#{name := Name}, Pbc) ->
@@ -556,7 +541,7 @@ maybe_int(A) -> A.
 -spec exprec_bucket(maps:map()) -> ?RCS_BUCKET{}.
 exprec_bucket(Map) ->
     B0 = ?RCS_BUCKET{last_action = LA0,
-                     acl = A0} = exprec:frommap_moss_bucket_v1(Map),
+                     acl = A0} = exprec:frommap_moss_bucket_v2(Map),
     B0?RCS_BUCKET{last_action = last_action_from_binary(LA0),
                   acl = maybe_exprec_acl(A0)}.
 last_action_from_binary(<<"undefined">>) -> undefined;
@@ -612,15 +597,3 @@ unarm(A = ?IAM_ROLE{assume_role_policy_document = D})
     A?IAM_ROLE{assume_role_policy_document = base64:decode(D)};
 unarm(A = ?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
     A?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(D)}.
-
-
-
-
-handle_response({ok, Returnable}) ->
-    {ok, Returnable};
-handle_response(ok) ->
-    ok;
-handle_response({error, {error_status, _, _, ErrorDoc}}) ->
-    riak_cs_aws_response:velvet_response(ErrorDoc);
-handle_response({error, _} = Error) ->
-    Error.

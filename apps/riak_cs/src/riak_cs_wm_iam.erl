@@ -321,7 +321,8 @@ do_action("ListUsers",
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_users(
-           RcPid, #list_users_request{path_prefix = list_to_binary(PathPrefix),
+           RcPid, #list_users_request{request_id = RequestId,
+                                      path_prefix = list_to_binary(PathPrefix),
                                       max_items = MaxItems,
                                       marker = Marker}) of
         {ok, #{users := Users,
@@ -409,7 +410,8 @@ do_action("ListRoles",
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_roles(
-           RcPid, #list_roles_request{path_prefix = list_to_binary(PathPrefix),
+           RcPid, #list_roles_request{request_id = RequestId,
+                                      path_prefix = list_to_binary(PathPrefix),
                                       max_items = MaxItems,
                                       marker = Marker}) of
         {ok, #{roles := Roles,
@@ -489,11 +491,14 @@ do_action("ListPolicies",
     PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
     OnlyAttached = proplists:get_value("OnlyAttached", Form, "false"),
     PolicyUsageFilter = proplists:get_value("PolicyUsageFilter", Form, "All"),
+    Scope = proplists:get_value("Scope", Form, "All"),
     MaxItems = proplists:get_value("MaxItems", Form),
     Marker = proplists:get_value("Marker", Form),
     case riak_cs_api:list_policies(
-           RcPid, #list_policies_request{path_prefix = list_to_binary(PathPrefix),
+           RcPid, #list_policies_request{request_id = RequestId,
+                                         path_prefix = list_to_binary(PathPrefix),
                                          only_attached = list_to_atom(OnlyAttached),
+                                         scope = list_to_atom(Scope),
                                          policy_usage_filter = list_to_atom(PolicyUsageFilter),
                                          max_items = MaxItems,
                                          marker = Marker}) of
@@ -678,7 +683,7 @@ do_action("ListSAMLProviders",
                                             response_module = ResponseMod,
                                             request_id = RequestId}) ->
     case riak_cs_api:list_saml_providers(
-           RcPid, #list_saml_providers_request{}) of
+           RcPid, #list_saml_providers_request{request_id = RequestId}) of
         {ok, #{saml_providers := PP}} ->
             PPEE = [#saml_provider_list_entry{arn = Arn,
                                               create_date = CreateDate,

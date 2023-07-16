@@ -155,7 +155,6 @@ active_manifest(Dict) ->
             {no_active_manifest, undefined}, orddict_values(Dict))).
 
 %% @doc Ensure the manifest hasn't been deleted during upload.
--spec live_manifest(tuple()) -> {ok, lfs_manifest()} | {error, no_active_manifest}.
 live_manifest({no_active_manifest, _}) ->
     {error, no_active_manifest};
 live_manifest({Manifest, undefined}) ->
@@ -170,9 +169,6 @@ live_manifest({Manifest, DeleteTime}) ->
 
 %% NOTE: This is a foldl function, initial acc = {no_active_manifest, undefined}
 %% Return the most recent active manifest as well as the most recent manifest delete time
--spec most_recent_active_manifest(lfs_manifest(), {
-    no_active_manifest | lfs_manifest(), undefined | erlang:timestamp()}) ->
-        {no_active_manifest | lfs_manifest(), erlang:timestamp() | undefined}.
 most_recent_active_manifest(Manifest = ?MANIFEST{state = scheduled_delete},
                             {MostRecent, undefined}) ->
     {MostRecent, delete_time(Manifest)};
@@ -257,7 +253,7 @@ mark_pending_delete(Dict, UUIDsToMark) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
                     V?MANIFEST{state=pending_delete,
-                               delete_marked_time=os:timestamp()};
+                               delete_marked_time = os:system_time(millisecond)};
                 false ->
                     V
             end
@@ -274,7 +270,7 @@ mark_deleted(Dict, UUIDsToMark) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
                     V?MANIFEST{state = pending_delete,
-                               delete_marked_time = os:timestamp(),
+                               delete_marked_time = os:system_time(millisecond),
                                props=[{deleted, true} | V?MANIFEST.props]};
                 false ->
                     V
@@ -291,8 +287,8 @@ mark_scheduled_delete(Dict, UUIDsToMark) ->
     MapFun = fun(K, V) ->
             case lists:member(K, UUIDsToMark) of
                 true ->
-                    V?MANIFEST{state=scheduled_delete,
-                               scheduled_delete_time = os:timestamp()};
+                    V?MANIFEST{state = scheduled_delete,
+                               scheduled_delete_time = os:system_time(millisecond)};
                 false ->
                     V
             end
@@ -320,7 +316,7 @@ find_deleted_active_manifests(Manifests, DeleteTime) ->
 
 
 -spec prune(orddict:orddict(),
-            erlang:timestamp(),
+            non_neg_integer(),
             unlimited | non_neg_integer(), non_neg_integer()) -> orddict:orddict().
 prune(Dict, Time, MaxCount, LeewaySeconds) ->
     Filtered = orddict:filter(fun (_Key, Value) -> not needs_pruning(Value, Time, LeewaySeconds) end,
@@ -346,21 +342,15 @@ prune_count(Manifests, MaxCount) ->
             Manifests
     end.
 
--spec needs_pruning(lfs_manifest(), erlang:timestamp(), non_neg_integer()) -> boolean().
+-spec needs_pruning(lfs_manifest(), non_neg_integer(), non_neg_integer()) -> boolean().
 needs_pruning(?MANIFEST{state = scheduled_delete,
                         scheduled_delete_time = ScheduledDeleteTime}, Time, LeewaySeconds) ->
-    seconds_diff(Time, ScheduledDeleteTime) > LeewaySeconds;
+    (Time - ScheduledDeleteTime) > LeewaySeconds * 1000;
 needs_pruning(_Manifest, _, _) ->
     false.
 
-seconds_diff(T2, T1) ->
-    TimeDiffMicrosends = timer:now_diff(T2, T1),
-    SecondsTime = TimeDiffMicrosends / (1000 * 1000),
-    erlang:trunc(SecondsTime).
 
 
-
--spec latest_delete_time([lfs_manifest()]) -> term() | undefined.
 latest_delete_time(Manifests) ->
     lists:foldl(fun(M, Acc) ->
                     DeleteTime = delete_time(M),

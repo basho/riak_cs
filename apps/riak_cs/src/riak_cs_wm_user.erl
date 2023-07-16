@@ -83,7 +83,6 @@ forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
               riak_cs_config:anonymous_user_creation())
         orelse AuthBypass,
     Next = fun(NewRD, NewCtx = #rcs_web_context{user = User}) ->
-                   ?LOG_DEBUG("Are we ~p ~p", [User, user_key(RD)]),
                    forbidden(wrq:method(RD),
                              NewRD,
                              NewCtx,
@@ -102,16 +101,18 @@ handle_user_auth_response({_Reason, _RD, _Ctx} = Ret) ->
     Ret.
 
 -spec content_types_accepted(term(), term()) ->
-    {[{string(), atom()}], term(), term()}.
+    {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
 
 content_types_provided(RD, Ctx) ->
     {[{?XML_TYPE, produce_xml}, {?JSON_TYPE, produce_json}], RD, Ctx}.
 
-post_is_create(RD, Ctx) -> {true, RD, Ctx}.
+post_is_create(RD, Ctx) ->
+    {true, RD, Ctx}.
 
-create_path(RD, Ctx) -> {"/riak-cs/user", RD, Ctx}.
+create_path(RD, Ctx) ->
+    {"/riak-cs/user", RD, Ctx}.
 
 -spec accept_json(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
@@ -206,8 +207,8 @@ etag(Body) ->
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
-forbidden(_, _RD, _Ctx, undefined, <<>>, true) ->
-    {false, _RD, _Ctx};
+forbidden(_, RD, Ctx, undefined, <<>>, true) ->
+    {false, RD, Ctx};
 forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
     get_user({false, RD, Ctx}, UserPathKey);
 forbidden('POST', RD, Ctx, User, <<>>, _) ->
@@ -347,6 +348,6 @@ user_response({error, Reason}, _, RD, Ctx) ->
     riak_cs_aws_response:api_error(Reason, RD, Ctx).
 
 format_user_record(User, ?JSON_TYPE) ->
-    iolist_to_binary(riak_cs_json:to_json(User));
+    riak_cs_json:to_json(User);
 format_user_record(User, ?XML_TYPE) ->
     riak_cs_xml:to_xml(User).
