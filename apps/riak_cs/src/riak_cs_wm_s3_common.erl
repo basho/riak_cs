@@ -133,7 +133,6 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
                                      submodule = Mod,
                                      riak_client = RcPid,
                                      exports_fun = ExportsFun}) ->
-    ?LOG_DEBUG("Are we ~p ~p", [user, user_key]),
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
             failed ->
@@ -142,7 +141,6 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
             {failed, Reason} ->
                 {{error, Reason}, false};
             {UserKey, AuthData} ->
-                ?LOG_DEBUG("eeee ~p ~p", [UserKey, AuthData]),
                 case maybe_create_user(
                        riak_cs_user:get_user(UserKey, RcPid),
                        UserKey,
@@ -171,7 +169,7 @@ maybe_create_user({error, NE}, KeyId, oos, _, {UserData, _}, RcPid)
     %% Attempt to create a Riak CS user to represent the OS tenant
     _ = riak_cs_user:create_user(Name, Email, KeyId, Secret, #{}),
     riak_cs_user:get_user(KeyId, RcPid);
-maybe_create_user({error, NE}, KeyId, s3, riak_cs_keystone_auth, {UserData, _}, RcPid)
+maybe_create_user({error, NE}, KeyId, aws, riak_cs_keystone_auth, {UserData, _}, RcPid)
   when NE =:= not_found;
        NE =:= notfound;
        NE =:= no_user_key ->
@@ -188,9 +186,7 @@ maybe_create_user({error, disconnected} = Error, _, _, _, _, RcPid) ->
     {ok, MasterPid} = riak_cs_riak_client:master_pbc(RcPid),
     riak_cs_pbc:check_connection_status(MasterPid, maybe_create_user),
     Error;
-maybe_create_user({error, Reason}=Error, _, Api, _, _, _) ->
-    logger:error("Retrieval of user record for ~p failed. Reason: ~p",
-                 [Api, Reason]),
+maybe_create_user({error, _Reason} = Error, _, _Api, _, _, _) ->
     Error.
 
 %% @doc Get the list of methods a resource supports.

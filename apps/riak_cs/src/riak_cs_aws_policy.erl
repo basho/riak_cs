@@ -75,7 +75,6 @@ eval(Access, JSON) when is_binary(JSON) ->
         {error, _} = E -> E
     end;
 eval(Access, ?AMZ_POLICY{statement=Stmts} = Policy) ->
-    ?LOG_DEBUG("Evaluating policy: ~p", [Policy]),
     case check_version(Policy) of
         true -> aggregate_evaluation(Access, Stmts);
         false -> false
@@ -334,8 +333,9 @@ policy_from_meta([_ | RestMD]) ->
 %% ===================================================================
 %% internal API
 
-resource_matches(_, _, #statement{resource = '*'} = _Stmt ) -> true;
-resource_matches(BucketBin, KeyBin, #statement{resource=Resources})
+resource_matches(_, _, #statement{resource = '*'} = _Stmt ) ->
+    true;
+resource_matches(BucketBin, KeyBin, #statement{resource = Resources})
   when KeyBin =:= undefined orelse is_binary(KeyBin) ->
     Bucket = binary_to_list(BucketBin),
     % @TODO in case of using unicode object keys
@@ -372,8 +372,8 @@ eval_statement(#access_v1{req = Req,
     IsRelated = (lists:member(<<"s3:*">>, As)
                  orelse (lists:member(<<"s3:Get*">>, As))
                  orelse (lists:member(A, As)) andalso not (lists:member(A, NAs)
-                                                           orelse lists:member(<<"s3:*">>, As)
-                                                           orelse lists:member(<<"s3:Get*">>, As))
+                                                           orelse lists:member(<<"s3:*">>, NAs)
+                                                           orelse lists:member(<<"s3:Get*">>, NAs))
                 ),
     case {IsRelated, ResourceMatch} of
         {false, _} -> undefined;
@@ -381,7 +381,8 @@ eval_statement(#access_v1{req = Req,
         {true, true} ->
             Match = lists:all(fun(Cond) -> eval_condition(Req, Cond) end, Conds),
             case {E, Match} of
-                {allow, true} -> true;
+                {allow, true} ->
+                    true;
                 {deny, true} -> false;
                 {_, false} -> undefined %% matches nothing
             end

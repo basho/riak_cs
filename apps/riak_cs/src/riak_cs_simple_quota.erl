@@ -206,13 +206,13 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
 
 -spec get_latest_usage(pid(), string()) -> {ok, list()} | {error, notfound}.
 get_latest_usage(Pid, User) ->
-    Now = calendar:now_to_datetime(os:timestamp()),
-    NowASec = calendar:datetime_to_gregorian_seconds(Now),
+    Now = calendar:system_time_to_gregorian_seconds(
+            os:system_time(millisecond)),
     ArchivePeriod = case riak_cs_storage:archive_period() of
                         {ok, Period} -> Period;
                         _ -> 86400 %% A day is hard coded
                     end,
-    get_latest_usage(Pid, User, ArchivePeriod, NowASec, 0, 10).
+    get_latest_usage(Pid, User, ArchivePeriod, Now, 0, 10).
 
 -spec get_latest_usage(pid(), string(), non_neg_integer(),
                        non_neg_integer(), non_neg_integer(), non_neg_integer()) ->

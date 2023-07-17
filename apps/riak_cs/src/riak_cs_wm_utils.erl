@@ -735,18 +735,25 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
             Policies = [BucketPolicy | UserPolicies],
             {PolicyVerdict, _, _} =
                 lists:foldl(
-                  fun(P, {false, _, _}) ->
+                  fun(_, {false, _, _} = Q) ->
+                          Q;
+                     (P, _) ->
                           handle_bucket_acl_policy_response(
-                            Acl, P, AccessType, Deletable, RD, PermCtx);
-                     (_, Q) ->
-                          Q
+                            Acl, P, AccessType, Deletable, RD, PermCtx)
                   end,
-                  {false, RD, Ctx},
+                  {undefined, RD, Ctx},
                   Policies),
             {PermBoundaryVerdict, _, _} =
-                handle_bucket_acl_policy_response(
-                  Acl, PermissionsBoundary, AccessType, Deletable, RD, PermCtx),
-            {PolicyVerdict or PermBoundaryVerdict, RD, PermCtx}
+                case PermissionsBoundary of
+                    [] ->
+                        {undefined, RD, PermCtx};
+                    _ ->
+                        handle_bucket_acl_policy_response(
+                          Acl, PermissionsBoundary, AccessType, Deletable, RD, PermCtx)
+                end,
+            UltimateVerdict =
+                (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
+            {not UltimateVerdict, RD, PermCtx}
     end.
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
@@ -767,7 +774,7 @@ get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
                                            user = ?RCS_USER{attached_policies = PP},
                                            riak_client = RcPid}) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    riak_cs_iam:express_policies(PP, Pbc).
+    {riak_cs_iam:express_policies(PP, Pbc), []}.
 
 handle_bucket_acl_policy_response(_, undefined, _, _, RD, Ctx) ->
     {false, RD, Ctx};
@@ -1168,8 +1175,8 @@ role_access_authorize_helper(Target, RD,
         {UserPolicies, PermissionsBoundary} ->
             PolicyVerdict =
                 lists:foldl(
-                  fun(_, false) ->
-                          false;
+                  fun(_, true) ->
+                          true;
                      (P, _) ->
                           PolicyMod:eval(Access, P)
                   end,

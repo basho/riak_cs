@@ -60,7 +60,6 @@
            binary() | {v4, v4_attrs()} | undefined} |
           {failed, Reason::atom()}.
 identify(RD, _Ctx) ->
-    ?LOG_DEBUG("Are we here?"),
     case wrq:get_req_header("authorization", RD) of
         undefined ->
             identify_by_query_string(RD);
@@ -100,8 +99,7 @@ authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
                 undefined ->
                     ok;
                 _ ->
-                    {MegaSecs, Secs, _} = os:timestamp(),
-                    Now = (MegaSecs * 1000000) + Secs,
+                    Now = os:system_time(second),
                     case Now > list_to_integer(Expires) of
                         true ->
                             %% @TODO Not sure if this is the proper error

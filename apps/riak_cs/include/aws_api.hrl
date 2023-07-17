@@ -78,7 +78,7 @@
 
 -type s3_action() :: s3_bucket_action() | s3_object_action().
 
--define(SUPPORTED_S3_ACTIONS, ?SUPPORTED_BUCKET_ACTIONS ++ ?SUPPORTED_OBJECT_ACTIONS ++ ['s3:*']).
+-define(SUPPORTED_S3_ACTIONS, ?SUPPORTED_BUCKET_ACTIONS ++ ?SUPPORTED_OBJECT_ACTIONS).
 
 
 -type iam_action() :: 'iam:CreateUser' | 'iam:GetUser' | 'iam:DeleteUser' | 'iam:ListUsers'

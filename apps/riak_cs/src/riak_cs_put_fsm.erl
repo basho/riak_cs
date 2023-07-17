@@ -61,7 +61,7 @@
                 caller :: reference(),
                 uuid :: binary(),
                 md5 :: crypto:hash_state() | binary(),
-                reported_md5 :: undefined | string(),
+                reported_md5 :: undefined | binary(),
                 reply_pid :: undefined | {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_pid :: undefined | pid(),
@@ -195,7 +195,7 @@ prepare(timeout, State = #state{content_length = 0}) ->
     Md5 = riak_cs_utils:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5 = Md5,
                                                    state = active,
-                                                   last_block_written_time = os:timestamp()},
+                                                   last_block_written_time = os:system_time(millisecond)},
     {next_state, done, NewState#state{md5 = Md5, manifest = NewManifest}};
 prepare(timeout, State) ->
     NewState = prepare(State),
@@ -206,7 +206,7 @@ prepare({finalize, ContentMD5}, From, State = #state{content_length = 0}) ->
     Md5 = riak_cs_utils:md5_final(NewState#state.md5),
     NewManifest = NewState#state.manifest?MANIFEST{content_md5 = Md5,
                                                    state = active,
-                                                   last_block_written_time = os:timestamp()},
+                                                   last_block_written_time = os:system_time(millisecond)},
     done(finalize, From, NewState#state{md5 = Md5,
                                         manifest = NewManifest,
                                         reported_md5 = ContentMD5});
@@ -300,27 +300,27 @@ all_received({finalize, ContentMD5}, From, State) ->
 done({finalize, ReportedMD5}, _From, State = #state{md5 = MD5}) ->
     done(finalize, is_digest_valid(MD5, ReportedMD5), _From, State);
 done(finalize, _From, State = #state{md5 = MD5,
-                                   reported_md5 = ReportedMD5}) ->
+                                     reported_md5 = ReportedMD5}) ->
     done(finalize, is_digest_valid(MD5, ReportedMD5), _From, State).
 
 
-done(finalize, false, From, State=#state{manifest=Manifest,
-                                         mani_pid=ManiPid,
-                                         timer_ref=TimerRef}) ->
+done(finalize, false, From, State = #state{manifest = Manifest,
+                                           mani_pid = ManiPid,
+                                           timer_ref = TimerRef}) ->
     _ = erlang:cancel_timer(TimerRef),
     %% reset the state from `active' to `pending_delete', this means
     %% that it's never persisted in the active state
     Props = Manifest?MANIFEST.props,
-    NotActive = Manifest?MANIFEST{state=pending_delete,
-                                  props=[{bad_checksum, true} | Props]},
+    NotActive = Manifest?MANIFEST{state = pending_delete,
+                                  props = [{bad_checksum, true} | Props]},
 
     ok = maybe_update_manifest_with_confirmation(ManiPid, NotActive),
     gen_fsm:reply(From, {error, invalid_digest}),
     logger:warning("Invalid digest in the PUT FSM"),
     {stop, normal, State};
-done(finalize, true, From, State=#state{manifest=Manifest,
-                                        mani_pid=ManiPid,
-                                        timer_ref=TimerRef}) ->
+done(finalize, true, From, State = #state{manifest = Manifest,
+                                          mani_pid = ManiPid,
+                                          timer_ref = TimerRef}) ->
     %% 1. reply immediately with the finished manifest
     _ = erlang:cancel_timer(TimerRef),
     case maybe_update_manifest_with_confirmation(ManiPid, Manifest) of
@@ -332,15 +332,14 @@ done(finalize, true, From, State=#state{manifest=Manifest,
             {stop, Error, State}
     end.
 
--spec is_digest_valid(binary(), undefined | string()) -> boolean().
 is_digest_valid(D1, undefined) ->
     %% reported MD5 is not in request header
     ?LOG_DEBUG("Calculated = ~p, Reported = undefined", [D1]),
     true;
-is_digest_valid(CalculatedMD5, ReportedMD5) ->
-    StringCalculatedMD5 = base64:encode(CalculatedMD5),
-    ?LOG_DEBUG("Calculated = ~p, Reported = ~p", [StringCalculatedMD5, ReportedMD5]),
-    StringCalculatedMD5 =:= list_to_binary(ReportedMD5).
+is_digest_valid(CalculatedMD5Raw, ReportedMD5) ->
+    CalculatedMD5 = base64:encode(CalculatedMD5Raw),
+    ?LOG_DEBUG("Calculated = ~p, Reported = ~p", [CalculatedMD5, ReportedMD5]),
+    CalculatedMD5 =:= ReportedMD5.
 
 %%--------------------------------------------------------------------
 %%
@@ -424,7 +423,7 @@ prepare(State=#state{bucket = Bucket,
     {ok, ManiPid} = maybe_riak_cs_manifest_fsm_start_link(
                       MakeNewManifestP, Bucket, Key, Vsn, RcPid),
 
-    Manifest2 = Manifest1?MANIFEST{write_start_time = os:timestamp()},
+    Manifest2 = Manifest1?MANIFEST{write_start_time = os:system_time(millisecond)},
 
     WriterPids = case ContentLength of
                      0 ->

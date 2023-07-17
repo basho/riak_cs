@@ -357,8 +357,8 @@ handle_normal_put(RD, Ctx0) ->
             %% Want to catch mochiweb_socket:recv() returns {error,
             %% einval} or disconnected stuff, any errors prevents this
             %% manifests from being uploaded anymore
-            Res = riak_cs_put_fsm:force_stop(Pid),
-            ?LOG_DEBUG("PUT FSM force_stop: ~p Reason: ~p", [Res, {Type, Error}]),
+            ?LOG_DEBUG("PUT FSM force_stop after ~p:~p", [Type, Error]),
+            _ = riak_cs_put_fsm:force_stop(Pid),
             error({Type, Error})
     end.
 
@@ -479,7 +479,7 @@ finalize_request(RD,
                  Pid) ->
     #key_context{obj_vsn = Vsn,
                  size = S} = LocalCtx,
-    ContentMD5 = wrq:get_req_header("content-md5", RD),
+    ContentMD5 = list_to_binary(wrq:get_req_header("content-md5", RD)),
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
             {ok, Manifest} ->

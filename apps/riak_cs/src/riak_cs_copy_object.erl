@@ -191,12 +191,12 @@ copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun) ->
 %% disconnect the TCP connection while waiting for copying large
 %% objects. But mochiweb/webmachine cannot notify nor stop copying,
 %% thus some fd watcher is expected here.
--spec copy(pid(), lfs_manifest(), riak_client(), fun(()->boolean()),
-           {non_neg_integer(), non_neg_integer()}|fail|undefined) ->
+-spec copy(pid(), lfs_manifest(), riak_client(), fun(() -> boolean()),
+           {non_neg_integer(), non_neg_integer()} | fail | undefined) ->
                   {ok, DstManifest::lfs_manifest()} | {error, term()}.
 copy(_, _, _, _, fail) ->
     {error, bad_request};
-copy(PutFsmPid, ?MANIFEST{content_length=0} = _SrcManifest,
+copy(PutFsmPid, ?MANIFEST{content_length = 0} = _SrcManifest,
      _ReadRcPid, _, _) ->
     %% Zero-size copy will successfully create zero-size object
     riak_cs_put_fsm:finalize(PutFsmPid, undefined);
@@ -218,16 +218,14 @@ copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun, Range0) ->
         end,
 
     riak_cs_get_fsm:continue(GetFsmPid, Range),
+    ?LOG_DEBUG("MD5: ~p", [MD5]),
     get_and_put(GetFsmPid, PutFsmPid, MD5, ContFun).
 
--spec get_content_md5(tuple() | binary()) -> string().
 get_content_md5({_MD5, _Str}) ->
     undefined;
 get_content_md5(MD5) ->
-    base64:encode_to_string(MD5).
+    base64:encode(MD5).
 
--spec get_and_put(pid(), pid(), list(), fun(() -> boolean()))
-                 -> {ok, lfs_manifest()} | {error, term()}.
 get_and_put(GetPid, PutPid, MD5, ContFun) ->
     case ContFun() of
         true ->

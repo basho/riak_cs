@@ -125,7 +125,7 @@ update(BaseId, ServiceTime, WaitingTime) ->
 -spec update_with_start(key(), erlang:timestamp()) ->
                                    ok | {error, any()}.
 update_with_start(BaseId, StartTime) ->
-    update(BaseId, timer:now_diff(os:timestamp(), StartTime)).
+    update(BaseId, os:system_time(millisecond) - StartTime).
 
 -spec report_json() -> string().
 report_json() ->

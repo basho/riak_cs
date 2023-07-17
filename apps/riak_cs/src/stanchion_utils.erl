@@ -298,7 +298,8 @@ create_policy(Fields, Pbc) ->
 
 -spec update_policy(maps:map(), pid()) -> ok | {error, term()}.
 update_policy(Fields, Pbc) ->
-    Policy = riak_cs_iam:exprec_policy(Fields),
+    Policy = riak_cs_iam:unarm(
+               riak_cs_iam:exprec_policy(Fields)),
     save_policy_directly(Policy, Pbc).
 
 policy_name_available(Name, Pbc) ->
