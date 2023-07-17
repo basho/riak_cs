@@ -1165,8 +1165,8 @@ role_access_authorize_helper(Target, RD,
     case get_user_policies_or_halt(Ctx) of
         user_session_expired ->
             deny_access(RD, Ctx);
-        Policies ->
-            PoliciesEvaluated =
+        {UserPolicies, PermissionsBoundary} ->
+            PolicyVerdict =
                 lists:foldl(
                   fun(_, false) ->
                           false;
@@ -1174,11 +1174,18 @@ role_access_authorize_helper(Target, RD,
                           PolicyMod:eval(Access, P)
                   end,
                   undefined,
-                  Policies),
-            case PoliciesEvaluated of
+                  UserPolicies),
+            PermBoundaryVerdict =
+                case PermissionsBoundary of
+                    ?AMZ_POLICY{} ->
+                        PolicyMod:eval(Access, PermissionsBoundary);
+                    [] ->
+                        undefined
+                end,
+            case PolicyVerdict == true andalso PermBoundaryVerdict /= false of
                 true ->
                     {false, RD, Ctx};
-                _false_or_undecided ->
+                false ->
                     deny_access(RD, Ctx)
             end
     end.

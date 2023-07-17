@@ -457,7 +457,7 @@ parse_saml_provider_idp_metadata(?IAM_SAML_PROVIDER{saml_metadata_document = D} 
         {ok, Certs} ->
             {ok, P?IAM_SAML_PROVIDER{entity_id = list_to_binary(EntityID),
                                      valid_until = calendar:rfc3339_to_system_time(ValidUntil, [{unit, millisecond}]),
-                                     consume_uri = ConsumeUri,
+                                     consume_uri = list_to_binary(ConsumeUri),
                                      certificates = Certs}};
         {error, Reason} ->
             logger:warning("Problem parsing certificate in IdP metadata: ~p", [Reason]),
@@ -555,6 +555,7 @@ maybe_exprec_acl(A) -> exprec:frommap_acl_v3(A).
 exprec_role(Map) ->
     Role0 = ?IAM_ROLE{permissions_boundary = PB0,
                       role_last_used = LU0,
+                      attached_policies = AP0,
                       tags = TT0} = exprec:frommap_role_v1(Map),
     PB = case PB0 of
              Undefined when Undefined =:= null;
@@ -570,9 +571,18 @@ exprec_role(Map) ->
              _ ->
                  exprec:frommap_role_last_used(LU0)
          end,
+    AP = case AP0 of
+             Undefined2 when Undefined2 =:= null;
+                             Undefined2 =:= undefined;
+                             Undefined2 =:= <<>> ->
+                 [];
+             Defined ->
+                 Defined
+         end,
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     Role0?IAM_ROLE{permissions_boundary = PB,
                    role_last_used = LU,
+                   attached_policies = AP,
                    tags = TT}.
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.

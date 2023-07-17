@@ -228,8 +228,8 @@ update_user(ContentType, KeyId, UserDoc, Options) ->
         no_auth_creds ->
             Headers = Headers0
     end,
-    case request(put, Path, [204], ContentType, Headers, UserDoc) of
-        {ok, {{_, 204, _}, _RespHeaders, RespBody}} ->
+    case request(put, Path, [200, 204], ContentType, Headers, UserDoc) of
+        {ok, {_, _RespHeaders, RespBody}} ->
             User = riak_cs_iam:exprec_user(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
             {ok, User};
         {error, Error} ->
