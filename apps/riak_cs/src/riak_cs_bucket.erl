@@ -41,7 +41,8 @@
          delete_all_uploads/2,
          delete_old_uploads/3,
          fold_all_buckets/3,
-         fetch_bucket_keys/1
+         fetch_bucket_keys/1,
+         exprec_bucket_versioning/1
         ]).
 
 -include("riak_cs.hrl").
@@ -345,11 +346,13 @@ format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
     {Acl, Policy}.
 
 -spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
-                            binary(), bucket_versioning()) ->
+                            binary(), bucket_versioning() | #{}) ->
           ok | {error, term()}.
-set_bucket_versioning(User, _UserObj, Bucket, Option) ->
+set_bucket_versioning(User, _UserObj, Bucket, Specs = #{}) ->
+    set_bucket_versioning(User, _UserObj, Bucket, exprec_bucket_versioning(Specs));
+set_bucket_versioning(User, _UserObj, Bucket, Options) ->
     serialized_bucket_op(Bucket,
-                         Option,
+                         Options,
                          User,
                          update_versioning,
                          [velvet, set_bucket_versioning]).
@@ -366,7 +369,7 @@ get_bucket_versioning(Bucket, RcPid) ->
                         undefined ->
                             {ok, #bucket_versioning{status = suspended}};
                         Defined ->
-                            {ok, versioning_json_to_struct(binary_to_term(Defined))}
+                            {ok, binary_to_term(Defined)}
                     end;
                 error ->
                     {ok, #bucket_versioning{status = suspended}}
@@ -375,18 +378,12 @@ get_bucket_versioning(Bucket, RcPid) ->
             Error
     end.
 
-versioning_json_to_struct({struct, Doc}) ->
-    lists:foldl(
-      fun({<<"Status">>, <<"enabled">>}, Acc) -> Acc#bucket_versioning{status = enabled};
-         ({<<"Status">>, <<"suspended">>}, Acc) -> Acc#bucket_versioning{status = suspended};
-         ({<<"MFADelete">>, <<"enabled">>}, Acc) -> Acc#bucket_versioning{mfa_delete = enabled};
-         ({<<"MFADelete">>, <<"disabled">>}, Acc) -> Acc#bucket_versioning{mfa_delete = disabled};
-         ({<<"CanUpdateVersions">>, V}, Acc) -> Acc#bucket_versioning{can_update_versions = V};
-         ({<<"UseSubversioning">>, V}, Acc) -> Acc#bucket_versioning{use_subversioning = V};
-         ({<<"ReplSiblings">>, V}, Acc) -> Acc#bucket_versioning{repl_siblings = V}
-      end,
-      #bucket_versioning{},
-      Doc).
+-spec exprec_bucket_versioning(#{}) -> bucket_versioning().
+exprec_bucket_versioning(FF) ->
+    BV0 = #bucket_versioning{status = S0,
+                             mfa_delete = M0} = exprec:frommap_bucket_versioning(FF),
+    BV0#bucket_versioning{status = binary_to_atom(S0, latin1),
+                          mfa_delete = binary_to_atom(M0, latin1)}.
 
 
 %% ===================================================================

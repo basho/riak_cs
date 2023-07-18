@@ -877,7 +877,7 @@ object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
 object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                                RD, #rcs_web_context{policy_module = PolicyMod,
                                                     local_context = LocalCtx,
-                                                    user = ?IAM_USER{canonical_id = CanonicalId} = User,
+                                                    user = User,
                                                     riak_client = RcPid,
                                                     response_module = ResponseMod} = Ctx)
   when ( AccessType =:= object_acl orelse
@@ -898,6 +898,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         Policy ->
             Method = wrq:method(RD),
+            CanonicalId = safely_extract_canonical_id(User),
             Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
             ObjectAcl = extract_object_acl(Manifest),
 
@@ -943,6 +944,9 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                     riak_cs_wm_utils:deny_access(RD, Ctx)
             end
     end.
+
+safely_extract_canonical_id(?IAM_USER{canonical_id = A}) -> A;
+safely_extract_canonical_id(undefined) -> undefined.
 
 
 -spec check_object_authorization(access(), boolean(), undefined|acl(), policy(),

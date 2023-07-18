@@ -77,8 +77,6 @@ authorize_on_src(RcPid, SrcManifest, RD,
                 {undefined, undefined}
         end,
 
-    ?LOG_DEBUG("UserKey: ~p / ~p", [UserKey, User]),
-
     %% Build fake context for checking read access to the src object
     OtherLocalCtx = LocalCtx#key_context{bucket = SrcBucket,
                                          key = SrcKey,
@@ -218,7 +216,6 @@ copy(PutFsmPid, SrcManifest, ReadRcPid, ContFun, Range0) ->
         end,
 
     riak_cs_get_fsm:continue(GetFsmPid, Range),
-    ?LOG_DEBUG("MD5: ~p", [MD5]),
     get_and_put(GetFsmPid, PutFsmPid, MD5, ContFun).
 
 get_content_md5({_MD5, _Str}) ->

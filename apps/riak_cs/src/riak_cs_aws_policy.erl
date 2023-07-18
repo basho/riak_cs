@@ -335,25 +335,24 @@ policy_from_meta([_ | RestMD]) ->
 
 resource_matches(_, _, #statement{resource = '*'} = _Stmt ) ->
     true;
-resource_matches(BucketBin, KeyBin, #statement{resource = Resources})
+resource_matches(Bucket, KeyBin, #statement{resource = Resources})
   when KeyBin =:= undefined orelse is_binary(KeyBin) ->
-    Bucket = binary_to_list(BucketBin),
     % @TODO in case of using unicode object keys
     Path0 = case KeyBin of
                 undefined ->
-                    Bucket;
+                    <<Bucket/binary, "/">>;
                 _ when is_binary(KeyBin) ->
-                    unicode:characters_to_list(<<BucketBin/binary, "/", KeyBin/binary>>, unicode)
+                    <<Bucket/binary, "/", KeyBin/binary>>
             end,
-    lists:any(fun(#arn_v1{path = "*"}) ->    true;
-                 (#arn_v1{path = Path}) ->
-                      case Path of
-                          Bucket -> true;
-                          %% only prefix matching
-                          Path ->
-                              [B|_] = string:tokens(Path, "*"),
-                              Len = length(B),
-                              B =:= string:substr(Path0, 1, Len)
+    lists:any(fun(#arn_v1{path = Path}) ->
+                      case binary:last(Path) of
+                          $* ->
+                              %% only prefix matching
+                              <<M1:(size(Path)-1)/binary, _/binary>> = Path,
+                              <<M2:(size(Path)-1)/binary, _/binary>> = Path0,
+                              M1 =:= M2;
+                          _ ->
+                              Path =:= Path0
                       end;
                  (_) -> false
               end, Resources).
@@ -635,7 +634,7 @@ binary_to_action(Bin) ->
         true ->
             A;
         false ->
-            case re:run(Bin, <<"(s3|iam|sts):[a-zA-Z]*\\*">>) of
+            case re:run(Bin, <<"((s3|iam|sts):|)[a-zA-Z]*\\*">>) of
                 {match, _} ->
                     Bin;
                 nomatch ->
@@ -644,6 +643,8 @@ binary_to_action(Bin) ->
     end.
 
 parse_principal(<<"*">>) -> '*';
+parse_principal(#{} = A) ->
+    parse_principals(maps:to_list(A), []);
 parse_principal(List) when is_list(List) ->
     parse_principals(List, []);
 parse_principal([List]) when is_list(List) ->

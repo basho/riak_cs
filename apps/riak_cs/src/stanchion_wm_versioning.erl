@@ -40,6 +40,7 @@
              ]).
 
 -include("stanchion.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 init(Config) ->
     %% Check if authentication is disabled and
@@ -75,18 +76,15 @@ allowed_methods(RD, Ctx) ->
     {['PUT'], RD, Ctx}.
 
 -spec content_types_accepted(term(), term()) ->
-                                    {[{string(), atom()}], term(), term()}.
+          {[{string(), atom()}], term(), term()}.
 content_types_accepted(RD, Ctx) ->
     {[{"application/json", accept_body}], RD, Ctx}.
 
 %% @doc Process the request body on `PUT'.
 accept_body(RD, Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    Body = wrq:req_body(RD),
-    %% @TODO Handle json decoding exceptions
-    ParsedBody = mochijson2:decode(Body),
-    FF = jsx:decode(ParsedBody, [{labels, atom}]),
-    case stanchion_server:set_bucket_versioning(Bucket, FF) of
+    Specs = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
+    case stanchion_server:set_bucket_versioning(Bucket, Specs) of
         ok ->
             {true, RD, Ctx};
         {error, Reason} ->

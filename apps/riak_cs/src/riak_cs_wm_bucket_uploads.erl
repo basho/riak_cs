@@ -56,10 +56,12 @@
 
 -spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
 init(Ctx) ->
+    ?LOG_DEBUG("include me?"),
     {ok, Ctx#rcs_web_context{local_context = #key_context{}}}.
 
 -spec stats_prefix() -> list_uploads.
-stats_prefix() -> list_uploads.
+stats_prefix() ->
+    list_uploads.
 
 -spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {false, #wm_reqdata{}, #rcs_web_context{}}.
 malformed_request(RD, Ctx = #rcs_web_context{local_context = LocalCtx0}) ->
@@ -98,7 +100,7 @@ to_xml(RD, Ctx=#rcs_web_context{local_context = LocalCtx,
                     %% Just ignore the value in `D?MULTIPART_DESCR.storage_class',
                     %% since there was a bug where it was writen as `regular'.
                     {'StorageClass', ["STANDARD"]},
-                    {'Initiated', [D?MULTIPART_DESCR.initiated]}
+                    {'Initiated', [binary_to_list(rts:iso8601(D?MULTIPART_DESCR.initiated))]}
                    ]
                   } || D <- Ds],
             Cs = [{'CommonPrefixes',

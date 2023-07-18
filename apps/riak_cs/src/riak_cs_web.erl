@@ -90,7 +90,6 @@ base_resources() ->
      {["sts"], riak_cs_wm_sts, props(no_submodule)}
     ].
 
--spec one_three_resources(undefined | pos_integer()) -> [dispatch_rule()].
 one_three_resources(undefined) ->
     [];
 one_three_resources(Version) when Version < 010300 ->
@@ -98,7 +97,7 @@ one_three_resources(Version) when Version < 010300 ->
 one_three_resources(_Version) ->
     [
      %% Bucket resources
-     {["buckets", bucket, "uploads"], riak_cs_s3_wm_common, props(riak_cs_wm_bucket_uploads)},
+     {["buckets", bucket, "uploads"], riak_cs_wm_s3_common, props(riak_cs_wm_bucket_uploads)},
      {["buckets", bucket, "policy"], riak_cs_s3_wm_common, props(riak_cs_wm_bucket_policy)},
      %% Object resources
      {["buckets", bucket, "objects", object, "uploads", uploadId], riak_cs_wm_s3_common, props(riak_cs_wm_object_upload_part)},

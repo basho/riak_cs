@@ -104,15 +104,6 @@
                           | delete_policy | update_versioning.
 -type bucket_action() :: created | deleted.
 
--record(bucket_versioning, { status = suspended :: enabled | suspended
-                           , mfa_delete = disabled :: disabled | enabled
-                           %% Riak CS extensions
-                           , use_subversioning = false :: boolean()
-                           , can_update_versions = false :: boolean()
-                           , repl_siblings = true :: boolean()
-                           }).
--type bucket_versioning() :: #bucket_versioning{}.
-
 
 %% federated users
 

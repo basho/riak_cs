@@ -110,7 +110,7 @@ find_user(Index, A, Pbc) ->
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
             get_user(Arn, Pbc);
         {error, Reason} ->
-            logger:notice("Riak client connection error while finding user ~s in : ~p", [A, Index, Reason]),
+            logger:notice("Riak client connection error while finding user ~s in ~s: ~p", [A, Index, Reason]),
             {error, Reason}
     end.
 
@@ -190,7 +190,7 @@ find_role(Index, A, Pbc) ->
         {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
             get_role(Key, Pbc);
         {error, Reason} ->
-            logger:notice("Riak client connection error while finding role ~s in : ~p", [A, Index, Reason]),
+            logger:notice("Riak client connection error while finding role ~s in ~s: ~p", [A, Index, Reason]),
             {error, Reason}
     end.
 

@@ -44,6 +44,7 @@
              ]).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 init(Ctx) ->
     {ok, Ctx#rcs_web_context{local_context = #key_context{}}}.
@@ -159,7 +160,7 @@ content_types_accepted(RD, Ctx = #rcs_web_context{local_context = LocalCtx0}) ->
     end.
 
 
--spec produce_body(term(), term()) -> {iolist()|binary(), term(), term()}.
+-spec produce_body(#wm_reqdata{}, #rcs_web_context{}) -> {iolist()|binary(), term(), term()}.
 produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
                                         requested_perm = 'READ_ACP'}) ->
     #key_context{get_fsm_pid = GetFsmPid,
@@ -171,7 +172,7 @@ produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
              end,
     {AclXml, RD, Ctx}.
 
--spec accept_body(term(), term()) ->
+-spec accept_body(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_body(RD, Ctx = #rcs_web_context{local_context = #key_context{get_fsm_pid = GetFsmPid,
                                                                     manifest = Mfst,
@@ -192,10 +193,11 @@ accept_body(RD, Ctx = #rcs_web_context{local_context = #key_context{get_fsm_pid 
             [] ->
                 {ok, AclFromHeadersOrDefault};
             _ ->
+                A1 = riak_cs_acl_utils:acl_from_xml(Body,
+                                                    User?RCS_USER.key_id,
+                                                    RcPid),
                 riak_cs_acl_utils:validate_acl(
-                  riak_cs_acl_utils:acl_from_xml(Body,
-                                                 User?RCS_USER.key_id,
-                                                 RcPid),
+                  A1,
                   User?RCS_USER.canonical_id)
         end,
     case AclRes of

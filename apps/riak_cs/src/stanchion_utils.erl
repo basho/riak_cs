@@ -470,7 +470,8 @@ set_bucket_policy(Bucket, #{requester := Requester,
 -spec set_bucket_versioning(binary(), maps:map(), pid()) -> ok | {error, term()}.
 set_bucket_versioning(Bucket, #{requester := Requester,
                                 versioning := Versioning}, Pbc) ->
-    do_bucket_op(Bucket, Requester, [{versioning, Versioning}], update_versioning, Pbc).
+    do_bucket_op(Bucket, Requester, [{versioning, riak_cs_bucket:exprec_bucket_versioning(
+                                                    Versioning)}], update_versioning, Pbc).
 
 
 %% @doc Delete a bucket

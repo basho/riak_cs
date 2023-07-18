@@ -537,6 +537,7 @@ request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
                 true ->
                     Resp;
                 false ->
+                    ?LOG_DEBUG("AAAaaa ~p", [RespBody]),
                     #{error_tag := Tag_,
                       resource := _Resource} = jsx:decode(list_to_binary(RespBody), [{labels, atom}]),
                     Tag = binary_to_term(base64:decode(Tag_)),

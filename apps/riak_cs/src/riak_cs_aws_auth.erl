@@ -140,8 +140,8 @@ parse_auth_header(_) ->
 %% Idintify user by query string.
 %% Currently support signature v2 only, does NOT support signature v4.
 identify_by_query_string(RD) ->
-    {list_to_binary(wrq:get_qs_value(?QS_KEYID, RD)),
-     list_to_binary(wrq:get_qs_value(?QS_SIGNATURE, RD))}.
+    {case wrq:get_qs_value(?QS_KEYID, RD) of undefined -> undefined; A -> list_to_binary(A) end,
+     case wrq:get_qs_value(?QS_SIGNATURE, RD) of undefined -> undefined; A -> list_to_binary(A) end}.
 
 parse_auth_v4_header(String) ->
     KVs = string:tokens(String, ", "),

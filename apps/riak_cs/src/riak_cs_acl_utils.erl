@@ -279,10 +279,8 @@ fail_either({ok, Val}, {_OkOrError, Acc}) ->
 
 %% @doc Convert an XML document representing an ACL into
 %% an internal representation.
--spec acl_from_xml(string(), binary(), riak_client()) -> {ok, acl()} |
-    {error, 'invalid_argument'} |
-    {error, 'unresolved_grant_email'} |
-    {error, 'malformed_acl_error'}.
+-spec acl_from_xml(string(), binary(), riak_client()) ->
+          {ok, acl()} | {error, invalid_argument | unresolved_grant_email | malformed_acl_error}.
 acl_from_xml(Xml, KeyId, RcPid) ->
     case riak_cs_xml:scan(Xml) of
         {error, malformed_xml} -> {error, malformed_acl_error};
@@ -427,7 +425,8 @@ canned_acl_grants(_, Owner, _) ->
 %% @doc Get the canonical id of the user associated with
 %% a given email address.
 canonical_for_email(Email, RcPid) ->
-    case riak_cs_iam:find_user(#{email => list_to_binary(Email)}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_user(#{email => list_to_binary(Email)}, Pbc) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.canonical_id};
         {error, Reason} ->
@@ -438,7 +437,8 @@ canonical_for_email(Email, RcPid) ->
 %% @doc Get the display name of the user associated with
 %% a given canonical id.
 name_for_canonical(CanonicalId, RcPid) ->
-    case riak_cs_iam:find_user(#{id => list_to_binary(CanonicalId)}, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_user(#{canonical_id => CanonicalId}, Pbc) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.display_name};
         {error, _} ->
@@ -451,7 +451,6 @@ process_acl_contents([], Acl, _) ->
 process_acl_contents([#xmlElement{content=Content,
                                   name=ElementName}
                      | RestElements], Acl, RcPid) ->
-    ?LOG_DEBUG("Element name: ~p", [ElementName]),
     UpdAclRes =
         case ElementName of
             'Owner' ->
@@ -459,7 +458,7 @@ process_acl_contents([#xmlElement{content=Content,
             'AccessControlList' ->
                 process_grants(Content, Acl, RcPid);
             _ ->
-                ?LOG_DEBUG("Encountered unexpected element: ~p", [ElementName]),
+                logger:notice("Unexpected element encountered while processing ACL content: ~p", [ElementName]),
                 Acl
         end,
     case UpdAclRes of
@@ -485,20 +484,18 @@ process_owner([], Acl = ?ACL{owner = #{display_name := undefined,
     end;
 process_owner([], Acl, _) ->
     {ok, Acl};
-process_owner([#xmlElement{content=[Content],
-                           name=ElementName} |
+process_owner([#xmlElement{content = [Content],
+                           name = ElementName} |
                RestElements], Acl, RcPid) ->
     Owner = Acl?ACL.owner,
     case Content of
-        #xmlText{value=Value} ->
+        #xmlText{value = Value} ->
             UpdOwner =
                 case ElementName of
                     'ID' ->
-                        ?LOG_DEBUG("Owner ID value: ~p", [Value]),
-                        Owner#{canonical_id => Value};
+                        Owner#{canonical_id => list_to_binary(Value)};
                     'DisplayName' ->
-                        ?LOG_DEBUG("Owner Name content: ~p", [Value]),
-                        Owner#{display_name => Value};
+                        Owner#{display_name => list_to_binary(Value)};
                     _ ->
                         ?LOG_DEBUG("Encountered unexpected element: ~p", [ElementName]),
                         Owner
@@ -596,33 +593,45 @@ process_grantee([], Grant, _, _) ->
 process_grantee([#xmlElement{content = [Content],
                              name = ElementName} |
                  RestElements], ?ACL_GRANT{grantee = Grantee} = G, AclOwner, RcPid) ->
-    Value = Content#xmlText.value,
-    case ElementName of
-        'ID' ->
-            UpdGrant = G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
-        'EmailAddress' ->
-            ?LOG_DEBUG("Email value: ~p", [Value]),
-            UpdGrant =
-                case canonical_for_email(Value, RcPid) of
-                    {ok, _Id} ->
-                        %% Get the canonical id for a given email address
-                        G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
-                    {error, _}=Error ->
-                        Error
+    Value = list_to_binary(Content#xmlText.value),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    UpdGrant =
+        case ElementName of
+            'ID' ->
+                case riak_cs_iam:find_user(#{canonical_id => Value}, Pbc) of
+                    {ok, {?RCS_USER{email = Email,
+                                    display_name = DisplayName}, _}} ->
+                        G?ACL_GRANT{grantee = Grantee#{display_name => DisplayName,
+                                                       email => Email,
+                                                       canonical_id => Value}};
+                    {error, _} ->
+                        logger:notice("Grantee with canonical_id ~s not found; grant not processed", [Value]),
+                        G
                 end;
-        'URI' ->
-            case Value of
-                ?AUTH_USERS_GROUP ->
-                    UpdGrant = G?ACL_GRANT{grantee = 'AuthUsers'};
-                ?ALL_USERS_GROUP ->
-                    UpdGrant = G?ACL_GRANT{grantee = 'AllUsers'};
-                _ ->
-                    %% Not yet supporting log delivery group
-                    UpdGrant = G
-            end;
-        _ ->
-            UpdGrant = G
-    end,
+            'EmailAddress' ->
+                case riak_cs_iam:find_user(#{email => Value}, Pbc) of
+                    {ok, {?RCS_USER{canonical_id = CanonicalId,
+                                    display_name = DisplayName}, _}} ->
+                        G?ACL_GRANT{grantee = Grantee#{display_name => DisplayName,
+                                                       email => Value,
+                                                       canonical_id => CanonicalId}};
+                    {error, _} ->
+                        logger:notice("Grantee with email ~s not found; grant not processed", [Value]),
+                        G
+                end;
+            'URI' ->
+                case Value of
+                    ?AUTH_USERS_GROUP ->
+                        G?ACL_GRANT{grantee = 'AuthUsers'};
+                    ?ALL_USERS_GROUP ->
+                        G?ACL_GRANT{grantee = 'AllUsers'};
+                    _ ->
+                        %% Not yet supporting log delivery group
+                        G
+                end;
+            _ ->
+                G
+        end,
     case UpdGrant of
         {error, _} ->
             UpdGrant;
