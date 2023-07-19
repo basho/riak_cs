@@ -718,9 +718,10 @@ extract_user_metadata([_ | Headers], Acc) ->
 -spec bucket_access_authorize_helper(AccessType::atom(), boolean(),
                                      #wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
-    #rcs_web_context{riak_client = RcPid,
-                     policy_module = PolicyMod} = Ctx,
+bucket_access_authorize_helper(AccessType, Deletable, RD,
+                               #rcs_web_context{riak_client = RcPid,
+                                                response_module = ResponseMod,
+                                                policy_module = PolicyMod} = Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
@@ -731,29 +732,33 @@ bucket_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
         user_session_expired ->
             deny_access(RD, Ctx);
         {UserPolicies, PermissionsBoundary} ->
-            {Acl, BucketPolicy} = riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid),
-            Policies = [BucketPolicy | UserPolicies],
-            {PolicyVerdict, _, _} =
-                lists:foldl(
-                  fun(_, {false, _, _} = Q) ->
-                          Q;
-                     (P, _) ->
-                          handle_bucket_acl_policy_response(
-                            Acl, P, AccessType, Deletable, RD, PermCtx)
-                  end,
-                  {undefined, RD, Ctx},
-                  Policies),
-            {PermBoundaryVerdict, _, _} =
-                case PermissionsBoundary of
-                    [] ->
-                        {undefined, RD, PermCtx};
-                    _ ->
-                        handle_bucket_acl_policy_response(
-                          Acl, PermissionsBoundary, AccessType, Deletable, RD, PermCtx)
-                end,
-            UltimateVerdict =
-                (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
-            {not UltimateVerdict, RD, PermCtx}
+            case riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) of
+                {ok, {Acl, BucketPolicy}} ->
+                    Policies = [BucketPolicy | UserPolicies],
+                    {PolicyVerdict, _, _} =
+                        lists:foldl(
+                          fun(_, {false, _, _} = Q) ->
+                                  Q;
+                             (P, _) ->
+                                  handle_bucket_acl_policy_response(
+                                    Acl, P, AccessType, Deletable, RD, PermCtx)
+                          end,
+                          {undefined, RD, Ctx},
+                          Policies),
+                    {PermBoundaryVerdict, _, _} =
+                        case PermissionsBoundary of
+                            [] ->
+                                {undefined, RD, PermCtx};
+                            _ ->
+                                handle_bucket_acl_policy_response(
+                                  Acl, PermissionsBoundary, AccessType, Deletable, RD, PermCtx)
+                        end,
+                    UltimateVerdict =
+                        (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
+                    {not UltimateVerdict, RD, PermCtx};
+                {error, Reason} ->
+                    ResponseMod:api_error(Reason, RD, Ctx)
+            end
     end.
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
@@ -941,7 +946,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                             riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
                     end;
                 {error, access_denied} ->
-                    riak_cs_wm_utils:deny_access(RD, Ctx)
+                    deny_access(RD, Ctx)
             end
     end.
 
@@ -1038,7 +1043,7 @@ actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
        Method =:= 'POST' orelse
        (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
-    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+    deny_access(AccessRD, Ctx);
 actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->
@@ -1055,7 +1060,7 @@ actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'PUT' orelse
        (Deletable andalso Method =:= 'DELETE') ->
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
-    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
+    deny_access(AccessRD, Ctx);
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'GET' orelse
        (Deletable andalso Method =:= 'HEAD') ->

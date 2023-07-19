@@ -353,11 +353,11 @@ handle_normal_put(RD, Ctx0) ->
         accept_streambody(RD, Ctx1, Pid,
                           wrq:stream_req_body(RD, riak_cs_lfs_utils:block_size()))
     catch
-        Type:Error ->
+        Type:Error:ST ->
             %% Want to catch mochiweb_socket:recv() returns {error,
             %% einval} or disconnected stuff, any errors prevents this
             %% manifests from being uploaded anymore
-            ?LOG_DEBUG("PUT FSM force_stop after ~p:~p", [Type, Error]),
+            ?LOG_DEBUG("PUT FSM force_stop after ~p:~p. Stacktrace: ~p", [Type, Error, ST]),
             _ = riak_cs_put_fsm:force_stop(Pid),
             error({Type, Error})
     end.
@@ -479,7 +479,10 @@ finalize_request(RD,
                  Pid) ->
     #key_context{obj_vsn = Vsn,
                  size = S} = LocalCtx,
-    ContentMD5 = list_to_binary(wrq:get_req_header("content-md5", RD)),
+    ContentMD5 = case wrq:get_req_header("content-md5", RD) of
+                     undefined -> undefined;
+                     A -> list_to_binary(A)
+                 end,
     Response =
         case riak_cs_put_fsm:finalize(Pid, ContentMD5) of
             {ok, Manifest} ->

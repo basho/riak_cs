@@ -332,13 +332,13 @@ done(finalize, true, From, State = #state{manifest = Manifest,
             {stop, Error, State}
     end.
 
-is_digest_valid(D1, undefined) ->
+is_digest_valid(_D1, undefined) ->
     %% reported MD5 is not in request header
-    ?LOG_DEBUG("Calculated = ~p, Reported = undefined", [D1]),
+    %% ?LOG_DEBUG("Calculated = ~p, Reported = undefined", [_D1]),
     true;
 is_digest_valid(CalculatedMD5Raw, ReportedMD5) ->
     CalculatedMD5 = base64:encode(CalculatedMD5Raw),
-    ?LOG_DEBUG("Calculated = ~p, Reported = ~p", [CalculatedMD5, ReportedMD5]),
+    %% ?LOG_DEBUG("Calculated = ~p, Reported = ~p", [CalculatedMD5, ReportedMD5]),
     CalculatedMD5 =:= ReportedMD5.
 
 %%--------------------------------------------------------------------

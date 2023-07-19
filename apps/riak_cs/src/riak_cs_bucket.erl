@@ -224,8 +224,8 @@ fold_delete_uploads(Bucket, RcPid, [?MULTIPART_DESCR{key = VKey,
                 {ok, _NewObj} ->
                     fold_delete_uploads(Bucket, RcPid, Ds, Timestamp, Count+1);
                 E ->
-                    ?LOG_DEBUG("cannot delete multipart manifest: ~s (~s/~s:~s): ~p",
-                               [M?MANIFEST.uuid, Bucket, Key, Vsn, E]),
+                    logger:notice("cannot delete multipart manifest: ~s (~s/~s:~s): ~p",
+                                  [M?MANIFEST.uuid, Bucket, Key, Vsn, E]),
                     E
             end;
         _E ->
@@ -315,7 +315,7 @@ delete_bucket_policy(User, _UserObj, Bucket) ->
 
 %% @doc fetch moss.bucket and return acl and policy
 -spec get_bucket_acl_policy(binary(), atom(), riak_client()) ->
-          {acl(), policy()} | {error, term()}.
+          {ok, {acl(), policy()}} | {error, term()}.
 get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
     case fetch_bucket_object(Bucket, RcPid) of
         {ok, Obj} ->
@@ -326,7 +326,7 @@ get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
             Acl = riak_cs_acl:bucket_acl_from_contents(Bucket, Contents),
             Policy = PolicyMod:bucket_policy_from_contents(Bucket, Contents),
             format_acl_policy_response(Acl, Policy);
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error
     end.
 
@@ -335,15 +335,15 @@ get_bucket_acl_policy(Bucket, PolicyMod, RcPid) ->
 -type acl_from_meta_result() :: {'ok', acl()} | {'error', 'acl_undefined'}.
 -type bucket_acl_result() :: acl_from_meta_result() | {'error', 'multiple_bucket_owners'}.
 -spec format_acl_policy_response(bucket_acl_result(), bucket_policy_result()) ->
-                                        {error, atom()} | {acl(), 'undefined' | policy()}.
+          {error, atom()} | {acl(), 'undefined' | policy()}.
 format_acl_policy_response({error, _}=Error, _) ->
     Error;
 format_acl_policy_response(_, {error, multiple_bucket_owners}=Error) ->
     Error;
 format_acl_policy_response({ok, Acl}, {error, policy_undefined}) ->
-    {Acl, undefined};
+    {ok, {Acl, undefined}};
 format_acl_policy_response({ok, Acl}, {ok, Policy}) ->
-    {Acl, Policy}.
+    {ok, {Acl, Policy}}.
 
 -spec set_bucket_versioning(rcs_user(), riakc_obj:riakc_obj(),
                             binary(), bucket_versioning() | #{}) ->
@@ -449,6 +449,8 @@ fetch_bucket_object(BucketName, RcPid) ->
                 _ ->
                     {ok, Obj}
             end;
+        {error, notfound} ->
+            {error, no_such_bucket};
         {error, _} = Error ->
             Error
     end.
@@ -460,7 +462,7 @@ fetch_bucket_object_raw(BucketName, Pbc) ->
             Values = riakc_obj:get_values(Obj),
             maybe_log_sibling_warning(BucketName, Values),
             {ok, Obj};
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error
     end.
 

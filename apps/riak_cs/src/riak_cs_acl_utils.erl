@@ -474,8 +474,7 @@ process_acl_contents([#xmlText{} | RestElements], Acl, RcPid) ->
     process_acl_contents(RestElements, Acl, RcPid).
 
 %% @doc Process an XML element containing acl owner information.
-process_owner([], Acl = ?ACL{owner = #{display_name := undefined,
-                                       canonical_id := CanonicalId} = Owner}, RcPid) ->
+process_owner([], Acl = ?ACL{owner = #{canonical_id := CanonicalId} = Owner}, RcPid) ->
     case name_for_canonical(CanonicalId, RcPid) of
         {ok, DisplayName} ->
             {ok, Acl?ACL{owner = Owner#{display_name => DisplayName}}};
@@ -497,7 +496,7 @@ process_owner([#xmlElement{content = [Content],
                     'DisplayName' ->
                         Owner#{display_name => list_to_binary(Value)};
                     _ ->
-                        ?LOG_DEBUG("Encountered unexpected element: ~p", [ElementName]),
+                        logger:warning("Encountered unexpected element: ~p", [ElementName]),
                         Owner
             end,
             process_owner(RestElements, Acl?ACL{owner = UpdOwner}, RcPid);

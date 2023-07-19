@@ -397,7 +397,8 @@ finalize_request(RD, Ctx=#rcs_web_context{local_context = LocalCtx,
                  part_number = PartNumber,
                  part_uuid = PartUUID} = LocalCtx,
     Caller = riak_cs_user:to_3tuple(Ctx#rcs_web_context.user),
-    ContentMD5 = list_to_binary(wrq:get_req_header("content-md5", RD)),
+    ContentMD5 = case wrq:get_req_header("content-md5", RD) of undefined -> undefined;
+                     A -> list_to_binary(A) end,
     case riak_cs_put_fsm:finalize(PutPid, ContentMD5) of
         {ok, M} ->
             case riak_cs_mp_utils:upload_part_finished(

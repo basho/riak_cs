@@ -114,7 +114,6 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
         end,
     case AclRes of
         {ok, ACL} ->
-            ?LOG_DEBUG("ACL ~p", [ACL]),
             case riak_cs_bucket:set_bucket_acl(User,
                                                UserObj,
                                                Bucket,

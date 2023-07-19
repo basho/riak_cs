@@ -91,7 +91,7 @@
                         }).
 
 -record(moss_bucket_v2, { name :: binary()
-                        , last_action :: created | deleted | binary()
+                        , last_action :: undefined | created | deleted | binary()
                         , creation_date = os:system_time(millisecond) :: non_neg_integer()
                         , modification_time :: undefined | non_neg_integer()
                         , acl :: undefined | acl()
