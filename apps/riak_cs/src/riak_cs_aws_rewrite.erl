@@ -37,7 +37,7 @@ rewrite(Method, Scheme, Vsn, Headers, Url) ->
     Host = mochiweb_headers:get_value("host", Headers),
     case service_from_host(Host) of
         no_rewrite ->
-            logger:debug("not rewriting direct request for us: ~s", [Host]),
+            logger:debug("not rewriting direct request to us: ~s", [Host]),
             riak_cs_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url);
         {unsupported, A} ->
             logger:warning("Service ~s is not supported", [A]),

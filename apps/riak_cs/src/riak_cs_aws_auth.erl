@@ -83,7 +83,7 @@ authenticate(User, Signature, RD, Ctx) ->
             end
     end.
 
--spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, RD::term(), #rcs_web_context{}) ->
+-spec authenticate_1(rcs_user(), string() | {v4, v4_attrs()}, #wm_reqdata{}, #rcs_web_context{}) ->
           ok | {error, atom()}.
 authenticate_1(User, {v4, Attributes}, RD, _Ctx) ->
     authenticate_v4(User, Attributes, RD);
@@ -214,7 +214,7 @@ calculate_signature_v2(KeyData, RD, Quirk) ->
            Resource],
     %%?LOG_DEBUG("STS: ~p", [STS]),
 
-    base64:encode_to_string(riak_cs_utils:sha_mac(binary_to_list(KeyData), STS)).
+    base64:encode(riak_cs_utils:sha_mac(KeyData, STS)).
 
 apply_sigv2_quirk(boto3_1_26_36, {Path, QS}) ->
     logger:notice("applying boto3-1.26.36 quirk to QS ~p", [QS]),

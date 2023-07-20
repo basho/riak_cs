@@ -56,10 +56,10 @@ rewrite_path_and_headers(Method, Headers, Url, Path, QueryString) ->
     {RewrittenHeaders, RewrittenPath}.
 
 
-%% All IAM requests appear to be POSTs without a resource
-%% path. Instead of attempting to rewrite path and map those POSTs to
-%% something we may deem more logical, let's just skip rewriting
-%% altogether. In riak_cs_wm_iam.erl, we read the www-form and handle
-%% the request based on presented Action.
+%% All IAM requests are POSTs without a resource path. Instead of
+%% attempting to rewrite path and map those POSTs to something we may
+%% deem more logical, let's just skip rewriting altogether. In
+%% riak_cs_wm_iam.erl, we read the www-form and handle the request
+%% based on presented Action.
 rewrite_path(_Method, "/", _QS) ->
     "/iam".

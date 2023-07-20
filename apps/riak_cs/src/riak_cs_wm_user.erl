@@ -126,16 +126,12 @@ accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
                                    IAMExtra),
     user_response(Res, ?JSON_TYPE, RD, Ctx);
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
-    Body = wrq:req_body(RD),
-    case catch jsx:decode(Body, [{labels, atom}]) of
-        UserItems when is_list(UserItems) ->
-            user_response(update_user(UserItems, User),
-                          ?JSON_TYPE,
-                          RD,
-                          Ctx);
-        {'EXIT', _} ->
-            riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx)
-    end.
+    FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
+    IAMExtra = #{path => maps:get(path, FF, <<"/">>),
+                 permissions_boundary => maps:get(permissions_boundary, FF, undefined),
+                 tags => maps:get(tags, FF, [])},
+    user_response(update_user(maps:to_list(maps:merge(FF, IAMExtra)), User),
+                  ?JSON_TYPE, RD, Ctx).
 
 -spec accept_xml(term(), term()) ->
     {boolean() | {halt, term()}, term(), term()}.
@@ -218,7 +214,7 @@ forbidden('PUT', RD, Ctx, User, <<>>, _) ->
     admin_check(riak_cs_user:is_admin(User), RD, Ctx);
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
-      UserPathKey =:= [] ->
+      UserPathKey =:= <<>> ->
     %% User is accessing own account
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     {false, AccessRD, Ctx};
@@ -258,7 +254,7 @@ update_user_record(User, [{email, Email} | RestUpdates], _) ->
                                      display_name = DisplayName},
                        RestUpdates,
                        true);
-update_user_record(User=?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
+update_user_record(User = ?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
     update_user_record(riak_cs_user:update_key_secret(User), RestUpdates, true);
 update_user_record(User, [_ | RestUpdates], U1) ->
     update_user_record(User, RestUpdates, U1).
@@ -290,7 +286,7 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    [{email, Content#xmlText.value} | Acc];
+                    [{email, list_to_binary(Content#xmlText.value)} | Acc];
                 false ->
                     Acc
             end;
@@ -298,7 +294,7 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    [{name, Content#xmlText.value} | Acc];
+                    [{name, list_to_binary(Content#xmlText.value)} | Acc];
                 false ->
                     Acc
             end;
@@ -306,14 +302,7 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    case Content#xmlText.value of
-                        "enabled" ->
-                            [{status, enabled} | Acc];
-                        "disabled" ->
-                            [{status, disabled} | Acc];
-                        _ ->
-                            Acc
-                    end;
+                    [{status, list_to_binary(Content#xmlText.value)} | Acc];
                 false ->
                     Acc
             end;

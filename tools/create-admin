@@ -16,7 +16,7 @@ def create_user(host, port, name, email):
 
 def main():
     admin_name = "admin"
-    admin_email = "admin@yourinnerfreedom.com"
+    admin_email = "admin@me.com"
     port = 8080
     quiet = False
 

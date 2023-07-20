@@ -42,6 +42,7 @@
              ]).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% -------------------------------------------------------------------
 %% Webmachine callbacks
@@ -125,7 +126,7 @@ wait_for_users(Format, RcPid, ReqId, Boundary, Status) ->
     _ = riak_cs_stats:inflow([riakc, list_users_receive_chunk]),
     StartTime = os:system_time(millisecond),
     receive
-        {ReqId, {keys, UserIds}} ->
+        {ReqId, {keys, UserIds}} when UserIds =/= [] ->
             _ = riak_cs_stats:update_with_start(
                   [riakc, list_users_receive_chunk], StartTime),
             FoldFun = user_fold_fun(RcPid, Status),
@@ -156,8 +157,9 @@ users_doc(UserDocs, json, Boundary) ->
 
 %% @doc Return a fold function to retrieve and filter user accounts
 user_fold_fun(RcPid, Status) ->
-    fun(KeyId, Users) ->
-            case riak_cs_user:get_user(KeyId, RcPid) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    fun(Arn, Users) ->
+            case riak_cs_iam:get_user(Arn, Pbc) of
                 {ok, {User, _}} when User?RCS_USER.status =:= Status;
                                      Status =:= undefined ->
                     [User | Users];
@@ -165,8 +167,8 @@ user_fold_fun(RcPid, Status) ->
                     %% Status is defined and does not match the account status
                     Users;
                 {error, Reason} ->
-                    logger:warning("Failed to fetch user record ~s"
-                                   " Reason: ~p", [KeyId, Reason]),
+                    logger:warning("Failed to fetch user record ~s."
+                                   " Reason: ~p", [Arn, Reason]),
                     Users
             end
     end.

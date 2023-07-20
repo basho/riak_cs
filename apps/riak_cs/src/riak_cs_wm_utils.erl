@@ -176,7 +176,7 @@ parse_auth_params(undefined, _, false) ->
 parse_auth_params(_, undefined, _) ->
     {riak_cs_blockall_auth, undefined, undefined};
 parse_auth_params(KeyId, Signature, _) ->
-    {riak_cs_aws_auth, KeyId, Signature}.
+    {riak_cs_aws_auth, list_to_binary(KeyId), list_to_binary(Signature)}.
 
 %% @doc Lookup the user specified by the access headers, and call
 %% `Next(RD, NewCtx)' if there is no auth error.
@@ -223,16 +223,16 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
     %% given keyid and signature matched, proceed
     Next(RD, Ctx#rcs_web_context{user = User,
                                  user_object = UserObj});
-handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
-    logger:notice("given keyid was found, but signature didn't match; ignore anonymous_user_creation"),
-    deny_access(RD, Conv2KeyCtx(Ctx));
-handle_validation_response({error, no_user_key}, RD, Ctx, Next, _, true) ->
+handle_validation_response({error, _Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    ?LOG_DEBUG("anonymous_user_creation is enabled, skipping auth", []),
+    ?LOG_DEBUG("anonymous_user_creation is enabled, skipping auth (specific error was ~p)", [_Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
     ?LOG_DEBUG("No user key, deny"),
+    deny_access(RD, Conv2KeyCtx(Ctx));
+handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
+    logger:notice("given key_id was found, but signature didn't match; ignore anonymous_user_creation"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
