@@ -324,7 +324,7 @@ api_error({error, Reason}, RD, Ctx) ->
 error_response(StatusCode, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
                          {'Message', [Message]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -349,7 +349,7 @@ toomanybuckets_response(Current, BucketLimit, RD, Ctx) ->
                          {'Message', [error_message(toomanybuckets)]},
                          {'CurrentNumberOfBuckets', [Current]},
                          {'AllowedNumberOfBuckets', [BucketLimit]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(toomanybuckets), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -358,7 +358,7 @@ invalid_argument_response(Name, Value, RD, Ctx) ->
                          {'Message', [error_message({invalid_argument, Name})]},
                          {'ArgumentName', [Name]},
                          {'ArgumentValue', [Value]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -367,14 +367,14 @@ key_too_long(Len, RD, Ctx) ->
                          {'Message', [error_message({key_too_long, Len})]},
                          {'Size', [Len]},
                          {'MaxSizeAllowed', [riak_cs_config:max_key_length()]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 stanchion_recovery_failure(RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(stanchion_recovery_failure)]},
                          {'Message', [error_message(stanchion_recovery_failure)]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -389,7 +389,7 @@ copy_response(Manifest, TagName, RD, Ctx) ->
     ETag = riak_cs_manifest:etag(Manifest),
     XmlDoc = [{TagName, [{'LastModified', [LastModified]},
                          {'ETag', [ETag]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -402,7 +402,7 @@ no_such_upload_response(InternalUploadId, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(no_such_upload)]},
                          {'Message', [error_message(no_such_upload)]},
                          {'UploadId', [UploadId]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(no_such_upload), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -410,14 +410,15 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(invalid_digest)]},
                          {'Message', [error_message(invalid_digest)]},
                          {'Content-MD5', [ContentMd5]}
-                        ] ++ common_response_items(Ctx)}
+                        ] ++ common_response_items(RD, Ctx)}
              ],
     respond(status_code(invalid_digest), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 
-common_response_items(#rcs_web_context{request_id = RequestId,
-                                       user = User}) ->
+common_response_items(RD, #rcs_web_context{request_id = RequestId,
+                                           user = User}) ->
     [{'RequestId', [binary_to_list(RequestId)]},
+     {'Resource', [wrq:path(RD)]},
      {'AWSAccessKeyId', [user_access_key(User)]},
      {'HostId', [riak_cs_config:host_id()]}
     ].

@@ -56,7 +56,6 @@
 
 -spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
 init(Ctx) ->
-    ?LOG_DEBUG("include me?"),
     {ok, Ctx#rcs_web_context{local_context = #key_context{}}}.
 
 -spec stats_prefix() -> list_uploads.
