@@ -123,7 +123,6 @@ error_message(stanchion_recovery_failure) -> "Service is temporarily unavailable
 error_message(invalid_action) -> "This Action is invalid or not yet supported";
 error_message(invalid_parameter_value) -> "Unacceptable parameter value";
 error_message(missing_parameter) -> "Missing parameter";
-error_message(temp_users_create_bucket_restriction) -> "Federated users with assumed roles cannot create buckets";
 error_message({unsatisfied_constraint, Constraint}) ->
     io_lib:format("Unable to complete operation due to ~s constraint violation.", [Constraint]);
 error_message(not_implemented) -> "A request you provided implies functionality that is not implemented";
@@ -194,7 +193,6 @@ error_code(stanchion_recovery_failure) -> "ServiceDegraded";
 error_code(invalid_action) -> "InvalidAction";
 error_code(invalid_parameter_value) -> "InvalidParameterValue";
 error_code(missing_parameter) -> "MissingParameter";
-error_code(temp_users_create_bucket_restriction) -> "NotImplemented";
 error_code(not_implemented) -> "NotImplemented";
 error_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -269,7 +267,6 @@ status_code(disconnected)                  -> 500;
 status_code(invalid_action)                -> 400;
 status_code(invalid_parameter_value)       -> 400;
 status_code(missing_parameter)             -> 400;
-status_code(temp_users_create_bucket_restriction) -> 403;
 status_code(not_implemented)                      -> 501;
 status_code(ErrorName) ->
     logger:warning("Unknown error: ~p", [ErrorName]),
@@ -295,19 +292,10 @@ respond(StatusCode, Body, ReqData, Ctx) ->
                                                         ReqData)),
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
-api_error(Error, RD, Ctx) when is_atom(Error) ->
-    error_response(status_code(Error),
-                   error_code(Error),
-                   error_message(Error),
-                   RD,
-                   Ctx);
-api_error({Tag, _} = Error, RD, Ctx)
-  when Tag =:= riak_connect_failed orelse
-       Tag =:= malformed_policy_version orelse
-       Tag =:= auth_not_supported ->
-    error_response(status_code(Error),
-                   error_code(Error),
-                   error_message(Error),
+api_error(Tag, RD, Ctx) when is_atom(Tag) ->
+    error_response(Tag,
+                   error_code(Tag),
+                   error_message(Tag),
                    RD,
                    Ctx);
 api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
@@ -317,39 +305,24 @@ api_error({invalid_argument, Name, Value}, RD, Ctx) ->
 api_error({key_too_long, Len}, RD, Ctx) ->
     key_too_long(Len, RD, Ctx);
 api_error(stanchion_recovery_failure, RD, Ctx) ->
-    stanchion_recovery_failure(RD, Ctx);
+    stanchion_recovery_failure_response(RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
     api_error(Reason, RD, Ctx).
 
-error_response(StatusCode, Code, Message, RD, Ctx) ->
+error_response(Tag, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
                          {'Message', [Message]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(Tag, RD, Ctx)}
              ],
-    respond(StatusCode, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
+    respond(status_code(Tag), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
-
-%% error_resource(Tag, RD)
-%%   when Tag =:= no_copy_source_key;
-%%        Tag =:= copy_source_access_denied->
-%%     {B, K, V} = riak_cs_copy_object:get_copy_source(RD),
-%%     case V of
-%%         ?LFS_DEFAULT_OBJECT_VERSION ->
-%%             <<$/, B/binary, $/, K/binary>>;
-%%         _ ->
-%%             <<$/, B/binary, $/, K/binary, $/, V/binary>>
-%%     end;
-
-%% error_resource(_Tag, RD) ->
-%%     {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
-%%     OrigResource.
 
 toomanybuckets_response(Current, BucketLimit, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(toomanybuckets)]},
                          {'Message', [error_message(toomanybuckets)]},
                          {'CurrentNumberOfBuckets', [Current]},
                          {'AllowedNumberOfBuckets', [BucketLimit]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(toomanybuckets, RD, Ctx)}
              ],
     respond(status_code(toomanybuckets), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -358,7 +331,7 @@ invalid_argument_response(Name, Value, RD, Ctx) ->
                          {'Message', [error_message({invalid_argument, Name})]},
                          {'ArgumentName', [Name]},
                          {'ArgumentValue', [Value]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(invalid_argument, RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -367,14 +340,14 @@ key_too_long(Len, RD, Ctx) ->
                          {'Message', [error_message({key_too_long, Len})]},
                          {'Size', [Len]},
                          {'MaxSizeAllowed', [riak_cs_config:max_key_length()]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(key_too_long, RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
-stanchion_recovery_failure(RD, Ctx) ->
+stanchion_recovery_failure_response(RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(stanchion_recovery_failure)]},
                          {'Message', [error_message(stanchion_recovery_failure)]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(stanchion_recovery_failure, RD, Ctx)}
              ],
     respond(status_code(invalid_argument), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -389,7 +362,7 @@ copy_response(Manifest, TagName, RD, Ctx) ->
     ETag = riak_cs_manifest:etag(Manifest),
     XmlDoc = [{TagName, [{'LastModified', [LastModified]},
                          {'ETag', [ETag]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(TagName, RD, Ctx)}
              ],
     respond(200, riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -402,7 +375,7 @@ no_such_upload_response(InternalUploadId, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(no_such_upload)]},
                          {'Message', [error_message(no_such_upload)]},
                          {'UploadId', [UploadId]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(no_such_upload, RD, Ctx)}
              ],
     respond(status_code(no_such_upload), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
@@ -410,18 +383,32 @@ invalid_digest_response(ContentMd5, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [error_code(invalid_digest)]},
                          {'Message', [error_message(invalid_digest)]},
                          {'Content-MD5', [ContentMd5]}
-                        ] ++ common_response_items(RD, Ctx)}
+                        ] ++ common_response_items(invalid_digest, RD, Ctx)}
              ],
     respond(status_code(invalid_digest), riak_cs_xml:to_xml(XmlDoc), RD, Ctx).
 
 
-common_response_items(RD, #rcs_web_context{request_id = RequestId,
-                                           user = User}) ->
+common_response_items(Tag, RD, #rcs_web_context{request_id = RequestId,
+                                                user = User}) ->
     [{'RequestId', [binary_to_list(RequestId)]},
-     {'Resource', [wrq:path(RD)]},
+     {'Resource', [error_resource(Tag, RD)]},
      {'AWSAccessKeyId', [user_access_key(User)]},
      {'HostId', [riak_cs_config:host_id()]}
     ].
+
+error_resource(Tag, RD)
+  when Tag =:= no_copy_source_key;
+       Tag =:= copy_source_access_denied->
+    {B, K, V} = riak_cs_copy_object:get_copy_source(RD),
+    case V of
+        ?LFS_DEFAULT_OBJECT_VERSION ->
+            <<$/, B/binary, $/, K/binary>>;
+        _ ->
+            <<$/, B/binary, $/, K/binary, $/, V/binary>>
+    end;
+error_resource(_Tag, RD) ->
+    {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
+    OrigResource.
 
 user_access_key(?RCS_USER{key_id = KeyId}) when KeyId /= undefined ->
     KeyId;
