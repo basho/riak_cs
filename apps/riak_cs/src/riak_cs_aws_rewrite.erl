@@ -36,9 +36,14 @@
 rewrite(Method, Scheme, Vsn, Headers, Url) ->
     Host = mochiweb_headers:get_value("host", Headers),
     case service_from_host(Host) of
-        no_rewrite ->
-            logger:debug("not rewriting direct request to us: ~s", [Host]),
-            riak_cs_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url);
+        legacy_or_no_rewrite ->
+            case Url of
+                "/riak-cs/" ++ _ ->
+                    logger:debug("not rewriting direct request to us: ~s", [Url]),
+                    riak_cs_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url);
+                _ ->
+                    riak_cs_aws_s3_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url)
+            end;
         {unsupported, A} ->
             logger:warning("Service ~s is not supported", [A]),
             {Headers, Url};
@@ -68,7 +73,7 @@ service_from_host(Host) ->
                     Service
             end;
         false ->
-            no_rewrite
+            legacy_or_no_rewrite
     end.
 
 aws_service_submodule("s3") -> riak_cs_aws_s3_rewrite;
