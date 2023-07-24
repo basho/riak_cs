@@ -6,8 +6,7 @@
       {platform_bin_dir, ${PLATFORM_BIN_DIR}},
       {dtrace_support, false},
       {proxy_get, ${PROXY_GET}},
-      {cs_version,30100},  %% to match values in include/riak_cs.hrl and rel/vars.config and others in rel/pkg/
-      {fold_objects_for_list_keys, ${FOLD_OBJECTS_FOR_LIST_KEYS}},
+      {cs_version,30200},  %% to match values in include/riak_cs.hrl and rel/vars.config and others in rel/pkg/
       {usage_request_limit, ${USAGE_REQUEST_LIMIT}},
       {storage_archive_period, ${STORAGE_ARCHIVE_PERIOD}},
       {access_archiver_max_workers, ${ACCESS_ARCHIVER_MAX_WORKERS}},
@@ -27,7 +26,7 @@
       {trust_x_forwarded_for, ${TRUST_X_FORWARDED_FOR}},
       {max_key_length, ${MAX_KEY_LENGTH}},
       {max_buckets_per_user, ${MAX_BUCKETS_PER_USER}},
-      {cs_root_host, ${CS_ROOT_HOST}},
+      {s3_root_host, ${S3_ROOT_HOST}},
       {auth_v4_enabled, ${AUTH_V4_ENABLED}},
       {auth_bypass, ${AUTH_BYPASS}},
       {admin_key, ${ADMIN_KEY}},
@@ -40,7 +39,8 @@
       {stanchion_ssl_keyfile, ${STANCHION_SSL_KEYFILE}},
       {stanchion_subnet, ${STANCHION_SUBNET},
       {stanchion_netmask, ${STANCHION_NETMASK},
-      {tussle_voss_riak_host, ${TUSSLE_VOSS_RIAK_HOST}}
+      {tussle_voss_riak_host, ${TUSSLE_VOSS_RIAK_HOST}},
+      {iam_create_user_default_email_host, ${IAM_CREATE_USER_DEFAULT_EMAIL_HOST}},
       {connection_pools,[{request_pool,{128,0}},{bucket_list_pool,{5,0}}]}]},
  {sasl,[{sasl_error_logger,false}]},
  {webmachine,
