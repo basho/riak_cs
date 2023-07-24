@@ -59,7 +59,7 @@ supps(Opts) ->
 
 test([]) ->
     UserName = <<"ADMINTESTUSER">>,
-    Bucket = riak_cs_aws_utils:make_id(10),
+    Bucket = <<"testbucket">>,
     try
         {ok, RcPid} = riak_cs_riak_client:start_link([]),
         {User, UserObj} = get_test_user(UserName, RcPid),
@@ -102,13 +102,10 @@ get_test_user(Name, RcPid) ->
             {ok, UU} =
                 riak_cs_user:get_user(KeyId, RcPid),
             UU;
-        {error, unknown} ->
-            %% this is because velvet sees {error,insufficient_vnodes_available}. Just retry.
-            timer:sleep(200),
-            get_test_user(Name, RcPid);
         {error, user_already_exists} ->
+            {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
             {ok, UU} =
-                riak_cs_iam:find_user(#{email => Email}, RcPid),
+                riak_cs_iam:find_user(#{email => Email}, Pbc),
             UU
     end.
 
