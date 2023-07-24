@@ -5,6 +5,8 @@ Released July 12, 2023.
 ## Changed configuration items
 
 * removed `fold_objects_for_list_keys`
+* added `iam_create_user_default_email_host`
+* `cs_root_host` renamed to `s3_root_host`
 
 # Riak CS 3.1.0 Release Notes
 
