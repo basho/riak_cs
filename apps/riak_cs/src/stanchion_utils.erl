@@ -804,7 +804,8 @@ save_user(User, Obj0, Pbc) ->
     normalize_ok(Res).
 
 normalize_ok(ok) -> ok;
-normalize_ok({ok, _}) -> ok.
+normalize_ok({ok, _}) -> ok;
+normalize_ok(Error) -> Error.
 
 
 
