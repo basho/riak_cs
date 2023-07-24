@@ -47,16 +47,13 @@
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}'.
--spec sum_user(riak_client(), string(), boolean(), erlang:timestamp()) ->
-                      {ok, [{string(), integer()}]}
-                          | {error, term()}.
-sum_user(RcPid, User, Detailed, LeewayEdge) when is_binary(User) ->
-    sum_user(RcPid, binary_to_list(User), Detailed, LeewayEdge);
-sum_user(RcPid, User, Detailed, LeewayEdge) when is_list(User) ->
-    case riak_cs_iam:find_user(#{key_id => User}, RcPid) of
+-spec sum_user(riak_client(), binary(), boolean(), erlang:timestamp()) ->
+          {ok, [{string(), integer()}]} | {error, term()}.
+sum_user(RcPid, KeyId, Detailed, LeewayEdge) ->
+    case riak_cs_user:get_user(KeyId, RcPid) of
         {ok, {UserRecord, _UserObj}} ->
             Buckets = riak_cs_bucket:get_buckets(UserRecord),
-            BucketUsages = [maybe_sum_bucket(User, B, Detailed, LeewayEdge) ||
+            BucketUsages = [maybe_sum_bucket(KeyId, B, Detailed, LeewayEdge) ||
                                B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
