@@ -134,7 +134,7 @@ rcs_rewrite_header(RawPath, Bucket) ->
 bucket_from_host(undefined) ->
     undefined;
 bucket_from_host(HostHeader) ->
-    #{path := HostNoPort} = uri_string:parse(HostHeader),
+    [HostNoPort|_] = string:tokens(HostHeader, ":"),
     extract_bucket_from_host(HostNoPort).
 
 extract_bucket_from_host(Host) ->
