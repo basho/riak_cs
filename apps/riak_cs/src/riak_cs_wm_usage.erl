@@ -406,7 +406,7 @@ usage_if(RD, #rcs_web_context{riak_client = RcPid,
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            Module:get_usage(RcPid, user_key(RD), (User = admin), Start, End);
+            Module:get_usage(RcPid, user_key(RD), (User == admin), Start, End);
         false ->
             not_requested
     end.
