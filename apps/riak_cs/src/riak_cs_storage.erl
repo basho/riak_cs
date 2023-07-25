@@ -66,7 +66,7 @@ sum_user(RcPid, KeyId, Detailed, LeewayEdge) ->
 %%      which riak_cs_storage_d failed.
 maybe_sum_bucket(User, ?RCS_BUCKET{name = Name}, Detailed, LeewayEdge) ->
     case sum_bucket(Name, Detailed, LeewayEdge) of
-        {struct, _} = BucketUsage -> {Name, BucketUsage};
+        {ok, BucketUsage} -> {Name, BucketUsage};
         {error, _} = E ->
             logger:error("failed to calculate usage of bucket \"~s\" of user \"~s\". Reason: ~p",
                          [Name, User, E]),
@@ -86,8 +86,7 @@ maybe_sum_bucket(User, ?RCS_BUCKET{name = Name}, Detailed, LeewayEdge) ->
 %% `Bytes', which is the total size of all of those objects.  More
 %% fields are included for detailed calculation.
 -spec sum_bucket(binary(), boolean(), non_neg_integer()) ->
-                        {struct, [{binary(), integer()}]}
-                            | {error, term()}.
+          {ok, [{binary(), integer()}]} | {error, term()}.
 sum_bucket(BucketName, Detailed, LeewayEdge) ->
     Query = case Detailed of
                 false ->
@@ -117,7 +116,7 @@ sum_bucket(BucketName, Detailed, LeewayEdge) ->
         case riak_cs_pbc:mapred(ManifestPbc, Input, Query, Timeout,
                                 [riakc, mapred_storage]) of
             {ok, MRRes} ->
-                extract_summary(MRRes, Detailed);
+                {ok, extract_summary(MRRes, Detailed)};
             {error, Error} ->
                 {error, Error}
         end

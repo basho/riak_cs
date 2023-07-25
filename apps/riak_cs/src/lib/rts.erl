@@ -64,20 +64,19 @@
 
 -type datetime() :: calendar:datetime().
 -type slice() :: {Start :: datetime(), End :: datetime()}.
--type mochijson2() :: term().
 
 %% @doc Just create the new sample object (don't store it).
 -spec new_sample(binary(), iolist(),
                  datetime(), datetime(),
-                 integer(), mochijson2())
+                 integer(), riakc_obj:riakc_object())
          -> riakc_obj:riakc_obj().
 new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
     Slice = slice_containing(Start, Period),
     Key = slice_key(Slice, KeyPostfix),
-    MJSON = {struct, [{?START_TIME, iso8601(Start)},
-                      {?END_TIME, iso8601(End)}
-                      |Data]},
-    Body = iolist_to_binary(mochijson2:encode(MJSON)),
+    MJSON = [{?START_TIME, iso8601(Start)},
+             {?END_TIME, iso8601(End)}
+            |Data],
+    Body = jsx:encode(MJSON),
     riakc_obj:new(Bucket, Key, Body, "application/json").
 
 %% @doc Fetch all of the samples from riak that overlap the specified
@@ -87,7 +86,7 @@ new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
 %% extraction/etc. on the client side.  It would be a a trivial
 %% modification to do this via MapReduce instead.
 -spec find_samples(fun(), datetime(), datetime(), integer()) ->
-                          {Samples::[mochijson2()], Errors::[{slice(), Reason::term()}]}.
+                          {Samples::[], Errors::[{slice(), Reason::term()}]}.
 find_samples(Puller, Start, End, Period) ->
     Slices = slices_filling(Start, End, Period),
     {Samples, Errors} = lists:foldl(Puller, {[], []}, Slices),
@@ -96,8 +95,6 @@ find_samples(Puller, Start, End, Period) ->
 %% @doc Make a thunk that lists:filter can use to filter samples for a
 %% given time period.  Samples are stored in groups, an a user may
 %% request some, but not all, samples from a group.
--spec sample_in_bounds(datetime(), datetime())
-         -> fun( (list()) -> boolean() ).
 sample_in_bounds(Start, End) ->
     Start8601 = iso8601(Start),
     End8601 = iso8601(End),
@@ -301,8 +298,8 @@ make_object_prop() ->
                 {SliceStart,_} = slice_containing(Start, Period),
                 Obj = new_sample(Bucket, Postfix, Start, End, Period, []),
 
-                {struct, MJ} = mochijson2:decode(
-                                 riakc_obj:get_update_value(Obj)),
+                MJ = jsx:decode(
+                       riakc_obj:get_update_value(Obj, [{return_maps, false}])),
 
                 ?WHENFAIL(
                 io:format(user, "keys: ~p~n", [MJ]),

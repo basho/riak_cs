@@ -59,10 +59,10 @@
           next,          %% the next scheduled time
 
           riak_client :: undefined | pid(),   %% client we're currently using
-          batch_start,   %% the time we actually started
-          batch_count=0, %% count of users processed so far
-          batch_skips=0, %% count of users skipped so far
-          batch=[] :: [string()], %% users left to process in this batch
+          batch_start,     %% the time we actually started
+          batch_count = 0, %% count of users processed so far
+          batch_skips = 0, %% count of users skipped so far
+          batch = [] :: [binary()], %% users left to process in this batch
           recalc,        %% recalculate a user's storage for this period?
           detailed,      %% calculate more than counts and total sizes
           leeway_edge    %% prior to this clock, gc can reclain objects
@@ -372,19 +372,19 @@ start_batch(Options, Time, State) ->
 
 %% @doc Compute storage for the next user in the batch.
 calculate_next_user(#state{riak_client=RcPid,
-                           batch=[User|Rest],
+                           batch=[UserArn|Rest],
                            recalc=Recalc,
                            detailed=Detailed,
                            leeway_edge=LeewayEdge}=State) ->
     Start = calendar:universal_time(),
-    case recalc(Recalc, RcPid, User, Start) of
+    case recalc(Recalc, RcPid, UserArn, Start) of
         true ->
-            _ = case riak_cs_storage:sum_user(RcPid, User, Detailed, LeewayEdge) of
+            _ = case riak_cs_storage:sum_user(RcPid, UserArn, Detailed, LeewayEdge) of
                     {ok, BucketList} ->
                         End = calendar:universal_time(),
-                        store_user(State, User, BucketList, Start, End);
+                        store_user(State, UserArn, BucketList, Start, End);
                     {error, Error} ->
-                        logger:error("Error computing storage for user ~s (~p)", [User, Error])
+                        logger:error("Error computing storage for user ~s (~p)", [UserArn, Error])
                 end,
             State#state{batch=Rest, batch_count=1+State#state.batch_count};
         false ->

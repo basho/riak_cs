@@ -114,10 +114,10 @@ flush(Timeout) ->
 
 %% @doc Set the Riak CS user for this request.  Stats are not recorded if
 %% the user is not set.
-set_user(KeyID, RD) when is_binary(KeyID) ->
-    wrq:add_note(?STAT(user), KeyID, RD);
-set_user(?RCS_USER{key_id = KeyID}, RD) ->
-    wrq:add_note(?STAT(user), KeyID, RD);
+set_user(Arn, RD) when is_binary(Arn) ->
+    wrq:add_note(?STAT(user), Arn, RD);
+set_user(?RCS_USER{arn = Arn}, RD) ->
+    wrq:add_note(?STAT(user), Arn, RD);
 set_user(undefined, RD) ->
     RD;
 set_user(unknown, RD) ->

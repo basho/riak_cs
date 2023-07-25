@@ -33,7 +33,6 @@
          flush_access_object_to_log/3
         ]).
 
--include("riak_cs.hrl").
 -ifdef(TEST).
 -ifdef(EQC).
 -compile([export_all]).
@@ -41,6 +40,9 @@
 -endif.
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export_type([slice/0]).
 
@@ -105,20 +107,16 @@ max_flush_size() ->
 %% The keys of the proplist must be either atoms or binaries, to be
 %% encoded as JSON keys.  The values of the proplists must be numbers,
 %% as the values for each key will be summed in the stored object.
--spec make_object(iodata(),
-                  [[{atom()|binary(), number()}]],
-                  slice())
-                 -> riakc_obj:riakc_obj().
+-spec make_object(binary(), [[{atom()|binary(), number()}]], slice()) ->
+          riakc_obj:riakc_obj().
 make_object(User, Accesses, {Start, End}) ->
     {ok, Period} = archive_period(),
     Aggregate = aggregate_accesses(Accesses),
     rts:new_sample(?ACCESS_BUCKET, User, Start, End, Period,
-                   [{?NODEKEY, node()}|Aggregate]).
+                   [{?NODEKEY, node()} | Aggregate]).
 
 aggregate_accesses(Accesses) ->
-    Merged = lists:foldl(fun merge_ops/2, [], Accesses),
-    %% now mochijson-ify
-    [ {OpName, {struct, Stats}} || {OpName, Stats} <- Merged ].
+    lists:foldl(fun merge_ops/2, [], Accesses).
 
 merge_ops({OpName, Stats}, Acc) ->
     case lists:keytake(OpName, 1, Acc) of
@@ -137,15 +135,15 @@ merge_stats(Stats, Acc) ->
 %% which the keys are Riak CS node names.  The value for each key is a
 %% list of samples.  Each sample is an orddict full of metrics.
 -spec get_usage(riak_client(),
-                term(),     %% TODO: riak_cs:user_key() type doesn't exist
+                binary(),
                 boolean(),  %% Not used in this module
                 calendar:datetime(),
                 calendar:datetime()) ->
-                       {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
-get_usage(RcPid, User, _AdminAccess, Start, End) ->
+          {Usage::orddict:orddict(), Errors::[{slice(), term()}]}.
+get_usage(RcPid, UserArn, _AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
     RtsPuller = riak_cs_riak_client:rts_puller(
-                  RcPid, ?ACCESS_BUCKET, User, [riakc, get_access]),
+                  RcPid, ?ACCESS_BUCKET, UserArn, [riakc, get_access]),
     {Usage, Errors} = rts:find_samples(RtsPuller, Start, End, Period),
     {group_by_node(Usage), Errors}.
 
@@ -232,11 +230,9 @@ make_object_prop() ->
                            [ if is_atom(K)   -> atom_to_binary(K, latin1);
                                 is_binary(K) -> K
                              end || {K, _V} <- lists:flatten(Accesses)]),
-                {struct, MJ} = mochijson2:decode(
-                                 riakc_obj:get_update_value(Obj)),
+                MJ = jsx:decode(riakc_obj:get_update_value(Obj), [{return_maps, false}]),
 
-                Paired = [{{struct, sum_access(K, Accesses)},
-                           proplists:get_value(K, MJ)}
+                Paired = [{sum_access(K, Accesses), proplists:get_value(K, MJ)}
                           || K <- Unique],
 
                 ?WHENFAIL(

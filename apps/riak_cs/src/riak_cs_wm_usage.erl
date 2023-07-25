@@ -138,6 +138,7 @@
 
 -include("rts.hrl").
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% Keys used in output - defined here to help keep JSON and XML output
 %% as similar as possible.
@@ -352,7 +353,7 @@ xml_sample(Sample, SubType, TypeLabel) ->
     {?KEY_SAMPLE, [{xml_name(?START_TIME), S}, {xml_name(?END_TIME), E}],
      [{SubType, [{TypeLabel, OpName}],
        [{xml_name(K), [mochinum:digits(V)]} || {K, V} <- Stats]}
-      || {OpName, {struct, Stats}} <- Rest ]}.
+      || {OpName, Stats} <- Rest ]}.
 
 xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
     %% cheat to make errors structured exactly like samples
@@ -365,7 +366,6 @@ xml_sample_error({{Start, End}, Reason}, SubType, TypeLabel) ->
 
 %% @doc JSON deserializes with keys as binaries, but xmerl requires
 %% tag names to be atoms.
--spec xml_name(binary()) -> usage_field_type() | ?ATTR_START | ?ATTR_END.
 xml_name(?START_TIME) -> ?ATTR_START;
 xml_name(?END_TIME) -> ?ATTR_END;
 xml_name(UsageFieldName) ->
@@ -390,7 +390,7 @@ xml_storage({Storage, Errors}) ->
 user_key(RD) ->
     case path_tokens(RD) of
         [KeyId|_] -> list_to_binary(mochiweb_util:unquote(KeyId));
-        _         -> []
+        _         -> <<>>
     end.
 
 maybe_access(RD, Ctx) ->
@@ -406,7 +406,16 @@ usage_if(RD, #rcs_web_context{riak_client = RcPid,
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            Module:get_usage(RcPid, user_key(RD), (User == admin), Start, End);
+            KeyId = user_key(RD),
+            Arn =
+                case User of
+                    ?RCS_USER{arn = A} ->
+                        A;
+                    admin ->
+                        {ok, {?RCS_USER{arn = A}, _}} = riak_cs_user:get_cs_user(KeyId, RcPid),
+                        A
+                end,
+            Module:get_usage(RcPid, Arn, (User == admin), Start, End);
         false ->
             not_requested
     end.
@@ -475,8 +484,8 @@ error_msg(RD, Message) ->
     wrq:set_resp_header("content-type", Type, wrq:set_resp_body(Body, RD)).
 
 json_error_msg(Message) ->
-    MJ = {struct, [{?KEY_ERROR, {struct, [{?KEY_MESSAGE, Message}]}}]},
-    mochijson2:encode(MJ).
+    MJ = [{?KEY_ERROR, [{?KEY_MESSAGE, Message}]}],
+    jsx:encode(MJ).
 
 xml_error_msg(Message) when is_binary(Message) ->
     xml_error_msg(binary_to_list(Message));

@@ -123,7 +123,7 @@ rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
                                  Timeout, StatsKey) of
                 {ok, Object} ->
                     RawSamples =
-                        [ catch element(2, {struct,_}=mochijson2:decode(V))
+                        [ jsx:decode(V, [{return_maps, false}])
                           || V <- riakc_obj:get_values(Object) ],
                     {NewSamples, EncodingErrors} =
                         lists:partition(fun({'EXIT',_}) -> false;
