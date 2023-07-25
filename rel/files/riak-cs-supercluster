@@ -1,11 +1,10 @@
 #!/bin/sh
-
 ## -------------------------------------------------------------------
 ##
 ## riak-cs-supercluster: Riak CS supercluster management
 ##
 ## Copyright (c) 2014 Basho Technologies, Inc.,
-##               2021 TI Tokyo.  All Rights Reserved.
+##               2021-2023 TI Tokyo.  All Rights Reserved.
 ##
 ## This file is provided to you under the Apache License,
 ## Version 2.0 (the "License"); you may not use this file
@@ -38,6 +37,8 @@ if [ "$PLATFORM_LIB_DIR" = "${PLATFORM_LIB_DIR#/}" ]; then
     PLATFORM_LIB_DIR=$PLATFORM_BASE_DIR/$PLATFORM_LIB_DIR
 fi
 . $PLATFORM_LIB_DIR/lib.sh
+
+export USE_NODETOOL=1  # {use_nodetool, true} is not clear enough
 
 # Check the first argument for instructions
 case "$1" in

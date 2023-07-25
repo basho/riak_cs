@@ -39,25 +39,7 @@ if [ "$PLATFORM_LIB_DIR" = "${PLATFORM_LIB_DIR#/}" ]; then
 fi
 . $PLATFORM_LIB_DIR/lib.sh
 
-PLATFORM_ETC_DIR={{platform_etc_dir}}
-if [ "$PLATFORM_ETC_DIR" = "${PLATFORM_ETC_DIR#/}" ]; then
-    PLATFORM_ETC_DIR=$PLATFORM_BASE_DIR/$PLATFORM_ETC_DIR
-fi
-
-PLATFORM_PATCH_DIR={{platform_patch_dir}}
-if [ "$PLATFORM_PATCH_DIR" = "${PLATFORM_PATCH_DIR#/}" ]; then
-    PLATFORM_PATCH_DIR=$PLATFORM_BASE_DIR/$PLATFORM_PATCH_DIR
-fi
-
-ERTS_VER=$(cd ${PLATFORM_BASE_DIR} && ls -d erts-*)
-ERTS_PATH="${PLATFORM_BASE_DIR}/$ERTS_VER/bin"
-COOKIE=`egrep '^[ \t]*distributed_cookie[ \t]*=[ \t]*' $PLATFORM_ETC_DIR/riak-cs.conf 2> /dev/null | cut -d = -f 2 | tr -d ' '`
-
-NODE=`egrep '^[ \t]*nodename[ \t]*=[ \t]*' $PLATFORM_ETC_DIR/riak-cs.conf 2> /dev/null | cut -d = -f 2 | tr -d ' '`
-HOST=${NODE#*@}
-
-BOOT_FILE="${PLATFORM_BASE_DIR}/releases/{{release_version}}/start_clean"
-
+export USE_NODETOOL=1  # {use_nodetool, true} is not clear enough
 
 usage() {
     echo "Usage: $SCRIPT { version | status | gc | access | storage |"
