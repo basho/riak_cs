@@ -30,6 +30,7 @@
          display_name/1,
          is_admin/1,
          get_user/2,
+         get_cs_user/2,
          from_riakc_obj/2,
          to_3tuple/1,
          update_key_secret/1,
