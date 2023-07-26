@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved,.
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -119,8 +119,8 @@ fetch_2i_keys(Pbc, Options, Continuation) ->
     debug("Fetching next ~p keys, Continuation=~p", [MaxResults, Continuation]),
     QueryOptions = [{max_results, MaxResults},
                     {continuation, Continuation}],
-    Now = riak_cs_gc:timestamp(),
-    Leeway = proplists:get_value(leeway_seconds, Options),
+    Now = os:system_time(millisecond),
+    Leeway = 1000 * proplists:get_value(leeway_seconds, Options),
     StartTime = riak_cs_gc:epoch_start(),
     EndTime = list_to_binary(integer_to_list(Now - Leeway)),
     debug("StartTime=~p, EndTime=~p", [StartTime, EndTime]),
@@ -158,8 +158,7 @@ process_gc_keys(Pbc, Options, Continuation, [GCKey | Keys]) ->
     process_gc_keys(Pbc, Options, Continuation, Keys).
 
 -spec repair_manifests_for_gc_key(pid(), proplists:proplist(), binary()) ->
-                                         ok |
-                                         {error, term()}.
+          ok | {error, term()}.
 repair_manifests_for_gc_key(Pbc, Options, GCKey) ->
     Timeout = riak_cs_config:get_gckey_timeout(),
     case riakc_pb_socket:get(Pbc, ?GC_BUCKET, GCKey, [], Timeout) of

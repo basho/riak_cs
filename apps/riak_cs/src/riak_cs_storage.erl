@@ -49,11 +49,12 @@
 %% `{BucketName, Bytes}'.
 -spec sum_user(riak_client(), binary(), boolean(), erlang:timestamp()) ->
           {ok, [{string(), integer()}]} | {error, term()}.
-sum_user(RcPid, KeyId, Detailed, LeewayEdge) ->
-    case riak_cs_user:get_user(KeyId, RcPid) of
+sum_user(RcPid, Arn, Detailed, LeewayEdge) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:get_user(Arn, Pbc) of
         {ok, {UserRecord, _UserObj}} ->
             Buckets = riak_cs_bucket:get_buckets(UserRecord),
-            BucketUsages = [maybe_sum_bucket(KeyId, B, Detailed, LeewayEdge) ||
+            BucketUsages = [maybe_sum_bucket(Arn, B, Detailed, LeewayEdge) ||
                                B <- Buckets],
             {ok, BucketUsages};
         {error, Error} ->
@@ -132,14 +133,14 @@ object_size_reduce(Values, Args) ->
 
 extract_summary(MRRes, false) ->
     {1, [{Objects, Bytes}]} = lists:keyfind(1, 1, MRRes),
-    {struct, [{<<"Objects">>, Objects},
-              {<<"Bytes">>, Bytes}]};
+    [{<<"Objects">>, Objects},
+     {<<"Bytes">>, Bytes}];
 extract_summary(MRRes, true) ->
     Summary = case lists:keyfind(1, 1, MRRes) of
                   {1, [[]]} -> riak_cs_storage_mr:empty_summary();
                   {1, [NonEmptyValue]} -> NonEmptyValue
               end,
-    {struct, detailed_result_json_struct(Summary, [])}.
+    detailed_result_json_struct(Summary, []).
 
 detailed_result_json_struct([], Acc) ->
     Acc;
@@ -171,14 +172,14 @@ make_object(User, BucketList, SampleStart, SampleEnd) ->
     rts:new_sample(?STORAGE_BUCKET, User, SampleStart, SampleEnd, Period,
                    BucketList).
 
--spec get_usage(riak_client(), string(),
+-spec get_usage(riak_client(), binary(),
                 boolean(),
                 calendar:datetime(),
                 calendar:datetime()) -> {list(), list()}.
-get_usage(RcPid, User, AdminAccess, Start, End) ->
+get_usage(RcPid, UserArn, AdminAccess, Start, End) ->
     {ok, Period} = archive_period(),
     RtsPuller = riak_cs_riak_client:rts_puller(
-                  RcPid, ?STORAGE_BUCKET, User, [riakc, get_storage]),
+                  RcPid, ?STORAGE_BUCKET, UserArn, [riakc, get_storage]),
     {Samples, Errors} = rts:find_samples(RtsPuller, Start, End, Period),
     case AdminAccess of
         true -> {Samples, Errors};
@@ -190,9 +191,12 @@ filter_internal_usage([], Acc) ->
 filter_internal_usage([{K, _V}=T | Rest], Acc)
   when K =:= <<"StartTime">> orelse K =:= <<"EndTime">> ->
     filter_internal_usage(Rest, [T|Acc]);
-filter_internal_usage([{Bucket, {struct, UsageList}} | Rest], Acc) ->
-    Objects = lists:keyfind(<<"Objects">>, 1, UsageList),
-    Bytes = lists:keyfind(<<"Bytes">>, 1, UsageList),
-    filter_internal_usage(Rest, [{Bucket, {struct, [Objects, Bytes]}} | Acc]);
-filter_internal_usage([{_Bucket, _ErrorBin}=T | Rest], Acc) ->
-    filter_internal_usage(Rest, [T|Acc]).
+filter_internal_usage([{Bucket, MaybeUsageList} = AsIs | Rest], Acc) ->
+    Objects = lists:keyfind(<<"Objects">>, 1, MaybeUsageList),
+    Bytes = lists:keyfind(<<"Bytes">>, 1, MaybeUsageList),
+    case {Objects, Bytes} of
+        {undefined, undefined} ->
+            filter_internal_usage(Rest, [AsIs | Acc]);
+        _ ->
+            filter_internal_usage(Rest, [{Bucket, [Objects, Bytes]} | Acc])
+    end.

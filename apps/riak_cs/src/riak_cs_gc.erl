@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021, 2022 TI Tokyo    All Rights Reseved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -272,7 +272,7 @@ gc_max_workers() ->
     end.
 
 %% @doc Return the start of GC epoch represented as a binary.
-%% This is the time that the GC manager uses to  begin collecting keys
+%% This is the time that the GC manager uses to begin collecting keys
 %% from the `riak-cs-gc' bucket.
 -spec epoch_start() -> non_neg_integer().
 epoch_start() ->

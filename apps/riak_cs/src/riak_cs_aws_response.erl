@@ -292,12 +292,6 @@ respond(StatusCode, Body, ReqData, Ctx) ->
                                                         ReqData)),
     {{halt, StatusCode}, UpdReqData, Ctx}.
 
-api_error(Tag, RD, Ctx) when is_atom(Tag) ->
-    error_response(Tag,
-                   error_code(Tag),
-                   error_message(Tag),
-                   RD,
-                   Ctx);
 api_error({toomanybuckets, Current, BucketLimit}, RD, Ctx) ->
     toomanybuckets_response(Current, BucketLimit, RD, Ctx);
 api_error({invalid_argument, Name, Value}, RD, Ctx) ->
@@ -307,7 +301,13 @@ api_error({key_too_long, Len}, RD, Ctx) ->
 api_error(stanchion_recovery_failure, RD, Ctx) ->
     stanchion_recovery_failure_response(RD, Ctx);
 api_error({error, Reason}, RD, Ctx) ->
-    api_error(Reason, RD, Ctx).
+    api_error(Reason, RD, Ctx);
+api_error(Tag, RD, Ctx) ->
+    error_response(Tag,
+                   error_code(Tag),
+                   error_message(Tag),
+                   RD,
+                   Ctx).
 
 error_response(Tag, Code, Message, RD, Ctx) ->
     XmlDoc = [{'Error', [{'Code', [Code]},
