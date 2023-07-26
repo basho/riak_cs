@@ -762,6 +762,9 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
     end.
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
+                                           user = undefined}) ->
+    {[], []};
+get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
                                            user = ?RCS_USER{key_id = KeyId},
                                            riak_client = RcPid}) ->
     case riak_cs_temp_sessions:get(KeyId) of
@@ -1059,6 +1062,7 @@ actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
 actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'PUT' orelse
        (Deletable andalso Method =:= 'DELETE') ->
+    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     deny_access(AccessRD, Ctx);
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
@@ -1069,15 +1073,18 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
 actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
+    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#rcs_web_context{local_context = LocalCtx#key_context{owner = OwnerId}},
     shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#rcs_web_context.riak_client);
 actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
+    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#rcs_web_context{local_context = LocalCtx#key_context{owner = OwnerId}},
     {false, AccessRD, UpdCtx}.
 
 just_allowed_by_policy(OwnerId, RD, Ctx, LocalCtx) ->
+    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner = OwnerId},
     {false, AccessRD, Ctx#rcs_web_context{local_context = UpdLocalCtx}}.
