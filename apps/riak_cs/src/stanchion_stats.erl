@@ -129,7 +129,7 @@ update_with_start(BaseId, StartTime) ->
 
 -spec report_json() -> string().
 report_json() ->
-    lists:flatten(mochijson2:encode({struct, get_stats()})).
+    lists:flatten(jsx:encode(get_stats())).
 
 all_metrics() ->
     Metrics0 = [{Subkey ++ Metric, Type, [], []}

@@ -56,8 +56,8 @@ empty_statement_conversion_test()->
         "{\"Sid\":\"undefined\",\"Effect\":\"Deny\",\"Principal\":[],"
         "\"Action\":[],\"NotAction\":[],\"Resource\":[],\"Condition\":[]}"
         "],\"Id\":\"hello\"}",
-    {struct, LHS} = mochijson2:decode(JsonPolicy),
-    {struct, RHS} = mochijson2:decode(riak_cs_s3_policy:policy_to_json_term(Policy)),
+    LHS = jsx:decode(JsonPolicy, [{return_maps, false}]),
+    RHS = jsx:decode(riak_cs_s3_policy:policy_to_json_term(Policy), [{return_maps, false}]),
     ?assertEqual(lists:sort(LHS), lists:sort(RHS)),
     {ok, PolicyFromJson} = riak_cs_s3_policy:policy_from_json(list_to_binary(JsonPolicy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),

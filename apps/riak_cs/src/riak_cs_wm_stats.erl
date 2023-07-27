@@ -92,7 +92,7 @@ service_available(RD, Ctx) ->
     end.
 
 produce_body(RD, Ctx) ->
-    Body = mochijson2:encode(get_stats()),
+    Body = jsx:encode(get_stats()),
     ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
     {Body, RD2, Ctx}.

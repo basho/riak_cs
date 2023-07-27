@@ -77,7 +77,7 @@ token_names(undefined) ->
     ordsets:new();
 token_names(Roles) ->
     ordsets:from_list(
-      [proplists:get_value(<<"name">>, Role, []) || {struct, Role} <- Roles]).
+      [proplists:get_value(<<"name">>, Role, []) || Role <- Roles]).
 
 validate_token(_, undefined) ->
     failed;

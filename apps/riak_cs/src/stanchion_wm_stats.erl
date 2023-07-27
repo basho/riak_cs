@@ -81,5 +81,5 @@ content_types_provided(RD, Ctx) ->
                           {{'halt', term()}, #wm_reqdata{}, term()}.
 produce_body(RD, Ctx) ->
     Stats = stanchion_stats:get_stats(),
-    JSON = mochijson2:encode({struct, Stats}),
+    JSON = jsx:encode(Stats),
     {JSON, RD, Ctx}.

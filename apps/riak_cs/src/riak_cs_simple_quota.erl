@@ -233,7 +233,7 @@ get_latest_usage(Pid, User, ArchivePeriod, EndSec, N, Max) ->
 sum_all_buckets(UsageList) ->
     lists:foldl(fun({<<"StartTime">>, _}, Sum) -> Sum;
                    ({<<"EndTime">>, _}, Sum) -> Sum;
-                   ({_BucketName, {struct, Data}}, Sum) ->
+                   ({_BucketName, Data}, Sum) ->
                         case proplists:get_value(<<"Bytes">>, Data) of
                             I when is_integer(I) -> Sum + I;
                             _ -> Sum

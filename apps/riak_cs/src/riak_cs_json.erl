@@ -50,9 +50,9 @@
 %% Public API
 %% ===================================================================
 
--spec from_json(string()) -> {struct, term()} | [term()] | {error, decode_failed}.
+-spec from_json(string()) -> proplists:proplist() | {error, decode_failed}.
 from_json(JsonString) ->
-    case catch mochijson2:decode(JsonString) of
+    case catch jsx:decode(JsonString, [{return_maps, false}]) of
         {'EXIT', _} ->
             {error, decode_failed};
         Result ->
@@ -62,17 +62,15 @@ from_json(JsonString) ->
 -type match_spec() :: {index, non_neg_integer()} | {key, binary(), binary()}.
 -type path_query() :: {find, match_spec()}.
 -type path() :: [binary() | tuple() | path_query()].
--spec get({struct, term()} | [term()] | undefined, path()) -> term().
-get({struct, _}=Object, Path) ->
-    follow_path(Object, Path);
-get(Array, [{find, Query} | RestPath]) when is_list(Array) ->
-    follow_path(find(Array, Query), RestPath);
-get(_Array, [{find, _Query} | _RestPath]) ->
-    {error, invalid_path};
+-spec get(proplists:proplist() | undefined, path()) -> term().
 get(undefined, _) ->
     {error, not_found};
 get(not_found, _) ->
-    {error, not_found}.
+    {error, not_found};
+get(Array, [{find, Query} | RestPath]) ->
+    follow_path(find(Array, Query), RestPath);
+get(Object, Path) ->
+    follow_path(Object, Path).
 
 -spec to_json(tuple() | undefined | []) -> binary().
 to_json(?KEYSTONE_S3_AUTH_REQ{} = A) ->
@@ -130,8 +128,6 @@ value_or_default({ok, Value}, _) ->
 %% Internal functions
 %% ===================================================================
 
--spec follow_path(tuple() | [term()] | undefined, path()) ->
-                         {ok, term()} | {error, not_found}.
 follow_path(undefined, _) ->
     {error, not_found};
 follow_path(Value, []) ->
@@ -140,15 +136,14 @@ follow_path(JsonItems, [{find, Query}]) ->
     follow_path(find(JsonItems, Query), []);
 follow_path(JsonItems, [{find, Query} | RestPath]) ->
     get(find(JsonItems, Query), RestPath);
-follow_path({struct, JsonItems}, [Key]) when is_tuple(Key) ->
+follow_path(JsonItems, [Key]) when is_tuple(Key) ->
     follow_path(target_tuple_values(Key, JsonItems), []);
-follow_path({struct, JsonItems}, [Key]) ->
+follow_path(JsonItems, [Key]) ->
     follow_path(proplists:get_value(Key, JsonItems), []);
-follow_path({struct, JsonItems}, [Key | RestPath]) ->
+follow_path(JsonItems, [Key | RestPath]) ->
     Value = proplists:get_value(Key, JsonItems),
     follow_path(Value, RestPath).
 
--spec find([term()], match_spec()) -> undefined | {struct, term()}.
 find(Array, {key, Key, Value}) ->
     lists:foldl(key_folder(Key, Value), not_found, Array);
 find(Array, {index, Index}) when Index =< length(Array) ->
@@ -157,15 +152,13 @@ find(_, {index, _}) ->
     undefined.
 
 key_folder(Key, Value) ->
-    fun({struct, Items}=X, Acc) ->
-            case lists:keyfind(Key, 1, Items) of
+    fun(X, Acc) ->
+            case lists:keyfind(Key, 1, X) of
                 {Key, Value} ->
                     X;
                 _ ->
                     Acc
-            end;
-       (_, Acc) ->
-            Acc
+            end
     end.
 
 -spec target_tuple_values(tuple(), proplists:proplist()) -> tuple().
@@ -215,31 +208,31 @@ get_embedded_key_from_array_test() ->
     Object = "{\"test\":{\"objects\":[{\"key1\":\"a1\",\"key2\":\"a2\",\"key3\""
         ":\"a3\"},{\"key1\":\"b1\",\"key2\":\"b2\",\"key3\":\"b3\"},{\"key1\""
         ":\"c1\",\"key2\":\"c2\",\"key3\":\"c3\"}]}}",
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key1">>, <<"a1">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key2">>, <<"a2">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key3">>, <<"a3">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key1">>, <<"b1">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key2">>, <<"b2">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"b1">>}, {<<"key2">>, <<"b2">>}, {<<"key3">>, <<"b3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key3">>, <<"b3">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key1">>, <<"c1">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key2">>, <<"c2">>}}])),
-    ?assertEqual({ok, {struct, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]}},
+    ?assertEqual({ok, [{<<"key1">>, <<"c1">>}, {<<"key2">>, <<"c2">>}, {<<"key3">>, <<"c3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key3">>, <<"c3">>}}])).
 

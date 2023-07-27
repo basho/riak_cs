@@ -918,35 +918,32 @@ acl_to_json_term_test() ->
     JsonTerm = jsx:(Acl),
     {AclMegaSecs, AclSecs, AclMicroSecs} = CreationTime,
     ExpectedTerm = {<<"acl">>,
-                    {struct,
-                     [{<<"version">>,1},
-                      {<<"owner">>,
-                       {struct,
-                        [{<<"display_name">>,<<"tester1">>},
-                         {<<"canonical_id">>,<<"TESTID1">>},
-                         {<<"key_id">>,<<"TESTKEYID1">>}]}},
-                      {<<"grants">>,
-                       [{struct,
-                         [{<<"display_name">>,<<"tester2">>},
-                          {<<"canonical_id">>,<<"TESTID2">>},
-                          {<<"permissions">>,[<<"WRITE">>]}]},
-                        {struct,
-                         [{<<"display_name">>,<<"tester1">>},
-                          {<<"canonical_id">>,<<"TESTID1">>},
-                          {<<"permissions">>,[<<"READ">>]}]}]},
-                      {<<"creation_time">>,
-                       {struct,
-                        [{<<"mega_seconds">>, AclMegaSecs},
-                         {<<"seconds">>, AclSecs},
-                         {<<"micro_seconds">>, AclMicroSecs}]}}]}},
+                    [{<<"version">>,1},
+                     {<<"owner">>,
+                      [{<<"display_name">>,<<"tester1">>},
+                       {<<"canonical_id">>,<<"TESTID1">>},
+                       {<<"key_id">>,<<"TESTKEYID1">>}]},
+                     {<<"grants">>,
+                      [[{<<"display_name">>,<<"tester2">>},
+                        {<<"canonical_id">>,<<"TESTID2">>},
+                        {<<"permissions">>,[<<"WRITE">>]}],
+                       [{<<"display_name">>,<<"tester1">>},
+                        {<<"canonical_id">>,<<"TESTID1">>},
+                        {<<"permissions">>,[<<"READ">>]}]}],
+                     {<<"creation_time">>,
+                      [{<<"mega_seconds">>, AclMegaSecs},
+                       {<<"seconds">>, AclSecs},
+                       {<<"micro_seconds">>, AclMicroSecs}]}
+                    ]
+                   },
     ?assertEqual(ExpectedTerm, JsonTerm).
 
 owner_to_json_term_test() ->
     JsonTerm = owner_to_json_term("name", "cid123", "keyid123"),
     ExpectedTerm = {<<"owner">>,
-                    {struct, [{<<"display_name">>, <<"name">>},
-                              {<<"canonical_id">>, <<"cid123">>},
-                              {<<"key_id">>, <<"keyid123">>}]}
+                    [{<<"display_name">>, <<"name">>},
+                     {<<"canonical_id">>, <<"cid123">>},
+                     {<<"key_id">>, <<"keyid123">>}]
                    },
     ?assertEqual(ExpectedTerm, JsonTerm).
 
@@ -960,27 +957,25 @@ grants_to_json_term_test() ->
               CreationTime),
     JsonTerm = grants_to_json_term(Acl?ACL.grants, []),
     ExpectedTerm =
-        {<<"grants">>, [{struct,
-                         [{<<"display_name">>,<<"tester2">>},
-                          {<<"canonical_id">>,<<"TESTID2">>},
-                          {<<"permissions">>,[<<"WRITE">>]}]},
-                        {struct,
-                         [{<<"display_name">>,<<"tester1">>},
-                          {<<"canonical_id">>,<<"TESTID1">>},
-                          {<<"permissions">>,[<<"READ">>]}]}]},
+        {<<"grants">>, [[{<<"display_name">>,<<"tester2">>},
+                         {<<"canonical_id">>,<<"TESTID2">>},
+                         {<<"permissions">>,[<<"WRITE">>]}],
+                        [{<<"display_name">>,<<"tester1">>},
+                         {<<"canonical_id">>,<<"TESTID1">>},
+                         {<<"permissions">>,[<<"READ">>]}]
+                       ]
+        },
 
     ?assertEqual(ExpectedTerm, JsonTerm).
 
 grantee_to_json_term_test() ->
     JsonTerm1 = grantee_to_json_term({{"tester1", "TESTID1"}, ['READ']}),
     JsonTerm2 = grantee_to_json_term({'AllUsers', ['WRITE']}),
-    ExpectedTerm1 = {struct,
-                     [{<<"display_name">>,<<"tester1">>},
-                      {<<"canonical_id">>,<<"TESTID1">>},
-                      {<<"permissions">>,[<<"READ">>]}]},
-    ExpectedTerm2 = {struct,
-                     [{<<"group">>,<<"AllUsers">>},
-                      {<<"permissions">>,[<<"WRITE">>]}]},
+    ExpectedTerm1 = [{<<"display_name">>,<<"tester1">>},
+                     {<<"canonical_id">>,<<"TESTID1">>},
+                     {<<"permissions">>,[<<"READ">>]}],
+    ExpectedTerm2 = [{<<"group">>,<<"AllUsers">>},
+                     {<<"permissions">>,[<<"WRITE">>]}],
     ?assertEqual(ExpectedTerm1, JsonTerm1),
     ?assertEqual(ExpectedTerm2, JsonTerm2).
 
@@ -1000,10 +995,9 @@ permissions_to_json_term_test() ->
 erlang_time_to_json_term_test() ->
     JsonTerm = erlang_time_to_json_term({1000, 100, 10}),
     ExpectedTerm = {<<"creation_time">>,
-                    {struct,
-                     [{<<"mega_seconds">>, 1000},
-                      {<<"seconds">>, 100},
-                      {<<"micro_seconds">>, 10}]}},
+                    [{<<"mega_seconds">>, 1000},
+                     {<<"seconds">>, 100},
+                     {<<"micro_seconds">>, 10}]},
     ?assertEqual(ExpectedTerm, JsonTerm).
 
 

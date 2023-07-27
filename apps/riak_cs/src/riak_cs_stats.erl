@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -192,7 +192,7 @@ countup(Key) ->
 
 -spec report_json() -> string().
 report_json() ->
-    lists:flatten(mochijson2:encode({struct, get_stats()})).
+    lists:flatten(jsx:encode(get_stats())).
 
 -spec report_pretty_json() -> string().
 report_pretty_json() ->

@@ -46,7 +46,7 @@ get_bucket_to_json() ->
     {ok, _UpdatedUser} = riak_cs_user:get_user(User?RCS_USER.key_id),
     CorrectJsonBucketNames = [list_to_binary(Name) ||
                                      Name <- lists:reverse(BucketNames)],
-    _EncodedCorrectNames = mochijson2:encode(CorrectJsonBucketNames),
+    _EncodedCorrectNames = jsx:encode(CorrectJsonBucketNames),
     %%_Context = #context{user=UpdatedUser},
     ?assert(true).
     %%{ResultToTest, _, _} = riak_cs_wm_service:to_json(fake_rd, Context),

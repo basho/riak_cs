@@ -191,12 +191,9 @@ filter_internal_usage([], Acc) ->
 filter_internal_usage([{K, _V}=T | Rest], Acc)
   when K =:= <<"StartTime">> orelse K =:= <<"EndTime">> ->
     filter_internal_usage(Rest, [T|Acc]);
-filter_internal_usage([{Bucket, MaybeUsageList} = AsIs | Rest], Acc) ->
-    Objects = lists:keyfind(<<"Objects">>, 1, MaybeUsageList),
-    Bytes = lists:keyfind(<<"Bytes">>, 1, MaybeUsageList),
-    case {Objects, Bytes} of
-        {undefined, undefined} ->
-            filter_internal_usage(Rest, [AsIs | Acc]);
-        _ ->
-            filter_internal_usage(Rest, [{Bucket, [Objects, Bytes]} | Acc])
-    end.
+filter_internal_usage([{_Bucket, <<"{error,", _/binary>>} = T | Rest], Acc) ->
+    filter_internal_usage(Rest, [T|Acc]);
+filter_internal_usage([{Bucket, UsageList} | Rest], Acc) ->
+    Objects = lists:keyfind(<<"Objects">>, 1, UsageList),
+    Bytes = lists:keyfind(<<"Bytes">>, 1, UsageList),
+    filter_internal_usage(Rest, [{Bucket, [Objects, Bytes]} | Acc]).
