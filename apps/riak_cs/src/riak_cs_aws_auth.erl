@@ -176,7 +176,6 @@ calculate_signature_v2(KeyData, RD, Quirk) ->
     OriginalResource = riak_cs_aws_rewrite:original_resource(RD),
     Resource = case OriginalResource of
                    undefined ->
-                       logger:warning("Empty OriginalResource in RD ~p", [RD]),
                        [];
                    {Path, QS} ->
                        case Quirk of

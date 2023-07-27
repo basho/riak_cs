@@ -289,7 +289,6 @@ force_archive(#state{current=C}=State, FlushEnd) ->
 
 %% @doc Send the current slice's accumulated accesses to the archiver
 %% for storage.  Create a clean table to store the next slice's accesses.
--spec do_archive(state()) -> state().
 do_archive(#state{period=P, table=T, current=C}=State) ->
     ?LOG_DEBUG("Rolling access for ~p", [C]),
     %% archiver takes ownership of the table, and deletes it when done

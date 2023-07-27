@@ -23,8 +23,6 @@
 
 -module(riak_cs_storage).
 
--include("riak_cs.hrl").
-
 -export([
          sum_user/4,
          sum_bucket/3,
@@ -38,6 +36,9 @@
          object_size_reduce/2
         ]).
 
+-include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 -ifdef(TEST).
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -47,7 +48,7 @@
 %% @doc Sum the number of bytes stored in active files in all of the
 %% given user's directories.  The result is a list of pairs of
 %% `{BucketName, Bytes}'.
--spec sum_user(riak_client(), binary(), boolean(), erlang:timestamp()) ->
+-spec sum_user(riak_client(), binary(), boolean(), non_neg_integer()) ->
           {ok, [{string(), integer()}]} | {error, term()}.
 sum_user(RcPid, Arn, Detailed, LeewayEdge) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),

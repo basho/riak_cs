@@ -49,6 +49,7 @@
          code_change/4]).
 
 -include("riak_cs.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(SERVER, ?MODULE).
 
@@ -67,8 +68,6 @@
           detailed,      %% calculate more than counts and total sizes
           leeway_edge    %% prior to this clock, gc can reclain objects
          }).
-
--type state() :: #state{}.
 
 %%%===================================================================
 %%% API
@@ -265,8 +264,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
--spec try_prepare(state()) -> {next_state, atom(), state()} |
-                              {next_state, atom(), state(), pos_integer()}.
 try_prepare(State) ->
     Schedule = read_storage_schedule(),
     SchedState = schedule_next(State#state{schedule=Schedule},

@@ -232,7 +232,7 @@ handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false)
     ?LOG_DEBUG("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
-    logger:notice("given key_id was found, but signature didn't match; ignore anonymous_user_creation"),
+    logger:notice("given key_id was found, but signature didn't match"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
