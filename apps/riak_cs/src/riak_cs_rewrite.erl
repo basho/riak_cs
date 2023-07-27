@@ -31,6 +31,7 @@
 
 -include("riak_cs.hrl").
 -include("riak_cs_web.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 
 %% no-rewrite, for calls directly to riak_cs
@@ -46,12 +47,15 @@ rewrite(_Method, _Scheme, _Vsn, Headers, Url) ->
 
 -spec original_resource(#wm_reqdata{}) -> undefined | {string(), [{term(), term()}]}.
 original_resource(RD) ->
-    case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
-        undefined -> undefined;
-        RawPath ->
-            {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
-            {Path, mochiweb_util:parse_qs(QS)}
-    end.
+    RawPath =
+        case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
+            undefined ->
+                wrq:raw_path(RD);
+            A ->
+                A
+        end,
+    {Path, QS, _} = mochiweb_util:urlsplit_path(RawPath),
+    {Path, mochiweb_util:parse_qs(QS)}.
 
 -spec raw_url(#wm_reqdata{}) -> undefined | {string(), [{term(), term()}]}.
 raw_url(RD) ->
