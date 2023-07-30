@@ -30,7 +30,7 @@
          iso_8601_to_rfc_1123/1,
          to_rfc_1123/1,
          iso_8601_to_erl_date/1,
-         streaming_get/6,
+         streaming_get/4,
          find_and_auth_admin/3,
          find_and_auth_user/3,
          find_and_auth_user/4,
@@ -374,14 +374,14 @@ shift_to_owner(RD, Ctx = #rcs_web_context{response_module = ResponseMod}, OwnerI
             ResponseMod:api_error(bucket_owner_unavailable, RD, Ctx)
     end.
 
-streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) ->
+streaming_get(RcPool, RcPid, FsmPid, StartTime) ->
     case riak_cs_get_fsm:get_next_chunk(FsmPid) of
         {done, Chunk} ->
             ok = riak_cs_stats:update_with_start([object, get], StartTime),
             riak_cs_riak_client:checkin(RcPool, RcPid),
             {Chunk, done};
         {chunk, Chunk} ->
-            {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime, UserName, BFile_str) end}
+            {Chunk, fun() -> streaming_get(RcPool, RcPid, FsmPid, StartTime) end}
     end.
 
 -spec lower_case_method(atom()) -> atom().

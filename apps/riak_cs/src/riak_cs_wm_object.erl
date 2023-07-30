@@ -184,17 +184,12 @@ produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
 produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
                                         riak_client = RcPid,
                                         local_context = LocalCtx,
-                                        start_time = StartTime,
-                                        user = User},
+                                        start_time = StartTime},
              {Start, End}, RespRange) ->
     #key_context{get_fsm_pid = GetFsmPid,
-                 manifest = ?MANIFEST{bkey = {Bucket, File},
-                                      created = Created,
+                 manifest = ?MANIFEST{created = Created,
                                       content_length = ResourceLength,
-                                      vsn = ObjVsn,
                                       metadata = Metadata} = Mfst} = LocalCtx,
-    BFile_str = bfile_str(Bucket, File, ObjVsn),
-    UserName = riak_cs_wm_utils:extract_name(User),
     Method = wrq:method(RD),
     LastModified = riak_cs_wm_utils:to_rfc_1123(Created),
     ETag = riak_cs_manifest:etag(Mfst),
@@ -219,7 +214,7 @@ produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
                                      stats_key = no_stats},
                  {<<>>, fun() ->
                                 riak_cs_wm_utils:streaming_get(
-                                  RcPool, RcPid, GetFsmPid, StartTime, UserName, BFile_str)
+                                  RcPool, RcPid, GetFsmPid, StartTime)
                         end}}
         end,
     {{known_length_stream, ResourceLength, StreamBody}, NewRQ2, NewCtx}.
