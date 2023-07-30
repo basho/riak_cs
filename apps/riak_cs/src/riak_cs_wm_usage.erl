@@ -258,7 +258,7 @@ forbidden(RD, #rcs_web_context{auth_bypass = AuthBypass,
 
 forbidden(RD, Ctx, _, true) ->
     %% Treat AuthBypass=true as same as admin access
-    {false, RD, Ctx#rcs_web_context{user = admin}};
+    {false, RD, Ctx#rcs_web_context{admin_access = true}};
 forbidden(RD, Ctx, undefined, false) ->
     %% anonymous access disallowed
     riak_cs_wm_utils:deny_access(RD, Ctx);
@@ -266,7 +266,7 @@ forbidden(RD, Ctx, User, false) ->
     case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == User?RCS_USER.key_id ->
             %% admin can access anyone's stats
-            {false, RD, Ctx#rcs_web_context{user = admin}};
+            {false, RD, Ctx#rcs_web_context{admin_access = true}};
         _ ->
             case user_key(RD) == User?RCS_USER.key_id of
                 true ->
@@ -400,22 +400,27 @@ maybe_storage(RD, Ctx) ->
     usage_if(RD, Ctx, "b", riak_cs_storage).
 
 usage_if(RD, #rcs_web_context{riak_client = RcPid,
-                              user = User,
+                              admin_access = AdminAccess,
+                              user = CallingUser,
                               local_context = #local_context{start_time = Start,
                                                              end_time = End}},
          QParam, Module) ->
     case true_param(RD, QParam) of
         true ->
-            KeyId = user_key(RD),
-            Arn =
-                case User of
-                    ?RCS_USER{arn = A} ->
-                        A;
-                    admin ->
-                        {ok, {?RCS_USER{arn = A}, _}} = riak_cs_user:get_cs_user(KeyId, RcPid),
-                        A
-                end,
-            Module:get_usage(RcPid, Arn, (User == admin), Start, End);
+            TargetKeyId = user_key(RD),
+            case CallingUser of
+                ?RCS_USER{arn = Arn,
+                          key_id = TargetKeyId} ->
+                    Module:get_usage(RcPid, Arn, AdminAccess, Start, End);
+                _ ->
+                    case riak_cs_user:get_user(TargetKeyId, RcPid) of
+                        {ok, {?RCS_USER{arn = Arn}, _}} ->
+                            Module:get_usage(RcPid, Arn, AdminAccess, Start, End);
+                        _ ->
+                            logger:notice("Usage request for non-existing user ~s", [TargetKeyId]),
+                            not_requested
+                    end
+            end;
         false ->
             not_requested
     end.

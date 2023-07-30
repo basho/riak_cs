@@ -136,7 +136,6 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
     {AuthResult, AnonOk} =
         case AuthMod:identify(RD, Ctx) of
             failed ->
-                %% Identification failed, deny access
                 {{error, no_such_key}, false};
             {failed, Reason} ->
                 {{error, Reason}, false};
@@ -148,8 +147,11 @@ forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
                        Ctx#rcs_web_context.auth_module,
                        AuthData,
                        RcPid) of
-                    {ok, {User, Obj}} = _LookupResult ->
-                        {authenticate(User, Obj, RD, Ctx, AuthData),
+                    {ok, {User, Obj}} ->
+                        {authenticate(
+                           User, Obj,
+                           RD, Ctx#rcs_web_context{admin_access = riak_cs_user:is_admin(User)},
+                           AuthData),
                          resource_call(Mod, anon_ok, [], ExportsFun)};
                     Error ->
                         {Error,

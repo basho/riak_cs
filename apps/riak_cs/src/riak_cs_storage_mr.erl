@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -210,10 +210,7 @@ blocks_mp_parts(?MULTIPART_MANIFEST{parts=PartMs}) ->
                  P?PART_MANIFEST.content_length,
                  P?PART_MANIFEST.block_size) || P <- PartMs]).
 
-% @doc Returns `new' if Timestamp is 3-tuple and greater than `LeewayEdge',
-% otherwise `old'.
--spec new_or_old(erlang:timestamp(), erlang:timestamp()) -> new | old.
-new_or_old(LeewayEdge, {_,_,_} = Timestamp) when LeewayEdge < Timestamp -> new;
+new_or_old(LeewayEdge, Timestamp) when LeewayEdge < Timestamp -> new;
 new_or_old(_, _) -> old.
 
 -spec add_to(sum(), pos_integer(),

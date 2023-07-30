@@ -110,6 +110,7 @@ authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
                     end
             end;
         el/=se ->
+            ?LOG_DEBUG("Sigs don't match: ~p vs ~p", [CalculatedSignature, Signature]),
             authenticate_1(User, Signature, RD, _Ctx, MoreQuirks)
     end.
 
