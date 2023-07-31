@@ -1,0 +1,17 @@
+%%-*- mode: erlang -*-
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
+{application, riak_cs_multibag,
+ [
+  {description, "riak_cs_multibag"},
+  {vsn, git},
+  {modules, []},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    inets,
+    crypto
+   ]},
+  {env, []}
+ ]}.
