@@ -721,7 +721,8 @@ extract_user_metadata([_ | Headers], Acc) ->
 bucket_access_authorize_helper(AccessType, Deletable, RD,
                                #rcs_web_context{riak_client = RcPid,
                                                 response_module = ResponseMod,
-                                                policy_module = PolicyMod} = Ctx) ->
+                                                policy_module = PolicyMod,
+                                                request_id = RequestId} = Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
         riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
@@ -734,17 +735,24 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
         {UserPolicies, PermissionsBoundary} ->
             case riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) of
                 {ok, {Acl, BucketPolicy}} ->
-                    Policies = [BucketPolicy | UserPolicies],
+                    Policies = lists:filter(fun(P) -> P /= undefined end, [BucketPolicy | UserPolicies]),
                     {PolicyVerdict, VerdictRD1, _} =
-                        lists:foldl(
-                          fun(_, {false, _, _} = Q) ->
-                                  Q;
-                             (P, _) ->
-                                  handle_bucket_acl_policy_response(
-                                    Acl, P, AccessType, Deletable, RD, PermCtx)
-                          end,
-                          {undefined, RD, Ctx},
-                          Policies),
+                        case Policies of
+                            [] ->
+                                logger:info("No bucket or user-attached policies: granting ~s access to ~s on request ~s",
+                                            [AccessType, Bucket, RequestId]),
+                                {false, RD, Ctx};
+                            _ ->
+                                lists:foldl(
+                                  fun(_, {false, _, _} = Q) ->
+                                          Q;
+                                     (P, _) ->
+                                          handle_bucket_acl_policy_response(
+                                            Acl, P, AccessType, Deletable, RD, PermCtx)
+                                  end,
+                                  {undefined, RD, Ctx},
+                                  Policies)
+                        end,
                     {PermBoundaryVerdict, VerdictRD2, _} =
                         case PermissionsBoundary of
                             [] ->
@@ -784,8 +792,6 @@ get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     {riak_cs_iam:express_policies(PP, Pbc), []}.
 
-handle_bucket_acl_policy_response(_, undefined, _, _, RD, Ctx) ->
-    {undefined, RD, Ctx};
 handle_bucket_acl_policy_response(Acl, Policy, AccessType, DeleteEligible, RD, Ctx) ->
     #rcs_web_context{bucket = Bucket,
                      riak_client = RcPid,
