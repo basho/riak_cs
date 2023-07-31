@@ -735,7 +735,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
             case riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) of
                 {ok, {Acl, BucketPolicy}} ->
                     Policies = [BucketPolicy | UserPolicies],
-                    {PolicyVerdict, _, _} =
+                    {PolicyVerdict, VerdictRD1, _} =
                         lists:foldl(
                           fun(_, {false, _, _} = Q) ->
                                   Q;
@@ -745,17 +745,17 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
                           end,
                           {undefined, RD, Ctx},
                           Policies),
-                    {PermBoundaryVerdict, _, _} =
+                    {PermBoundaryVerdict, VerdictRD2, _} =
                         case PermissionsBoundary of
                             [] ->
-                                {undefined, RD, PermCtx};
+                                {undefined, VerdictRD1, PermCtx};
                             _ ->
                                 handle_bucket_acl_policy_response(
-                                  Acl, PermissionsBoundary, AccessType, Deletable, RD, PermCtx)
+                                  Acl, PermissionsBoundary, AccessType, Deletable, VerdictRD1, PermCtx)
                         end,
                     UltimateVerdict =
                         (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
-                    {not UltimateVerdict, RD, PermCtx};
+                    {not UltimateVerdict, VerdictRD2, PermCtx};
                 {error, Reason} ->
                     ResponseMod:api_error(Reason, RD, Ctx)
             end
@@ -785,7 +785,7 @@ get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
     {riak_cs_iam:express_policies(PP, Pbc), []}.
 
 handle_bucket_acl_policy_response(_, undefined, _, _, RD, Ctx) ->
-    {false, RD, Ctx};
+    {undefined, RD, Ctx};
 handle_bucket_acl_policy_response(Acl, Policy, AccessType, DeleteEligible, RD, Ctx) ->
     #rcs_web_context{bucket = Bucket,
                      riak_client = RcPid,
