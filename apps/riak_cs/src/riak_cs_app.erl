@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -30,6 +30,7 @@
          stop/1]).
 
 -include("riak_cs.hrl").
+-include_lib("riakc/include/riakc.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -type start_type() :: normal | {takeover, node()} | {failover, node()}.
@@ -44,17 +45,21 @@
                                            {error, term()}.
 start(_Type, _StartArgs) ->
     riak_cs_config:warnings(),
-    sanity_check(is_config_valid(),
-                 check_admin_creds(),
-                 ensure_bucket_props()).
+    {ok, Pbc} = riak_connection(),
+    try
+        sanity_check(is_config_valid(),
+                     check_admin_creds(Pbc),
+                     ensure_bucket_props(Pbc))
+    after
+        ok = riakc_pb_socket:stop(Pbc)
+    end.
 
 %% @doc application stop callback for riak_cs.
 -spec stop(term()) -> ok.
 stop(_State) ->
     ok.
 
--spec check_admin_creds() -> ok | {error, term()}.
-check_admin_creds() ->
+check_admin_creds(Pbc) ->
     case riak_cs_config:admin_creds() of
         {ok, {<<"admin-key">>, _}} ->
             %% The default key
@@ -69,40 +74,27 @@ check_admin_creds() ->
             logger:warning("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {Key, undefined}} ->
-            fetch_and_cache_admin_creds(Key);
+            fetch_and_cache_admin_creds(Key, Pbc);
         {ok, {Key, <<>>}} ->
-            fetch_and_cache_admin_creds(Key);
+            fetch_and_cache_admin_creds(Key, Pbc);
         {ok, {Key, _}} ->
             logger:warning("The admin user's secret is specified. Ignoring."),
-            fetch_and_cache_admin_creds(Key)
+            fetch_and_cache_admin_creds(Key, Pbc)
     end.
 
-fetch_and_cache_admin_creds(Key) ->
-    fetch_and_cache_admin_creds(Key, _MaxRetries = 5, no_error).
-fetch_and_cache_admin_creds(_Key, 0, Error) ->
+fetch_and_cache_admin_creds(Key, Pbc) ->
+    fetch_and_cache_admin_creds(Key, Pbc, _MaxRetries = 5, no_error).
+fetch_and_cache_admin_creds(_Key, _, 0, Error) ->
     Error;
-fetch_and_cache_admin_creds(Key, Attempt, _Error) ->
-    %% Not using as the master pool might not be initialized
-    {ok, MasterPbc} = riak_connection(),
-    ?LOG_DEBUG("setting admin as ~s", [Key]),
-    try
-        %% Do we count this into stats?; This is a startup query and
-        %% system latency is expected to be low. So get timeout can be
-        %% low like 10% of configuration value.
-        case riak_cs_pbc:get_sans_stats(MasterPbc, ?USER_BUCKET, Key,
-                                        [{notfound_ok, false}],
-                                        riak_cs_config:get_user_timeout() div 10) of
-            {ok, Obj} ->
-                User = riak_cs_user:from_riakc_obj(Obj, false),
-                Secret = User?RCS_USER.key_secret,
-                application:set_env(riak_cs, admin_secret, Secret);
-            Error ->
-                logger:error("Couldn't get admin user (~s) record: ~p. Will retry ~b more times", [Key, Error, Attempt]),
-                timer:sleep(3000),
-                fetch_and_cache_admin_creds(Key, Attempt - 1, Error)
-        end
-    after
-        riakc_pb_socket:stop(MasterPbc)
+fetch_and_cache_admin_creds(Key, Pbc, Attempt, _Error) ->
+    case find_user(Key, Pbc) of
+        {ok, ?IAM_USER{key_secret = SAK}} ->
+            application:set_env(riak_cs, admin_secret, SAK);
+        Error ->
+            logger:warning("Couldn't get admin user (~s) record: ~p. Will retry ~b more times",
+                           [Key, Error, Attempt]),
+            timer:sleep(3000),
+            fetch_and_cache_admin_creds(Key, Pbc, Attempt - 1, Error)
     end.
 
 sanity_check(true, ok, ok) ->
@@ -123,7 +115,7 @@ get_env_response_to_bool({ok, _}) ->
 get_env_response_to_bool(_) ->
     false.
 
-ensure_bucket_props() ->
+ensure_bucket_props(Pbc) ->
     BucketsWithMultiTrue = [?USER_BUCKET,
                             ?ACCESS_BUCKET,
                             ?STORAGE_BUCKET,
@@ -136,11 +128,9 @@ ensure_bucket_props() ->
     %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
     %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
     %%                   riak_kv_wm_link_walker, mapreduce_linkfun],
-    {ok, Pbc} = riak_connection(),
     [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
     [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
-    riakc_pb_socket:stop(Pbc).
-
+    ok.
 
 
 riak_connection() ->
@@ -154,3 +144,24 @@ riak_connection() ->
     StartOptions = [{connect_timeout, Timeout},
                     {auto_reconnect, true}],
     riakc_pb_socket:start_link(Host, Port, StartOptions).
+
+find_user(A, Pbc) ->
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_KEYID_INDEX, A),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
+            get_user(Arn, Pbc);
+        {error, Reason} ->
+            logger:warning("Riak client connection error while finding user ~s: ~p", [A, Reason]),
+            {error, Reason}
+    end.
+get_user(Arn, Pbc) ->
+    case riak_cs_pbc:get_sans_stats(Pbc, ?USER_BUCKET, Arn,
+                                    [{notfound_ok, false}],
+                                    riak_cs_config:get_user_timeout()) of
+        {ok, Obj} ->
+            {ok, riak_cs_user:from_riakc_obj(Obj, _KeepDeletedBuckets = false)};
+        ER ->
+            ER
+    end.
