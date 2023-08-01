@@ -29,11 +29,10 @@
 -export([pbc_pools/0,
          pbc_pool_name/1,
          rts_puller/4]).
--export([stop/1,
+-export([
+         stop/1,
          get_bucket/2,
          set_bucket_name/2,
-         get_user/2,
-         get_user_with_pbc/2,
          set_manifest_bag/2,
          get_manifest_bag/1,
          set_manifest/2,
@@ -47,15 +46,19 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+%% exported for other `riak_client' implementations
+-export([get_bucket_with_pbc/2]).
+
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("riakc/include/riakc.hrl").
--include_lib("kernel/include/logger.hrl").
 
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          master_pbc :: undefined | pid()
+          master_pbc :: undefined | pid(),
+          bucket_name,
+          bucket_obj
          }).
 
 start_link(_Args) ->
@@ -151,17 +154,6 @@ get_bucket(RcPid, BucketName) when is_binary(BucketName) ->
 set_bucket_name(RcPid, BucketName) when is_binary(BucketName) ->
     gen_server:call(RcPid, {set_bucket_name, BucketName}, infinity).
 
-%% @doc Perform an initial read attempt with R=PR=N.
-%% If the initial read fails retry using
-%% R=quorum and PR=1, but indicate that bucket deletion
-%% indicators should not be cleaned up.
--spec get_user(riak_client(), binary()) ->
-          {ok, {riakc_obj:riakc_obj(), KeepDeletedBuckets :: boolean()}} |
-          {error, term()}.
-get_user(RcPid, UserKey) when is_binary(UserKey) ->
-    gen_server:call(RcPid, {get_user, UserKey}, infinity).
-
-
 -spec set_manifest(riak_client(), lfs_manifest()) -> ok | {error, term()}.
 set_manifest(RcPid, Manifest) ->
     gen_server:call(RcPid, {set_manifest, {Manifest?MANIFEST.uuid, Manifest}}).
@@ -201,23 +193,15 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(cleanup, _From, State) ->
     {reply, ok, do_cleanup(State)};
-handle_call({get_bucket, BucketName}, _From, State0) ->
-    case do_get_from_bucket(?BUCKETS_BUCKET, BucketName, get_cs_bucket, State0) of
-        {ok, Obj, State9} ->
-            {reply, {ok, Obj}, State9};
-        {error, Reason, State9} ->
-            {reply, {error, Reason}, State9}
+handle_call({get_bucket, BucketName}, _From, State) ->
+    case do_get_bucket(State#state{bucket_name=BucketName}) of
+        {ok, #state{bucket_obj=BucketObj} = NewState} ->
+            {reply, {ok, BucketObj}, NewState};
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
     end;
 handle_call({set_bucket_name, _BucketName}, _From, State) ->
     {reply, ok, State};
-handle_call({get_user, UserKey}, _From, State) ->
-    case ensure_master_pbc(State) of
-        {ok, #state{master_pbc = MasterPbc} = NewState} ->
-            Res = get_user_with_pbc(MasterPbc, UserKey),
-            {reply, Res, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
 handle_call(master_pbc, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc=MasterPbc} = NewState} ->
@@ -277,17 +261,17 @@ stop_pbc(Pbc) when is_pid(Pbc) ->
     riak_cs_utils:close_riak_connection(pbc_pool_name(master), Pbc),
     ok.
 
-do_get_from_bucket(Bucket, Key, StatsItem, State0) ->
-    case ensure_master_pbc(State0) of
-        {ok, State9 = #state{master_pbc = Pbc}} ->
-            case get_object_with_pbc(Pbc, Bucket, Key, StatsItem) of
+do_get_bucket(State) ->
+    case ensure_master_pbc(State) of
+        {ok, #state{master_pbc=MasterPbc, bucket_name=BucketName} = NewState} ->
+            case get_bucket_with_pbc(MasterPbc, BucketName) of
                 {ok, Obj} ->
-                    {ok, Obj, State9};
+                    {ok, NewState#state{bucket_obj=Obj}};
                 {error, Reason} ->
-                    {error, Reason, State0}
+                    {error, Reason, NewState}
             end;
         {error, Reason} ->
-            {error, Reason, State0}
+            {error, Reason, State}
     end.
 
 ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
@@ -299,55 +283,7 @@ ensure_master_pbc(#state{} = State) ->
         {error, Reason} -> {error, Reason}
     end.
 
-get_object_with_pbc(MasterPbc, Bucket, Key, StatsItem) ->
+get_bucket_with_pbc(MasterPbc, BucketName) ->
     Timeout = riak_cs_config:get_bucket_timeout(),
-    riak_cs_pbc:get(MasterPbc, Bucket, Key, [], Timeout,
-                    [riakc, StatsItem]).
-
-get_user_with_pbc(MasterPbc, Key) ->
-    get_user_with_pbc(MasterPbc, Key, riak_cs_config:fast_user_get()).
-
-get_user_with_pbc(MasterPbc, Key, true) ->
-    weak_get_user_with_pbc(MasterPbc, Key);
-get_user_with_pbc(MasterPbc, Key, false) ->
-    case strong_get_user_with_pbc(MasterPbc, Key) of
-        {ok, _} = OK -> OK;
-        {error, <<"{pr_val_unsatisfied,", _/binary>>} ->
-            weak_get_user_with_pbc(MasterPbc, Key);
-        {error, Reason} ->
-            logger:warning("Fetching user record with strong option failed: ~p", [Reason]),
-            Timeout = riak_cs_config:get_user_timeout(),
-            _ = riak_cs_pbc:pause_to_reconnect(MasterPbc, Reason, Timeout),
-            weak_get_user_with_pbc(MasterPbc, Key)
-    end.
-
-strong_get_user_with_pbc(MasterPbc, Key) ->
-    StrongOptions = [{r, all}, {pr, all}, {notfound_ok, false}],
-    Timeout = riak_cs_config:get_user_timeout(),
-    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, StrongOptions,
-                         Timeout, [riakc, get_cs_user_strong]) of
-        {ok, Obj} ->
-            %% since we read from all primaries, we're less concerned
-            %% with there being an 'out-of-date' replica that we might
-            %% conflict with (and not be able to properly resolve
-            %% conflicts).
-            KeepDeletedBuckets = false,
-            {ok, {Obj, KeepDeletedBuckets}};
-        {error, _} = Error ->
-            Error
-    end.
-
-weak_get_user_with_pbc(MasterPbc, Key) ->
-    Timeout = riak_cs_config:get_user_timeout(),
-    WeakOptions = [{r, quorum}, {pr, one}, {notfound_ok, false}],
-    case riak_cs_pbc:get(MasterPbc, ?USER_BUCKET, Key, WeakOptions,
-                         Timeout, [riakc, get_cs_user]) of
-        {ok, Obj} ->
-            %% We weren't able to read from all primary vnodes, so
-            %% don't risk losing information by pruning the bucket
-            %% list.
-            KeepDeletedBuckets = true,
-            {ok, {Obj, KeepDeletedBuckets}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    riak_cs_pbc:get(MasterPbc, ?BUCKETS_BUCKET, BucketName, [], Timeout,
+                    [riakc, get_cs_bucket]).

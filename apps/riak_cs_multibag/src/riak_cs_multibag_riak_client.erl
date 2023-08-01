@@ -8,6 +8,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3, format_status/2]).
 
+-include_lib("riak_cs/include/riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 -define(SERVER, ?MODULE).
@@ -71,22 +72,6 @@ handle_call({set_bucket_name, RequestedBucketName}, _From,
             #state{bucket_name = BucketName} = State) ->
     {reply, {error, {bucket_name_already_set, RequestedBucketName, BucketName}}, State};
 
-handle_call({get_user, UserKey}, _From, State) ->
-    case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc} = NewState} ->
-            Res = riak_cs_riak_client:get_user_with_pbc(MasterPbc, UserKey),
-            {reply, Res, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
-handle_call({save_user, User, OldUserObj}, _From, State) ->
-    case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc} = NewState} ->
-            Res = riak_cs_riak_client:save_user_with_pbc(MasterPbc, User, OldUserObj),
-            {reply, Res, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
 handle_call(master_pbc, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc=MasterPbc} = NewState} ->
@@ -188,10 +173,11 @@ stop_pbcs([{Pbc, BagId} | Rest]) when is_pid(Pbc) ->
 
 do_get_bucket(State) ->
     case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc, bucket_name=BucketName} = NewState} ->
+        {ok, #state{master_pbc = MasterPbc,
+                    bucket_name = BucketName} = NewState} ->
             case riak_cs_riak_client:get_bucket_with_pbc(MasterPbc, BucketName) of
                 {ok, Obj} ->
-                    {ok, NewState#state{bucket_obj=Obj}};
+                    {ok, NewState#state{bucket_obj = Obj}};
                 {error, Reason} ->
                     {error, Reason, NewState}
             end;
