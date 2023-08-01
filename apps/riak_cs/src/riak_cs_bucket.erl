@@ -439,8 +439,7 @@ bucket_empty_any_pred(RcPid, Bucket) ->
 -spec fetch_bucket_object(binary(), riak_client()) ->
           {ok, riakc_obj:riakc_obj()} | {error, term()}.
 fetch_bucket_object(BucketName, RcPid) ->
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case fetch_bucket_object_raw(BucketName, Pbc) of
+    case fetch_bucket_object_raw(BucketName, RcPid) of
         {ok, Obj} ->
             [Value | _] = riakc_obj:get_values(Obj),
             case Value of
@@ -457,7 +456,7 @@ fetch_bucket_object(BucketName, RcPid) ->
 
 %% @doc Fetches the bucket object, even it is marked as free
 fetch_bucket_object_raw(BucketName, Pbc) ->
-    case riak_cs_pbc:get(Pbc, ?BUCKETS_BUCKET, BucketName, get_cs_bucket) of
+    case riak_cs_riak_client:get_bucket(Pbc, BucketName) of
         {ok, Obj} ->
             Values = riakc_obj:get_values(Obj),
             maybe_log_sibling_warning(BucketName, Values),
