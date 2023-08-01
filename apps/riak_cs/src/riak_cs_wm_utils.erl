@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -105,6 +105,7 @@ make_s3_action(Method, Target) ->
         {'PUT', object_acl} -> 's3:PutObjectAcl';
         {'PUT', bucket_acl} -> 's3:PutBucketAcl';
         {'PUT', bucket_policy} -> 's3:PutBucketPolicy';
+        {'PUT', bucket_versioning} -> 's3:PutBucketVersioning';
         {'PUT', bucket_request_payment} -> 's3:PutBucketRequestPayment';
 
         {'GET', object} -> 's3:GetObject';
@@ -114,6 +115,7 @@ make_s3_action(Method, Target) ->
         {'GET', no_bucket } -> 's3:ListAllMyBuckets';
         {'GET', bucket_acl} -> 's3:GetBucketAcl';
         {'GET', bucket_policy} -> 's3:GetBucketPolicy';
+        {'GET', bucket_versioning} -> 's3:GetBucketVersioning';
         {'GET', bucket_location} -> 's3:GetBucketLocation';
         {'GET', bucket_request_payment} -> 's3:GetBucketRequestPayment';
         {'GET', bucket_uploads} -> 's3:ListBucketMultipartUploads';

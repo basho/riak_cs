@@ -69,7 +69,7 @@ content_types_accepted(RD, Ctx) ->
 -spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_version, false, RD, Ctx).
+    riak_cs_wm_utils:bucket_access_authorize_helper(bucket_versioning, false, RD, Ctx).
 
 
 -spec to_xml(#wm_reqdata{}, #rcs_web_context{}) ->
