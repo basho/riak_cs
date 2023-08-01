@@ -267,7 +267,7 @@ method_from_target(bucket_acl) ->
 method_from_target(bucket_location) -> 'GET';
 method_from_target(bucket_policy) ->
     oneof(['PUT', 'GET', 'DELETE']);
-%% method_from_target(bucket_version) -> 'GET';
+method_from_target(bucket_versioning) -> 'GET';
 method_from_target(bucket_uploads) -> 'GET';
 method_from_target(object) ->
     oneof(['PUT', 'GET', 'POST', 'DELETE', 'HEAD']);
@@ -276,7 +276,7 @@ method_from_target(object_acl) ->
 
 access_v1() ->
     ?LET(Target, oneof([bucket, bucket_acl, bucket_location,
-                        bucket_policy, bucket_uploads, %% bucket_version,
+                        bucket_policy, bucket_uploads, bucket_versioning,
                         bucket_uploads,
                         object, object_acl]),
          ?LET(Method, method_from_target(Target),
