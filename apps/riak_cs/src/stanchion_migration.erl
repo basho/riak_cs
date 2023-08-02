@@ -27,6 +27,7 @@
          apply_stanchion_details/1,
          save_stanchion_data/1
         ]).
+-export([stop_stanchion_here/0]).
 
 -include("riak_cs.hrl").
 
@@ -87,7 +88,9 @@ select_addr_for_stanchion() ->
 
 adopt_stanchion() ->
     case riak_cs_config:stanchion_hosting_mode() of
-        auto ->
+        Adoptable when Adoptable =:= riak_cs_with_stanchion;
+                       Adoptable =:= auto;
+                       Adoptable =:= stanchion_only ->
             Addr = select_addr_for_stanchion(),
             {ok, Port} = application:get_env(riak_cs, stanchion_port),
             ok = save_stanchion_data({Addr, Port}),
