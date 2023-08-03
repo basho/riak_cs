@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,7 +25,6 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("riak_cs.hrl").
--include("list_objects.hrl").
 
 %% properties
 -export([prop_skip_past_prefix_and_delimiter/0,

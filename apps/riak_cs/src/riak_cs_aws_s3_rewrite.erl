@@ -271,8 +271,8 @@ extract_bucket_from_host_test() ->
             , {"a.s.df.s2.amazonaws.com", undefined}
             , {"a.s.df.s3.amazonaws.org", undefined}
             ],
-    lists:foreach(fun({A, E}) -> ?assertEqual(extract_bucket_from_host(A, "s3.amazonaws.com"), E) end, Cases),
-    lists:foreach(fun({A, E}) -> ?assertEqual(extract_bucket_from_host(A, "s3.us-east-2.amazonaws.com"), E) end, Cases),
+    lists:foreach(fun({A, E}) -> ?assertEqual(bucket_from_host(A), E) end, Cases),
+    lists:foreach(fun({A, E}) -> ?assertEqual(bucket_from_host(A), E) end, Cases),
     ok.
 
 -endif.

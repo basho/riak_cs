@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -34,8 +34,6 @@
 -include("aws_api.hrl").
 -include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--include_lib("webmachine/include/wm_reqdata.hrl").
 
 -define(TEST_ITERATIONS, 500).
 -define(QC_OUT(P),
@@ -168,8 +166,8 @@ prop_policy_v1()->
 
 
 %% Generators
-object_action() -> oneof(?SUPPORTED_OBJECT_ACTION).
-bucket_action() -> oneof(?SUPPORTED_BUCKET_ACTION).
+object_action() -> oneof(?SUPPORTED_OBJECT_ACTIONS).
+bucket_action() -> oneof(?SUPPORTED_BUCKET_ACTIONS).
 
 string_condition()  -> oneof(?STRING_CONDITION_ATOMS).
 numeric_condition() -> oneof(?NUMERIC_CONDITION_ATOMS).
@@ -250,8 +248,8 @@ nonempty_binary_char_string() ->
          <<Char, BinString/binary>>).
 
 policy_v1() ->
-    #policy_v1{
-       version   = <<"2008-10-17">>,
+    #policy{
+       version   = ?POLICY_VERSION_2008,
        id        = oneof([undefined, binary_char_string()]),
        statement = statements(),
        creation_time = creation_time()
