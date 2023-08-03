@@ -19,21 +19,60 @@
 %%
 %% ---------------------------------------------------------------------
 
--ifndef(RIAK_CS_S3_API_HRL).
--define(RIAK_CS_S3_API_HRL, included).
+-ifndef(RIAK_CS_AWS_API_HRL).
+-define(RIAK_CS_AWS_API_HRL, included).
 
 -include_lib("public_key/include/public_key.hrl").
 
 -define(S3_ROOT_HOST, "s3.amazonaws.com").
 -define(IAM_ROOT_HOST, "iam.amazonaws.com").
 -define(STS_ROOT_HOST, "sts.amazonaws.com").
+-type aws_service() :: s3 | iam | sts.
+
+
+%% ACL =============
+
+-type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
+-type group_grant() :: 'AllUsers' | 'AuthUsers'.
+-type acl_owner() :: #{display_name => binary(),
+                       canonical_id => binary(),
+                       key_id => binary()}.
+
+-type acl_grantee() :: acl_owner() | group_grant().
+
+-record(acl_grant_v2, { grantee :: acl_grantee()
+                      , perms :: [acl_perm()]
+                      }
+       ).
+-type acl_grant() :: #acl_grant_v2{}.
+-define(ACL_GRANT, #acl_grant_v2).
+
+%% -record(acl_v1, {owner = {"", ""} :: {string(), string()},
+%%                  grants = [] :: [acl_grant()],
+%%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
+%% %% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
+%% -record(acl_v2, {owner={"", "", ""} :: acl_owner(),
+%%                  grants=[] :: [acl_grant()],
+%%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
+
+-record(acl_v3, { owner :: acl_owner()
+                , grants = [] :: [acl_grant()]
+                , creation_time = os:system_time(millisecond) :: non_neg_integer()
+                }
+       ).
+
+-type acl() :: #acl_v3{}.
+-define(ACL, #acl_v3).
+
+
+%% Policies =============
 
 -define(SUBRESOURCES, ["acl", "location", "logging", "notification", "partNumber",
                        "policy", "requestPayment", "torrent", "uploadId", "uploads",
                        "versionId", "versioning", "versions", "website",
                        "delete", "lifecycle"]).
 
-% type and record definitions for S3 policy API
+%% type and record definitions for S3 policy API
 -type s3_object_action() :: 's3:GetObject' | 's3:GetObjectVersion'
                           | 's3:GetObjectAcl' | 's3:GetObjectVersionAcl'
                           | 's3:PutObject' | 's3:PutObjectAcl'
