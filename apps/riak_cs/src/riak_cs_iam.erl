@@ -362,7 +362,7 @@ update_policy(A = ?IAM_POLICY{arn = Arn}) ->
                          [{auth_creds, AdminCreds}]).
 
 
--spec express_policies([flat_arn()], pid()) -> [amz_policy()].
+-spec express_policies([flat_arn()], pid()) -> [iam_policy()].
 express_policies(AA, Pbc) ->
     lists:flatten(
       [begin
@@ -587,7 +587,7 @@ exprec_role(Map) ->
 
 -spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
 exprec_policy(Map) ->
-    Policy0 = ?IAM_POLICY{tags = TT0} = exprec:frommap_policy_v1(Map),
+    Policy0 = ?IAM_POLICY{tags = TT0} = exprec:frommap_iam_policy(Map),
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     Policy0?IAM_POLICY{tags = TT}.
 

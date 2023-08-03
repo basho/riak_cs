@@ -105,7 +105,7 @@ to_json(?IAM_ROLE{assume_role_policy_document = D} = A) ->
 to_json(?IAM_POLICY{policy_document = D} = A) ->
     list_to_binary(
       jason:encode(A?IAM_POLICY{policy_document = base64:encode(D)},
-                   [{records, [{policy_v1, record_info(fields, policy_v1)},
+                   [{records, [{iam_policy, record_info(fields, iam_policy)},
                                {tag, record_info(fields, tag)}]}]));
 to_json(?IAM_SAML_PROVIDER{saml_metadata_document = D} = A) ->
     list_to_binary(

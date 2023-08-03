@@ -67,14 +67,14 @@
 %% @doc evaluates the policy and returns the policy allows, denies or
 %% not says anything about this access. Usually in case of undefined,
 %% the owner access must be accepted and others must be refused.
--spec eval(access(), amz_policy() | undefined | binary() ) -> boolean() | undefined.
+-spec eval(access(), policy() | undefined | binary()) -> boolean() | undefined.
 eval(_, undefined) -> undefined;
 eval(Access, JSON) when is_binary(JSON) ->
     case policy_from_json(JSON) of
         {ok, Policy} ->  eval(Access, Policy);
         {error, _} = E -> E
     end;
-eval(Access, ?AMZ_POLICY{statement=Stmts} = Policy) ->
+eval(Access, ?POLICY{statement=Stmts} = Policy) ->
     case check_version(Policy) of
         true -> aggregate_evaluation(Access, Stmts);
         false -> false
@@ -90,21 +90,21 @@ aggregate_evaluation(Access, [Stmt|Stmts]) ->
 
 
 % @doc  semantic validation of policy
--spec check_policy(access(), amz_policy()) ->
+-spec check_policy(access(), policy()) ->
           ok | {error, {malformed_policy_version, binary()}
                | malformed_policy_resource | malformed_policy_action}.
 check_policy(#access_v1{bucket = B}, Policy) ->
     case check_version(Policy) of
         false ->
-            {error, {malformed_policy_version, Policy?AMZ_POLICY.version}};
+            {error, {malformed_policy_version, Policy?POLICY.version}};
         true ->
             case check_all_resources(B, Policy) of
                 false -> {error, malformed_policy_resource};
                 true ->
-                    case check_principals(Policy?AMZ_POLICY.statement) of
+                    case check_principals(Policy?POLICY.statement) of
                         false -> {error, malformed_policy_principal};
                         true ->
-                            case check_actions(Policy?AMZ_POLICY.statement) of
+                            case check_actions(Policy?POLICY.statement) of
                                 false -> {error, malformed_policy_action};
                                 true -> ok
                             end
@@ -112,10 +112,10 @@ check_policy(#access_v1{bucket = B}, Policy) ->
             end
     end.
 
-check_version(?AMZ_POLICY{version = V}) ->
-    case lists:member(V, [?AMZ_POLICY_VERSION_2008,
-                          ?AMZ_POLICY_VERSION_2012,
-                          ?AMZ_POLICY_VERSION_2020]) of
+check_version(?POLICY{version = V}) ->
+    case lists:member(V, [?POLICY_VERSION_2008,
+                          ?POLICY_VERSION_2012,
+                          ?POLICY_VERSION_2020]) of
         true ->
             true;
         false ->
@@ -159,7 +159,7 @@ check_principal([_|T]) ->
     check_principal(T).
 
 % @doc check if the policy is set to proper bucket by checking arn
-check_all_resources(Bucket, ?AMZ_POLICY{statement = Stmts}) ->
+check_all_resources(Bucket, ?POLICY{statement = Stmts}) ->
     CheckFun = fun(Stmt) ->
                        check_all_resources(Bucket, Stmt)
                end,
@@ -192,7 +192,7 @@ reqdata_to_access(RD, Target, ID) ->
                action = riak_cs_wm_utils:aws_service_action(RD, Target)
               }.
 
--spec policy_from_json(JSON::binary()) -> {ok, amz_policy()} | {error, term()}.
+-spec policy_from_json(JSON::binary()) -> {ok, policy()} | {error, term()}.
 policy_from_json(JSON) ->
     try
         case jsx:decode(JSON) of
@@ -226,12 +226,12 @@ policy_from_json(JSON) ->
             ?LOG_DEBUG("Argh ~p:~p:~p", [T, E, ST])
     end.
 
--spec policy_to_json_term(amz_policy()) -> JSON::binary().
-policy_to_json_term(?AMZ_POLICY{version = Version,
-                                id = ID, statement = Stmts0})
-  when Version =:= ?AMZ_POLICY_VERSION_2008;
-       Version =:= ?AMZ_POLICY_VERSION_2012;
-       Version =:= ?AMZ_POLICY_VERSION_2020 ->
+-spec policy_to_json_term(policy()) -> JSON::binary().
+policy_to_json_term(?POLICY{version = Version,
+                            id = ID, statement = Stmts0})
+  when Version =:= ?POLICY_VERSION_2008;
+       Version =:= ?POLICY_VERSION_2012;
+       Version =:= ?POLICY_VERSION_2020 ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     Policy = #{<<"Version">> => Version,
                <<"Id">> => ID,
@@ -250,7 +250,7 @@ log_supported_actions() ->
     ok.
 
 %% @doc Fetch the policy for a bucket
--type policy_from_meta_result() :: {ok, amz_policy()} | {error, policy_undefined}.
+-type policy_from_meta_result() :: {ok, policy()} | {error, policy_undefined}.
 -type bucket_policy_result() :: policy_from_meta_result() |
                                 {error, notfound} |
                                 {error, multiple_bucket_owners}.
@@ -314,7 +314,7 @@ resolve_bucket_policies(Policies) ->
 newer_policy(Policy1, ?POLICY_UNDEF) ->
     Policy1;
 newer_policy({ok, Policy1}, {ok, Policy2})
-  when Policy1?AMZ_POLICY.creation_time >= Policy2?AMZ_POLICY.creation_time ->
+  when Policy1?POLICY.creation_time >= Policy2?POLICY.creation_time ->
     {ok, Policy1};
 newer_policy(_, Policy2) ->
     Policy2.
@@ -848,9 +848,9 @@ principal_eq({aws, H}, [{aws, H}]) -> true;
 principal_eq([{aws, H}], {aws, H}) -> true;
 principal_eq(LHS, RHS) ->   LHS =:= RHS.
 
-resource_eq(?ARN{} = LHS, [?ARN{} = LHS]) -> true;
-resource_eq([?ARN{} = LHS], ?ARN{} = LHS) -> true;
-resource_eq(LHS, RHS) ->  LHS =:= RHS.
+resource_eq(?S3_ARN{} = LHS, [?S3_ARN{} = LHS]) -> true;
+resource_eq([?S3_ARN{} = LHS], ?S3_ARN{} = LHS) -> true;
+resource_eq(LHS, RHS) -> LHS =:= RHS.
 
 statement_eq(LHS, RHS) ->
     (LHS#statement.sid =:= RHS#statement.sid)
@@ -869,11 +869,11 @@ statement_eq(LHS, RHS) ->
 
 valid_arn_parse_test() ->
     A1 = <<"arn:aws:s3::123456789012:user/Development/product_1234/*">>,
-    E1 = ?ARN{provider = aws,
-              service = s3,
-              region = [],
-              id = <<"123456789012">>,
-              path = "user/Development/product_1234/*"},
+    E1 = ?S3_ARN{provider = aws,
+                 service = s3,
+                 region = [],
+                 id = <<"123456789012">>,
+                 path = "user/Development/product_1234/*"},
     AAEE = [{{ok, [E1]}, A1},
             {{ok, [E1]}, [A1]},
             {{ok, [E1, E1]}, [A1, A1]}

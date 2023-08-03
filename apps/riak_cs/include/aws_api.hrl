@@ -24,9 +24,6 @@
 
 -include_lib("public_key/include/public_key.hrl").
 
--define(S3_ROOT_HOST, "s3.amazonaws.com").
--define(IAM_ROOT_HOST, "iam.amazonaws.com").
--define(STS_ROOT_HOST, "sts.amazonaws.com").
 -type aws_service() :: s3 | iam | sts.
 
 
@@ -150,7 +147,7 @@
 -define(SUPPORTED_ACTIONS, ?SUPPORTED_S3_ACTIONS ++ ?SUPPORTED_IAM_ACTIONS ++ ?SUPPORTED_STS_ACTIONS).
 
 
-% one of string, numeric, date&time, boolean, IP address, ARN and existence of condition keys
+%% one of string, numeric, date&time, boolean, IP address, ARN and existence of condition keys
 -type string_condition_type() :: 'StringEquals' | streq            | 'StringNotEquals' | strneq
                                | 'StringEqualsIgnoreCase' | streqi | 'StringNotEqualsIgnoreCase' | strneqi
                                | 'StringLike' | strl               | 'StringNotLike' | strnl.
@@ -199,7 +196,6 @@
                         | {string_condition_type(),  [{'aws:UserAgent', binary()}]}
                         | {string_condition_type(),  [{'aws:Referer', binary()}]}.
 
--type aws_service() :: s3 | iam | sts.
 
 -record(arn_v1, { provider = aws :: aws
                 , service  = s3  :: aws_service()
@@ -234,34 +230,37 @@
        ).
 -define(S3_STATEMENT, #statement).
 
--define(AMZ_POLICY_VERSION_2008, <<"2008-10-17">>).
--define(AMZ_POLICY_VERSION_2012, <<"2012-10-17">>).
--define(AMZ_POLICY_VERSION_2020, <<"2020-10-17">>).
+-define(POLICY_VERSION_2008, <<"2008-10-17">>).
+-define(POLICY_VERSION_2012, <<"2012-10-17">>).
+-define(POLICY_VERSION_2020, <<"2020-10-17">>).
 
--record(amz_policy, { version = ?AMZ_POLICY_VERSION_2020 :: binary()
-                    , id = undefined :: undefined | binary()  % had better use uuid: should be UNIQUE
-                    , statement = [] :: [#statement{}]
-                    , creation_time = os:system_time(millisecond) :: non_neg_integer()
+-record(policy, { version = ?POLICY_VERSION_2012 :: binary()
+                , id = undefined :: undefined | binary()  % had better use uuid: should be UNIQUE
+                , statement = [] :: [#statement{}]
+                , creation_time = os:system_time(millisecond) :: non_neg_integer()
          }).
--type amz_policy() :: #amz_policy{}.
--define(AMZ_POLICY, #amz_policy).
+-type policy() :: #policy{}.
+-define(POLICY, #policy).
 
--record(policy_v1, { arn :: flat_arn()
-                   , path = <<"/">> :: binary()
-                   , attachment_count = 0 :: non_neg_integer()
-                   , create_date = os:system_time(millisecond) :: non_neg_integer()
-                   , default_version_id = <<"v1">> :: binary()
-                   , description = <<>> :: binary()
-                   , is_attachable = true :: boolean()
-                   , permissions_boundary_usage_count = 0 :: non_neg_integer()
-                   , policy_document :: binary()
-                   , policy_id :: binary()
-                   , policy_name :: binary()
-                   , tags = [] :: [tag()]
-                   , update_date = os:system_time(millisecond) :: non_neg_integer()
-         }).
--type policy() :: #policy_v1{}.
--define(IAM_POLICY, #policy_v1).
+
+%% IAM entities =============
+
+-record(iam_policy, { arn :: flat_arn()
+                    , path = <<"/">> :: binary()
+                    , attachment_count = 0 :: non_neg_integer()
+                    , create_date = os:system_time(millisecond) :: non_neg_integer()
+                    , default_version_id = <<"v1">> :: binary()
+                    , description = <<>> :: binary()
+                    , is_attachable = true :: boolean()
+                    , permissions_boundary_usage_count = 0 :: non_neg_integer()
+                    , policy_document :: binary()
+                    , policy_id :: binary()
+                    , policy_name :: binary()
+                    , tags = [] :: [tag()]
+                    , update_date = os:system_time(millisecond) :: non_neg_integer()
+                    }).
+-type iam_policy() :: #iam_policy{}.
+-define(IAM_POLICY, #iam_policy).
 
 
 -record(permissions_boundary, { permissions_boundary_arn :: flat_arn()
@@ -342,6 +341,11 @@
 -define(POLICY_ID_PREFIX, "ANPA").
 
 -define(IAM_ENTITY_ID_LENGTH, 21).  %% length("AROAJQABLZS4A3QDU576Q").
+
+
+-define(S3_ROOT_HOST, "s3.amazonaws.com").
+-define(IAM_ROOT_HOST, "iam.amazonaws.com").
+-define(STS_ROOT_HOST, "sts.amazonaws.com").
 
 -define(DEFAULT_REGION, "us-east-1").
 

@@ -457,7 +457,7 @@ auth_test_() ->
 
 setup() ->
     application:set_env(riak_cs, verify_client_clock_skew, false),
-    application:set_env(riak_cs, cs_root_host, ?ROOT_HOST).
+    application:set_env(riak_cs, cs_root_host, ?S3_ROOT_HOST).
 
 teardown(_) ->
     application:unset_env(riak_cs, verify_client_clock_skew),

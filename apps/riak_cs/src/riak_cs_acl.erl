@@ -296,16 +296,7 @@ object_access(_BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, _) ->
 %% @doc Get the canonical id of the owner of an entity.
 -spec owner_id(acl(), riak_client()) -> binary().
 owner_id(?ACL{owner = #{key_id := OwnerKeyId}}, _) ->
-    OwnerKeyId;
-owner_id(#acl_v1{owner = OwnerData}, RcPid) ->
-    {Name, CanonicalId} = OwnerData,
-    case riak_cs_iam:find_user(#{id => list_to_binary(CanonicalId)}, RcPid) of
-        {ok, {Owner, _}} ->
-            Owner?RCS_USER.key_id;
-        {error, _} ->
-            logger:warning("Failed to retrieve key_id for user ~p with canonical_id ~p", [Name, CanonicalId]),
-            []
-    end.
+    OwnerKeyId.
 
 -spec exprec_acl(maps:map()) -> ?ACL{}.
 exprec_acl(Map) ->

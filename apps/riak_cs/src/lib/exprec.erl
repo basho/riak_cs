@@ -33,6 +33,7 @@
                                fromlist_assumed_role_user/1,
                                fromlist_bucket_versioning/1,
                                fromlist_credentials/1,
+                               fromlist_iam_policy/1,
                                fromlist_lfs_manifest_v3/1,
                                fromlist_moss_bucket_v2/1,
                                fromlist_moss_user_v1/1,
@@ -41,7 +42,6 @@
                                fromlist_part_descr_v1/1,
                                fromlist_part_manifest_v1/1,
                                fromlist_permissions_boundary/1,
-                               fromlist_policy_v1/1,
                                fromlist_rcs_user_v3/1,
                                fromlist_role_last_used/1,
                                fromlist_role_v1/1,
@@ -53,6 +53,7 @@
                                frommap_assumed_role_user/1,
                                frommap_bucket_versioning/1,
                                frommap_credentials/1,
+                               frommap_iam_policy/1,
                                frommap_lfs_manifest_v3/1,
                                frommap_moss_bucket_v2/1,
                                frommap_moss_user_v1/1,
@@ -61,7 +62,6 @@
                                frommap_part_descr_v1/1,
                                frommap_part_manifest_v1/1,
                                frommap_permissions_boundary/1,
-                               frommap_policy_v1/1,
                                frommap_rcs_user_v3/1,
                                frommap_role_last_used/1,
                                frommap_role_v1/1,
@@ -77,6 +77,8 @@
                                new_assumed_role_user/1,
                                new_credentials/0,
                                new_credentials/1,
+                               new_iam_policy/0,
+                               new_iam_policy/1,
                                new_lfs_manifest_v3/0,
                                new_lfs_manifest_v3/1,
                                new_moss_bucket_v2/0,
@@ -93,8 +95,6 @@
                                new_part_manifest_v1/1,
                                new_permissions_boundary/0,
                                new_permissions_boundary/1,
-                               new_policy_v1/0,
-                               new_policy_v1/1,
                                new_rcs_user_v3/0,
                                new_rcs_user_v3/1,
                                new_role_last_used/0,
@@ -122,7 +122,7 @@
         , bucket_versioning
           %% AWS records
         , arn_v1
-        , policy_v1
+        , iam_policy
         , statement
         , tag
         , role_last_used

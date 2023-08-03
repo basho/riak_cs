@@ -85,7 +85,7 @@ create(?IAM_ROLE{role_id = RoleId,
     end.
 
 
--spec effective_policies(#temp_session{}, pid()) -> {[amz_policy()], PermissionsBoundary::amz_policy() | []}.
+-spec effective_policies(#temp_session{}, pid()) -> {[iam_policy()], PermissionsBoundary::iam_policy() | []}.
 effective_policies(#temp_session{inline_policy = InlinePolicy,
                                  session_policies = SessionPolicies,
                                  role = ?IAM_ROLE{assume_role_policy_document = AssumeRolePolicyDocument,
