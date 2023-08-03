@@ -214,8 +214,14 @@
 
 -type flat_arn() :: binary().
 
+-type principal_id() :: '*' | binary().
+-type one_or_many(A) :: A | [A].
 -type principal() :: '*'
-                   | [{canonical_id, binary()} | {aws, '*'}].
+                   | [ {canonical_user, one_or_many(principal_id())}
+                     | {federated, one_or_many(principal_id())}
+                     | {service, one_or_many(principal_id())}
+                     | {aws, one_or_many(principal_id())}
+                     ].
 
 -record(statement, { sid = undefined :: undefined | binary() % had better use uuid: should be UNIQUE
                    , effect = deny :: allow | deny

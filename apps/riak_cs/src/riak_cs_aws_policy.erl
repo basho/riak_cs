@@ -642,47 +642,48 @@ binary_to_action(Bin) ->
             end
     end.
 
+parse_principal([]) -> throw({error, missing_principal});
 parse_principal(<<"*">>) -> '*';
 parse_principal(#{} = A) ->
-    parse_principals(maps:to_list(A), []);
-parse_principal(List) when is_list(List) ->
-    parse_principals(List, []);
-parse_principal([List]) when is_list(List) ->
-    parse_principals(List, []).
+    parse_principals(maps:to_list(A), []).
 
+-define(IS_VALID_PRINCIPAL(P),
+        P =:= <<"AWS">> orelse
+        P =:= <<"Federated">> orelse
+        P =:= <<"CanonicalUser">> orelse
+        P =:= <<"Service">>).
+-define(IS_ASTERISK(A),
+        A =:= <<"*">> orelse A =:= [<<"*">>]).
+parse_principals([], Q) -> Q;
+parse_principals([{P, Id} | TL], Q)
+  when ?IS_VALID_PRINCIPAL(P) ->
+    parse_principals(TL, [{s2principal(P), s2id(Id)} | Q]).
+s2principal(<<"AWS">>) -> aws;
+s2principal(<<"Federated">>) -> federated;
+s2principal(<<"Service">>) -> service;
+s2principal(<<"CanonicalUser">>) -> canonical_user;
+s2principal(Invalid) -> throw({error, {invalid_principal, Invalid}}).
 
-parse_principals([], Principal) -> Principal;
-parse_principals([{<<"AWS">>, [<<"*">>]} | TL], Principal) ->
-    parse_principals(TL, [{aws, '*'} | Principal]);
-parse_principals([{<<"AWS">>,<<"*">>} | TL], Principal) ->
-    parse_principals(TL, [{aws, '*'} | Principal]).
-%% TODO: CanonicalUser as principal is not yet supported,
-%%  Because to use at Riak CS, key_id is better to specify user, because
-%%  getting canonical ID from Riak is not enough efficient
-%% ```
-%% parse_principals([{<<"CanonicalUser">>,CanonicalIds}|TL], Principal) ->
-%%     case CanonicalIds of
-%%         [H|_] when is_binary(H) ->
-%%             %% in case of list of strings ["CAFEBABE...", "BA6DAAD..."]
-%%             CanonicalUsers = lists:map(fun(CanonicalId) ->
-%%                                                {canonical_id, binary_to_list(CanonicalId)}
-%%                                        end,
-%%                                        CanonicalIds),
-%%             parse_principals(TL, CanonicalUsers ++ Principal);
-%%         CanonicalId when is_binary(CanonicalId) ->
-%%             %% in case of just a string ["CAFEBABE..."]
-%%             parse_principals(TL, [{canonical_id, binary_to_list(CanonicalId)}|Principal])
-%%     end.
-%% '''
+s2id(<<"*">>) -> '*';
+s2id(Ids) when is_list(Ids) ->
+    [s2id_flat(Id) || Id <- Ids];
+s2id(Id) -> Id.
+
+s2id_flat(Id) when is_binary(Id) -> Id;
+s2id_flat(A) -> throw({error, {invalid_principal_id, A}}).
 
 print_principal('*') -> <<"*">>;
-print_principal({aws, '*'}) ->
-    [{<<"AWS">>, <<"*">>}];
-%%print_principal({canonical_id, Id}) ->
-%%    {"CanonicalUser", Id};
+print_principal({P, A}) ->
+    {principal2s(P), a2s(A)};
 print_principal(Principals) when is_list(Principals) ->
-    PrintFun = fun(Principal) -> print_principal(Principal) end,
-    lists:map(PrintFun, Principals).
+    lists:map(fun print_principal/1, Principals).
+principal2s(aws) -> <<"AWS">>;
+principal2s(federated) -> <<"Federated">>;
+principal2s(service) -> <<"Service">>;
+principal2s(canonical_user) -> <<"CanonicalUser">>.
+a2s('*') -> <<"*">>;
+a2s(Id) -> Id.
+
 
 -spec parse_arns(binary()|[binary()]) -> {ok, [arn()]} | {error, bad_arn}.
 parse_arns(<<"*">>) -> {ok, '*'};
@@ -730,9 +731,10 @@ my_split(Ch, [Ch0|TL], Acc, L) ->
 -spec print_arns( '*'|[arn()]) -> [binary()] | binary().
 print_arns('*') -> <<"*">>;
 print_arns(#arn_v1{region = R, id = ID, path = Path} = _ARN) ->
-    StringPath = unicode:characters_to_list(Path),
-    StringID   = binary_to_list(ID),
-    list_to_binary(string:join(["arn", "aws", "s3", R, StringID, StringPath], ":"));
+    list_to_binary(string:join(["arn", "aws", "s3",
+                                binary_to_list(R),
+                                binary_to_list(ID),
+                                unicode:characters_to_list(Path)], ":"));
 
 print_arns(ARNs) when is_list(ARNs)->
     PrintARN = fun(ARN) -> print_arns(ARN) end,
