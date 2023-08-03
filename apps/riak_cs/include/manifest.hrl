@@ -22,7 +22,7 @@
 -ifndef(RCS_COMMON_MANIFEST_HRL).
 -define(RCS_COMMON_MANIFEST_HRL, included).
 
--include("acl.hrl").
+-include("aws_api.hrl").
 
 
 -define(MANIFEST, #lfs_manifest_v4).

@@ -22,7 +22,6 @@
 -ifndef(RCS_COMMON_MOSS_HRL).
 -define(RCS_COMMON_MOSS_HRL, included).
 
--include("acl.hrl").
 -include("aws_api.hrl").
 
 %% User

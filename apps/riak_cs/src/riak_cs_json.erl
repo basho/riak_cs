@@ -112,6 +112,11 @@ to_json(?IAM_SAML_PROVIDER{saml_metadata_document = D} = A) ->
       jason:encode(A?IAM_SAML_PROVIDER{saml_metadata_document = base64:encode(D)},
                    [{records, [{saml_provider_v1, record_info(fields, saml_provider_v1)},
                                {tag, record_info(fields, tag)}]}]));
+to_json(?ACL{} = A) ->
+    list_to_binary(
+      jason:decode(A,
+                   [{records, [{acl_v3, record_info(fields, acl_v3)}]}]));
+
 to_json(undefined) ->
     <<>>;
 to_json([]) ->

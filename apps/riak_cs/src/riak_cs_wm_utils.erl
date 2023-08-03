@@ -1208,7 +1208,7 @@ role_access_authorize_helper(Target, RD,
                   UserPolicies),
             PermBoundaryVerdict =
                 case PermissionsBoundary of
-                    ?AMZ_POLICY{} ->
+                    ?IAM_POLICY{} ->
                         PolicyMod:eval(Access, PermissionsBoundary);
                     [] ->
                         undefined
