@@ -196,23 +196,14 @@ reqdata_to_access(RD, Target, ID) ->
 policy_from_json(JSON) ->
     try
         case jsx:decode(JSON) of
-            #{<<"Version">> := Version,
-              <<"Statement">> := Stmts0} = Map ->
-                ID = maps:get(<<"ID">>, Map, <<"undefined">>),
+            #{<<"Statement">> := Stmts0} = Map ->
                 case [statement_from_pairs(maps:to_list(S), #statement{}) || S <- Stmts0] of
                     [] ->
                         {error, missing_principal};
                     Stmts ->
-                        case {Version, ID} of
-                            {undefined, <<"undefined">>} ->
-                                {ok, ?AMZ_POLICY{statement = Stmts}};
-                            {undefined, _} ->
-                                {ok, ?AMZ_POLICY{id = ID, statement = Stmts}};
-                            {_, <<"undefined">>} ->
-                                {ok, ?AMZ_POLICY{version = Version, statement = Stmts}};
-                            _ ->
-                                {ok, ?AMZ_POLICY{id = ID, version = Version, statement = Stmts}}
-                        end
+                        Version = maps:get(<<"Version">>, Map, ?POLICY_VERSION_2020),
+                        ID = maps:get(<<"ID">>, Map, undefined),
+                        {ok, ?POLICY{id = ID, version = Version, statement = Stmts}}
                 end;
             #{} ->
                 logger:warning("Policy document missing required fields: ~s", [JSON]),
@@ -223,7 +214,7 @@ policy_from_json(JSON) ->
             logger:notice("Bad Policy JSON (~p): ~s", [SpecificError, JSON]),
             {error, SpecificError};
         T:E:ST ->
-            ?LOG_DEBUG("Argh ~p:~p:~p", [T, E, ST])
+            {error, {uncaught_parsing_error, lists:flatten(io_lib:format(" ~p:~p", [T, E])), ST}}
     end.
 
 -spec policy_to_json_term(policy()) -> JSON::binary().
