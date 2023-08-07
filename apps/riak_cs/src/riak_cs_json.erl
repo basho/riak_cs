@@ -180,8 +180,8 @@ target_tuple_values(Keys, JsonItems) ->
 -ifdef(TEST).
 
 get_single_key_test() ->
-    Object1 = "{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}",
-    Object2 = "{\"test\":{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}}",
+    Object1 = <<"{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}">>,
+    Object2 = <<"{\"test\":{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}}">>,
     ?assertEqual({ok, <<"123">>}, get(from_json(Object1), [<<"abc">>])),
     ?assertEqual({ok, <<"456">>}, get(from_json(Object1), [<<"def">>])),
     ?assertEqual({ok, <<"789">>}, get(from_json(Object1), [<<"ghi">>])),
@@ -192,7 +192,7 @@ get_single_key_test() ->
     ?assertEqual({error, not_found}, get(from_json(Object2), [<<"test">>, <<"zzz">>])).
 
 get_array_test() ->
-    Array = "[\"abc\", \"123\", \"def\", \"456\", 7]",
+    Array = <<"[\"abc\", \"123\", \"def\", \"456\", 7]">>,
     ?assertEqual({ok, <<"abc">>}, get(from_json(Array), [{find, {index, 1}}])),
     ?assertEqual({ok, <<"123">>}, get(from_json(Array), [{find, {index, 2}}])),
     ?assertEqual({ok, <<"def">>}, get(from_json(Array), [{find, {index, 3}}])),
@@ -201,19 +201,19 @@ get_array_test() ->
     ?assertEqual({error, not_found}, get(from_json(Array), [{find, {index, 6}}])).
 
 get_multi_key_test() ->
-    Object1 = "{\"test\":{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}}",
-    Object2 = "{\"test\":{\"abc\":{\"123\":123,\"456\":456,\"789\":789},\"def\""
-        ":{\"123\":123,\"456\":456,\"789\":789},\"ghi\":{\"123\":123,\"456\""
-        ":456,\"789\":789}}}",
+    Object1 = <<"{\"test\":{\"abc\":\"123\", \"def\":\"456\", \"ghi\":\"789\"}}">>,
+    Object2 = <<"{\"test\":{\"abc\":{\"123\":123,\"456\":456,\"789\":789},\"def\""
+                ":{\"123\":123,\"456\":456,\"789\":789},\"ghi\":{\"123\":123,\"456\""
+                ":456,\"789\":789}}}">>,
     ?assertEqual({ok, {<<"123">>, <<"789">>}}, get(from_json(Object1), [<<"test">>, {<<"abc">>, <<"ghi">>}])),
     ?assertEqual({ok, {123, 789}}, get(from_json(Object2), [<<"test">>, <<"abc">>, {<<"123">>, <<"789">>}])),
     ?assertEqual({ok, {123, 789}}, get(from_json(Object2), [<<"test">>, <<"def">>, {<<"123">>, <<"789">>}])),
     ?assertEqual({ok, {123, 789}}, get(from_json(Object2), [<<"test">>, <<"ghi">>, {<<"123">>, <<"789">>}])).
 
 get_embedded_key_from_array_test() ->
-    Object = "{\"test\":{\"objects\":[{\"key1\":\"a1\",\"key2\":\"a2\",\"key3\""
-        ":\"a3\"},{\"key1\":\"b1\",\"key2\":\"b2\",\"key3\":\"b3\"},{\"key1\""
-        ":\"c1\",\"key2\":\"c2\",\"key3\":\"c3\"}]}}",
+    Object = <<"{\"test\":{\"objects\":[{\"key1\":\"a1\",\"key2\":\"a2\",\"key3\""
+               ":\"a3\"},{\"key1\":\"b1\",\"key2\":\"b2\",\"key3\":\"b3\"},{\"key1\""
+               ":\"c1\",\"key2\":\"c2\",\"key3\":\"c3\"}]}}">>,
     ?assertEqual({ok, [{<<"key1">>, <<"a1">>}, {<<"key2">>, <<"a2">>}, {<<"key3">>, <<"a3">>}]},
                  get(from_json(Object),
                      [<<"test">>, <<"objects">>, {find, {key, <<"key1">>, <<"a1">>}}])),

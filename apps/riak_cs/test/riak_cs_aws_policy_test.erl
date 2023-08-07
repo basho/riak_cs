@@ -135,8 +135,10 @@ eval_ip_address_test_trust_x_forwarded_for_false_test() ->
     %% get the peer address, but it's not a real wm request.
     %% If trust_x_forwarded_for = true, it would just use the peer address and the call would
     %% succeed
-    ?assertError({badrecord, defined_on_call},
-                 riak_cs_aws_policy:eval_ip_address(#wm_reqdata{peer="23.23.23.23"}, Conds)),
+    {'EXIT', {{badrecord, ThisorThatRecord}, _}} =
+        catch riak_cs_aws_policy:eval_ip_address(#wm_reqdata{peer="23.23.23.23"}, Conds),
+    ?assert(ThisorThatRecord == wm_reqstate orelse
+            ThisorThatRecord == defined_on_call),
     %% Reset env for next test
     application:set_env(riak_cs, trust_x_forwarded_for, true).
 

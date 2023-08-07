@@ -889,9 +889,9 @@ valid_arn_parse_test() ->
     A1 = <<"arn:aws:s3::123456789012:user/Development/product_1234/*">>,
     E1 = ?S3_ARN{provider = aws,
                  service = s3,
-                 region = [],
+                 region = <<>>,
                  id = <<"123456789012">>,
-                 path = "user/Development/product_1234/*"},
+                 path = <<"user/Development/product_1234/*">>},
     AAEE = [{{ok, [E1]}, A1},
             {{ok, [E1]}, [A1]},
             {{ok, [E1, E1]}, [A1, A1]}

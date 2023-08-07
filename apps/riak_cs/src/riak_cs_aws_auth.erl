@@ -467,7 +467,7 @@ test_fun(Desc, ExpectedSignature, CalculatedSignature) ->
     {Desc, ?_assert(ExpectedSignature == CalculatedSignature)}.
 
 example_get_object() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'GET',
     Version = {1, 1},
     OrigPath = "/johnsmith/photos/puppy.jpg",
@@ -477,12 +477,12 @@ example_get_object() ->
                                {"Date", "Tue, 27 Mar 2007 19:36:42 +0000"},
                                {"x-rcs-rewrite-path", OrigPath}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "xXjDGYUmKxnwqr5KXNPGldn5LbA=",
+    ExpectedSignature = <<"xXjDGYUmKxnwqr5KXNPGldn5LbA=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example get object test", ExpectedSignature, CalculatedSignature).
 
 example_put_object() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'PUT',
     Version = {1, 1},
     OrigPath = "/johnsmith/photos/puppy.jpg",
@@ -494,12 +494,12 @@ example_put_object() ->
                                {"Content-Length", 94328},
                                {"Date", "Tue, 27 Mar 2007 21:15:45 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "hcicpDDvL9SsO6AkvxqmIWkmOuQ=",
+    ExpectedSignature = <<"hcicpDDvL9SsO6AkvxqmIWkmOuQ=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example put object test", ExpectedSignature, CalculatedSignature).
 
 example_list() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'GET',
     Version = {1, 1},
     OrigPath = "/johnsmith/?prefix=photos&max-keys=50&marker=puppy",
@@ -510,12 +510,12 @@ example_list() ->
                                {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Tue, 27 Mar 2007 19:42:41 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "jsRt/rhG+Vtp88HrYL706QhE4w4=",
+    ExpectedSignature = <<"jsRt/rhG+Vtp88HrYL706QhE4w4=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example list test", ExpectedSignature, CalculatedSignature).
 
 example_fetch() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'GET',
     Version = {1, 1},
     OrigPath = "/johnsmith/?acl",
@@ -525,12 +525,12 @@ example_fetch() ->
                                {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Tue, 27 Mar 2007 19:44:46 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "thdUi9VAkzhkniLj96JIrOPGi0g=",
+    ExpectedSignature = <<"thdUi9VAkzhkniLj96JIrOPGi0g=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example fetch test", ExpectedSignature, CalculatedSignature).
 
 example_delete() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'DELETE',
     Version = {1, 1},
     OrigPath = "/johnsmith/photos/puppy.jpg",
@@ -542,7 +542,7 @@ example_delete() ->
                                {"Date", "Tue, 27 Mar 2007 21:20:27 +0000"},
                                {"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "amG66fXy2/BJ/HvrN2jUKINWfrE=",
+    ExpectedSignature = <<"amG66fXy2/BJ/HvrN2jUKINWfrE=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example delete test", ExpectedSignature, CalculatedSignature).
 
@@ -556,7 +556,7 @@ example_delete() ->
 %% is specified using a singled X-Amz-Meta-ReviewedBy header with
 %% multiple field values.
 example_upload() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'PUT',
     Version = {1, 1},
     OrigPath = "/static.johnsmith.net/db-backup.dat.gz",
@@ -577,12 +577,12 @@ example_upload() ->
                                {"Content-Encoding", "gzip"},
                                {"Content-Length", 5913339}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "C0FlOtU8Ylb9KDTpZqYkZPX91iI=",
+    ExpectedSignature = <<"C0FlOtU8Ylb9KDTpZqYkZPX91iI=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example upload test", ExpectedSignature, CalculatedSignature).
 
 example_list_all_buckets() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'GET',
     Version = {1, 1},
     Path = "/",
@@ -591,12 +591,12 @@ example_list_all_buckets() ->
                                {"x-rcs-rewrite-path", Path},
                                {"Date", "Wed, 28 Mar 2007 01:29:59 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "Db+gepJSUbZKwpx1FR0DLtEYoZA=",
+    ExpectedSignature = <<"Db+gepJSUbZKwpx1FR0DLtEYoZA=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example list all buckts test", ExpectedSignature, CalculatedSignature).
 
 example_unicode_keys() ->
-    KeyData = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
+    KeyData = <<"uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o">>,
     Method = 'GET',
     Version = {1, 1},
     OrigPath = "/dictionary/fran%C3%A7ais/pr%c3%a9f%c3%a8re",
@@ -606,7 +606,7 @@ example_unicode_keys() ->
                                {"x-rcs-rewrite-path", OrigPath},
                                {"Date", "Wed, 28 Mar 2007 01:49:49 +0000"}]),
     RD = wrq:create(Method, Version, Path, Headers),
-    ExpectedSignature = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
+    ExpectedSignature = <<"dxhSBHoI6eVSPcXJqEghlUzZMnY=">>,
     CalculatedSignature = calculate_signature_v2(KeyData, RD),
     test_fun("example unicode keys test", ExpectedSignature, CalculatedSignature).
 

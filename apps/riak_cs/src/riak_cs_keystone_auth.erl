@@ -211,16 +211,18 @@ canonicalize_qs([{K, V}|T], Acc) ->
 -ifdef(TEST).
 
 tenant_id_test() ->
-    Token = "{\"access\":{\"token\":{\"expires\":\"2012-02-05T00:00:00\","
-            "\"id\":\"887665443383838\", \"tenant\":{\"id\":\"1\", \"name\""
-            ":\"customer-x\"}}, \"user\":{\"name\":\"joeuser\", \"tenantName\""
-            ":\"customer-x\", \"id\":\"1\", \"roles\":[{\"serviceId\":\"1\","
-            "\"id\":\"3\", \"name\":\"Member\"}], \"tenantId\":\"1\"}}}",
-    InvalidToken = "{\"access\":{\"token\":{\"expires\":\"2012-02-05T00:00:00\","
-        "\"id\":\"887665443383838\", \"tenant\":{\"id\":\"1\", \"name\""
-        ":\"customer-x\"}}, \"user\":{\"name\":\"joeuser\", \"tenantName\""
-        ":\"customer-x\", \"id\":\"1\", \"roles\":[{\"serviceId\":\"1\","
-        "\"id\":\"3\", \"name\":\"Member\"}]}}}",
+    Token =
+        <<"{\"access\":{\"token\":{\"expires\":\"2012-02-05T00:00:00\","
+          "\"id\":\"887665443383838\", \"tenant\":{\"id\":\"1\", \"name\""
+          ":\"customer-x\"}}, \"user\":{\"name\":\"joeuser\", \"tenantName\""
+          ":\"customer-x\", \"id\":\"1\", \"roles\":[{\"serviceId\":\"1\","
+          "\"id\":\"3\", \"name\":\"Member\"}], \"tenantId\":\"1\"}}}">>,
+    InvalidToken =
+        <<"{\"access\":{\"token\":{\"expires\":\"2012-02-05T00:00:00\","
+          "\"id\":\"887665443383838\", \"tenant\":{\"id\":\"1\", \"name\""
+          ":\"customer-x\"}}, \"user\":{\"name\":\"joeuser\", \"tenantName\""
+          ":\"customer-x\", \"id\":\"1\", \"roles\":[{\"serviceId\":\"1\","
+          "\"id\":\"3\", \"name\":\"Member\"}]}}}">>,
     ?assertEqual({ok, <<"1">>},
                  riak_cs_json:get(riak_cs_json:from_json(Token),
                                   [<<"access">>, <<"user">>, <<"tenantId">>])),
