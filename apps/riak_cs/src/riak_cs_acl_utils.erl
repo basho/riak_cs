@@ -426,23 +426,34 @@ canned_acl_grants(_, Owner, _) ->
 %% a given email address.
 canonical_for_email(Email, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riak_cs_iam:find_user(#{email => list_to_binary(Email)}, Pbc) of
+    case riak_cs_iam:find_user(#{email => Email}, Pbc) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.canonical_id};
         {error, Reason} ->
-            logger:warning("Failed to retrieve canonical id for ~p. Reason: ~p", [Email, Reason]),
+            logger:notice("Failed to find user with email ~s: ~p", [Email, Reason]),
             {error, unresolved_grant_email}
     end.
 
 %% @doc Get the display name of the user associated with
 %% a given canonical id.
-name_for_canonical(CanonicalId, RcPid) ->
+name_for_canonical(Id, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riak_cs_iam:find_user(#{canonical_id => CanonicalId}, Pbc) of
+    case riak_cs_iam:find_user(#{canonical_id => Id}, Pbc) of
         {ok, {User, _}} ->
             {ok, User?RCS_USER.display_name};
-        {error, _} ->
-            {error, invalid_argument}
+        {error, Reason} ->
+            logger:notice("Failed to find user with canonical_id ~s: ~p", [Id, Reason]),
+            {error, unresolved_grant_display_name}
+    end.
+
+user_details_for_canonical(Id, RcPid) ->
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:find_user(#{canonical_id => list_to_binary(Id)}, Pbc) of
+        {ok, {?RCS_USER{email = Email, display_name = DisplayName}, _}} ->
+            {ok, {Email, DisplayName}};
+        {error, Reason} ->
+            logger:notice("Failed to find user with canonical_id ~s: ~p", [Id, Reason]),
+            {error, unresolved_grant_id}
     end.
 
 %% @doc Process the top-level elements of the
@@ -574,26 +585,42 @@ process_grant([#xmlText{}|RestElements], Grant, Owner, RcPid) ->
 
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
-process_grantee([], ?ACL_GRANT{grantee = #{display_name := undefined,
-                                           canonical_id := CanonicalId} = O
-                              } = G,
-                #{display_name := DisplayName,
-                  canonical_id := CanonicalId}, _RcPid) ->
-    G?ACL_GRANT{grantee = O#{display_name => DisplayName}};
-process_grantee([], ?ACL_GRANT{grantee = #{display_name := undefined,
-                                           canonical_id := CanonicalId} = O
-                              } = G,
-                _, RcPid) ->
-    %% Lookup the display name for the user with the
-    %% canonical id of `CanonicalId'.
-    case name_for_canonical(CanonicalId, RcPid) of
-        {ok, DisplayName} ->
-            G?ACL_GRANT{grantee = O#{display => DisplayName}};
-        {error, _} = Error ->
-            Error
+process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, _, RcPid) ->
+    case Gee0 of
+        #{email := Email,
+          canonical_id := CanonicalId,
+          display_name := DisplayName} when is_binary(Email),
+                                            is_binary(CanonicalId),
+                                            is_binary(DisplayName) ->
+            G0;
+        #{email := Email} = M ->
+            MaybeConflictingId =
+                case maps:get(canonical_id, M, undefined) of
+                    undefined ->
+                        undefined;
+                    Defined ->
+                        Defined
+                end,
+            case canonical_for_email(Email, RcPid) of
+                {ok, CanonicalId} when MaybeConflictingId /= undefined,
+                                       CanonicalId /= MaybeConflictingId ->
+                    logger:notice("ACL has both Email (~s) and ID (~s) but the user with this email has a different canonical_id; "
+                                  "treating this ACL as invalid", [Email, MaybeConflictingId]),
+                    {error, conflicting_grantee_canonical_id};
+                {ok, CanonicalId} ->
+                    G0?ACL_GRANT{grantee = Gee0#{canonical_id => CanonicalId}};
+                ER ->
+                    ER
+            end;
+        #{canonical_id := CanonicalId} ->
+            case user_details_for_canonical(CanonicalId, RcPid) of
+                {ok, {Email, DisplayName}} ->
+                    G0?ACL_GRANT{grantee = Gee0#{email => Email,
+                                                 display_name => DisplayName}};
+                ER ->
+                    ER
+            end
     end;
-process_grantee([], Grant, _, _) ->
-    Grant;
 process_grantee([#xmlElement{content = [Content],
                              name = ElementName} |
                  RestElements], ?ACL_GRANT{grantee = Grantee} = G, AclOwner, RcPid) ->
