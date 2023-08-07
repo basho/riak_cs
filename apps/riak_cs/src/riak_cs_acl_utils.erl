@@ -86,8 +86,7 @@ canned_acl(HeaderVal, Owner, BucketOwner) ->
                            HeaderValue :: string()}],
                          riak_client()) ->
     {ok, acl()} |
-    {error, invalid_argument} |
-    {error, unresolved_grant_email}.
+    {error, invalid_argument | unresolved_grant_email | unresolved_grant_canonical_id}.
 specific_acl_grant(Owner, Headers, RcPid) ->
     %% TODO: this function is getting a bit long and confusing
     Grants = [{HeaderName, parse_grant_header_value(GrantString)}
@@ -109,7 +108,7 @@ specific_acl_grant(Owner, Headers, RcPid) ->
                             {ok, ?ACL{owner = Owner,
                                       grants = AclGrants}
                             };
-                        {error, invalid_argument} = E ->
+                        {error, _} = E ->
                             E
                     end
             end
@@ -123,7 +122,7 @@ valid_headers_to_grants(Pairs, RcPid) ->
     case promote_failure(MaybeGrants) of
         {ok, Grants} ->
             {ok, lists:foldl(fun add_grant/2, [], lists:flatten(Grants))};
-        {error, invalid_argument}=E ->
+        {error, _} = E ->
             E
     end.
 
@@ -137,7 +136,7 @@ header_to_acl_grants(HeaderName, Grants, RcPid) ->
     case promote_failure(MaybeGrantList) of
         {ok, GrantList} ->
             {ok, lists:foldl(fun add_grant/2, [], GrantList)};
-        {error, invalid_argument} = E ->
+        {error, _} = E ->
             E
     end.
 
@@ -148,7 +147,7 @@ header_to_grant(Permission, {id, ID}, RcPid) ->
     case name_for_canonical(ID, RcPid) of
         {ok, DisplayName} ->
             {ok, {{DisplayName, ID}, [Permission]}};
-        {error, invalid_argument}=E ->
+        {error, _} = E ->
             E
     end;
 header_to_grant(Permission, {uri, URI}, _RcPid) ->
@@ -166,8 +165,7 @@ header_to_grant(Permission, {uri, URI}, _RcPid) ->
 -type grant_user_identifier() :: 'emailAddress' | 'id' | 'uri'.
 -spec parse_grant_header_value(string()) ->
     {ok, [{grant_user_identifier(), string()}]} |
-    {error, invalid_argument} |
-    {error, unresolved_grant_email}.
+    {error, invalid_argument | unresolved_grant_email | unresolved_grant_canonical_id}.
 parse_grant_header_value(HeaderValue) ->
     Mappings = split_header_values_and_strip(HeaderValue),
     promote_failure(lists:map(fun parse_mapping/1, Mappings)).
@@ -443,12 +441,12 @@ name_for_canonical(Id, RcPid) ->
             {ok, User?RCS_USER.display_name};
         {error, Reason} ->
             logger:notice("Failed to find user with canonical_id ~s: ~p", [Id, Reason]),
-            {error, unresolved_grant_display_name}
+            {error, unresolved_grant_canonical_id}
     end.
 
 user_details_for_canonical(Id, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-    case riak_cs_iam:find_user(#{canonical_id => list_to_binary(Id)}, Pbc) of
+    case riak_cs_iam:find_user(#{canonical_id => Id}, Pbc) of
         {ok, {?RCS_USER{email = Email, display_name = DisplayName}, _}} ->
             {ok, {Email, DisplayName}};
         {error, Reason} ->
@@ -585,7 +583,7 @@ process_grant([#xmlText{}|RestElements], Grant, Owner, RcPid) ->
 
 %% @doc Process an XML element containing information about
 %% an ACL permission grantee.
-process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, _, RcPid) ->
+process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, AclOwner, RcPid) ->
     case Gee0 of
         #{email := Email,
           canonical_id := CanonicalId,
@@ -613,13 +611,21 @@ process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, _, RcPid) ->
                     ER
             end;
         #{canonical_id := CanonicalId} ->
-            case user_details_for_canonical(CanonicalId, RcPid) of
-                {ok, {Email, DisplayName}} ->
-                    G0?ACL_GRANT{grantee = Gee0#{email => Email,
+            case AclOwner of
+                #{display_name := DisplayName} = M ->
+                    G0?ACL_GRANT{grantee = Gee0#{email => maps:get(email, M, undefined),
                                                  display_name => DisplayName}};
-                ER ->
-                    ER
-            end
+                _ ->
+                    case user_details_for_canonical(CanonicalId, RcPid) of
+                        {ok, {Email, DisplayName}} ->
+                            G0?ACL_GRANT{grantee = Gee0#{email => Email,
+                                                         display_name => DisplayName}};
+                        ER ->
+                            ER
+                    end
+            end;
+        _GroupGrantee when is_atom(_GroupGrantee) ->
+            G0
     end;
 process_grantee([#xmlElement{content = [Content],
                              name = ElementName} |
