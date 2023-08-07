@@ -370,7 +370,7 @@ has_permission(Grants, RequestedAccess) ->
 
 %% @doc Determine if a user has the requested permission
 %% granted in an ACL.
--spec has_permission([acl_grant()], atom(), string()) -> boolean().
+-spec has_permission([acl_grant()], atom(), binary()) -> boolean().
 has_permission(Grants, RequestedAccess, CanonicalId) ->
     GroupGrants = group_grants(Grants, []),
     case user_grant(Grants, CanonicalId) of

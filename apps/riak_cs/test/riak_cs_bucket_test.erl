@@ -28,30 +28,13 @@
 -include("riak_cs.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-handle_delete_response_test() ->
-    ErrorDoc =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error>"
-        " <Code>MultipartUploadRemaining</Code> <Message>Multipart uploads still remaining.</Message>"
-        "<Resource>/buckets/riak-test-bucket</Resource><RequestId></RequestId></Error>",
-    %% which is defined at stanchion_response.erl
-    ?assertEqual({error, remaining_multipart_upload},
-                 riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, delete, <<>>)),
-    ?assertThrow({remaining_multipart_upload_on_deleted_bucket, <<>>},
-                 riak_cs_bucket:handle_stanchion_response(409, ErrorDoc, create, <<>>)),
-    ErrorResponse = riak_cs_aws_response:error_response(ErrorDoc),
-    ?assertEqual(ErrorResponse,
-                 riak_cs_bucket:handle_stanchion_response(503, ErrorDoc, delete, <<>>)),
-    ?assertEqual(ErrorResponse,
-                 riak_cs_bucket:handle_stanchion_response(204, ErrorDoc, delete, <<>>)).
-
-
 bucket_resolution_test() ->
     %% @TODO Replace or augment this with eqc testing.
-    UserRecord = riak_cs_user:user_record("uncle fester",
-                                          "fester@tester.com",
-                                          "festersquest",
-                                          "wasthebest",
-                                          "cid"),
+    UserRecord = ?RCS_USER{name = <<"uncle fester">>,
+                           email = <<"fester@tester.com">>,
+                           key_id = <<"festersquest">>,
+                           key_secret = <<"wasthebest">>,
+                           canonical_id = <<"cid">>},
     BucketList1 = [bucket_record(<<"bucket1">>, create),
                    bucket_record(<<"bucket2">>, create),
                    bucket_record(<<"bucket3">>, create)],

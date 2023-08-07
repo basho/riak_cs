@@ -100,14 +100,12 @@ sample_policy_check_test() ->
                         bucket = <<"test">>},
     Access2 = Access#access_v1{method='PUT', target=object},
     ?assertEqual(undefined, riak_cs_aws_policy:eval(Access2, Policy)),
-    Access3 = Access#access_v1{req=#wm_reqdata{peer="1.1.1.1"}},
+    Access3 = Access#access_v1{req = #wm_reqdata{peer = "1.1.1.1"}},
     ?assertEqual(undefined, riak_cs_aws_policy:eval(Access3, Policy)).
 
-sample_conversion_test()->
+sample_conversion_test() ->
     JsonPolicy0 = sample_plain_allow_policy(),
     {ok, Policy} = riak_cs_aws_policy:policy_from_json(JsonPolicy0),
-    io:format("mememememem ~p", [riak_cs_aws_policy:policy_from_json(
-                             riak_cs_aws_policy:policy_to_json_term(Policy))]),
     {ok, PolicyFromJson} = riak_cs_aws_policy:policy_from_json(
                              riak_cs_aws_policy:policy_to_json_term(Policy)),
     ?assertEqual(Policy?POLICY.id, PolicyFromJson?POLICY.id),
@@ -120,14 +118,14 @@ sample_conversion_test()->
 
 
 eval_all_ip_addr_test() ->
-    ?assert(riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1},{255,255,255,255}}], {192,168,0,1})),
-    ?assert(not riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1},{255,255,255,255}}], {192,168,25,1})),
-    ?assert(riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1},{255,255,255,0}}], {192,168,0,23})).
+    ?assert(riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1}, {255,255,255,255}}], {192,168,0,1})),
+    ?assert(not riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1}, {255,255,255,255}}], {192,168,25,1})),
+    ?assert(riak_cs_aws_policy:eval_all_ip_addr([{{192,168,0,1}, {255,255,255,0}}], {192,168,0,23})).
 
-eval_ip_address_test()->
+eval_ip_address_test() ->
     ?assert(riak_cs_aws_policy:eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
-                                              [garbage,{chiba, boo},"saitama",
-                                               {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
+                                               [garbage, {chiba, boo}, "saitama",
+                                                {'aws:SourceIp', {{23,23,0,0}, {255,255,0,0}}}, hage])).
 
 eval_ip_address_test_trust_x_forwarded_for_false_test() ->
     application:set_env(riak_cs, trust_x_forwarded_for, false),
@@ -142,25 +140,28 @@ eval_ip_address_test_trust_x_forwarded_for_false_test() ->
     %% Reset env for next test
     application:set_env(riak_cs, trust_x_forwarded_for, true).
 
-eval_ip_addresses_test()->
+eval_ip_addresses_test() ->
     ?assert(riak_cs_aws_policy:eval_ip_address(#wm_reqdata{peer = "23.23.23.23"},
-                                              [{'aws:SourceIp', {{1,1,1,1}, {255,255,255,0}}},
-                                               {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage])).
+                                               [{'aws:SourceIp', {{1,1,1,1}, {255,255,255,0}}},
+                                                {'aws:SourceIp', {{23,23,0,0}, {255,255,0,0}}}, hage])).
 
-eval_condition_test()->
+eval_condition_test() ->
     ?assert(riak_cs_aws_policy:eval_condition(#wm_reqdata{peer = "23.23.23.23"},
-                                             {'IpAddress', [garbage,{chiba, boo},"saitama",
-                                                            {'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}, hage]})).
+                                              {'IpAddress', [garbage,{chiba, boo},"saitama",
+                                                             {'aws:SourceIp', {{23,23,0,0}, {255,255,0,0}}}, hage]})).
 
-eval_statement_test()->
-    Access = #access_v1{method='GET', target=object,
-                        req=#wm_reqdata{peer="23.23.23.23"},
+eval_statement_test() ->
+    Access = #access_v1{method = 'GET',
+                        action = 's3:GetObject',
+                        target = object,
+                        req = #wm_reqdata{peer = "23.23.23.23"},
                         bucket= <<"testbokee">>},
-    Statement = #statement{effect=allow,condition_block=
+    Statement = #statement{effect = allow,
+                           condition_block =
                                [{'IpAddress',
-                                 [{'aws:SourceIp', {{23,23,0,0},{255,255,0,0}}}]}],
-                           action=['s3:GetObject'],
-                           resource='*'},
+                                 [{'aws:SourceIp', {{23,23,0,0}, {255,255,0,0}}}]}],
+                           action = ['s3:GetObject'],
+                           resource = '*'},
     ?assert(riak_cs_aws_policy:eval_statement(Access, Statement)).
 
 my_split_test_()->
@@ -188,7 +189,7 @@ parse_arn_test()->
     {ok, ARNS2} = riak_cs_aws_policy:parse_arns(List2),
     ?assertEqual(List2, riak_cs_aws_policy:print_arns(ARNS2)).
 
-sample_securetransport_statement()->
+sample_securetransport_statement() ->
     <<"{"
       "\"Id\":\"Policy135406996387500\","
       "\"Statement\":["
@@ -212,16 +213,20 @@ sample_securetransport_statement()->
       "}" >>.
 
 
-secure_transport_test()->
+secure_transport_test() ->
     application:set_env(riak_cs, trust_x_forwarded_for, true),
     JsonPolicy0 = sample_securetransport_statement(),
     {ok, Policy} = riak_cs_aws_policy:policy_from_json(JsonPolicy0),
-    Req = #wm_reqdata{peer="192.168.0.1", scheme=https},
-    Access = #access_v1{method='GET', target=object, id="spam/ham/egg",
-                        req = Req, bucket= <<"test">>},
+    Req = #wm_reqdata{peer = "192.168.0.1", scheme = https},
+    Access = #access_v1{method ='GET',
+                        target = object,
+                        id = <<"spam/ham/egg">>,
+                        action = 's3:GetObject',
+                        req = Req,
+                        bucket = <<"test">>},
     ?assert(riak_cs_aws_policy:eval(Access, Policy)),
     % io:format(standard_error, "~w~n", [Policy]),
-    Access2 = Access#access_v1{req=Req#wm_reqdata{scheme=http}},
+    Access2 = Access#access_v1{req = Req#wm_reqdata{scheme = http}},
     ?assertEqual(undefined, riak_cs_aws_policy:eval(Access2, Policy)).
 
 %% "Bool": { "aws:SecureTransport" : true,

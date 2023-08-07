@@ -46,6 +46,7 @@
          datetime/0,
          md5_chunk_size/0,
          timestamp/0,
+         email/0,
          props/0]).
 
 -export([non_blank_string/0]).
@@ -113,13 +114,16 @@ datetime() ->
      {choose(0, 23), choose(0, 59), choose(0, 59)}}.
 
 timestamp() ->
-    {choose(0, 5000), choose(0, 999999), choose(0, 999999)}.
+    nat().
 
 md5_chunk_size() ->
     oneof([2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]).
 
 props() ->
     oneof([[], [{deleted, true}]]).
+
+email() ->
+    iolist_to_binary([riak_cs_aws_utils:make_id(4), $@, riak_cs_aws_utils:make_id(4), ".com"]).
 
 %%====================================================================
 %% Helpers

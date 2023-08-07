@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -185,7 +185,7 @@ gc_batch(ListOfFilesetKeysInput, BatchSize, MaxWorkers) ->
     %% SortedKeys = lists:sort(ListOfFilesetKeysInput),
     %% {StartKey, _} = hd(SortedKeys),
     %% {EndKey, _} = lists:last(SortedKeys),
-    BatchStart = riak_cs_gc:timestamp(),
+    BatchStart = os:system_time(millisecond),
     %% ?debugVal({StartKey, EndKey, BatchStart}),
     {ok, _} = riak_cs_gc_batch:start_link(#gc_batch_state{
                                              batch_start=BatchStart,

@@ -59,9 +59,9 @@ proper_test_() ->
 %% @doc This test verifies that the key for object manifest is exactly same as
 %% the key before URL encoding. This is also a regression test of riak_cs#1040.
 prop_s3_rewrite(Style) ->
-    RewriteModule = riak_cs_s3_rewrite,
+    RewriteModule = riak_cs_aws_s3_rewrite,
     RootHost = "s3.amazonaws.com",
-    ok = application:set_env(riak_cs, cs_root_host, RootHost),
+    ok = application:set_env(riak_cs, s3_root_host, RootHost),
     DispatchTable = riak_cs_web:object_api_dispatch_table(),
     ?FORALL({CSBucket, CSKey, Verb, Scheme, Version},
             {riak_cs_gen:bucket(), riak_cs_gen:file_name(),
@@ -108,7 +108,7 @@ prop_extract_bucket_from_host() ->
                 Host = compose_host(BucketStr, BaseHost),
                 ExpectedBucket = expected_bucket(BucketStr, BaseHost),
                 ResultBucket =
-                    riak_cs_s3_rewrite:bucket_from_host(Host, BaseHost),
+                    riak_cs_aws_s3_rewrite:bucket_from_host(Host),
                 equals(ExpectedBucket, ResultBucket)
             end)).
 

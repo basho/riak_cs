@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -38,12 +38,11 @@ default_config_test() ->
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_secret"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.cs_root_host", "s3.amazonaws.com"),
+    cuttlefish_unit:assert_config(Config, "riak_cs.s3_root_host", ?S3_ROOT_HOST),
     cuttlefish_unit:assert_config(Config, "riak_cs.cs_version", ?RCS_VERSION),
     cuttlefish_unit:assert_config(Config, "riak_cs.proxy_get", false),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.rewrite_module"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.auth_module"),
-    cuttlefish_unit:assert_config(Config, "riak_cs.fold_objects_for_list_keys", true),
     cuttlefish_unit:assert_config(Config, "riak_cs.max_buckets_per_user", 100),
     cuttlefish_unit:assert_config(Config, "riak_cs.max_key_length", 1024),
     cuttlefish_unit:assert_config(Config, "riak_cs.trust_x_forwarded_for", false),

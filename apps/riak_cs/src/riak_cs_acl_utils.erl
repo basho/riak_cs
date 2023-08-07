@@ -475,11 +475,16 @@ process_acl_contents([#xmlText{} | RestElements], Acl, RcPid) ->
 
 %% @doc Process an XML element containing acl owner information.
 process_owner([], Acl = ?ACL{owner = #{canonical_id := CanonicalId} = Owner}, RcPid) ->
-    case name_for_canonical(CanonicalId, RcPid) of
-        {ok, DisplayName} ->
-            {ok, Acl?ACL{owner = Owner#{display_name => DisplayName}}};
-        {error, _}=Error ->
-            Error
+    case maps:get(display_name, Owner, undefined) of
+        undefined ->
+            case name_for_canonical(CanonicalId, RcPid) of
+                {ok, DisplayName} ->
+                    {ok, Acl?ACL{owner = Owner#{display_name => DisplayName}}};
+                {error, _} = Error ->
+                    Error
+            end;
+        _ ->
+            {ok, Acl}
     end;
 process_owner([], Acl, _) ->
     {ok, Acl};
@@ -573,7 +578,7 @@ process_grantee([], ?ACL_GRANT{grantee = #{display_name := undefined,
                                            canonical_id := CanonicalId} = O
                               } = G,
                 #{display_name := DisplayName,
-                  canonical_id := CanonicalId}, _) ->
+                  canonical_id := CanonicalId}, _RcPid) ->
     G?ACL_GRANT{grantee = O#{display_name => DisplayName}};
 process_grantee([], ?ACL_GRANT{grantee = #{display_name := undefined,
                                            canonical_id := CanonicalId} = O
@@ -593,31 +598,12 @@ process_grantee([#xmlElement{content = [Content],
                              name = ElementName} |
                  RestElements], ?ACL_GRANT{grantee = Grantee} = G, AclOwner, RcPid) ->
     Value = list_to_binary(Content#xmlText.value),
-    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     UpdGrant =
         case ElementName of
             'ID' ->
-                case riak_cs_iam:find_user(#{canonical_id => Value}, Pbc) of
-                    {ok, {?RCS_USER{email = Email,
-                                    display_name = DisplayName}, _}} ->
-                        G?ACL_GRANT{grantee = Grantee#{display_name => DisplayName,
-                                                       email => Email,
-                                                       canonical_id => Value}};
-                    {error, _} ->
-                        logger:notice("Grantee with canonical_id ~s not found; grant not processed", [Value]),
-                        G
-                end;
+                G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
             'EmailAddress' ->
-                case riak_cs_iam:find_user(#{email => Value}, Pbc) of
-                    {ok, {?RCS_USER{canonical_id = CanonicalId,
-                                    display_name = DisplayName}, _}} ->
-                        G?ACL_GRANT{grantee = Grantee#{display_name => DisplayName,
-                                                       email => Value,
-                                                       canonical_id => CanonicalId}};
-                    {error, _} ->
-                        logger:notice("Grantee with email ~s not found; grant not processed", [Value]),
-                        G
-                end;
+                G?ACL_GRANT{grantee = Grantee#{email => Value}};
             'URI' ->
                 case Value of
                     ?AUTH_USERS_GROUP ->
@@ -660,26 +646,16 @@ process_permission([Content], G = ?ACL_GRANT{perms = Perms0}) ->
 
 -ifdef(TEST).
 
-%% @doc Construct an acl. The structure is the same for buckets
-%% and objects.
-acl(DisplayName, CanonicalId, KeyId, Grants, CreationTime) ->
-    ?ACL{owner = #{display_name => DisplayName,
-                   canonical_id => CanonicalId,
-                   key_id => KeyId},
-         grants = Grants,
-         creation_time = CreationTime}.
-
-
-%% @TODO Use eqc to do some more interesting case explorations.
-
 default_acl_test() ->
     ExpectedXml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
-    DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    DefaultAcl = default_acl(<<"tester1">>,
+                             <<"TESTID1">>,
+                             <<"TESTKEYID1">>),
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}
                                ]
                      },
@@ -688,15 +664,21 @@ default_acl_test() ->
 
 acl_from_xml_test() ->
     Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
-    DefaultAcl = default_acl("tester1", "TESTID1", "TESTKEYID1"),
-    {ok, Acl} = acl_from_xml(Xml, "TESTKEYID1", undefined),
+    DefaultAcl = default_acl(<<"tester1">>, <<"TESTID1">>, <<"TESTKEYID1">>),
+    {ok, Acl} = acl_from_xml(Xml, <<"TESTKEYID1">>, undefined),
     #{display_name := ExpectedOwnerName,
       canonical_id := ExpectedOwnerId} = DefaultAcl?ACL.owner,
     #{display_name := ActualOwnerName,
       canonical_id := ActualOwnerId} = Acl?ACL.owner,
-    ?assertEqual(DefaultAcl?ACL.grants, Acl?ACL.grants),
+    ?ACL{grants = [?ACL_GRANT{grantee = #{display_name := ExpectedOwnerName,
+                                          canonical_id := ExpectedOwnerId},
+                              perms = ExpectedPerms}]} = DefaultAcl,
+    ?ACL{grants = [?ACL_GRANT{grantee = #{display_name := ActualOwnerName,
+                                          canonical_id := ActualOwnerId},
+                              perms = ActualPerms}]} = Acl,
     ?assertEqual(ExpectedOwnerName, ActualOwnerName),
-    ?assertEqual(ExpectedOwnerId, ActualOwnerId).
+    ?assertEqual(ExpectedOwnerId, ActualOwnerId),
+    ?assertEqual(ExpectedPerms, ActualPerms).
 
 roundtrip_test() ->
     Xml1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>",
@@ -719,8 +701,12 @@ requested_access_test() ->
     ?assertEqual(undefined, requested_access('GARBAGE', true)).
 
 canned_acl_test() ->
-    Owner  = {"tester1", "TESTID1", "TESTKEYID1"},
-    BucketOwner = {"owner1", "OWNERID1", "OWNERKEYID1"},
+    Owner = #{display_name => <<"tester1">>,
+              canonical_id => <<"TESTID1">>,
+              key_id => <<"TESTKEYID1">>},
+    BucketOwner = #{display_name => <<"owner1">>,
+                    canonical_id => <<"OWNERID1">>,
+                    key_id => <<"OWNERKEYID1">>},
     DefaultAcl = canned_acl(undefined, Owner, undefined),
     PrivateAcl = canned_acl("private", Owner, undefined),
     PublicReadAcl = canned_acl("public-read", Owner, undefined),
@@ -733,38 +719,38 @@ canned_acl_test() ->
     BucketOwnerFCAcl2 = canned_acl("bucket-owner-full-control", Owner, BucketOwner),
     BucketOwnerFCAcl3 = canned_acl("bucket-owner-full-control", Owner, Owner),
 
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}]
                      },
                  DefaultAcl),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}]
                      },
                  PrivateAcl),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']},
                                 ?ACL_GRANT{grantee = 'AllUsers',
                                            perms = ['READ']}
                                ]
                      },
                  PublicReadAcl),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']},
                                 ?ACL_GRANT{grantee = 'AllUsers',
                                            perms = ['READ', 'WRITE']
@@ -772,71 +758,71 @@ canned_acl_test() ->
                                ]
                      },
                  PublicRWAcl),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']},
                                 ?ACL_GRANT{grantee = 'AuthUsers',
                                            perms = ['READ']}
                                ]
                      },
                  AuthReadAcl),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}]
                      },
                  BucketOwnerReadAcl1),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']},
-                                ?ACL_GRANT{grantee = #{display_name := "owner1",
-                                                       canonical_id := "OWNERID1"},
+                                ?ACL_GRANT{grantee = #{display_name := <<"owner1">>,
+                                                       canonical_id := <<"OWNERID1">>},
                                            perms = ['READ']}
                                ]
                      },
                  BucketOwnerReadAcl2),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}
                                ]
                      },
                  BucketOwnerReadAcl3),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}
                                ]
                      },
                  BucketOwnerFCAcl1),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']},
-                                ?ACL_GRANT{grantee = #{display_name := "owner1",
-                                                       canonical_id := "OWNERID1"},
+                                ?ACL_GRANT{grantee = #{display_name := <<"owner1">>,
+                                                       canonical_id := <<"OWNERID1">>},
                                            perms = ['FULL_CONTROL']}
                                ]
                      }, BucketOwnerFCAcl2),
-    ?assertMatch(?ACL{owner = #{display_name := "tester1",
-                                canonical_id := "TESTID1",
-                                key_id := "TESTKEYID1"},
-                      grants = [?ACL_GRANT{grantee = #{display_name := "tester1",
-                                                       canonical_id := "TESTID1"},
+    ?assertMatch(?ACL{owner = #{display_name := <<"tester1">>,
+                                canonical_id := <<"TESTID1">>,
+                                key_id := <<"TESTKEYID1">>},
+                      grants = [?ACL_GRANT{grantee = #{display_name := <<"tester1">>,
+                                                       canonical_id := <<"TESTID1">>},
                                            perms = ['FULL_CONTROL']}]
                      },
                  BucketOwnerFCAcl3).
@@ -873,65 +859,21 @@ comment_space_test() ->
                  Acl),
     ok.
 
-%% acl_from_json_test() ->
-%%     CreationTime = os:system_time(millisecond),
-%%     JsonTerm = "{\"owner\":
-%%                   {\"display_name\": \"tester1\",
-%%                    \"canonical_id\": \"TESTID1\",
-%%                    \"key_id\": \"TESTKEYID1\"},
-%%                  \"grants:
-%%                   {group,AllUsers},
-%%                    {permissions,[WRITE_ACP]}],
-%%                   [{display_name,tester2},
-%%                    {canonical_id,TESTID2},
-%%                    {permissions,[WRITE]}],
-%%                   [{display_name,tester1},
-%%                    {canonical_id,TESTID1},
-%%                    {permissions,[READ]}]],
-%%                  {creation_time,
-%%                   "++integer_to_list(CreationTime)++"}}
-%%                ]",
-%%     Acl = riak_cs_acl:exprec_acl(jsx:decode(JsonTerm)),
-%%     ExpectedAcl = ?ACL{owner = #{display_name => <<"tester1">>,
-%%                                  key_id => <<"TESTKEYID1">>,
-%%                                  canonical_id => <<"TESTID1">>},
-%%                        grants = [?ACL_GRANT{grantee => 'AllUsers',
-%%                                             perms => ['WRITE_ACP']},
-%%                                  ?ACL_GRANT{grantee = #acl_owner{canonical_id => <<"TESTID2">>,
-%%                                                                  display_name => <<"tester2">>},
-%%                       "TESTKEYID1",
-%%                       [{{"tester1", "TESTID1"}, ['READ']},
-%%                        {{"tester2", "TESTID2"}, ['WRITE']},
-%%                        {'AllUsers', ['WRITE_ACP']}],
-%%                       CreationTime),
-%%     ?assertEqual(ExpectedAcl, Acl).
-
-acl_to_json_term_test() ->
+acl_to_from_json_term_test() ->
     CreationTime = os:system_time(millisecond),
-    Acl = acl("tester1",
-              "TESTID1",
-              "TESTKEYID1",
-              [{{"tester1", "TESTID1"}, ['READ']},
-               {{"tester2", "TESTID2"}, ['WRITE']}],
-              CreationTime),
-    JsonTerm = jsx:decode(Acl, [{return_maps, false}]),
-    ExpectedTerm = {<<"acl">>,
-                    [{<<"version">>,1},
-                     {<<"owner">>,
-                      [{<<"display_name">>,<<"tester1">>},
-                       {<<"canonical_id">>,<<"TESTID1">>},
-                       {<<"key_id">>,<<"TESTKEYID1">>}]},
-                     {<<"grants">>,
-                      [[{<<"display_name">>,<<"tester2">>},
-                        {<<"canonical_id">>,<<"TESTID2">>},
-                        {<<"permissions">>,[<<"WRITE">>]}],
-                       [{<<"display_name">>,<<"tester1">>},
-                        {<<"canonical_id">>,<<"TESTID1">>},
-                        {<<"permissions">>,[<<"READ">>]}]]},
-                     {<<"creation_time">>,
-                      CreationTime}
-                    ]
-                   },
-    ?assertEqual(ExpectedTerm, JsonTerm).
+    Acl0 = ?ACL{owner = #{display_name => <<"tester1">>,
+                          canonical_id => <<"TESTID1">>,
+                          key_id => <<"TESTKEYID1">>},
+                grants = [?ACL_GRANT{grantee = #{display_name => <<"tester1">>,
+                                                 canonical_id => <<"TESTID1">>},
+                                     perms = ['READ']},
+                          ?ACL_GRANT{grantee = #{display_name => <<"tester2">>,
+                                                 canonical_id => <<"TESTID2">>},
+                                     perms = ['WRITE']}],
+                creation_time = CreationTime},
+    Json = riak_cs_json:to_json(Acl0),
+    Acl9 = riak_cs_acl:exprec_acl(
+             jsx:decode(Json, [{labels, atom}])),
+    ?assertEqual(Acl0, Acl9).
 
 -endif.

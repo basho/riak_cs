@@ -283,26 +283,27 @@ bucket_to_xml(Name, CreationDate) ->
                        [make_external_node('Name', Name),
                         make_external_node('CreationDate', binary_to_list(rts:iso8601(CreationDate)))]).
 
-user_to_xml_owner(?RCS_USER{canonical_id=CanonicalId, display_name=Name}) ->
+user_to_xml_owner(?RCS_USER{canonical_id = CanonicalId,
+                            display_name = Name}) ->
     make_internal_node('Owner', [make_external_node('ID', [CanonicalId]),
                                  make_external_node('DisplayName', [Name])]).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
-make_grants(Grantees) ->
-    make_grants(Grantees, []).
+make_grants(Grants) ->
+    make_grants(Grants, []).
 
 %% @doc Assemble the xml for the set of grantees for an acl.
 make_grants([], Acc) ->
     lists:flatten(Acc);
 make_grants([?ACL_GRANT{grantee = #{display_name := GranteeName,
                                     canonical_id := GranteeId},
-                        perms = Perms} | RestGrantees], Acc) ->
-    Grantee = [make_grant(GranteeName, GranteeId, Perm) || Perm <- Perms],
-    make_grants(RestGrantees, [Grantee | Acc]);
+                        perms = Perms} | RestGrants], Acc) ->
+    Grant = [make_grant(GranteeName, GranteeId, Perm) || Perm <- Perms],
+    make_grants(RestGrants, [Grant | Acc]);
 make_grants([?ACL_GRANT{grantee = Group,
-                        perms = Perms} | RestGrantees], Acc) ->
-    Grantee = [make_grant(Group, Perm) || Perm <- Perms],
-    make_grants(RestGrantees, [Grantee | Acc]).
+                        perms = Perms} | RestGrants], Acc) ->
+    Grant = [make_grant(Group, Perm) || Perm <- Perms],
+    make_grants(RestGrants, [Grant | Acc]).
 
 %% @doc Assemble the xml for a group grantee for an acl.
 make_grant(Group, Permission) ->
@@ -833,12 +834,29 @@ format_value(Val) when is_float(Val) ->
 
 acl_to_xml_test() ->
     Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AccessControlPolicy><Owner><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID2</ID><DisplayName>tester2</DisplayName></Grantee><Permission>WRITE</Permission></Grant><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>TESTID1</ID><DisplayName>tester1</DisplayName></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>">>,
-    Grants1 = [{{"tester1", "TESTID1"}, ['READ']},
-               {{"tester2", "TESTID2"}, ['WRITE']}],
-    Grants2 = [{{"tester2", "TESTID1"}, ['READ']},
-               {{"tester1", "TESTID2"}, ['WRITE']}],
-    Acl1 = riak_cs_acl_utils:acl("tester1", "TESTID1", "TESTKEYID1", Grants1),
-    Acl2 = riak_cs_acl_utils:acl("tester1", "TESTID1", "TESTKEYID1", Grants2),
+    Grants1 = [?ACL_GRANT{grantee = #{display_name => <<"tester1">>,
+                                      canonical_id => <<"TESTID1">>},
+                          perms = ['READ']},
+               ?ACL_GRANT{grantee = #{display_name => <<"tester2">>,
+                                      canonical_id => <<"TESTID2">>},
+                          perms = ['WRITE']}],
+    Grants2 = [?ACL_GRANT{grantee = #{display_name => <<"tester2">>,
+                                      canonical_id => <<"TESTID1">>},
+                          perms = ['READ']},
+               ?ACL_GRANT{grantee = #{display_name => <<"tester1">>,
+                                      canonical_id => <<"TESTID2">>},
+                          perms = ['WRITE']}],
+    Now = os:system_time(millisecond),
+    Acl1 = ?ACL{owner = #{display_name => <<"tester1">>,
+                          canonical_id => <<"TESTID1">>,
+                          key_id => <<"TESTKEYID1">>},
+                grants = Grants1,
+                creation_time = Now},
+    Acl2 = ?ACL{owner = #{display_name => <<"tester1">>,
+                          canonical_id => <<"TESTID1">>,
+                          key_id => <<"TESTKEYID1">>},
+                grants = Grants2,
+                creation_time = Now},
     ?assertEqual(Xml, riak_cs_xml:to_xml(Acl1)),
     ?assertNotEqual(Xml, riak_cs_xml:to_xml(Acl2)).
 
@@ -869,7 +887,7 @@ list_objects_response_to_xml_test() ->
     ?assertEqual(Xml, riak_cs_xml:to_xml(ListObjectsResponse)).
 
 user_record_to_xml_test() ->
-    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Email>barf@spaceballs.com</Email><DisplayName>barf</DisplayName><Name>barfolomew</Name><KeyId>barf_key</KeyId><KeySecret>secretsauce</KeySecret><Id>1234</Id><Status>enabled</Status></User>">>,
+    Xml = <<"<?xml version=\"1.0\" encoding=\"UTF-8\"?><User><Email>barf@spaceballs.com</Email><DisplayName>barf</DisplayName><Path>barfolomew</Path><Name>barfolomew</Name><KeyId>barf_key</KeyId><KeySecret>secretsauce</KeySecret><Id>1234</Id><Status>enabled</Status></User>">>,
     User = ?RCS_USER{name="barfolomew",
                      display_name="barf",
                      email="barf@spaceballs.com",
@@ -877,6 +895,7 @@ user_record_to_xml_test() ->
                      key_secret="secretsauce",
                      canonical_id="1234",
                      status=enabled},
+    io:format("~p", [riak_cs_xml:to_xml(User)]),
     ?assertEqual(Xml, riak_cs_xml:to_xml(User)).
 
 -endif.

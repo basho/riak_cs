@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -71,8 +71,13 @@ prop_grant_gives_permission() ->
                                         {Grants, elements(Grants)}),
             begin
                 CombinedGrants = lists:foldl(fun riak_cs_acl_utils:add_grant/2, [], Grants),
-                {{_DisplayName, CanonicalID}, [RequestedAccess]} = RandomGrant,
-                riak_cs_acl:has_permission(CombinedGrants, RequestedAccess, CanonicalID)
+                case RandomGrant of
+                    ?ACL_GRANT{grantee = #{canonical_id := CanonicalID},
+                               perms = [RequestedAccess]} ->
+                        riak_cs_acl:has_permission(CombinedGrants, RequestedAccess, CanonicalID);
+                    ?ACL_GRANT{perms = [RequestedAccess]} ->
+                        riak_cs_acl:has_group_permission(CombinedGrants, RequestedAccess)
+                end
             end).
 
 
@@ -81,13 +86,20 @@ prop_grant_gives_permission() ->
 %%====================================================================
 
 grantee() ->
-    elements([{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}]).
+    oneof([owner(), group_grant()]).
+owner() ->
+    #{display_name => riak_cs_aws_utils:make_id(4),
+      canonical_id => riak_cs_aws_utils:make_id(8),
+      email => iolist_to_binary([riak_cs_aws_utils:make_id(2), $@, riak_cs_aws_utils:make_id(4), ".com"])}.
+group_grant() ->
+    oneof(['AllUsers', 'AuthUsers']).
 
 permission() ->
     elements(['READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL']).
 
 grant() ->
-    {grantee(), [permission()]}.
+    ?ACL_GRANT{grantee = grantee(),
+               perms = [permission()]}.
 
 %%====================================================================
 %% Helpers

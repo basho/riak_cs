@@ -56,8 +56,8 @@
 -include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
--compile(export_all).
--compile(nowarn_export_all).
+-compile([export_all, nowarn_export_all]).
+-export([bucket_from_host/1]).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 

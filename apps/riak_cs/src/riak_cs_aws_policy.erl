@@ -202,8 +202,12 @@ policy_from_json(JSON) ->
                         {error, missing_principal};
                     Stmts ->
                         Version = maps:get(<<"Version">>, Map, ?POLICY_VERSION_2020),
-                        ID = maps:get(<<"ID">>, Map, undefined),
-                        {ok, ?POLICY{id = ID, version = Version, statement = Stmts}}
+                        ID = n2u(maps:get(<<"Id">>, Map, null)),
+                        CreationTime = maps:get(<<"CreationTime">>, Map, os:system_time(millisecond)),
+                        {ok, ?POLICY{id = ID,
+                                     version = Version,
+                                     statement = Stmts,
+                                     creation_time = CreationTime}}
                 end;
             #{} ->
                 logger:warning("Policy document missing required fields: ~s", [JSON]),
@@ -214,21 +218,29 @@ policy_from_json(JSON) ->
             logger:notice("Bad Policy JSON (~p): ~s", [SpecificError, JSON]),
             {error, SpecificError};
         T:E:ST ->
-            {error, {uncaught_parsing_error, lists:flatten(io_lib:format(" ~p:~p", [T, E])), ST}}
+            logger:notice("Malformed policy json: ~p:~p", [T, E]),
+            ?LOG_DEBUG("Stacktrace: ~p", [ST]),
+            {error, malformed_policy_json}
     end.
+n2u(null) -> undefined;
+n2u(A) -> A.
 
 -spec policy_to_json_term(policy()) -> JSON::binary().
 policy_to_json_term(?POLICY{version = Version,
-                            id = ID, statement = Stmts0})
+                            id = ID,
+                            statement = Stmts0,
+                            creation_time = CreationTime})
   when Version =:= ?POLICY_VERSION_2008;
        Version =:= ?POLICY_VERSION_2012;
        Version =:= ?POLICY_VERSION_2020 ->
     Stmts = lists:map(fun statement_to_pairs/1, Stmts0),
     Policy = #{<<"Version">> => Version,
-               <<"Id">> => ID,
-               <<"Statement">> => Stmts},
+               <<"Id">> => u2n(ID),
+               <<"Statement">> => Stmts,
+               <<"CreationTime">> => CreationTime},
     jsx:encode(Policy).
-
+u2n(undefined) -> null;
+u2n(A) -> A.
 
 %% @doc put required atoms into atom table
 %% to make policy json parser safer by using erlang:binary_to_existing_atom/2.
@@ -331,22 +343,37 @@ resource_matches(Bucket, KeyBin, #statement{resource = Resources})
     % @TODO in case of using unicode object keys
     Path0 = case KeyBin of
                 undefined ->
-                    <<Bucket/binary, "/">>;
-                _ when is_binary(KeyBin) ->
+                    Bucket;
+                <<>> ->
+                    Bucket;
+                _ ->
                     <<Bucket/binary, "/", KeyBin/binary>>
             end,
     lists:any(fun(#arn_v1{path = Path}) ->
                       case binary:last(Path) of
                           $* ->
-                              %% only prefix matching
-                              <<M1:(size(Path)-1)/binary, _/binary>> = Path,
-                              <<M2:(size(Path)-1)/binary, _/binary>> = Path0,
-                              M1 =:= M2;
+                              if size(Path) < size(Path0) ->
+                                      %% only prefix matching
+                                      <<M1:(size(Path)-1)/binary, _/binary>> = Path,
+                                      <<M2:(size(Path)-1)/binary, _/binary>> = Path0,
+                                      M1 =:= M2;
+                                 el/=se ->
+                                      false
+                              end;
+
                           _ ->
-                              Path =:= Path0
+                              maybe_drop_last_slash(Path) =:= maybe_drop_last_slash(Path0)
                       end;
                  (_) -> false
               end, Resources).
+
+maybe_drop_last_slash(A) ->
+    case binary:last(A) of
+        $/ ->
+            maybe_drop_last_slash(binary:part(A, 0, byte_size(A)-1));
+        _ ->
+            A
+    end.
 
 % functions to eval:
 -spec eval_statement(access(), #statement{}) -> boolean() | undefined.
@@ -665,9 +692,9 @@ s2id_flat(A) -> throw({error, {invalid_principal_id, A}}).
 
 print_principal('*') -> <<"*">>;
 print_principal({P, A}) ->
-    {principal2s(P), a2s(A)};
+    [{principal2s(P), a2s(A)}];
 print_principal(Principals) when is_list(Principals) ->
-    lists:map(fun print_principal/1, Principals).
+    lists:flatten(lists:map(fun print_principal/1, Principals)).
 principal2s(aws) -> <<"AWS">>;
 principal2s(federated) -> <<"Federated">>;
 principal2s(service) -> <<"Service">>;

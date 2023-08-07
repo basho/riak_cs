@@ -24,7 +24,7 @@
 -export([prop_ip_filter/0,
          prop_secure_transport/0,
          prop_eval/0,
-         prop_policy_v1/0]).
+         prop_policy/0]).
 
 -export([string_condition/0,
          numeric_condition/0,
@@ -41,7 +41,7 @@
 
 -define(TIMEOUT, 60).
 
-proper_test_()->
+proper_test_() ->
     {inparallel,
      [
       {timeout, ?TIMEOUT,
@@ -59,24 +59,24 @@ proper_test_()->
       {timeout, ?TIMEOUT,
        ?_assertEqual(true,
                      proper:quickcheck(numtests(?TEST_ITERATIONS,
-                                                ?QC_OUT(prop_policy_v1()))))}
+                                                ?QC_OUT(prop_policy()))))}
      ]}.
 
 %% accept case of ip filtering
 %% TODO: reject case of ip filtering
 prop_ip_filter() ->
     ?FORALL({Policy0, Access0, IP, PrefixDigit},
-            {policy_v1(), access_v1(), inet_ip_address_v4(), choose(0,32)},
+            {policy(), access_v1(), inet_ip_address_v4(), choose(0,32)},
             begin
                 application:set_env(riak_cs, trust_x_forwarded_for, true),
                 %% replace IP in the policy with prefix mask
                 Statement0 = hd(Policy0?POLICY.statement),
                 IPStr0 = lists:flatten(io_lib:format("~s/~p",
                                                      [inet_parse:ntoa(IP), PrefixDigit])),
-                IPTuple = riak_cs_s3_policy:parse_ip(IPStr0),
+                IPTuple = riak_cs_aws_policy:parse_ip(IPStr0),
                 Cond = {'IpAddress', [{'aws:SourceIp', IPTuple}]},
-                Statement = Statement0#statement{condition_block=[Cond]},
-                Policy = Policy0?POLICY{statement=[Statement]},
+                Statement = Statement0#statement{condition_block = [Cond]},
+                Policy = Policy0?POLICY{statement = [Statement]},
 
                 %% replace IP in the wm_reqdata to match the policy
                 Peer = lists:flatten(io_lib:format("~s", [inet_parse:ntoa(IP)])),
@@ -84,8 +84,8 @@ prop_ip_filter() ->
                 Access = Access0#access_v1{req = ReqData0#wm_reqdata{peer=Peer}},
 
                 %% eval
-                JsonPolicy = riak_cs_s3_policy:policy_to_json_term(Policy),
-                Result = riak_cs_s3_policy:eval(Access, JsonPolicy),
+                JsonPolicy = riak_cs_aws_policy:policy_to_json_term(Policy),
+                Result = riak_cs_aws_policy:eval(Access, JsonPolicy),
                 Effect = Statement#statement.effect,
 
                 case {Result, Effect} of
@@ -101,7 +101,7 @@ prop_ip_filter() ->
 
 prop_secure_transport() ->
     %% needs better name instead of Bool
-    ?FORALL({Policy0, Access, Bool}, {policy_v1(), access_v1(), bool()},
+    ?FORALL({Policy0, Access, Bool}, {policy(), access_v1(), bool()},
             begin
                 %% inject SecureTransport policy
                 Statement0 = hd(Policy0?POLICY.statement),
@@ -114,8 +114,8 @@ prop_secure_transport() ->
                 Scheme = ReqData#wm_reqdata.scheme,
 
                 %% eval
-                JsonPolicy = riak_cs_s3_policy:policy_to_json_term(Policy),
-                Result = riak_cs_s3_policy:eval(Access, JsonPolicy),
+                JsonPolicy = riak_cs_aws_policy:policy_to_json_term(Policy),
+                Result = riak_cs_aws_policy:eval(Access, JsonPolicy),
                 Effect = Statement#statement.effect,
 
                 case {Result, {Scheme, Bool}} of
@@ -133,11 +133,11 @@ prop_secure_transport() ->
 
 %% checking not to throw or return unexpected result
 prop_eval() ->
-    ?FORALL({Policy, Access}, {policy_v1(), access_v1()},
+    ?FORALL({Policy, Access}, {policy(), access_v1()},
             begin
                 application:set_env(riak_cs, trust_x_forwarded_for, true),
-                JsonPolicy = riak_cs_s3_policy:policy_to_json_term(Policy),
-                case riak_cs_s3_policy:eval(Access, JsonPolicy) of
+                JsonPolicy = riak_cs_aws_policy:policy_to_json_term(Policy),
+                case riak_cs_aws_policy:eval(Access, JsonPolicy) of
                     true -> true;
                     false -> true;
                     undefined  -> true
@@ -145,29 +145,32 @@ prop_eval() ->
             end).
 
 %% policy conversion between JSON <==> record
-prop_policy_v1()->
-    ?FORALL(Policy, policy_v1(),
+prop_policy() ->
+    ?FORALL(Policy, policy(),
             begin
+                %% ?debugVal(Policy),
                 application:set_env(riak_cs, trust_x_forwarded_for, true),
                 JsonPolicy =
-                    riak_cs_s3_policy:policy_to_json_term(Policy),
+                    riak_cs_aws_policy:policy_to_json_term(Policy),
                 {ok, PolicyFromJson} =
-                    riak_cs_s3_policy:policy_from_json(JsonPolicy),
+                    riak_cs_aws_policy:policy_from_json(JsonPolicy),
+                %%?debugVal({Policy?POLICY.id, PolicyFromJson?POLICY.id}),
                 (Policy?POLICY.id =:= PolicyFromJson?POLICY.id)
                     andalso
                       (Policy?POLICY.version =:= PolicyFromJson?POLICY.version)
                     andalso
                     lists:all(fun({LHS, RHS}) ->
-                                      riak_cs_s3_policy:statement_eq(LHS, RHS)
+                                      riak_cs_aws_policy:statement_eq(LHS, RHS)
                               end,
-                              lists:zip(Policy?POLICY.statement,
-                                        PolicyFromJson?POLICY.statement))
+                              lists:zip(lists:sort(Policy?POLICY.statement),
+                                        lists:sort(PolicyFromJson?POLICY.statement)))
             end).
 
 
 %% Generators
 object_action() -> oneof(?SUPPORTED_OBJECT_ACTIONS).
 bucket_action() -> oneof(?SUPPORTED_BUCKET_ACTIONS).
+iam_action() -> oneof(?SUPPORTED_IAM_ACTIONS).
 
 string_condition()  -> oneof(?STRING_CONDITION_ATOMS).
 numeric_condition() -> oneof(?NUMERIC_CONDITION_ATOMS).
@@ -182,7 +185,7 @@ ip_with_mask() ->
          begin
              %% this code is to be moved to riak_cs_s3_policy
              String = lists:flatten(io_lib:format("~s/~p", [inet_parse:ntoa(IP), PrefixDigit])),
-             riak_cs_s3_policy:parse_ip(String)
+             riak_cs_aws_policy:parse_ip(String)
          end).
 
 condition_pair() ->
@@ -200,24 +203,23 @@ one_or_more_ip_with_mask() ->
 
 %% TODO: FIXME: add a more various form of path
 path() ->
-    "test/*".
+    <<"test/*">>.
 
 arn_id() ->
     %% removing ":" which confuses parser
-    ?LET(String, list(oneof([choose(33,57), choose(59,127)])),
-         list_to_binary(String)).
+    nonempty_binary_char_string().
 
 arn_v1() ->
     #arn_v1{
        provider = aws,
        service  = s3,
-       region   = "cs-ap-e1", %% TODO: add generator
+       region   = <<"cs-ap-e1">>,
        id =  arn_id(),
        path = path()
       }.
 
 
-principal() -> oneof(['*', {aws, '*'}]).
+principal() -> oneof(['*', {aws, '*'}, {aws, nonempty_binary_char_string()}]).
 
 effect() -> oneof([allow, deny]).
 
@@ -226,33 +228,28 @@ statement() ->
        sid = nonempty_binary_char_string(),
        effect = effect(),
        principal  = principal(),
-       action     = oneof([ object_action(), bucket_action(), '*' ]),
+       action     = [action()],
        not_action = [],
        resource   = oneof([arn_v1(), '*']),
-       condition_block = list(condition_pair())
+       condition_block = [condition_pair()]
       }.
 
 statements() ->
     non_empty(list(statement())).
 
-creation_time() ->
-    {nat(), choose(0, 1000000), choose(0, 1000000)}.
-
-ustring() -> list(choose(33,127)).
+ustring() -> list(choose($a, $z)).
 
 binary_char_string() ->
     ?LET(String, ustring(), list_to_binary(String)).
 
 nonempty_binary_char_string() ->
-    ?LET({Char, BinString}, {choose(33,127), binary_char_string()},
+    ?LET({Char, BinString}, {choose($a,$z), binary_char_string()},
          <<Char, BinString/binary>>).
 
-policy_v1() ->
+policy() ->
     #policy{
-       version   = ?POLICY_VERSION_2008,
-       id        = oneof([undefined, binary_char_string()]),
-       statement = statements(),
-       creation_time = creation_time()
+       id        = oneof([undefined, riak_cs_aws_utils:make_id(11)]),
+       statement = statements()
       }.
 
 method() ->
@@ -272,6 +269,9 @@ method_from_target(object) ->
 method_from_target(object_acl) ->
     oneof(['PUT', 'GET']).
 
+action() ->
+    oneof([ object_action(), bucket_action(), iam_action(), <<"s3:*">>, <<"iam:*">>, <<"sts:*">>, <<"*">> ]).
+
 access_v1() ->
     ?LET(Target, oneof([bucket, bucket_acl, bucket_location,
                         bucket_policy, bucket_uploads, bucket_versioning,
@@ -281,9 +281,10 @@ access_v1() ->
               #access_v1{
                  method = Method,
                  target = Target,
-                 id     = ustring(),
+                 action = action(),
+                 id     = nonempty_binary_char_string(),
                  bucket = nonempty_binary_char_string(),
-                 key    = oneof([undefined, binary_char_string()]),
+                 key    = oneof([undefined, nonempty_binary_char_string()]),
                  req    = wm_reqdata()
                 })).
 

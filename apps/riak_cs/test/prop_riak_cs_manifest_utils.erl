@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -102,7 +102,7 @@ prop_prune_manifests() ->
         begin
             AlteredManifests = lists:map(fun(M) -> M?MANIFEST{uuid = uuid:get_v4()} end, Manifests),
             AsDict = orddict:from_list([{M?MANIFEST.uuid, M} || M <- AlteredManifests]),
-            NowTime = {-1, -1, -1},
+            NowTime = -1,
             case MaxCount of
                 'unlimited' ->
                     %% We should not prune any manifests if the prune
@@ -147,23 +147,23 @@ manifest() ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=erlang:timestamp(),
-                              write_blocks_remaining=blocks_set()};
+            Manifest?MANIFEST{last_block_written_time = os:system_time(millisecond),
+                              write_blocks_remaining = blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
-                              write_start_time=riak_cs_gen:timestamp()};
+            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
+                              write_start_time = riak_cs_gen:timestamp()};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=erlang:timestamp(),
-                              delete_blocks_remaining=blocks_set(),
-                              delete_marked_time=riak_cs_gen:timestamp(),
-                              props=riak_cs_gen:props()};
+            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
+                              delete_blocks_remaining = blocks_set(),
+                              delete_marked_time = riak_cs_gen:timestamp(),
+                              props = riak_cs_gen:props()};
         scheduled_delete ->
-            Manifest?MANIFEST{delete_marked_time=riak_cs_gen:timestamp(),
-                              scheduled_delete_time=riak_cs_gen:timestamp(),
-                              props=riak_cs_gen:props()}
+            Manifest?MANIFEST{delete_marked_time = riak_cs_gen:timestamp(),
+                              scheduled_delete_time = riak_cs_gen:timestamp(),
+                              props = riak_cs_gen:props()}
     end.
 
 manifests() ->

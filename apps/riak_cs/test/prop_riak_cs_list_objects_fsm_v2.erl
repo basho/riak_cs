@@ -266,15 +266,15 @@ bin_key(Key) ->
 process_manifest(Manifest=?MANIFEST{state=State}) ->
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time=os:timestamp()};
+            Manifest?MANIFEST{last_block_written_time = os:system_time(millisecond)};
         active ->
             %% this clause isn't needed but it makes things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
+            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond)};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp()};
+            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond)};
         scheduled_delete ->
-            Manifest?MANIFEST{last_block_deleted_time=os:timestamp(),
-                              scheduled_delete_time=os:timestamp()}
+            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
+                              scheduled_delete_time = os:system_time(millisecond)}
     end.
 
 sort_manifests(Manifests) ->

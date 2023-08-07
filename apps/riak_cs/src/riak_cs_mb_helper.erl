@@ -31,6 +31,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(MB_ENABLED(Normal, Multibag),
         case riak_cs_config:is_multibag_enabled() of

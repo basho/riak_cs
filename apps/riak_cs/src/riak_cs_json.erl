@@ -114,8 +114,9 @@ to_json(?IAM_SAML_PROVIDER{saml_metadata_document = D} = A) ->
                                {tag, record_info(fields, tag)}]}]));
 to_json(?ACL{} = A) ->
     list_to_binary(
-      jason:decode(A,
-                   [{records, [{acl_v3, record_info(fields, acl_v3)}]}]));
+      jason:encode(A,
+                   [{records, [{acl_v3, record_info(fields, acl_v3)},
+                               {acl_grant_v2, record_info(fields, acl_grant_v2)}]}]));
 
 to_json(undefined) ->
     <<>>;

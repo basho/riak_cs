@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -46,7 +46,7 @@ prop_v2_auth() ->
             begin
                 {KeyData, KeySecret, RD} = Request,
                 SignedString = riak_cs_aws_auth:calculate_signature_v2(KeySecret, RD),
-                CSAuthHeader = ["AWS ", KeyData, $:, list_to_binary(SignedString)],
+                CSAuthHeader = ["AWS ", KeyData, $:, SignedString],
 
                 ErlCloudAuthHeader = erlcloud_hdr(KeyData, KeySecret, RD),
                 CSAuthHeader =:= ErlCloudAuthHeader
@@ -72,7 +72,7 @@ gen_request(RootHost) ->
                                       {"Date", Date},
                                       {"Content-MD5", ContentMD5},
                                       {"Content-Type", ContentType}]),
-           {Headers, Path} = riak_cs_s3_rewrite:rewrite(Verb, https, Version, Headers0, OrigPath),
+           {Headers, Path} = riak_cs_aws_s3_rewrite:rewrite(Verb, https, Version, Headers0, OrigPath),
            RD = wrq:create(Verb, Version, Path, Headers),
            {KeyData, KeySecret, RD}
        end).

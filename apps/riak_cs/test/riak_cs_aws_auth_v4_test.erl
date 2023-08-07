@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -28,8 +28,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test cases at http://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
--define(ACCESS_KEY_ID, "AKIAIOSFODNN7EXAMPLE").
--define(SECRET_ACCESS_KEY, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY").
+-define(ACCESS_KEY_ID, <<"AKIAIOSFODNN7EXAMPLE">>).
+-define(SECRET_ACCESS_KEY, <<"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">>).
 -define(VERSION, {1, 1}).
 -define(BUCKET, "examplebucket").
 
