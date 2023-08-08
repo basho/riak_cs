@@ -111,7 +111,7 @@ finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
 %% @doc Format the respons JSON object is a "pretty-printed" style.
 pretty_print(RD1, C1 = #rcs_web_context{}) ->
     {Json, RD2, C2} = produce_body(RD1, C1),
-    Body = riak_cs_utils:json_pp_print(lists:flatten(Json)),
+    Body = jsx:prettify(Json),
     ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(term_to_binary(Body))),
     RD3 = wrq:set_resp_header("ETag", ETag, RD2),
     {Body, RD3, C2}.

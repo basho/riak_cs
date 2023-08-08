@@ -46,7 +46,6 @@
          active_manifest_from_response/1,
          hexlist_to_binary/1,
          binary_to_hexlist/1,
-         json_pp_print/1,
          key_exists/3,
          n_val_1_get_requests/0,
          pow/2,
@@ -371,30 +370,6 @@ has_tombstone({_, <<>>}) ->
 has_tombstone({MD, _V}) ->
     dict:is_key(?MD_DELETED, MD) =:= true.
 
-%% @doc Pretty-print a JSON string ... from riak_core's json_pp.erl
-json_pp_print(Str) when is_list(Str) ->
-    json_pp_print(Str, 0, undefined, []).
-
-json_pp_print([$\\, C| Rest], I, C, Acc) -> % in quote
-    json_pp_print(Rest, I, C, [C, $\\| Acc]);
-json_pp_print([C| Rest], I, undefined, Acc) when ?is_quote(C) ->
-    json_pp_print(Rest, I, C, [C| Acc]);
-json_pp_print([C| Rest], I, C, Acc) -> % in quote
-    json_pp_print(Rest, I, undefined, [C| Acc]);
-json_pp_print([C| Rest], I, undefined, Acc) when ?is_indent(C) ->
-    json_pp_print(Rest, I+1, undefined, [json_pp_indent(I+1), $\n, C| Acc]);
-json_pp_print([C| Rest], I, undefined, Acc) when ?is_undent(C) ->
-    json_pp_print(Rest, I-1, undefined, [C, json_pp_indent(I-1), $\n| Acc]);
-json_pp_print([$,| Rest], I, undefined, Acc) ->
-    json_pp_print(Rest, I, undefined, [json_pp_indent(I), $\n, $,| Acc]);
-json_pp_print([$:| Rest], I, undefined, Acc) ->
-    json_pp_print(Rest, I, undefined, [?SPACE, $:| Acc]);
-json_pp_print([C|Rest], I, Q, Acc) ->
-    json_pp_print(Rest, I, Q, [C| Acc]);
-json_pp_print([], _I, _Q, Acc) -> % done
-    lists:reverse(Acc).
-
-json_pp_indent(I) -> lists:duplicate(I*4, ?SPACE).
 
 -spec n_val_1_get_requests() -> boolean().
 n_val_1_get_requests() ->
