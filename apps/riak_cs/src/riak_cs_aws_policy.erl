@@ -151,7 +151,14 @@ check_principal('*') ->
     true;
 check_principal([]) ->
     false;
-check_principal([{canonical_id, _Id}|_]) -> %% TODO: do we check all canonical ids exist?
+check_principal([{canonical_user, _Id}|_]) -> %% TODO: do we check all canonical ids exist?
+    %% no. Checking that such a user exists now will only create a
+    %% false sense of consistency. That user can be deleted at a later
+    %% point while the policy referencing it will continue to exist.
+    true;
+check_principal([{federated, _Id}|_]) ->
+    true;
+check_principal([{service, _Id}|_]) ->
     true;
 check_principal([{aws, '*'}|_]) ->
     true;

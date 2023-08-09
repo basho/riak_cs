@@ -968,10 +968,10 @@ safely_extract_canonical_id(undefined) -> undefined.
 -spec check_object_authorization(access(), boolean(), undefined|acl(), policy(),
                                  undefined|binary(), atom(), riak_client(), riakc_obj:riakc_obj()) ->
           {ok, actor_is_owner_and_allowed_policy |
-           {actor_is_not_owner_but_allowed_policy, string()} |
+           {actor_is_not_owner_but_allowed_policy, binary()} |
            just_allowed_by_policy} |
           {error, actor_is_owner_but_denied_policy |
-           {actor_is_not_owner_and_denied_policy, string()} |
+           {actor_is_not_owner_and_denied_policy, binary()} |
            access_denied}.
 check_object_authorization(Access, SkipAcl, ObjectAcl, Policy,
                            CanonicalId, PolicyMod,
@@ -1208,7 +1208,7 @@ role_access_authorize_helper(Target, RD,
                   UserPolicies),
             PermBoundaryVerdict =
                 case PermissionsBoundary of
-                    ?IAM_POLICY{} ->
+                    ?POLICY{} ->
                         PolicyMod:eval(Access, PermissionsBoundary);
                     [] ->
                         undefined

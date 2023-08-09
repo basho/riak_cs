@@ -240,7 +240,7 @@
 -record(part_manifest_v1, {
     bucket :: binary(),
     key :: binary(),
-    start_time :: erlang:timestamp(),
+    start_time :: non_neg_integer(),
     part_number :: integer(),
     part_id :: binary(),
     content_length :: integer(),
@@ -256,7 +256,7 @@
 
     %% used to judge races between concurrent uploads
     %% of the same part_number
-    start_time :: erlang:timestamp(),
+    start_time :: non_neg_integer(),
 
     %% one-of 1-10000, inclusive
     part_number :: integer(),
@@ -349,7 +349,7 @@
 %% Basis of multipart list parts output
 -record(part_descr_v1, {
     part_number :: integer(),
-    last_modified :: string(),  % TODO ??
+    last_modified :: non_neg_integer(),
     etag :: binary(),
     size :: integer()
 }).

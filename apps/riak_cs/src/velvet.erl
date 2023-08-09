@@ -368,7 +368,7 @@ update_role(ContentType, Arn, Doc, Options) ->
 
 
 -spec create_policy(string(), binary(), proplists:proplist()) ->
-          {ok, policy()} | {error, reportable_error_reason()}.
+          {ok, iam_policy()} | {error, reportable_error_reason()}.
 create_policy(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),
     Path = policies_path([]),
@@ -388,7 +388,7 @@ create_policy(ContentType, Doc, Options) ->
     end,
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
-            Policy = riak_cs_iam:exprec_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
+            Policy = riak_cs_iam:exprec_iam_policy(jsx:decode(list_to_binary(RespBody), [{labels, atom}])),
             {ok, Policy};
         {error, Error} ->
             {error, Error}
@@ -446,7 +446,7 @@ update_policy(ContentType, Arn, Doc, Options) ->
     end.
 
 
--spec create_saml_provider(string(), string(), proplists:proplist()) ->
+-spec create_saml_provider(string(), binary(), proplists:proplist()) ->
           {ok, {binary(), [tag()]}} | {error, reportable_error_reason()}.
 create_saml_provider(ContentType, Doc, Options) ->
     AuthCreds = proplists:get_value(auth_creds, Options, no_auth_creds),

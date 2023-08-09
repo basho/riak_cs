@@ -190,13 +190,13 @@ update_error_with_start(Key, StartTime) ->
 countup(Key) ->
     safe_update([riak_cs | Key], 1).
 
--spec report_json() -> string().
+-spec report_json() -> binary().
 report_json() ->
-    lists:flatten(jsx:encode(get_stats())).
+    jsx:encode(get_stats()).
 
--spec report_pretty_json() -> string().
+-spec report_pretty_json() -> binary().
 report_pretty_json() ->
-    lists:flatten(riak_cs_utils:json_pp_print(report_json())).
+    jsx:prettify(report_json()).
 
 -spec get_stats() -> proplists:proplist().
 get_stats() ->

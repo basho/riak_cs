@@ -100,13 +100,13 @@
                        | iam_entity
                        | sts_entity.
 
--record(access_v1, { method :: 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD'
-                   , target :: action_target()
-                   , id :: binary()
-                   , bucket :: binary()
+-record(access_v1, { method :: undefined | 'PUT' | 'GET' | 'POST' | 'DELETE' | 'HEAD'
+                   , target :: undefined | action_target()
+                   , id :: undefined | binary()
+                   , bucket :: undefined | binary()
                    , key = <<>> :: undefined | binary()
-                   , action :: aws_action()
-                   , req :: #wm_reqdata{}
+                   , action :: undefined | aws_action()
+                   , req :: undefined | #wm_reqdata{}
                    }
        ).
 -type access() :: #access_v1{}.
@@ -267,9 +267,9 @@
 -type list_buckets_response() :: #list_buckets_response{}.
 -define(LBRESP, #list_buckets_response).
 
--record(bucket_versioning, { status = suspended :: enabled | suspended
-                           , mfa_delete = disabled :: disabled | enabled
-                           %% Riak CS extensions
+-record(bucket_versioning, { status = suspended :: enabled | suspended | binary()
+                           , mfa_delete = disabled :: disabled | enabled | binary()
+                           %% Riak CS extensions (still to be implemented)
                            , use_subversioning = false :: boolean()
                            , can_update_versions = false :: boolean()
                            , repl_siblings = true :: boolean()
@@ -330,11 +330,11 @@
        ).
 
 
--record(create_policy_response, { policy :: policy()
+-record(create_policy_response, { policy :: iam_policy()
                                 , request_id :: binary()
                                 }
        ).
--record(get_policy_response, { policy :: policy()
+-record(get_policy_response, { policy :: iam_policy()
                              , request_id :: binary()
                              }
        ).
@@ -352,7 +352,7 @@
        ).
 -record(list_policies_response, { marker :: binary() | undefined
                                 , is_truncated :: boolean()
-                                , policies :: [policy()]
+                                , policies :: [iam_policy()]
                                 , request_id :: binary()
                                 }
        ).

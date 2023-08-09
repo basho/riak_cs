@@ -284,11 +284,11 @@ delete_role(Arn, Pbc) ->
     end.
 
 
--spec create_policy(maps:map(), pid()) -> {ok, policy()} | {error, term()}.
+-spec create_policy(maps:map(), pid()) -> {ok, iam_policy()} | {error, term()}.
 create_policy(Fields, Pbc) ->
     P = ?IAM_POLICY{policy_name = Name} =
         riak_cs_iam:unarm(
-          riak_cs_iam:exprec_policy(Fields)),
+          riak_cs_iam:exprec_iam_policy(Fields)),
     case policy_name_available(Name, Pbc) of
         true ->
             save_policy(P, Pbc);
@@ -299,7 +299,7 @@ create_policy(Fields, Pbc) ->
 -spec update_policy(maps:map(), pid()) -> ok | {error, term()}.
 update_policy(Fields, Pbc) ->
     Policy = riak_cs_iam:unarm(
-               riak_cs_iam:exprec_policy(Fields)),
+               riak_cs_iam:exprec_iam_policy(Fields)),
     save_policy_directly(Policy, Pbc).
 
 policy_name_available(Name, Pbc) ->

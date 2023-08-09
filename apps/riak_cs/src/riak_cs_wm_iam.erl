@@ -27,7 +27,6 @@
          malformed_request/2,
          forbidden/2,
          authorize/2,
-         content_types_provided/2,
          content_types_accepted/2,
          generate_etag/2,
          last_modified/2,
@@ -47,7 +46,6 @@
               malformed_request/2,
               forbidden/2,
               authorize/2,
-              content_types_provided/2,
               content_types_accepted/2,
               generate_etag/2,
               last_modified/2,
@@ -135,7 +133,7 @@ forbidden(RD, #rcs_web_context{auth_module = AuthMod,
     post_authentication(AuthResult, RD, Ctx, fun authorize/2).
 
 post_authentication({ok, admin_access}, RD, Ctx, _Authorize) ->
-    {false, RD, Ctx#rcs_web_context{user = admin}};
+    {false, RD, Ctx#rcs_web_context{admin_access = true}};
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
     %% given keyid and signature matched, proceed
     Authorize(RD, Ctx#rcs_web_context{user = User,
@@ -191,24 +189,20 @@ content_types_accepted(RD, Ctx) ->
     {[{?WWWFORM_TYPE, accept_wwwform}], RD, Ctx}.
 
 
--spec content_types_provided(#wm_reqdata{}, #rcs_web_context{}) ->
-          {[{string(), module()}], #wm_reqdata{}, #rcs_web_context{}}.
-content_types_provided(RD, Ctx) ->
-    {[{?XML_TYPE, produce_xml}], RD, Ctx}.
-
-
 -spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
     riak_cs_wm_utils:role_access_authorize_helper(iam_entity, RD, Ctx).
 
 
--spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
+-spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) ->
+          {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
 generate_etag(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
 
--spec last_modified(#wm_reqdata{}, #rcs_web_context{}) -> {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
+-spec last_modified(#wm_reqdata{}, #rcs_web_context{}) ->
+          {undefined|string(), #wm_reqdata{}, #rcs_web_context{}}.
 last_modified(RD, Ctx) ->
     {undefined, RD, Ctx}.
 
@@ -626,7 +620,7 @@ do_action("CreateSAMLProvider",
         false ->
             ResponseMod:api_error(missing_parameter, RD, Ctx);
         true ->
-            case riak_cs_iam:create_saml_provider(Specs#{request_id => RequestId}) of
+            case riak_cs_iam:create_saml_provider(Specs) of
                 {ok, {Arn, Tags}} ->
                     logger:info("Created SAML Provider \"~s\" (~s) on request_id ~s",
                                 [maps:get(name, Specs), Arn, RequestId]),

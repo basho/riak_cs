@@ -51,24 +51,24 @@
                      }).
 
 %% this now in part logically belongs in aws_api.hrl
--record(rcs_user_v3, { arn :: flat_arn()
+-record(rcs_user_v3, { arn :: undefined | flat_arn()
                      , path = <<"/">> :: binary()
                      , create_date = os:system_time(millisecond) :: non_neg_integer()
                      %% , user_id :: binary() %% maps to canonical_id
                      %% , user_name :: binary() %% maps to name
                      , password_last_used :: undefined | non_neg_integer()
-                     , permissions_boundary :: undefined | permissions_boundary()
-                     , tags = [] :: [tag()]
+                     , permissions_boundary :: undefined | #{} | permissions_boundary()
+                     , tags = [] :: [#{} | tag()]
                      , attached_policies = [] :: [flat_arn()]
 
-                     , name :: binary()
-                     , display_name :: binary()
-                     , email :: binary()
-                     , key_id :: binary()
-                     , key_secret :: binary()
-                     , canonical_id :: binary()
-                     , buckets = [] :: [cs_bucket()]
-                     , status = enabled :: enabled | disabled
+                     , name :: undefined | binary()
+                     , display_name :: undefined | binary()
+                     , email :: undefined | binary()
+                     , key_id :: undefined | binary()
+                     , key_secret :: undefined | binary()
+                     , canonical_id :: undefined | binary()
+                     , buckets = [] :: [#{} | cs_bucket()]
+                     , status = enabled :: enabled | disabled | binary()
                      }).
 
 -type moss_user() :: #rcs_user_v2{} | #moss_user_v1{}.
@@ -89,11 +89,11 @@
                         , acl :: undefined | acl()
                         }).
 
--record(moss_bucket_v2, { name :: binary()
+-record(moss_bucket_v2, { name :: undefined | binary()
                         , last_action :: undefined | created | deleted | binary()
                         , creation_date = os:system_time(millisecond) :: non_neg_integer()
                         , modification_time :: undefined | non_neg_integer()
-                        , acl :: undefined | acl()
+                        , acl :: undefined | #{} | acl()
                         }).
 
 -type cs_bucket() :: #moss_bucket_v2{}.

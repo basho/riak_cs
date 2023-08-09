@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -166,10 +166,12 @@ flush_to_log('$end_of_table', _, _) ->
     ok;
 flush_to_log(User, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
-    RiakObj = riak_cs_access:make_object(User, Accesses, Slice),
+    RiakObj = make_object(iolist_to_binary([User]), Accesses, Slice),
     flush_access_object_to_log(User, RiakObj, Slice),
     flush_to_log(ets:next(Table, User), Table, Slice).
 
+-spec flush_access_object_to_log(binary(), riakc_obj:riakc_obj(), slice()) ->
+          ok.
 flush_access_object_to_log(User, RiakObj, Slice) ->
     {Start0, End0} = Slice,
     Start = rts:iso8601(Start0),

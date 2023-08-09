@@ -100,7 +100,7 @@ handle_user_auth_response({{halt, _Code}, _RD, _Ctx} = Ret) ->
 handle_user_auth_response({_Reason, _RD, _Ctx} = Ret) ->
     Ret.
 
--spec content_types_accepted(term(), term()) ->
+-spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
     {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{?XML_TYPE, accept_xml}, {?JSON_TYPE, accept_json}], RD, Ctx}.
@@ -133,7 +133,7 @@ accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     user_response(update_user(maps:to_list(maps:merge(FF, IAMExtra)), User),
                   ?JSON_TYPE, RD, Ctx).
 
--spec accept_xml(term(), term()) ->
+-spec accept_xml(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
     Body = binary_to_list(wrq:req_body(RD)),

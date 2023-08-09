@@ -82,7 +82,7 @@ aws_service_submodule("sts") -> riak_cs_aws_sts_rewrite;
 aws_service_submodule(A) ->  {unsupported, A}.
 
 
--spec original_resource(#wm_reqdata{}) -> undefined | {string(), [{term(),term()}]}.
+-spec original_resource(#wm_reqdata{}) -> {string(), [{term(),term()}]}.
 original_resource(RD) ->
     riak_cs_rewrite:original_resource(RD).
 

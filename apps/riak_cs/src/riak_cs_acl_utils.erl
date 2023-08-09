@@ -339,7 +339,7 @@ check_grants(User, Bucket, RequestedAccess, RcPid) ->
     check_grants(User, Bucket, RequestedAccess, RcPid, undefined).
 
 -spec check_grants(undefined | rcs_user(), binary(), atom(), riak_client(), acl() | undefined) ->
-          boolean() | {true, string()}.
+          boolean() | {true, binary()}.
 check_grants(undefined, Bucket, RequestedAccess, RcPid, BucketAcl) ->
     riak_cs_acl:anonymous_bucket_access(Bucket, RequestedAccess, RcPid, BucketAcl);
 check_grants(User, Bucket, RequestedAccess, RcPid, BucketAcl) ->
@@ -585,11 +585,13 @@ process_grant([#xmlText{}|RestElements], Grant, Owner, RcPid) ->
 %% an ACL permission grantee.
 process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, AclOwner, RcPid) ->
     case Gee0 of
+        GroupGrantee when GroupGrantee == 'AllUsers';
+                          GroupGrantee == 'AuthUsers' ->
+            G0;
         #{email := Email,
           canonical_id := CanonicalId,
-          display_name := DisplayName} when is_binary(Email),
-                                            is_binary(CanonicalId),
-                                            is_binary(DisplayName) ->
+          display_name := _DisplayName} when is_binary(Email),
+                                             is_binary(CanonicalId) ->
             G0;
         #{email := Email} = M ->
             MaybeConflictingId =
@@ -624,19 +626,19 @@ process_grantee([], G0 = ?ACL_GRANT{grantee = Gee0}, AclOwner, RcPid) ->
                             ER
                     end
             end;
-        _GroupGrantee when is_atom(_GroupGrantee) ->
+        _DialyzersGoHere ->
             G0
     end;
 process_grantee([#xmlElement{content = [Content],
                              name = ElementName} |
                  RestElements], ?ACL_GRANT{grantee = Grantee} = G, AclOwner, RcPid) ->
-    Value = list_to_binary(Content#xmlText.value),
+    Value = Content#xmlText.value,
     UpdGrant =
         case ElementName of
             'ID' ->
-                G?ACL_GRANT{grantee = Grantee#{canonical_id => Value}};
+                G?ACL_GRANT{grantee = Grantee#{canonical_id => list_to_binary(Value)}};
             'EmailAddress' ->
-                G?ACL_GRANT{grantee = Grantee#{email => Value}};
+                G?ACL_GRANT{grantee = Grantee#{email => list_to_binary(Value)}};
             'URI' ->
                 case Value of
                     ?AUTH_USERS_GROUP ->
@@ -650,12 +652,7 @@ process_grantee([#xmlElement{content = [Content],
             _ ->
                 G
         end,
-    case UpdGrant of
-        {error, _} ->
-            UpdGrant;
-        _ ->
-            process_grantee(RestElements, UpdGrant, AclOwner, RcPid)
-    end;
+    process_grantee(RestElements, UpdGrant, AclOwner, RcPid);
 process_grantee([#xmlText{} | RestElements], Grant, Owner, RcPid) ->
     process_grantee(RestElements, Grant, Owner, RcPid);
 process_grantee([#xmlComment{} | RestElements], Grant, Owner, RcPid) ->

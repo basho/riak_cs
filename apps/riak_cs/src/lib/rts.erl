@@ -66,7 +66,7 @@
 -type slice() :: {Start :: datetime(), End :: datetime()}.
 
 %% @doc Just create the new sample object (don't store it).
--spec new_sample(binary(), iolist(),
+-spec new_sample(binary(), binary(),
                  datetime(), datetime(),
                  integer(), riakc_obj:riakc_object())
          -> riakc_obj:riakc_obj().
@@ -86,7 +86,7 @@ new_sample(Bucket, KeyPostfix, Start, End, Period, Data) ->
 %% extraction/etc. on the client side.  It would be a a trivial
 %% modification to do this via MapReduce instead.
 -spec find_samples(fun(), datetime(), datetime(), integer()) ->
-                          {Samples::[], Errors::[{slice(), Reason::term()}]}.
+                          {Samples::list(), Errors::[{slice(), Reason::term()}]}.
 find_samples(Puller, Start, End, Period) ->
     Slices = slices_filling(Start, End, Period),
     {Samples, Errors} = lists:foldl(Puller, {[], []}, Slices),
@@ -109,7 +109,7 @@ sample_in_bounds(Start, End) ->
 %% @doc Make the key for this slice+postfix. Note: this must be the
 %% actual slice, not just any two times (the times are not realigned
 %% to slice boundaries before making the key).
--spec slice_key(slice(), iolist()) -> binary().
+-spec slice_key(slice(), binary()) -> binary().
 slice_key({SliceStart, _}, Postfix) ->
     iolist_to_binary([iso8601(SliceStart),".",Postfix]).
 

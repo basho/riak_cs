@@ -199,7 +199,8 @@ continue(State) ->
 
 archive_user(User, RcPid, Table, Slice) ->
     Accesses = [ A || {_, A} <- ets:lookup(Table, User) ],
-    Record = riak_cs_access:make_object(User, Accesses, Slice),
+    Record = riak_cs_access:make_object(
+               iolist_to_binary([User]), Accesses, Slice),
     store(User, RcPid, Record, Slice).
 
 store(User, RcPid, Record, Slice) ->

@@ -54,7 +54,7 @@
          exprec_user/1,
          exprec_bucket/1,
          exprec_role/1,
-         exprec_policy/1,
+         exprec_iam_policy/1,
          exprec_saml_provider/1,
          unarm/1
         ]).
@@ -195,11 +195,11 @@ find_role(Index, A, Pbc) ->
     end.
 
 
--spec create_policy(maps:map()) -> {ok, policy()} | {error, reportable_error_reason()}.
+-spec create_policy(maps:map()) -> {ok, iam_policy()} | {error, reportable_error_reason()}.
 create_policy(Specs = #{policy_document := D}) ->
     case riak_cs_aws_policy:policy_from_json(D) of  %% this is to validate PolicyDocument
         {ok, _} ->
-            Encoded = riak_cs_json:to_json(exprec_policy(Specs)),
+            Encoded = riak_cs_json:to_json(exprec_iam_policy(Specs)),
             {ok, AdminCreds} = riak_cs_config:admin_creds(),
             velvet:create_policy("application/json",
                                  Encoded,
@@ -352,7 +352,7 @@ update_role(R = ?IAM_ROLE{arn = Arn}) ->
                        Encoded,
                        [{auth_creds, AdminCreds}]).
 
--spec update_policy(policy()) -> ok | {error, reportable_error_reason()}.
+-spec update_policy(iam_policy()) -> ok | {error, reportable_error_reason()}.
 update_policy(A = ?IAM_POLICY{arn = Arn}) ->
     Encoded = riak_cs_json:to_json(A),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -362,7 +362,7 @@ update_policy(A = ?IAM_POLICY{arn = Arn}) ->
                          [{auth_creds, AdminCreds}]).
 
 
--spec express_policies([flat_arn()], pid()) -> [iam_policy()].
+-spec express_policies([flat_arn()], pid()) -> [policy()].
 express_policies(AA, Pbc) ->
     lists:flatten(
       [begin
@@ -393,7 +393,7 @@ fix_permissions_boundary(Map) ->
     Map.
 
 
--spec create_saml_provider(maps:map()) -> {ok, {Arn::string(), [tag()]}} | {error, reportable_error_reason()}.
+-spec create_saml_provider(maps:map()) -> {ok, {Arn::binary(), [tag()]}} | {error, reportable_error_reason()}.
 create_saml_provider(Specs) ->
     Encoded = riak_cs_json:to_json(exprec_saml_provider(Specs)),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
@@ -533,7 +533,6 @@ exprec_user(Map) ->
                 buckets = [exprec_bucket(B) || BB /= <<>>, B <- BB]}.
 status_from_binary(<<"enabled">>) -> enabled;
 status_from_binary(<<"disabled">>) -> disabled.
-maybe_int(none) -> undefined;
 maybe_int(undefined) -> undefined;
 maybe_int(A) -> A.
 
@@ -585,8 +584,8 @@ exprec_role(Map) ->
                    attached_policies = AP,
                    tags = TT}.
 
--spec exprec_policy(maps:map()) -> ?IAM_POLICY{}.
-exprec_policy(Map) ->
+-spec exprec_iam_policy(maps:map()) -> ?IAM_POLICY{}.
+exprec_iam_policy(Map) ->
     Policy0 = ?IAM_POLICY{tags = TT0} = exprec:frommap_iam_policy(Map),
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     Policy0?IAM_POLICY{tags = TT}.
@@ -597,7 +596,7 @@ exprec_saml_provider(Map) ->
     TT = [exprec:frommap_tag(T) || is_list(TT0), T <- TT0],
     P0?IAM_SAML_PROVIDER{tags = TT}.
 
--spec unarm(A) -> A when A :: rcs_user() | role() | policy() | saml_provider().
+-spec unarm(A) -> A when A :: rcs_user() | role() | iam_policy() | saml_provider().
 unarm(A = ?IAM_USER{}) ->
     A;
 unarm(A = ?IAM_POLICY{policy_document = D}) ->

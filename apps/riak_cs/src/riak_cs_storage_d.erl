@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -405,8 +405,9 @@ recalc(false, RcPid, User, Time) ->
     end.
 
 %% @doc Archive a user's storage calculation.
-store_user(#state{riak_client=RcPid}, User, BucketList, Start, End) ->
-    Obj = riak_cs_storage:make_object(User, BucketList, Start, End),
+store_user(#state{riak_client = RcPid}, User, BucketList, Start, End) ->
+    Obj = riak_cs_storage:make_object(
+            iolist_to_binary([User]), BucketList, Start, End),
     {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
     Timeout = riak_cs_config:put_user_usage_timeout(),
     case riak_cs_pbc:put(MasterPbc, Obj, Timeout, [riakc, put_storage]) of

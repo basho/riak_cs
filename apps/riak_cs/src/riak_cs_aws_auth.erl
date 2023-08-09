@@ -166,25 +166,20 @@ parse_auth_v4_header([KV | KVs], UserId, Acc) ->
             parse_auth_v4_header(KVs, UserId, Acc)
     end.
 
--spec calculate_signature_v2(binary(), #wm_reqdata{}) -> string().
+-spec calculate_signature_v2(binary(), #wm_reqdata{}) -> binary().
 calculate_signature_v2(KeyData, RD) ->
     calculate_signature_v2(KeyData, RD, none).
 
--spec calculate_signature_v2(binary(), #wm_reqdata{}, sigv2_quirk()) -> string().
+-spec calculate_signature_v2(binary(), #wm_reqdata{}, sigv2_quirk()) -> binary().
 calculate_signature_v2(KeyData, RD, Quirk) ->
     Headers = riak_cs_wm_utils:normalize_headers(RD),
     AmazonHeaders = riak_cs_wm_utils:extract_amazon_headers(Headers),
-    OriginalResource = riak_cs_aws_rewrite:original_resource(RD),
-    Resource = case OriginalResource of
-                   undefined ->
-                       [];
-                   {Path, QS} ->
-                       case Quirk of
-                           boto3_1_26_36 ->
-                               apply_sigv2_quirk(boto3_1_26_36, {Path, QS});
-                           none ->
-                               [Path, canonicalize_qs(v2, QS)]
-                       end
+    {Path, QS} = riak_cs_aws_rewrite:original_resource(RD),
+    Resource = case Quirk of
+                   boto3_1_26_36 ->
+                       apply_sigv2_quirk(boto3_1_26_36, {Path, QS});
+                   none ->
+                       [Path, canonicalize_qs(v2, QS)]
                end,
     Date = case wrq:get_qs_value("Expires", RD) of
                undefined ->

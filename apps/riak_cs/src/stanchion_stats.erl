@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2015 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -122,14 +122,14 @@ update(BaseId, ServiceTime, WaitingTime) ->
     update(BaseId, ServiceTime),
     ok = exometer:update([stanchion, time, waiting], WaitingTime).
 
--spec update_with_start(key(), erlang:timestamp()) ->
-                                   ok | {error, any()}.
+-spec update_with_start(key(), non_neg_integer()) ->
+          ok | {error, any()}.
 update_with_start(BaseId, StartTime) ->
     update(BaseId, os:system_time(millisecond) - StartTime).
 
--spec report_json() -> string().
+-spec report_json() -> binary().
 report_json() ->
-    lists:flatten(jsx:encode(get_stats())).
+    jsx:encode(get_stats()).
 
 all_metrics() ->
     Metrics0 = [{Subkey ++ Metric, Type, [], []}
@@ -166,9 +166,7 @@ init() ->
 init_item({Name, Type, Opts, _Aliases}) ->
     ok = exometer:re_register([stanchion|Name], Type, Opts).
 
--spec report_exometer_item(key(), [atom()], exometer:type()) -> [{atom(), integer()}].
 report_exometer_item(Key, SubKey, ExometerType) ->
-    ?LOG_DEBUG("~p", [{Key, SubKey, ExometerType}]),
     AtomKeys = [metric_to_atom(Key ++ SubKey, Suffix) ||
                    Suffix <- suffixes(ExometerType)],
     {ok, Values} = exometer:get_value([stanchion | SubKey ++ Key],
@@ -186,7 +184,6 @@ suffixes(histogram) ->
 suffixes(spiral) ->
     ["one", "total"].
 
--spec report_mochiweb() -> [[{atom(), integer()}]].
 report_mochiweb() ->
     [report_mochiweb(webmachine_mochiweb)].
 
@@ -201,11 +198,9 @@ report_mochiweb(Id, Pid) ->
     [{metric_to_atom([Id], PropKey), gen_server:call(Pid, {get, PropKey})} ||
         PropKey <- [active_sockets, waiting_acceptors, port]].
 
--spec report_memory() -> [{atom(), integer()}].
 report_memory() ->
     lists:map(fun({K, V}) -> {metric_to_atom([memory], K), V} end, erlang:memory()).
 
--spec report_system() -> [{atom(), integer()}].
 report_system() ->
     [{nodename, erlang:node()},
      {connected_nodes, erlang:nodes()},

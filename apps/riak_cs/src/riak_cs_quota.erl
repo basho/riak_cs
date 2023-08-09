@@ -126,12 +126,12 @@ invoke_all_callbacks(Owner, Access, Ctx0) ->
                         Other
                 end, {ok, Access#access_v1.req, Ctx0}, Modules).
 
--spec update_all_states(iolist(), #wm_log_data{}) -> no_return().
+-spec update_all_states(binary(), #wm_log_data{}) -> no_return().
 update_all_states(User, LogData) ->
     Modules = riak_cs_config:quota_modules(),
     [begin
          ?LOG_DEBUG("quota update at ~p: ~p", [Module, User]),
-         (catch Module:update(list_to_binary(User), LogData))
+         (catch Module:update(User, LogData))
      end || Module <- Modules].
 
 handle_error(Module, Reason, RD0, Ctx0) ->

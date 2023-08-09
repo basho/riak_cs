@@ -31,14 +31,15 @@
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
--type acl_owner() :: #{display_name => binary(),
-                       canonical_id => binary(),
-                       key_id => binary()}.
+-type acl_owner() :: #{display_name => undefined | binary(),
+                       canonical_id => undefined | binary(),
+                       email => undefined | binary(),
+                       key_id => undefined | binary()}.
 
 -type acl_grantee() :: acl_owner() | group_grant().
 
--record(acl_grant_v2, { grantee :: acl_grantee()
-                      , perms :: [acl_perm()]
+-record(acl_grant_v2, { grantee :: undefined | binary() | acl_grantee()
+                      , perms = [] :: [binary() | acl_perm()]
                       }
        ).
 -type acl_grant() :: #acl_grant_v2{}.
@@ -52,8 +53,8 @@
 %%                  grants=[] :: [acl_grant()],
 %%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
--record(acl_v3, { owner :: acl_owner()
-                , grants = [] :: [acl_grant()]
+-record(acl_v3, { owner :: undefined | acl_owner()
+                , grants = [] :: [#{} | acl_grant()]
                 , creation_time = os:system_time(millisecond) :: non_neg_integer()
                 }
        ).
@@ -219,7 +220,7 @@
                      | {aws, one_or_many(principal_id())}
                      ].
 
--record(statement, { sid = undefined :: undefined | binary() % had better use uuid: should be UNIQUE
+-record(statement, { sid :: undefined | binary()
                    , effect = deny :: allow | deny
                    , principal  = [] :: principal()
                    , action     = [] :: aws_action() | [aws_action()]
@@ -245,7 +246,7 @@
 
 %% IAM entities =============
 
--record(iam_policy, { arn :: flat_arn()
+-record(iam_policy, { arn :: undefined | flat_arn()
                     , path = <<"/">> :: binary()
                     , attachment_count = 0 :: non_neg_integer()
                     , create_date = os:system_time(millisecond) :: non_neg_integer()
@@ -253,65 +254,65 @@
                     , description = <<>> :: binary()
                     , is_attachable = true :: boolean()
                     , permissions_boundary_usage_count = 0 :: non_neg_integer()
-                    , policy_document :: binary()
-                    , policy_id :: binary()
-                    , policy_name :: binary()
-                    , tags = [] :: [tag()]
+                    , policy_document :: undefined | binary()
+                    , policy_id :: undefined | binary()
+                    , policy_name :: undefined | binary()
+                    , tags = [] :: [#{} | tag()]
                     , update_date = os:system_time(millisecond) :: non_neg_integer()
                     }).
 -type iam_policy() :: #iam_policy{}.
 -define(IAM_POLICY, #iam_policy).
 
 
--record(permissions_boundary, { permissions_boundary_arn :: flat_arn()
-                              , permissions_boundary_type = <<"Policy">> :: binary()
+-record(permissions_boundary, { permissions_boundary_arn :: undefined | flat_arn()
+                              , permissions_boundary_type = <<"Policy">> :: undefined | binary()
                               }
 ).
 -type permissions_boundary() :: #permissions_boundary{}.
 -define(IAM_PERMISSION_BOUNDARY, #permissions_boundary).
 
 
--record(tag, { key :: binary()
-             , value :: binary()
+-record(tag, { key :: undefined | binary()
+             , value :: undefined | binary()
              }
        ).
 -type tag() :: #tag{}.
 -define(IAM_TAG, #tag).
 
 
--record(role_last_used, { last_used_date :: non_neg_integer()
-                        , region :: binary()
+-record(role_last_used, { last_used_date :: undefined | non_neg_integer()
+                        , region :: undefined | binary()
                         }
        ).
 -type role_last_used() :: #role_last_used{}.
 -define(IAM_ROLE_LAST_USED, #role_last_used).
 
--record(role_v1, { arn :: flat_arn()
+-record(role_v1, { arn :: undefined | flat_arn()
                  , path = <<"/">> :: binary()
-                 , assume_role_policy_document :: binary()
+                 , assume_role_policy_document :: undefined | binary()
                  , create_date = os:system_time(millisecond) :: non_neg_integer()
-                 , description :: binary()
-                 , max_session_duration :: non_neg_integer()
-                 , permissions_boundary :: flat_arn()  %% permissions_boundary()
-                 , role_id :: binary()
-                 , role_last_used :: undefined | role_last_used()
-                 , role_name :: binary()
-                 , tags :: [tag()]
-                 , attached_policies :: [flat_arn()]
+                 , description :: undefined | binary()
+                 , max_session_duration :: undefined | non_neg_integer()
+                 , permissions_boundary :: undefined | #{} | flat_arn()  %% permissions_boundary()
+                 , role_id :: undefined | binary()
+                 , role_last_used :: undefined | #{} | role_last_used()
+                 , role_name :: undefined | binary()
+                 , tags = [] :: [#{} | tag()]
+                 , attached_policies :: undefined | [flat_arn()]
                  }
        ).
 -type role() :: #role_v1{}.
 -define(IAM_ROLE, #role_v1).
 
--record(saml_provider_v1, { arn :: flat_arn()
-                          , saml_metadata_document :: binary()
-                          , tags :: [tag()]
-                          , name :: binary()
+-record(saml_provider_v1, { arn :: undefined | flat_arn()
+                          , saml_metadata_document :: undefined | binary()
+                          , tags = [] :: [#{} | tag()]
+                          , name :: undefined | binary()
                           %% fields populated with values extracted from MD document
                           , create_date = os:system_time(millisecond) :: non_neg_integer()
                           , valid_until :: undefined | non_neg_integer()
                           , entity_id :: undefined | binary()
-                          , consume_uri :: binary()
+                          , consume_uri :: undefined | binary()
                           , certificates :: undefined | [{signing|encryption, #'OTPCertificate'{}, FP::binary()}]
                           }
        ).
@@ -319,16 +320,16 @@
 -define(IAM_SAML_PROVIDER, #saml_provider_v1).
 
 
--record(assumed_role_user, { arn :: flat_arn()
-                           , assumed_role_id :: binary()
+-record(assumed_role_user, { arn :: undefined | flat_arn()
+                           , assumed_role_id :: undefined | binary()
                            }
        ).
 -type assumed_role_user() :: #assumed_role_user{}.
 
--record(credentials, { access_key_id :: binary()
-                     , expiration :: non_neg_integer()
-                     , secret_access_key :: binary()
-                     , session_token :: binary()
+-record(credentials, { access_key_id :: undefined | binary()
+                     , expiration :: undefined | non_neg_integer()
+                     , secret_access_key :: undefined | binary()
+                     , session_token :: undefined | binary()
                      }
        ).
 -type credentials() :: #credentials{}.
@@ -349,9 +350,9 @@
 
 -define(DEFAULT_REGION, "us-east-1").
 
--define(AUTH_USERS_GROUP, <<"http://acs.amazonaws.com/groups/global/AuthenticatedUsers">>).
--define(ALL_USERS_GROUP, <<"http://acs.amazonaws.com/groups/global/AllUsers">>).
--define(LOG_DELIVERY_GROUP, <<"http://acs.amazonaws.com/groups/s3/LogDelivery">>).
+-define(AUTH_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers").
+-define(ALL_USERS_GROUP, "http://acs.amazonaws.com/groups/global/AllUsers").
+-define(LOG_DELIVERY_GROUP, "http://acs.amazonaws.com/groups/s3/LogDelivery").
 
 -define(IAM_CREATE_USER_DEFAULT_EMAIL_HOST, "my-riak-cs-megacorp.com").
 

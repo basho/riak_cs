@@ -413,12 +413,8 @@ error_resource(Tag, RD)
             <<$/, B/binary, $/, K/binary, $/, V/binary>>
     end;
 error_resource(_Tag, RD) ->
-    case riak_cs_rewrite:original_resource(RD) of
-        {OrigResource, _} ->
-            OrigResource;
-        undefined ->
-            undefined
-    end.
+    {OrigResource, _} = riak_cs_rewrite:original_resource(RD),
+    OrigResource.
 
 user_access_key(?RCS_USER{key_id = KeyId}) when KeyId /= undefined ->
     KeyId;

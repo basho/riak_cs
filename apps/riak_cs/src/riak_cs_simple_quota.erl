@@ -143,8 +143,7 @@ allow(_Owner, #access_v1{req = RD} = _Access, Ctx) ->
 maybe_usage(_, _Ctx = #rcs_web_context{riak_client=undefined}) ->
     %% can't happen here
     error(no_riak_client);
-maybe_usage(User0, _Ctx = #rcs_web_context{riak_client=RiakClient}) ->
-    User = binary_to_list(User0),
+maybe_usage(User, _Ctx = #rcs_web_context{riak_client=RiakClient}) ->
     Usage = case get_latest_usage(RiakClient, User) of
                 {error, notfound} ->
                     logger:warning("No storage stats data was found. Starting as no usage."),
@@ -156,7 +155,7 @@ maybe_usage(User0, _Ctx = #rcs_web_context{riak_client=RiakClient}) ->
     %% come, each access can yield a new fresh state and then
     %% receives not access limitation.
     try
-        ets:insert_new(?MODULE, {User0, Usage}),
+        ets:insert_new(?MODULE, {User, Usage}),
         Usage
     catch _:_ ->
             Usage
@@ -204,17 +203,17 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
     UpdReqData = wrq:set_resp_body(Body, ReqData),
     {StatusCode, UpdReqData, Ctx}.
 
--spec get_latest_usage(pid(), string()) -> {ok, list()} | {error, notfound}.
 get_latest_usage(Pid, User) ->
-    Now = calendar:system_time_to_gregorian_seconds(
-            os:system_time(millisecond)),
+    Now = calendar:datetime_to_gregorian_seconds(
+            calendar:system_time_to_local_time(
+              os:system_time(millisecond), millisecond)),
     ArchivePeriod = case riak_cs_storage:archive_period() of
                         {ok, Period} -> Period;
                         _ -> 86400 %% A day is hard coded
                     end,
     get_latest_usage(Pid, User, ArchivePeriod, Now, 0, 10).
 
--spec get_latest_usage(pid(), string(), non_neg_integer(),
+-spec get_latest_usage(pid(), binary(), non_neg_integer(),
                        non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
                               {ok, list()} | {error, notfound}.
 get_latest_usage(_Pid, _User, _, _, N, N) -> {error, notfound};
@@ -222,7 +221,8 @@ get_latest_usage(Pid, User, ArchivePeriod, EndSec, N, Max) ->
     End = calendar:gregorian_seconds_to_datetime(EndSec),
     EndSec2 = EndSec - ArchivePeriod,
     ADayAgo = calendar:gregorian_seconds_to_datetime(EndSec2),
-    case riak_cs_storage:get_usage(Pid, User, false, ADayAgo, End) of
+    case riak_cs_storage:get_usage(
+           Pid, User, false, ADayAgo, End) of
         {[], _} ->
             get_latest_usage(Pid, User, ArchivePeriod, EndSec2, N+1, Max);
         {Res, _} ->

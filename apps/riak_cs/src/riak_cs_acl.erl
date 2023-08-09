@@ -57,12 +57,12 @@
 %% ===================================================================
 
 %% @doc Determine if anonymous access is set for the bucket.
--spec anonymous_bucket_access(binary(), atom(), riak_client()) -> {true, string()} | false.
+-spec anonymous_bucket_access(binary(), atom(), riak_client()) -> {true, binary()} | false.
 anonymous_bucket_access(Bucket, RequestedAccess, RcPid) ->
     anonymous_bucket_access(Bucket, RequestedAccess, RcPid, undefined).
 
 -spec anonymous_bucket_access(binary(), atom(), riak_client(), acl()|undefined)
-                             -> {true, string()} | false.
+                             -> {true, binary()} | false.
 anonymous_bucket_access(_Bucket, undefined, _, _) ->
     false;
 anonymous_bucket_access(Bucket, RequestedAccess, RcPid, undefined) ->
@@ -92,14 +92,14 @@ anonymous_bucket_access(_Bucket, RequestedAccess, RcPid, BucketAcl) ->
 %% @doc Determine if anonymous access is set for the object.
 %% @TODO Enhance when doing object ACLs
 -spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client()) ->
-          {true, string()} |
+          {true, binary()} |
           false.
 anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid) ->
     anonymous_object_access(BucketObj, ObjAcl, RequestedAccess, RcPid, undefined).
 
 
 -spec anonymous_object_access(riakc_obj:riakc_obj(), acl(), atom(), riak_client(), acl()|undefined) ->
-          {true, string()} | false.
+          {true, binary()} | false.
 anonymous_object_access(_BucketObj, _ObjAcl, undefined, _, _) ->
     false;
 anonymous_object_access(BucketObj, ObjAcl, 'WRITE', RcPid, undefined) ->
@@ -133,12 +133,12 @@ anonymous_object_access(_BucketObj, ObjAcl, RequestedAccess, RcPid, _) ->
 
 %% @doc Determine if a user has the requested access to a bucket.
 -spec bucket_access(binary(), atom(), binary(), riak_client()) ->
-          boolean() | {true, string()}.
+          boolean() | {true, binary()}.
 bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid) ->
     bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined).
 
 -spec bucket_access(binary(), atom(), binary(), riak_client(), acl() | undefined ) ->
-          boolean() | {true, string()}.
+          boolean() | {true, binary()}.
 bucket_access(_Bucket, undefined, _CanonicalId, _, _) ->
     false;
 bucket_access(Bucket, RequestedAccess, CanonicalId, RcPid, undefined) ->
@@ -202,6 +202,7 @@ bucket_acl(BucketObj) ->
 %% We attempt resolution, but intentionally do not write back a resolved
 %% value. Instead the fact that the bucket has siblings is logged, but the
 %% condition should be rare so we avoid updating the value at this time.
+-spec bucket_acl_from_contents(binary(), riakc_obj:contents()) -> {ok, acl()} | ?ACL_UNDEF.
 bucket_acl_from_contents(_, [{MD, _}]) ->
     MetaVals = dict:fetch(?MD_USERMETA, MD),
     acl_from_meta(MetaVals);
@@ -236,13 +237,13 @@ newer_acl(_, Acl2) ->
 %% patchy until object ACLs are done. The bucket owner gets full
 %% control, but bucket-level ACLs only matter for writes otherwise.
 -spec object_access(riakc_obj:riakc_obj(), acl(), atom(), binary(), riak_client()) ->
-          boolean() | {true, string()}.
+          boolean() | {true, binary()}.
 object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid) ->
     object_access(BucketObj, ObjAcl, RequestedAccess, CanonicalId, RcPid, undefined).
 
 
 -spec object_access(riakc_obj:riakc_obj(), acl(), atom(), binary(), riak_client(), undefined|acl()) ->
-          boolean() | {true, string()}.
+          boolean() | {true, binary()}.
 object_access(_BucketObj, _ObjAcl, undefined, _CanonicalId, _, _) ->
     false;
 object_access(_BucketObj, _ObjAcl, _RequestedAccess, undefined, _RcPid, _) ->
@@ -310,7 +311,7 @@ exprec_grant(Map) ->
                  grantee = case Grantee0 of
                                #{} ->
                                    Grantee0;
-                               GroupGrantee ->
+                               GroupGrantee when is_binary(GroupGrantee) ->
                                    binary_to_existing_atom(GroupGrantee, latin1)
                            end
                 }.

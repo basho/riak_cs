@@ -45,7 +45,7 @@ rewrite(_Method, _Scheme, _Vsn, Headers, Url) ->
     {RewrittenHeaders, Path}.
 
 
--spec original_resource(#wm_reqdata{}) -> undefined | {string(), [{term(), term()}]}.
+-spec original_resource(#wm_reqdata{}) -> {string(), [{term(), term()}]}.
 original_resource(RD) ->
     RawPath =
         case wrq:get_req_header(?RCS_REWRITE_HEADER, RD) of
