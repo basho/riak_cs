@@ -1,4 +1,4 @@
-FROM erlang:24 AS compile-image
+FROM erlang:25 AS compile-image
 
 EXPOSE 8080 8085
 
