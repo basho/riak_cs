@@ -31,12 +31,15 @@ encrypted SAML assertions.
   script requires python and boto3.
 
 * Changed configuration items:
-  * removed `fold_objects_for_list_keys`, along with legacy
+  * `fold_objects_for_list_keys` was removed, along with legacy
     riak\_cs\_list\_objects\_fsm.erl, long slated for removal in favor of riak\_cs\_list\_objects\_fsm_v2.erl.
-  * added `iam_create_user_default_email_host`, which defines the domain
+  * New key, `iam_create_user_default_email_host`, that defines the domain
     used to construct (artificial) email from the UserName parameter
     to the iam:CreateUser call.
   * `cs_root_host` renamed to `s3_root_host`.
+  * Default values for keys `rewrite_module`, `auth_module` have
+    changed to "riak\_cs\_aws\_rewrite" and "riak\_cs\_aws\_auth".
+  * `dtrace` key was removed, along with code supporting it.
 
 * `riak-cs stop` now prints "ok" on success, as in good old Basho times.
 
