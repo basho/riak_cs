@@ -57,8 +57,8 @@ encrypted SAML assertions.
 
 ## Compatibility
 
-Because of the volume of changes, this release is not compatible with
-3.1. 
+This release should be compatible with 3.1.0.
+
 
 # Riak CS 3.1.0 Release Notes
 

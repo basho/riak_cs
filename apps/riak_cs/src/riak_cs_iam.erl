@@ -98,7 +98,13 @@ find_user(#{name := A}, Pbc) ->
 find_user(#{canonical_id := A}, Pbc) ->
     find_user(?USER_ID_INDEX, A, Pbc);
 find_user(#{key_id := A}, Pbc) ->
-    find_user(?USER_KEYID_INDEX, A, Pbc);
+    case find_user(?USER_KEYID_INDEX, A, Pbc) of
+        {ok, _} = Found ->
+            Found;
+        _ ->
+            ?LOG_DEBUG("Trying to read 3.1 user by KeyId ~s", [A]),
+            get_user(A, Pbc)
+    end;
 find_user(#{email := A}, Pbc) ->
     find_user(?USER_EMAIL_INDEX, A, Pbc).
 
