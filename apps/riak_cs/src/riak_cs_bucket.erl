@@ -25,8 +25,7 @@
 -module(riak_cs_bucket).
 
 %% Public API
--export([
-         fetch_bucket_object/2,
+-export([fetch_bucket_object/2,
          create_bucket/5,
          delete_bucket/4,
          get_buckets/1,
@@ -42,7 +41,8 @@
          delete_old_uploads/3,
          fold_all_buckets/3,
          fetch_bucket_keys/1,
-         exprec_bucket_versioning/1
+         exprec_bucket_versioning/1,
+         update_bucket_record/1
         ]).
 
 -include("riak_cs.hrl").
@@ -669,3 +669,17 @@ fetch_bucket_keys(RcPid) ->
     Timeout = riak_cs_config:list_keys_list_buckets_timeout(),
     riak_cs_pbc:list_keys(MasterPbc, ?BUCKETS_BUCKET, Timeout,
                           [riakc, list_all_bucket_keys]).
+
+-spec update_bucket_record(#moss_bucket{} | #moss_bucket_v1{} | #moss_bucket_v2{}) -> ?RCS_BUCKET{}.
+update_bucket_record(#moss_bucket_v2{} = B) ->
+    B;
+update_bucket_record(#moss_bucket_v1{name = Name,
+                                     last_action = LastAction,
+                                     creation_date = CreationDate,
+                                     modification_time = {M1, M2, M3},
+                                     acl = Acl}) ->
+    #moss_bucket_v2{name = iolist_to_binary([Name]),
+                    last_action = LastAction,
+                    creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
+                    modification_time = M1 * 1000_000 + M2 + M3 div 1000,
+                    acl = riak_cs_acl:update_acl_record(Acl)}.

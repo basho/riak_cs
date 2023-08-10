@@ -59,8 +59,9 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
 -spec upgrade_manifest(#lfs_manifest_v2{} | #lfs_manifest_v3{} | #lfs_manifest_v4{}) -> lfs_manifest().
-upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
+upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                                   bkey = Bkey,
+                                  vsn = Vsn,
                                   metadata = Metadata,
                                   created = Created,
                                   uuid = UUID,
@@ -74,28 +75,30 @@ upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
                                   delete_marked_time = DeleteMarkedTime,
                                   last_block_deleted_time = LastBlockDeletedTime,
                                   delete_blocks_remaining = DeleteBlocksRemaining,
+                                  scheduled_delete_time = ScheduledDeleteTime,
                                   acl = Acl,
                                   props = Props,
                                   cluster_id = ClusterID}) ->
-
-    upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
-                                      bkey = Bkey,
-                                      metadata = Metadata,
-                                      created = Created,
-                                      uuid = UUID,
-                                      content_length = ContentLength,
-                                      content_type = ContentType,
-                                      content_md5 = ContentMd5,
-                                      state = State,
-                                      write_start_time = WriteStartTime,
-                                      last_block_written_time = LastBlockWrittenTime,
-                                      write_blocks_remaining = WriteBlocksRemaining,
-                                      delete_marked_time = DeleteMarkedTime,
-                                      last_block_deleted_time = LastBlockDeletedTime,
-                                      delete_blocks_remaining = DeleteBlocksRemaining,
-                                      acl = Acl,
-                                      props = Props,
-                                      cluster_id = ClusterID});
+    #lfs_manifest_v4{block_size = BlockSize,
+                     bkey = Bkey,
+                     vsn = Vsn,
+                     metadata = Metadata,
+                     created = Created,
+                     uuid = UUID,
+                     content_length = ContentLength,
+                     content_type = ContentType,
+                     content_md5 = ContentMd5,
+                     state = State,
+                     write_start_time = maybe_now_to_system_time(WriteStartTime),
+                     last_block_written_time = maybe_now_to_system_time(LastBlockWrittenTime),
+                     write_blocks_remaining = WriteBlocksRemaining,
+                     delete_marked_time = maybe_now_to_system_time(DeleteMarkedTime),
+                     last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
+                     delete_blocks_remaining = DeleteBlocksRemaining,
+                     scheduled_delete_time = maybe_now_to_system_time(ScheduledDeleteTime),
+                     acl = Acl,
+                     props = Props,
+                     cluster_id = ClusterID};
 
 upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                                   bkey = Bkey,
@@ -116,7 +119,6 @@ upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                                   acl = Acl,
                                   props = Props,
                                   cluster_id = ClusterID}) ->
-
     upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                                       bkey = Bkey,
                                       vsn = ?LFS_DEFAULT_OBJECT_VERSION,
@@ -135,11 +137,51 @@ upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                                       delete_blocks_remaining = DeleteBlocksRemaining,
                                       scheduled_delete_time = ScheduledDeleteTime,
                                       acl = Acl,
-                                      props = fixup_props(Props),
+                                      props = Props,
                                       cluster_id = ClusterID});
-upgrade_manifest(M = #lfs_manifest_v4{}) ->
-    M.
 
+upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
+                                  bkey = Bkey,
+                                  metadata = Metadata,
+                                  created = Created,
+                                  uuid = UUID,
+                                  content_length = ContentLength,
+                                  content_type = ContentType,
+                                  content_md5 = ContentMd5,
+                                  state = State,
+                                  write_start_time = WriteStartTime,
+                                  last_block_written_time = LastBlockWrittenTime,
+                                  write_blocks_remaining = WriteBlocksRemaining,
+                                  delete_marked_time = DeleteMarkedTime,
+                                  last_block_deleted_time = LastBlockDeletedTime,
+                                  delete_blocks_remaining = DeleteBlocksRemaining,
+                                  acl = Acl,
+                                  props = Props,
+                                  cluster_id = ClusterID}) ->
+    upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
+                                      bkey = Bkey,
+                                      metadata = Metadata,
+                                      created = Created,
+                                      uuid = UUID,
+                                      content_length = ContentLength,
+                                      content_type = ContentType,
+                                      content_md5 = ContentMd5,
+                                      state = State,
+                                      write_start_time = WriteStartTime,
+                                      last_block_written_time = LastBlockWrittenTime,
+                                      write_blocks_remaining = WriteBlocksRemaining,
+                                      delete_marked_time = DeleteMarkedTime,
+                                      last_block_deleted_time = LastBlockDeletedTime,
+                                      delete_blocks_remaining = DeleteBlocksRemaining,
+                                      acl = Acl,
+                                      props = fixup_props(Props),
+                                      cluster_id = ClusterID}).
+
+
+maybe_now_to_system_time({M1, M2, M3}) ->
+    M1 * 1000_000 + M2 + M3 div 1000;
+maybe_now_to_system_time(M) ->
+    M.
 
 fixup_props(undefined) ->
     [];

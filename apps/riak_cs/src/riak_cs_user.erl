@@ -221,8 +221,24 @@ select_email([A|T]) ->
             select_email(T)
     end.
 
-update_user_record(User = ?RCS_USER{}) ->
-    User;
+-spec update_user_record(#moss_user_v1{} | #rcs_user_v2{} | #rcs_user_v3{}) -> ?RCS_USER{}.
+update_user_record(#rcs_user_v3{} = A) ->
+    A;
+update_user_record(#rcs_user_v2{name = Name,
+                                display_name = DisplayName,
+                                email = Email,
+                                key_id = KeyId,
+                                key_secret = KeySecret,
+                                canonical_id = CanonicalId,
+                                buckets = Buckets}) ->
+    ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
+              name = Name,
+              display_name = DisplayName,
+              email = Email,
+              key_id = KeyId,
+              key_secret = KeySecret,
+              canonical_id = CanonicalId,
+              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]};
 update_user_record(#moss_user_v1{name = Name,
                                  display_name = DisplayName,
                                  email = Email,
@@ -237,4 +253,4 @@ update_user_record(#moss_user_v1{name = Name,
               key_id = KeyId,
               key_secret = KeySecret,
               canonical_id = CanonicalId,
-              buckets = Buckets}.
+              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]}.

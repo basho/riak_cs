@@ -1,12 +1,64 @@
 # Riak CS 3.2.0 Release Notes
 
-Released July 12, 2023.
+Released August 12, 2023.
 
-## Changed configuration items
+## New Features
 
-* removed `fold_objects_for_list_keys`
-* added `iam_create_user_default_email_host`
-* `cs_root_host` renamed to `s3_root_host`
+This release includes basic support for IAM entities such as roles and
+standalone policies, and federated users. The following new API calls are implemented:
+
+* IAM:
+  * CreateRole, GetRole, DeleteRole, ListRoles;
+  * CreatePolicy, GetPolicy, DeletePolicy, ListPolicies;
+  * AttachRolePolicy, AttachUserPolicy, DetachRolePolicy,
+    DetachUserPolicy, ListAttachedUserPolicies;
+  * CreateSAMLProvider, GetSAMLProvider, DeleteSAMLProvider,
+    ListSAMLProviders.
+* STS:
+  * AssumeRoleWithSAML (with [this specific use case](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_saml.html#CreatingSAML-configuring)
+in mind).
+
+Note that as a Service Provider, Riak CS does not currently accept
+encrypted SAML assertions.
+
+## Changes
+
+### User-visible changes
+
+* A script, tools/create-admin, is provided to facilitate the creation
+  of admin user. This script will also create a policy permitting
+  all S3, IAM and STS calls and attach it to the admin user. The
+  script requires python and boto3.
+
+* Changed configuration items:
+  * removed `fold_objects_for_list_keys`, along with legacy
+    riak\_cs\_list\_objects\_fsm.erl, long slated for removal in favor of riak\_cs\_list\_objects\_fsm_v2.erl.
+  * added `iam_create_user_default_email_host`, which defines the domain
+    used to construct (artificial) email from the UserName parameter
+    to the iam:CreateUser call.
+  * `cs_root_host` renamed to `s3_root_host`.
+
+* `riak-cs stop` now prints "ok" on success, as in good old Basho times.
+
+### Other changes
+
+* Rebar was upgraded to version 3.22.
+* riak\_cs\_multibag, a companion application previously existing in
+  its own repo, has been incorporated into Riak CS.
+* Users are now stored by their arns as keys, as do all IAM entities.
+* Many files and structures have been renamed to reflect the fact that
+  now Riak CS provides IAM and STS services, in addition to S3 around
+  which it was originally designed.
+* Throughout the entire code base, calls to mochijson2 facilities were
+  replaced with corresponding jsx and jason functions.
+* In many internal structures, strings were replaced with binaries,
+  and timestamps previously stored as `calendar:datetime()`, have been
+  converted to plain unixtime, in milliseconds.
+
+## Compatibility
+
+Because of the volume of changes, this release is not compatible with
+3.1. 
 
 # Riak CS 3.1.0 Release Notes
 

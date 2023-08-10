@@ -47,7 +47,8 @@
          object_access/5,
          object_access/6,
          owner_id/2,
-         exprec_acl/1
+         exprec_acl/1,
+         update_acl_record/1
         ]).
 
 -define(ACL_UNDEF, {error, acl_undefined}).
@@ -410,3 +411,43 @@ user_grant([HeadGrant = ?ACL_GRANT{grantee = #{canonical_id := CanonicalId}} | _
     HeadGrant;
 user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).
+
+
+-spec update_acl_record(#acl_v1{} | #acl_v2{} | #acl_v3{}) -> ?ACL{}.
+update_acl_record(#acl_v3{} = A) ->
+    A;
+update_acl_record(#acl_v2{owner = Owner,
+                          grants = Grants,
+                          creation_time = {T1, T2, T3}}) ->
+    #acl_v3{owner = update_owner(Owner),
+            grants = [update_grant(G) || G <- Grants],
+            creation_time = T1 * 1000_000 + T2 + T3 div 1000};
+update_acl_record(#acl_v1{owner = Owner,
+                          grants = Grants,
+                          creation_time = {T1, T2, T3}}) ->
+    #acl_v3{owner = update_owner(Owner),
+            grants = [update_grant(G) || G <- Grants],
+            creation_time = T1 * 1000_000 + T2 + T3 div 1000}.
+
+update_owner({DisplayName, CanonicalId, KeyId}) ->
+    #{display_name => DisplayName,
+      canonical_id => CanonicalId,
+      key_id => KeyId};
+update_owner({DisplayName, CanonicalId}) ->
+    #{display_name => DisplayName,
+      canonical_id => CanonicalId,
+      key_id => <<"FaKeKeyIdWontWorkWillFailReplaceIt">>};
+update_owner(A) ->
+    A.
+
+update_grant({Grantee, Perms}) ->
+    #acl_grant_v2{grantee = update_grantee(Grantee),
+                  perms = Perms};
+update_grant(A) ->
+    A.
+
+update_grantee({A, B}) ->
+    #{display_name => A,
+      canonical_id => B};
+update_grantee(A) ->
+    A.

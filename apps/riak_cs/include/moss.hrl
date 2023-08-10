@@ -24,6 +24,17 @@
 
 -include("aws_api.hrl").
 
+%% All those cases of `| undefined | #{} | binary()` to proper field
+%% types in various records in this file are for the sake of
+%% exprec. Because in the exprec-generated frommap_thing, fields can
+%% briefly be assigned a value of `undefined` or an unconverted
+%% binary, dialyzer rightfully takes issue with it. Further, in custom
+%% record conversion functions like riak_cs_iam:exprec_role, some
+%% other fields exist as maps (before they are converted into proper
+%% sub-records). Hence this type dilution and overall
+%% kludginess. There surely is a less painful solution, of which I am,
+%% as of releasing 3.2, sadly unaware.
+
 %% User
 -record(moss_user, { name :: string()
                    , key_id :: string()

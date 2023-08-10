@@ -45,13 +45,15 @@
 -type acl_grant() :: #acl_grant_v2{}.
 -define(ACL_GRANT, #acl_grant_v2).
 
-%% -record(acl_v1, {owner = {"", ""} :: {string(), string()},
-%%                  grants = [] :: [acl_grant()],
-%%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
+
+-record(acl_v1, {owner = {"", ""} :: {string(), string()},
+                 grants = [] :: [acl_grant()],
+                 creation_time = erlang:timestamp() :: erlang:timestamp()}).
+
 %% %% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
-%% -record(acl_v2, {owner={"", "", ""} :: acl_owner(),
-%%                  grants=[] :: [acl_grant()],
-%%                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
+-record(acl_v2, {owner={"", "", ""} :: acl_owner(),
+                 grants=[] :: [acl_grant()],
+                 creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
 -record(acl_v3, { owner :: undefined | acl_owner()
                 , grants = [] :: [#{} | acl_grant()]

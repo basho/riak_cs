@@ -23,11 +23,6 @@
 
 -module(riak_cs_utils).
 
--ignore_xref([{riak_object, bucket, 1},
-              {riak_object, get_contents, 1},
-              {riak_object, key, 1}
-             ]).
-
 %% Public API
 -export([etag_from_binary/1,
          etag_from_binary/2,
