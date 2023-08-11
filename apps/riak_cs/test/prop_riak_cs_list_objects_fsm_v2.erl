@@ -249,7 +249,6 @@ raw_manifest(Key, State) ->
     ?MANIFEST{uuid = <<"uuid-1">>,
               bkey={<<"bucket">>, bin_key(Key)},
               state=State,
-              created = "20221111T010101",
               content_md5 = <<"Content-MD5">>,
               content_length=100,
               acl=?ACL{owner=#{display_name => "display-name",
@@ -264,17 +263,18 @@ bin_key(Key) ->
     Key.
 
 process_manifest(Manifest=?MANIFEST{state=State}) ->
+    TS = os:system_time(millisecond),
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time = os:system_time(millisecond)};
+            Manifest?MANIFEST{last_block_written_time = TS};
         active ->
             %% this clause isn't needed but it makes things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond)};
+            Manifest?MANIFEST{last_block_deleted_time = TS};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond)};
+            Manifest?MANIFEST{last_block_deleted_time = TS};
         scheduled_delete ->
-            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
-                              scheduled_delete_time = os:system_time(millisecond)}
+            Manifest?MANIFEST{last_block_deleted_time = TS,
+                              scheduled_delete_time = TS}
     end.
 
 sort_manifests(Manifests) ->

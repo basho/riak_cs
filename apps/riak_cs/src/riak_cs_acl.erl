@@ -413,7 +413,7 @@ user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).
 
 
--spec update_acl_record(#acl_v1{} | #acl_v2{} | #acl_v3{}) -> ?ACL{}.
+-spec update_acl_record(#acl_v1{} | #acl_v2{} | #acl_v3{}) -> acl().
 update_acl_record(#acl_v3{} = A) ->
     A;
 update_acl_record(#acl_v2{owner = Owner,
@@ -430,24 +430,27 @@ update_acl_record(#acl_v1{owner = Owner,
             creation_time = T1 * 1000_000 + T2 + T3 div 1000}.
 
 update_owner({DisplayName, CanonicalId, KeyId}) ->
-    #{display_name => DisplayName,
-      canonical_id => CanonicalId,
-      key_id => KeyId};
+    #{display_name => list_to_binary(DisplayName),
+      canonical_id => list_to_binary(CanonicalId),
+      key_id => list_to_binary(KeyId),
+      email => undefined};
 update_owner({DisplayName, CanonicalId}) ->
-    #{display_name => DisplayName,
-      canonical_id => CanonicalId,
-      key_id => <<"FaKeKeyIdWontWorkWillFailReplaceIt">>};
-update_owner(A) ->
-    A.
+    #{display_name => list_to_binary(DisplayName),
+      canonical_id => list_to_binary(CanonicalId),
+      key_id => <<"FaKeKeyIdWontWorkWillFailReplaceIt">>,
+      email => undefined}.
 
 update_grant({Grantee, Perms}) ->
     #acl_grant_v2{grantee = update_grantee(Grantee),
-                  perms = Perms};
-update_grant(A) ->
-    A.
+                  perms = Perms}.
 
+update_grantee(GroupGrant) when is_atom(GroupGrant) ->
+    GroupGrant;
 update_grantee({A, B}) ->
     #{display_name => A,
       canonical_id => B};
-update_grantee(A) ->
-    A.
+update_grantee({A, B, C}) ->
+    #{display_name => A,
+      canonical_id => B,
+      key_id => C}.
+

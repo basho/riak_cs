@@ -179,7 +179,7 @@
 -record(list_objects_key_content,
         {
          key :: binary(),
-         last_modified :: term(),
+         last_modified :: binary(),
          etag :: binary(),
          size :: non_neg_integer(),
          owner :: list_objects_owner(),
@@ -229,7 +229,7 @@
 -record(list_object_versions_key_content,
         {
          key :: binary(),
-         last_modified :: term(),
+         last_modified :: binary(),
          etag :: binary(),
          is_latest :: boolean(),
          version_id :: binary(),

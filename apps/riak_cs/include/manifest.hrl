@@ -25,7 +25,7 @@
 -include("aws_api.hrl").
 
 
--define(MANIFEST, #lfs_manifest_v4).
+-define(MANIFEST, #lfs_manifest_v5).
 -define(MULTIPART_MANIFEST, #multipart_manifest_v1).
 -define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
 -define(PART_MANIFEST, #part_manifest_v2).
@@ -61,29 +61,22 @@
         delete_marked_time :: term(),
         last_block_deleted_time :: term(),
         delete_blocks_remaining :: ordsets:ordset(integer()),
-        acl :: acl(),
+        acl :: #acl_v1{} | #acl_v2{},
         props = [] :: proplists:proplist(),
         cluster_id :: cluster_id()
     }).
 
 -record(lfs_manifest_v3, {
         version = 3 :: 3,
-
         block_size :: undefined | integer(),
-
         bkey :: {binary(), binary()},
-
         metadata :: orddict:orddict(),
-
         created :: string(),
         uuid :: cs_uuid(),
-
         content_length :: non_neg_integer(),
         content_type :: binary(),
         content_md5 :: term(),
-
         state :: undefined | lfs_manifest_state(),
-
         write_start_time :: term(), %% immutable
         last_block_written_time :: term(),
         write_blocks_remaining :: undefined | ordsets:ordset(integer()),
@@ -91,26 +84,36 @@
         last_block_deleted_time :: term(),
         delete_blocks_remaining :: undefined | ordsets:ordset(integer()),
         scheduled_delete_time :: term(),  %% new in v3
-
-        acl = no_acl_yet :: acl() | no_acl_yet,
-
+        acl = no_acl_yet :: #acl_v1{} | #acl_v2{} | no_acl_yet,
         props = [] :: undefined | proplists:proplist(),
-
         cluster_id :: cluster_id()
     }).
 
 -record(lfs_manifest_v4, {
-        %% "global" properties
-        %% -----------------------------------------------------------------
-
-        %% this isn't as important anymore
-        %% since we're naming the record
-        %% to include the version number,
-        %% but I figured it's worth keeping
-        %% in case we change serialization
-        %% formats in the future.
         version = 4 :: 4,
+        block_size :: undefined | integer(),
+        bkey :: {binary(), binary()},
+        vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
+        metadata :: orddict:orddict(),
+        created :: string(),
+        uuid :: cs_uuid(),
+        content_length :: non_neg_integer(),
+        content_type :: binary(),
+        content_md5 :: term(),
+        state :: undefined | lfs_manifest_state(),
+        write_start_time :: term(), %% immutable
+        last_block_written_time :: term(),
+        write_blocks_remaining :: undefined | ordsets:ordset(integer()),
+        delete_marked_time :: term(),
+        last_block_deleted_time :: term(),
+        delete_blocks_remaining :: undefined | ordsets:ordset(integer()),
+        scheduled_delete_time :: term(),
+        acl = no_acl_yet :: #acl_v2{} | no_acl_yet,
+        props = [] :: proplists:proplist(),
+        cluster_id :: cluster_id()
+    }).
 
+-record(lfs_manifest_v5, {
         %% the block_size setting when this manifest
         %% was written. Needed if the user
         %% ever changes the block size after writing
@@ -138,7 +141,8 @@
         %% resolution, but I suppose there's no
         %% reason we can't change created
         %% to have millisecond as well.
-        created :: string(),
+        %% created :: string(),
+
         uuid :: cs_uuid(),
 
         %% content properties
@@ -153,13 +157,13 @@
 
         %% writing/active state
         %% -----------------------------------------------------------------
-        write_start_time :: term(), %% immutable
+        write_start_time = os:system_time(millisecond) :: non_neg_integer(), %% immutable
 
         %% used for two purposes
         %% 1. to mark when a file has finished uploading
         %% 2. to decide if a write crashed before completing
         %% and needs to be garbage collected
-        last_block_written_time :: term(),
+        last_block_written_time :: undefined | non_neg_integer(),
 
         %% a shrink-only (during resolution)
         %% set to denote which blocks still
@@ -174,7 +178,7 @@
         %% set to the current time
         %% when a manifest is marked as deleted
         %% and enters the pending_delete state
-        delete_marked_time :: term(),
+        delete_marked_time :: undefined | non_neg_integer(),
 
         %% the timestamp serves a similar
         %% purpose to last_block_written_time,
@@ -182,7 +186,7 @@
         %% when delete processes have died
         %% and garbage collection needs to
         %% pick up where they left off.
-        last_block_deleted_time :: term(),
+        last_block_deleted_time :: undefined | non_neg_integer(),
 
         %% a shrink-only (during resolution)
         %% set to denote which blocks
@@ -195,11 +199,11 @@
         %% the time the manifest was put
         %% into the scheduled_delete
         %% state
-        scheduled_delete_time :: term(),
+        scheduled_delete_time :: undefined | non_neg_integer(),
 
         %% The ACL for the version of the object represented
         %% by this manifest.
-        acl = no_acl_yet :: acl() | no_acl_yet,
+        acl = no_acl_yet :: #acl_v3{} | no_acl_yet,
 
         %% There are a couple of cases where we want to add record
         %% member'ish data without adding new members to the record,
@@ -232,7 +236,8 @@
         %%     fetch us the missing data.
         cluster_id :: cluster_id()
     }).
--type lfs_manifest() :: #lfs_manifest_v4{}.
+
+-type lfs_manifest() :: #lfs_manifest_v5{}.
 
 -type cs_uuid_and_manifest() :: {cs_uuid(), lfs_manifest()}.
 -type wrapped_manifest() :: orddict:orddict(cs_uuid(), lfs_manifest()).

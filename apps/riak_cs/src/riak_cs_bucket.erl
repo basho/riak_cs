@@ -218,7 +218,7 @@ fold_delete_uploads(Bucket, RcPid, [?MULTIPART_DESCR{key = VKey,
         {UploadId, M} when M?MANIFEST.state == writing
                            %% comparing timestamp here, like
                            %% <<"2012-02-17T18:22:50.000Z">> < <<"2014-05-11-....">> => true
-                           andalso M?MANIFEST.created < Timestamp ->
+                           andalso M?MANIFEST.write_start_time < Timestamp ->
             case riak_cs_gc:gc_specific_manifests(
                    [M?MANIFEST.uuid], Obj, Bucket, RcPid) of
                 {ok, _NewObj} ->
@@ -239,7 +239,7 @@ fold_all_buckets(Fun, Acc0, RcPid) when is_function(Fun) ->
     iterate_csbuckets(RcPid, Acc0, Fun, undefined).
 
 -spec iterate_csbuckets(riak_client(), term(), fun(), binary()|undefined) ->
-                               {ok, term()} | {error, any()}.
+          {ok, term()} | {error, any()}.
 iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
 
     Options = case Cont0 of
@@ -682,4 +682,10 @@ update_bucket_record(#moss_bucket_v1{name = Name,
                     last_action = LastAction,
                     creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
                     modification_time = M1 * 1000_000 + M2 + M3 div 1000,
+                    acl = riak_cs_acl:update_acl_record(Acl)};
+update_bucket_record(#moss_bucket{name = Name,
+                                  creation_date = CreationDate,
+                                  acl = Acl}) ->
+    #moss_bucket_v2{name = iolist_to_binary([Name]),
+                    creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
                     acl = riak_cs_acl:update_acl_record(Acl)}.

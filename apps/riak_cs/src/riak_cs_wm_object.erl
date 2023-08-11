@@ -158,9 +158,10 @@ generate_etag(RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
     {ETag, RD, Ctx}.
 
 -spec last_modified(#wm_reqdata{}, #rcs_web_context{}) -> {calendar:datetime(), #wm_reqdata{}, #rcs_web_context{}}.
-last_modified(RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
-    Mfst = LocalCtx#key_context.manifest,
-    ErlDate = riak_cs_wm_utils:iso_8601_to_erl_date(Mfst?MANIFEST.created),
+last_modified(RD, Ctx = #rcs_web_context{local_context
+                                         = #key_context{manifest
+                                                        = ?MANIFEST{write_start_time = WST}}}) ->
+    ErlDate = calendar:system_time_to_local_time(WST, millisecond),
     {ErlDate, RD, Ctx}.
 
 -spec produce_body(#wm_reqdata{}, #rcs_web_context{}) ->
@@ -187,11 +188,12 @@ produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
                                         start_time = StartTime},
              {Start, End}, RespRange) ->
     #key_context{get_fsm_pid = GetFsmPid,
-                 manifest = ?MANIFEST{created = Created,
+                 manifest = ?MANIFEST{write_start_time = Created,
                                       content_length = ResourceLength,
                                       metadata = Metadata} = Mfst} = LocalCtx,
     Method = wrq:method(RD),
-    LastModified = riak_cs_wm_utils:to_rfc_1123(Created),
+    LastModified = webmachine_util:rfc1123_date(
+                     calendar:system_time_to_local_time(Created, millisecond)),
     ETag = riak_cs_manifest:etag(Mfst),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,

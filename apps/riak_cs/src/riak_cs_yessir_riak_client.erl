@@ -216,7 +216,6 @@ new_manifest(BucketName, Key, Vsn, ContentLength, Acl) ->
               bkey = {BucketName, Key},
               vsn = Vsn,
               metadata = [],
-              created = riak_cs_wm_utils:iso_8601_datetime(),
               uuid = uuid:get_v4(),
 
               content_length = ContentLength,

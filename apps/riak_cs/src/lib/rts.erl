@@ -47,7 +47,7 @@
          find_samples/4,
          slice_containing/2,
          next_slice/2,
-         iso8601/1,
+         iso8601/1, iso8601_s/1,
          datetime/1
         ]).
 
@@ -164,6 +164,13 @@ iso8601(TS) when is_integer(TS) ->
     iso8601(calendar:system_time_to_local_time(TS, millisecond));
 iso8601({{Y,M,D},{H,I,S}}) ->
     iolist_to_binary(
+      io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
+                    [Y, M, D, H, I, S])).
+-spec iso8601_s(calendar:datetime() | non_neg_integer()) -> string().
+iso8601_s(TS) when is_integer(TS) ->
+    iso8601_s(calendar:system_time_to_local_time(TS, millisecond));
+iso8601_s({{Y,M,D},{H,I,S}}) ->
+    lists:flatten(
       io_lib:format("~4..0b~2..0b~2..0bT~2..0b~2..0b~2..0bZ",
                     [Y, M, D, H, I, S])).
 

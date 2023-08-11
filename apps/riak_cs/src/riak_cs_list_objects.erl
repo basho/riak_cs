@@ -121,13 +121,13 @@ safe_decompose_key(K) -> rcs_common_manifest:decompose_versioned_key(K).
 -spec manifest_to_keycontent(list_objects_req_type(), lfs_manifest()) ->
           list_objects_key_content() | list_object_versions_key_content().
 manifest_to_keycontent(ReqType, ?MANIFEST{bkey = {_Bucket, Key},
-                                          created = Created,
+                                          write_start_time = Created,
                                           content_md5 = ContentMd5,
                                           content_length = ContentLength,
                                           vsn = Vsn,
                                           acl = ACL}) ->
 
-    LastModified = list_to_binary(riak_cs_wm_utils:to_iso_8601(Created)),
+    LastModified = rts:iso8601(Created),
 
     %% Etag
     ETagString = riak_cs_utils:etag_from_binary(ContentMd5),

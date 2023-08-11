@@ -42,12 +42,12 @@
                    , buckets = []
                    }).
 
--record(moss_user_v1, { name :: binary()
-                      , display_name :: binary()
-                      , email :: binary()
-                      , key_id :: binary()
-                      , key_secret :: binary()
-                      , canonical_id :: binary()
+-record(moss_user_v1, { name :: string()
+                      , display_name :: string()
+                      , email :: string()
+                      , key_id :: string()
+                      , key_secret :: string()
+                      , canonical_id :: string()
                       , buckets = [] :: [cs_bucket()]
                       }).
 
@@ -91,13 +91,13 @@
 %% Bucket
 -record(moss_bucket, { name :: string()
                      , creation_date :: term()
-                     , acl :: acl()}).
+                     , acl :: #acl_v1{}}).
 
 -record(moss_bucket_v1, { name :: string() | binary()
                         , last_action :: undefined | created | deleted
                         , creation_date :: undefined | string()
-                        , modification_time :: undefined | non_neg_integer()
-                        , acl :: undefined | acl()
+                        , modification_time :: undefined | erlang:timestamp()
+                        , acl :: undefined | #acl_v2{}
                         }).
 
 -record(moss_bucket_v2, { name :: undefined | binary()

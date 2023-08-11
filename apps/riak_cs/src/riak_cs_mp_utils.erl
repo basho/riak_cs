@@ -645,7 +645,7 @@ multipart_description(?MANIFEST{bkey = {_, Key},
                                 vsn = Vsn,
                                 uuid = UUID,
                                 props = Props,
-                                created = Created}) ->
+                                write_start_time = Created}) ->
     ?MULTIPART_MANIFEST{owner = #{display_name := OwnerDisplay,
                                   key_id := OwnerKeyId}} =
         proplists:get_value(multipart, Props),
@@ -653,7 +653,7 @@ multipart_description(?MANIFEST{bkey = {_, Key},
                      upload_id = UUID,
                      owner_key_id = OwnerKeyId,
                      owner_display = OwnerDisplay,
-                     initiated = calendar:rfc3339_to_system_time(Created, [{unit, millisecond}])}.
+                     initiated = Created}.
 
 %% @doc Will cause error:{badmatch, {m_ibco, _}} if CallerKeyId does not exist
 

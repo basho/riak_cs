@@ -31,28 +31,35 @@
 
 -type acl_perm() :: 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP' | 'FULL_CONTROL'.
 -type group_grant() :: 'AllUsers' | 'AuthUsers'.
+
+-type acl_owner_very_old() :: {string(), string()}.
+-type acl_owner_old() :: {string(), string(), string()}.
 -type acl_owner() :: #{display_name => undefined | binary(),
                        canonical_id => undefined | binary(),
                        email => undefined | binary(),
                        key_id => undefined | binary()}.
 
+-type acl_grantee_very_old() :: acl_owner_very_old() | group_grant().
+-type acl_grantee_old() :: acl_owner_old() | group_grant().
 -type acl_grantee() :: acl_owner() | group_grant().
 
 -record(acl_grant_v2, { grantee :: undefined | binary() | acl_grantee()
                       , perms = [] :: [binary() | acl_perm()]
                       }
        ).
+
+-type acl_grant_old() :: {acl_grantee_old() | acl_grantee_very_old(), [acl_perm()]}.
 -type acl_grant() :: #acl_grant_v2{}.
 -define(ACL_GRANT, #acl_grant_v2).
 
 
--record(acl_v1, {owner = {"", ""} :: {string(), string()},
-                 grants = [] :: [acl_grant()],
+-record(acl_v1, {owner = {"", ""} :: acl_owner_very_old(),
+                 grants = [] :: [acl_grant_old()],
                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
 %% %% acl_v2 owner fields: {DisplayName, CanonicalId, KeyId}
--record(acl_v2, {owner={"", "", ""} :: acl_owner(),
-                 grants=[] :: [acl_grant()],
+-record(acl_v2, {owner = {"", "", ""} :: acl_owner_old(),
+                 grants = [] :: [acl_grant_old()],
                  creation_time = erlang:timestamp() :: erlang:timestamp()}).
 
 -record(acl_v3, { owner :: undefined | acl_owner()

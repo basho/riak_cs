@@ -61,9 +61,9 @@ update_acc(_UUID, _Manifest, Acc, true) ->
     Acc;
 update_acc(UUID, ?MANIFEST{state = active}, Acc, false) ->
     [UUID | Acc];
-update_acc(UUID, Manifest=?MANIFEST{state = writing}, Acc, _) ->
-    LBWT = Manifest?MANIFEST.last_block_written_time,
-    WST = Manifest?MANIFEST.write_start_time,
+update_acc(UUID, ?MANIFEST{state = writing,
+                           last_block_written_time = LBWT,
+                           write_start_time = WST}, Acc, _) ->
     acc_leeway_helper(UUID, Acc, LBWT, WST);
 update_acc(_, _, Acc, _) ->
    Acc.
@@ -129,8 +129,6 @@ prune(Dict) ->
 %%%===================================================================
 
 
-leeway_elapsed(undefined) ->
-    false;
 leeway_elapsed(Timestamp) ->
     Now = os:system_time(millisecond),
     Now > Timestamp + riak_cs_gc:leeway_seconds() * 1000.

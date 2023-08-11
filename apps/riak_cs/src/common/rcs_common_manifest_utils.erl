@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -58,12 +58,18 @@ upgrade_wrapped_manifests(ListofOrdDicts) ->
 %% version of the manifest record. This is so that
 %% _most_ of the codebase only has to deal with
 %% the most recent version of the record.
--spec upgrade_manifest(#lfs_manifest_v2{} | #lfs_manifest_v3{} | #lfs_manifest_v4{}) -> lfs_manifest().
+-spec upgrade_manifest(#lfs_manifest_v2{} |
+                       #lfs_manifest_v3{} |
+                       #lfs_manifest_v4{} |
+                       #lfs_manifest_v5{}) ->
+          lfs_manifest().
+upgrade_manifest(#lfs_manifest_v5{} = A) ->
+    A;
 upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                                   bkey = Bkey,
                                   vsn = Vsn,
                                   metadata = Metadata,
-                                  created = Created,
+                                  created = _Created,
                                   uuid = UUID,
                                   content_length = ContentLength,
                                   content_type = ContentType,
@@ -79,11 +85,10 @@ upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                                   acl = Acl,
                                   props = Props,
                                   cluster_id = ClusterID}) ->
-    #lfs_manifest_v4{block_size = BlockSize,
+    #lfs_manifest_v5{block_size = BlockSize,
                      bkey = Bkey,
                      vsn = Vsn,
                      metadata = Metadata,
-                     created = Created,
                      uuid = UUID,
                      content_length = ContentLength,
                      content_type = ContentType,
@@ -96,14 +101,13 @@ upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                      last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
                      delete_blocks_remaining = DeleteBlocksRemaining,
                      scheduled_delete_time = maybe_now_to_system_time(ScheduledDeleteTime),
-                     acl = Acl,
+                     acl = riak_cs_acl:update_acl_record(Acl),
                      props = Props,
                      cluster_id = ClusterID};
 
 upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                                   bkey = Bkey,
                                   metadata = Metadata,
-                                  created = Created,
                                   uuid = UUID,
                                   content_length = ContentLength,
                                   content_type = ContentType,
@@ -119,31 +123,29 @@ upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                                   acl = Acl,
                                   props = Props,
                                   cluster_id = ClusterID}) ->
-    upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
-                                      bkey = Bkey,
-                                      vsn = ?LFS_DEFAULT_OBJECT_VERSION,
-                                      metadata = Metadata,
-                                      created = Created,
-                                      uuid = UUID,
-                                      content_length = ContentLength,
-                                      content_type = ContentType,
-                                      content_md5 = ContentMd5,
-                                      state = State,
-                                      write_start_time = WriteStartTime,
-                                      last_block_written_time = LastBlockWrittenTime,
-                                      write_blocks_remaining = WriteBlocksRemaining,
-                                      delete_marked_time = DeleteMarkedTime,
-                                      last_block_deleted_time = LastBlockDeletedTime,
-                                      delete_blocks_remaining = DeleteBlocksRemaining,
-                                      scheduled_delete_time = ScheduledDeleteTime,
-                                      acl = Acl,
-                                      props = Props,
-                                      cluster_id = ClusterID});
+    #lfs_manifest_v5{block_size = BlockSize,
+                     bkey = Bkey,
+                     vsn = ?LFS_DEFAULT_OBJECT_VERSION,
+                     metadata = Metadata,
+                     uuid = UUID,
+                     content_length = ContentLength,
+                     content_type = ContentType,
+                     content_md5 = ContentMd5,
+                     state = State,
+                     write_start_time = maybe_now_to_system_time(WriteStartTime),
+                     last_block_written_time = maybe_now_to_system_time(LastBlockWrittenTime),
+                     write_blocks_remaining = WriteBlocksRemaining,
+                     delete_marked_time = maybe_now_to_system_time(DeleteMarkedTime),
+                     last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
+                     delete_blocks_remaining = DeleteBlocksRemaining,
+                     scheduled_delete_time = maybe_now_to_system_time(ScheduledDeleteTime),
+                     acl = riak_cs_acl:update_acl_record(Acl),
+                     props = fixup_props(Props),
+                     cluster_id = ClusterID};
 
 upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
                                   bkey = Bkey,
                                   metadata = Metadata,
-                                  created = Created,
                                   uuid = UUID,
                                   content_length = ContentLength,
                                   content_type = ContentType,
@@ -158,24 +160,23 @@ upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
                                   acl = Acl,
                                   props = Props,
                                   cluster_id = ClusterID}) ->
-    upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
-                                      bkey = Bkey,
-                                      metadata = Metadata,
-                                      created = Created,
-                                      uuid = UUID,
-                                      content_length = ContentLength,
-                                      content_type = ContentType,
-                                      content_md5 = ContentMd5,
-                                      state = State,
-                                      write_start_time = WriteStartTime,
-                                      last_block_written_time = LastBlockWrittenTime,
-                                      write_blocks_remaining = WriteBlocksRemaining,
-                                      delete_marked_time = DeleteMarkedTime,
-                                      last_block_deleted_time = LastBlockDeletedTime,
-                                      delete_blocks_remaining = DeleteBlocksRemaining,
-                                      acl = Acl,
-                                      props = fixup_props(Props),
-                                      cluster_id = ClusterID}).
+    #lfs_manifest_v5{block_size = BlockSize,
+                     bkey = Bkey,
+                     metadata = Metadata,
+                     uuid = UUID,
+                     content_length = ContentLength,
+                     content_type = ContentType,
+                     content_md5 = ContentMd5,
+                     state = State,
+                     write_start_time = maybe_now_to_system_time(WriteStartTime),
+                     last_block_written_time = maybe_now_to_system_time(LastBlockWrittenTime),
+                     write_blocks_remaining = WriteBlocksRemaining,
+                     delete_marked_time = maybe_now_to_system_time(DeleteMarkedTime),
+                     last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
+                     delete_blocks_remaining = DeleteBlocksRemaining,
+                     acl = riak_cs_acl:update_acl_record(Acl),
+                     props = fixup_props(Props),
+                     cluster_id = ClusterID}.
 
 
 maybe_now_to_system_time({M1, M2, M3}) ->

@@ -364,7 +364,7 @@ copy_part_response(Manifest, RD, Ctx) ->
     copy_response(Manifest, 'CopyPartResult', RD, Ctx).
 
 copy_response(Manifest, TagName, RD, Ctx) ->
-    LastModified = riak_cs_wm_utils:to_iso_8601(Manifest?MANIFEST.created),
+    LastModified = rts:iso8601_s(Manifest?MANIFEST.write_start_time),
     ETag = riak_cs_manifest:etag(Manifest),
     XmlDoc = [{TagName, [{'LastModified', [LastModified]},
                          {'ETag', [ETag]}

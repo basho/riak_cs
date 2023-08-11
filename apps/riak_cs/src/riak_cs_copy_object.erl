@@ -48,7 +48,7 @@
 test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
 
     ETag = riak_cs_manifest:etag(SrcManifest),
-    LastUpdate = SrcManifest?MANIFEST.created,
+    LastUpdate = rts:iso8601_s(SrcManifest?MANIFEST.write_start_time),
 
     %% TODO: write tests around these conditions, any kind of test is okay
     case condition_check(RD, ETag, LastUpdate) of

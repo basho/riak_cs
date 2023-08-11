@@ -145,24 +145,25 @@ manifest() ->
     ?LET(Manifest, raw_manifest(), process_manifest(Manifest)).
 
 process_manifest(Manifest=?MANIFEST{state=State}) ->
+    TS = os:system_time(millisecond),
     case State of
         writing ->
-            Manifest?MANIFEST{last_block_written_time = os:system_time(millisecond),
+            Manifest?MANIFEST{last_block_written_time = TS,
                               write_blocks_remaining = blocks_set()};
         active ->
             %% this clause isn't
             %% needed but it makes
             %% things more clear imho
-            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
-                              write_start_time = riak_cs_gen:timestamp()};
+            Manifest?MANIFEST{last_block_deleted_time = TS,
+                              write_start_time = TS};
         pending_delete ->
-            Manifest?MANIFEST{last_block_deleted_time = os:system_time(millisecond),
+            Manifest?MANIFEST{last_block_deleted_time = TS,
                               delete_blocks_remaining = blocks_set(),
-                              delete_marked_time = riak_cs_gen:timestamp(),
+                              delete_marked_time = TS,
                               props = riak_cs_gen:props()};
         scheduled_delete ->
-            Manifest?MANIFEST{delete_marked_time = riak_cs_gen:timestamp(),
-                              scheduled_delete_time = riak_cs_gen:timestamp(),
+            Manifest?MANIFEST{delete_marked_time = TS,
+                              scheduled_delete_time = TS,
                               props = riak_cs_gen:props()}
     end.
 

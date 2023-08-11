@@ -119,7 +119,9 @@ manifest_table_spec() ->
 manifest_rows(Manifests) ->
     [ [M?MANIFEST.state, deleted(M?MANIFEST.props),
        riak_cs_mp_utils:is_multipart_manifest(M),
-       M?MANIFEST.created, mochihex:to_hex(M?MANIFEST.uuid),
+       rts:iso8601(
+         calendar:system_time_to_universal_time(M?MANIFEST.write_start_time, millisecond)),
+       mochihex:to_hex(M?MANIFEST.uuid),
        M?MANIFEST.write_start_time, M?MANIFEST.delete_marked_time] || M <- Manifests].
 
 print_multipart_manifest(Props, Indent) ->
