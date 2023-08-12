@@ -142,7 +142,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
         1 ->
             Value = binary_to_term(riakc_obj:get_value(Obj)),
             User = update_user_record(Value),
-            Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+            Buckets = riak_cs_bucket:resolve_buckets([User], [], KeepDeletedBuckets),
             User?RCS_USER{buckets = Buckets};
         0 ->
             error(no_value);
@@ -151,13 +151,13 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
                          Value <- riakc_obj:get_values(Obj),
                          Value /= <<>>  % tombstone
                      ],
-            User = update_user_record(hd(Values)),
+            [User|_] = Users = [update_user_record(A) || A <- Values],
 
             KeyId = User?RCS_USER.key_id,
             logger:warning("User object of '~s' has ~p siblings", [KeyId, N]),
 
-            Buckets = riak_cs_bucket:resolve_buckets(Values, [], KeepDeletedBuckets),
-            User?RCS_USER{buckets=Buckets}
+            Buckets = riak_cs_bucket:resolve_buckets(Users, [], KeepDeletedBuckets),
+            User?RCS_USER{buckets = Buckets}
     end.
 
 %% @doc Determine if the specified user account is a system admin.

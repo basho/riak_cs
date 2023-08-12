@@ -413,7 +413,9 @@ user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).
 
 
--spec update_acl_record(#acl_v1{} | #acl_v2{} | #acl_v3{}) -> acl().
+-spec update_acl_record(undefined | #acl_v1{} | #acl_v2{} | #acl_v3{}) -> undefined | acl().
+update_acl_record(undefined) ->
+    undefined;
 update_acl_record(#acl_v3{} = A) ->
     A;
 update_acl_record(#acl_v2{owner = Owner,
