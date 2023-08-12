@@ -149,7 +149,8 @@ find_user(A, Pbc) ->
     Res = riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_KEYID_INDEX, A),
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
+            %% try_get_user_pre_3_2
+            get_user(A, Pbc);
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
             get_user(Arn, Pbc);
         {error, Reason} ->
