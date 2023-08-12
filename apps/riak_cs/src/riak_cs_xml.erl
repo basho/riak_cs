@@ -283,7 +283,7 @@ bucket_to_xml(Name, CreationDate) ->
                        [make_external_node('Name', Name),
                         make_external_node('CreationDate', binary_to_list(rts:iso8601(CreationDate)))]).
 
-user_to_xml_owner(?RCS_USER{canonical_id = CanonicalId,
+user_to_xml_owner(?RCS_USER{id = CanonicalId,
                             display_name = Name}) ->
     make_internal_node('Owner', [make_external_node('ID', [CanonicalId]),
                                  make_external_node('DisplayName', [Name])]).
@@ -346,7 +346,7 @@ user_node(?RCS_USER{name = Name,
                     display_name = DisplayName,
                     key_id = KeyID,
                     key_secret = KeySecret,
-                    canonical_id = CanonicalID,
+                    id = CanonicalID,
                     status = Status}) ->
     StatusStr = case Status of
                     enabled ->
@@ -372,7 +372,7 @@ iam_user_node(?IAM_USER{arn = Arn,
                         name = UserName,
                         create_date = CreateDate,
                         path = Path,
-                        canonical_id = UserId,
+                        id = UserId,
                         password_last_used = PasswordLastUsed,
                         tags = Tags}) ->
     C = lists:flatten(

@@ -345,7 +345,7 @@ check_grants(undefined, Bucket, RequestedAccess, RcPid, BucketAcl) ->
 check_grants(User, Bucket, RequestedAccess, RcPid, BucketAcl) ->
     riak_cs_acl:bucket_access(Bucket,
                               RequestedAccess,
-                              User?RCS_USER.canonical_id,
+                              User?RCS_USER.id,
                               RcPid,
                               BucketAcl).
 
@@ -426,7 +426,7 @@ canonical_for_email(Email, RcPid) ->
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:find_user(#{email => Email}, Pbc) of
         {ok, {User, _}} ->
-            {ok, User?RCS_USER.canonical_id};
+            {ok, User?RCS_USER.id};
         {error, Reason} ->
             logger:notice("Failed to find user with email ~s: ~p", [Email, Reason]),
             {error, unresolved_grant_email}

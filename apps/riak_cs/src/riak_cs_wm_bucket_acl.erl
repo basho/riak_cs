@@ -110,7 +110,7 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
             _ ->
                 RawAcl = riak_cs_acl_utils:acl_from_xml(
                            Body, User?RCS_USER.key_id, RcPid),
-                riak_cs_acl_utils:validate_acl(RawAcl, User?RCS_USER.canonical_id)
+                riak_cs_acl_utils:validate_acl(RawAcl, User?RCS_USER.id)
         end,
     case AclRes of
         {ok, ACL} ->

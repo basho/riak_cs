@@ -198,7 +198,7 @@ accept_body(RD, Ctx = #rcs_web_context{local_context = #key_context{get_fsm_pid 
                                                     RcPid),
                 riak_cs_acl_utils:validate_acl(
                   A1,
-                  User?RCS_USER.canonical_id)
+                  User?RCS_USER.id)
         end,
     case AclRes of
         {ok, Acl} ->

@@ -87,7 +87,7 @@ handle_with_bucket_obj({error, _} = Error, RD,
 
 handle_with_bucket_obj({ok, BucketObj},
                        RD, Ctx = #rcs_web_context{bucket = Bucket,
-                                                  user = ?IAM_USER{canonical_id = CanonicalId},
+                                                  user = ?IAM_USER{id = CanonicalId},
                                                   riak_client = RcPid,
                                                   response_module = ResponseMod,
                                                   policy_module = PolicyMod}) ->

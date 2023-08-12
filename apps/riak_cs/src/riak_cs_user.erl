@@ -79,7 +79,7 @@ create_user(Name, Email, KeyId, Secret, IAMExtra) ->
                              email = Email,
                              key_id = KeyId,
                              key_secret = Secret,
-                             canonical_id = CanonicalId},
+                             id = CanonicalId},
             create_credentialed_user(User);
         {error, _Reason} = Error ->
             Error
@@ -121,7 +121,7 @@ get_user(KeyId, RcPid) ->
                             name = Subject,
                             email = select_email([SourceIdentity, Email]),
                             display_name = Subject,
-                            canonical_id = CanonicalId,
+                            id = CanonicalId,
                             key_id = KeyId,
                             key_secret = SecretKey,
                             buckets = []},
@@ -172,7 +172,7 @@ is_admin(_, _) ->
 
 -spec to_3tuple(rcs_user()) -> acl_owner().
 to_3tuple(?RCS_USER{display_name = DisplayName,
-                    canonical_id = CanonicalId,
+                    id = CanonicalId,
                     key_id = KeyId}) ->
     %% acl_owner3: {display name, canonical id, key id}
     #{display_name => DisplayName,
@@ -231,13 +231,14 @@ update_user_record(#rcs_user_v2{name = Name,
                                 key_secret = KeySecret,
                                 canonical_id = CanonicalId,
                                 buckets = Buckets}) ->
+    ?LOG_DEBUG("Upgrading rcs_user_v2", []),
     ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
               name = list_to_binary(Name),
               display_name = list_to_binary(DisplayName),
               email = list_to_binary(Email),
               key_id = list_to_binary(KeyId),
               key_secret = list_to_binary(KeySecret),
-              canonical_id = list_to_binary(CanonicalId),
+              id = list_to_binary(CanonicalId),
               buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]};
 update_user_record(#moss_user_v1{name = Name,
                                  display_name = DisplayName,
@@ -246,11 +247,12 @@ update_user_record(#moss_user_v1{name = Name,
                                  key_secret = KeySecret,
                                  canonical_id = CanonicalId,
                                  buckets = Buckets}) ->
+    ?LOG_DEBUG("Upgrading moss_user_v1", []),
     ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
               name = list_to_binary(Name),
               display_name = list_to_binary(DisplayName),
               email = list_to_binary(Email),
               key_id = list_to_binary(KeyId),
               key_secret = list_to_binary(KeySecret),
-              canonical_id = list_to_binary(CanonicalId),
+              id = list_to_binary(CanonicalId),
               buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]}.

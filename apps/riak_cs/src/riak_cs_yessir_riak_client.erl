@@ -188,7 +188,7 @@ new_user(UserKey) ->
                email = <<UserKey/binary, "@example.com">>,
                key_id = UserKey,
                key_secret = <<UserKey/binary, "+Secret">>,
-               canonical_id = CanonicalId,
+               id = CanonicalId,
                buckets = [?RCS_BUCKET{name = <<UserKey/binary, "-yessir-bucket-1">>,
                                       acl = DefaultAcl}]},
      DefaultAcl}.

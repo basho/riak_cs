@@ -65,7 +65,7 @@
 -record(rcs_user_v3, { arn :: undefined | flat_arn()
                      , path = <<"/">> :: binary()
                      , create_date = os:system_time(millisecond) :: non_neg_integer()
-                     %% , user_id :: binary() %% maps to canonical_id
+                     %% , user_id :: binary() %% maps to id
                      %% , user_name :: binary() %% maps to name
                      , password_last_used :: undefined | non_neg_integer()
                      , permissions_boundary :: undefined | #{} | permissions_boundary()
@@ -77,7 +77,7 @@
                      , email :: undefined | binary()
                      , key_id :: undefined | binary()
                      , key_secret :: undefined | binary()
-                     , canonical_id :: undefined | binary()
+                     , id :: undefined | binary()
                      , buckets = [] :: [#{} | cs_bucket()]
                      , status = enabled :: enabled | disabled | binary()
                      }).

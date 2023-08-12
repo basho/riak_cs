@@ -611,7 +611,7 @@ parse_certs([{'Certificate', EntryData, _encrypted_or_not} | Rest], Q) ->
 
 
 object_indices(?RCS_USER{path = Path,
-                         canonical_id = Id,
+                         id = Id,
                          email = Email,
                          name = Name,
                          key_id = KeyId}) ->

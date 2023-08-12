@@ -256,7 +256,7 @@ do_action("CreateUser",
             case riak_cs_iam:create_user(Specs) of
                 {ok, User} ->
                     logger:info("Created user ~s \"~s\" (~s) on request_id ~s",
-                                [User?IAM_USER.canonical_id, User?IAM_USER.name, User?IAM_USER.arn, RequestId]),
+                                [User?IAM_USER.id, User?IAM_USER.name, User?IAM_USER.arn, RequestId]),
                     Doc = riak_cs_xml:to_xml(
                             #create_user_response{user = User,
                                                   request_id = RequestId}),

@@ -103,7 +103,7 @@ accept_body(RD, Ctx = #rcs_web_context{user = User,
     PolicyJson = wrq:req_body(RD),
     case PolicyMod:policy_from_json(PolicyJson) of
         {ok, Policy} ->
-            Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User?RCS_USER.canonical_id),
+            Access = PolicyMod:reqdata_to_access(RD, bucket_policy, User?RCS_USER.id),
             case PolicyMod:check_policy(Access, Policy) of
                 ok ->
                     case riak_cs_bucket:set_bucket_policy(User, UserObj, Bucket, PolicyJson) of

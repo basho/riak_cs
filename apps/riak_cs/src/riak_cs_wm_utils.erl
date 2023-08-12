@@ -529,7 +529,7 @@ maybe_update_context_with_acl_from_headers(RD,
                     {ok, Ctx#rcs_web_context{acl = Acl}};
                 error ->
                     DefaultAcl = riak_cs_acl_utils:default_acl(User?RCS_USER.display_name,
-                                                               User?RCS_USER.canonical_id,
+                                                               User?RCS_USER.id,
                                                                User?RCS_USER.key_id),
                     {ok, Ctx#rcs_web_context{acl = DefaultAcl}}
             end;
@@ -563,7 +563,7 @@ maybe_acl_from_context_and_request(RD, #rcs_web_context{user = User,
             Headers = normalize_headers(RD),
             BucketOwner = bucket_owner(BucketObj),
             Owner = #{display_name => User?RCS_USER.display_name,
-                      canonical_id => User?RCS_USER.canonical_id,
+                      canonical_id => User?RCS_USER.id,
                       key_id => User?RCS_USER.key_id},
             {ok, acl_from_headers(Headers, Owner, BucketOwner, RcPid)};
         false ->
@@ -818,7 +818,7 @@ handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
     PolicyMod = Ctx#rcs_web_context.policy_module,
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     Access = PolicyMod:reqdata_to_access(RD, AccessType,
-                                         User?RCS_USER.canonical_id),
+                                         User?RCS_USER.id),
     case PolicyMod:eval(Access, Policy) of
         false ->
             deny_access(AccessRD, Ctx);
@@ -844,7 +844,7 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
     PolicyMod = Ctx#rcs_web_context.policy_module,
     User = case User0 of
                undefined -> undefined;
-               _ ->         User0?RCS_USER.canonical_id
+               _ ->         User0?RCS_USER.id
            end,
     Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
     PolicyResult = PolicyMod:eval(Access, Policy),
@@ -961,7 +961,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             end
     end.
 
-safely_extract_canonical_id(?IAM_USER{canonical_id = A}) -> A;
+safely_extract_canonical_id(?IAM_USER{id = A}) -> A;
 safely_extract_canonical_id(undefined) -> undefined.
 
 
@@ -1192,7 +1192,7 @@ role_access_authorize_helper(Target, RD,
                              Ctx = #rcs_web_context{policy_module = PolicyMod,
                                                     user = User}) ->
     Access = PolicyMod:reqdata_to_access(RD, Target,
-                                         User?RCS_USER.canonical_id),
+                                         User?RCS_USER.id),
     case get_user_policies_or_halt(Ctx) of
         user_session_expired ->
             deny_access(RD, Ctx);
