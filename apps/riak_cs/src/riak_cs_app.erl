@@ -135,12 +135,7 @@ ensure_bucket_props(Pbc) ->
 
 riak_connection() ->
     {Host, Port} = riak_cs_config:riak_host_port(),
-    Timeout = case application:get_env(riak_cs, riakc_connect_timeout) of
-                  {ok, ConfigValue} ->
-                      ConfigValue;
-                  undefined ->
-                      10000
-              end,
+    Timeout = application:get_env(riak_cs, riakc_connect_timeout, 10_000),
     StartOptions = [{connect_timeout, Timeout},
                     {auto_reconnect, true}],
     riakc_pb_socket:start_link(Host, Port, StartOptions).
@@ -150,13 +145,42 @@ find_user(A, Pbc) ->
     case Res of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             %% try_get_user_pre_3_2
-            get_user(A, Pbc);
+            maybe_get_3_1_user_with_policy(A, Pbc);
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
             get_user(Arn, Pbc);
         {error, Reason} ->
             logger:warning("Riak client connection error while finding user ~s: ~p", [A, Reason]),
             {error, Reason}
     end.
+
+maybe_get_3_1_user_with_policy(KeyForArn, Pbc) ->
+    case get_user(KeyForArn, Pbc) of
+        {ok, OldAdminUser = ?IAM_USER{name = AdminUserName}} ->
+            %% without updatng the user first, attach_user_policy won't find it
+            {ok, NewAdminUser} = riak_cs_iam:update_user(OldAdminUser),
+            %% now it is saved properly, by arn, and will be found as such
+
+            logger:notice("Found pre-3.2 admin user; "
+                          "converting it to rcs_user_v3, attaching an admin policy and saving", []),
+
+            AdminPolicyDocument =
+                #{<<"Version">> => <<"2012-10-17">>,
+                  <<"Statement">> => [#{<<"Principal">> => <<"*">>,
+                                        <<"Effect">> => <<"Allow">>,
+                                        <<"Action">> => [<<"sts:*">>, <<"iam:*">>, <<"s3:*">>],
+                                        <<"Resource">> => <<"*">>
+                                       }
+                                     ]
+                 },
+            {ok, ?IAM_POLICY{arn = PolicyArn}} =
+                riak_cs_iam:create_policy(#{policy_name => <<"AdminPolicy">>,
+                                            policy_document => jsx:encode(AdminPolicyDocument)}),
+            ok = riak_cs_iam:attach_user_policy(PolicyArn, AdminUserName),
+            {ok, NewAdminUser};
+        ER ->
+            ER
+    end.
+
 get_user(Arn, Pbc) ->
     case riak_cs_pbc:get_sans_stats(Pbc, ?USER_BUCKET, Arn,
                                     [{notfound_ok, false}],
@@ -166,3 +190,4 @@ get_user(Arn, Pbc) ->
         ER ->
             ER
     end.
+
