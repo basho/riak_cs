@@ -31,6 +31,7 @@
 
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -type start_type() :: normal | {takeover, node()} | {failover, node()}.
@@ -46,17 +47,48 @@
 start(_Type, _StartArgs) ->
     riak_cs_config:warnings(),
     {ok, Pbc} = riak_connection(),
-    try
-        sanity_check(is_config_valid(),
-                     check_admin_creds(Pbc),
-                     ensure_bucket_props(Pbc))
-    after
-        ok = riakc_pb_socket:stop(Pbc)
-    end.
+    ok = is_config_valid(),
+    ok = ensure_bucket_props(Pbc),
+    {ok, PostFun} = check_admin_creds(Pbc),
+    Ret = {ok, _Pid} = riak_cs_sup:start_link(),
+    ok = PostFun(),
+    ok = riakc_pb_socket:stop(Pbc),
+    Ret.
+
+
 
 %% @doc application stop callback for riak_cs.
 -spec stop(term()) -> ok.
 stop(_State) ->
+    ok.
+
+
+is_config_valid() ->
+    case application:get_env(riak_cs, connection_pools) of
+        {ok, _} ->
+            ok;
+        _ ->
+            logger:error("connection_pools is not set"),
+            not_ok
+    end.
+
+
+ensure_bucket_props(Pbc) ->
+    BucketsWithMultiTrue = [?ACCESS_BUCKET,
+                            ?STORAGE_BUCKET],
+    BucketsWithMultiFalse = [?USER_BUCKET,
+                             ?BUCKETS_BUCKET,
+                             ?SERVICE_BUCKET,
+                             ?IAM_ROLE_BUCKET,
+                             ?IAM_POLICY_BUCKET,
+                             ?IAM_SAMLPROVIDER_BUCKET,
+                             ?TEMP_SESSIONS_BUCKET],
+    %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
+    %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
+    %%                   riak_kv_wm_link_walker, mapreduce_linkfun],
+    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
+    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
+    ?LOG_DEBUG("ensure_bucket_props done"),
     ok.
 
 check_admin_creds(Pbc) ->
@@ -66,12 +98,12 @@ check_admin_creds(Pbc) ->
             logger:warning("admin.key is defined as default. Please create"
                            " admin user and configure it.", []),
             application:set_env(riak_cs, admin_secret, <<"admin-secret">>),
-            ok;
+            {ok, nop()};
         {ok, {undefined, _}} ->
-            logger:warning("The admin user's key id has not been specified."),
+            logger:error("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {<<>>, _}} ->
-            logger:warning("The admin user's key id has not been specified."),
+            logger:error("The admin user's key id has not been specified."),
             {error, admin_key_undefined};
         {ok, {Key, undefined}} ->
             fetch_and_cache_admin_creds(Key, Pbc);
@@ -88,8 +120,9 @@ fetch_and_cache_admin_creds(_Key, _, 0, Error) ->
     Error;
 fetch_and_cache_admin_creds(Key, Pbc, Attempt, _Error) ->
     case find_user(Key, Pbc) of
-        {ok, ?IAM_USER{key_secret = SAK}} ->
-            application:set_env(riak_cs, admin_secret, SAK);
+        {ok, ?IAM_USER{key_secret = SAK}, PostFun} ->
+            application:set_env(riak_cs, admin_secret, SAK),
+            {ok, PostFun};
         Error ->
             logger:warning("Couldn't get admin user (~s) record: ~p. Will retry ~b more times",
                            [Key, Error, Attempt]),
@@ -97,57 +130,19 @@ fetch_and_cache_admin_creds(Key, Pbc, Attempt, _Error) ->
             fetch_and_cache_admin_creds(Key, Pbc, Attempt - 1, Error)
     end.
 
-sanity_check(true, ok, ok) ->
-    riak_cs_sup:start_link();
-sanity_check(false, _, _) ->
-    logger:error("You must update your Riak CS app.config. Please see the"
-                 "release notes for more information on updating you configuration."),
-    {error, bad_config};
-sanity_check(_, {error, Reason}, _) ->
-    logger:error("Admin credentials are not properly set: ~p.", [Reason]),
-    {error, Reason}.
-
-is_config_valid() ->
-    get_env_response_to_bool(application:get_env(riak_cs, connection_pools)).
-
-get_env_response_to_bool({ok, _}) ->
-    true;
-get_env_response_to_bool(_) ->
-    false.
-
-ensure_bucket_props(Pbc) ->
-    BucketsWithMultiTrue = [?USER_BUCKET,
-                            ?ACCESS_BUCKET,
-                            ?STORAGE_BUCKET,
-                            ?BUCKETS_BUCKET],
-    BucketsWithMultiFalse = [?SERVICE_BUCKET,
-                             ?IAM_ROLE_BUCKET,
-                             ?IAM_POLICY_BUCKET,
-                             ?IAM_SAMLPROVIDER_BUCKET,
-                             ?TEMP_SESSIONS_BUCKET],
-    %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
-    %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
-    %%                   riak_kv_wm_link_walker, mapreduce_linkfun],
-    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
-    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
-    ok.
-
-
-riak_connection() ->
-    {Host, Port} = riak_cs_config:riak_host_port(),
-    Timeout = application:get_env(riak_cs, riakc_connect_timeout, 10_000),
-    StartOptions = [{connect_timeout, Timeout},
-                    {auto_reconnect, true}],
-    riakc_pb_socket:start_link(Host, Port, StartOptions).
 
 find_user(A, Pbc) ->
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_KEYID_INDEX, A),
-    case Res of
+    case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_KEYID_INDEX, A) of
         {ok, ?INDEX_RESULTS{keys = []}} ->
             %% try_get_user_pre_3_2
             maybe_get_3_1_user_with_policy(A, Pbc);
         {ok, ?INDEX_RESULTS{keys = [Arn|_]}} ->
-            get_user(Arn, Pbc);
+            case get_user(Arn, Pbc) of
+                {ok, User} ->
+                    {ok, User, nop()};
+                ER ->
+                    ER
+            end;
         {error, Reason} ->
             logger:warning("Riak client connection error while finding user ~s: ~p", [A, Reason]),
             {error, Reason}
@@ -155,28 +150,42 @@ find_user(A, Pbc) ->
 
 maybe_get_3_1_user_with_policy(KeyForArn, Pbc) ->
     case get_user(KeyForArn, Pbc) of
-        {ok, OldAdminUser = ?IAM_USER{name = AdminUserName}} ->
-            %% without updatng the user first, attach_user_policy won't find it
-            {ok, NewAdminUser} = riak_cs_iam:update_user(OldAdminUser),
-            %% now it is saved properly, by arn, and will be found as such
-
+        {ok, OldAdminUser = ?IAM_USER{arn = AdminArn,
+                                      name = AdminUserName,
+                                      key_id = KeyId}} ->
             logger:notice("Found pre-3.2 admin user; "
                           "converting it to rcs_user_v3, attaching an admin policy and saving", []),
+            ?LOG_DEBUG("Converted admin: ~p", [OldAdminUser]),
 
-            AdminPolicyDocument =
-                #{<<"Version">> => <<"2012-10-17">>,
-                  <<"Statement">> => [#{<<"Principal">> => <<"*">>,
-                                        <<"Effect">> => <<"Allow">>,
-                                        <<"Action">> => [<<"sts:*">>, <<"iam:*">>, <<"s3:*">>],
-                                        <<"Resource">> => <<"*">>
-                                       }
-                                     ]
-                 },
-            {ok, ?IAM_POLICY{arn = PolicyArn}} =
-                riak_cs_iam:create_policy(#{policy_name => <<"AdminPolicy">>,
-                                            policy_document => jsx:encode(AdminPolicyDocument)}),
-            ok = riak_cs_iam:attach_user_policy(PolicyArn, AdminUserName),
-            {ok, NewAdminUser};
+            ?LOG_DEBUG("deleting old admin user", []),
+            ok = riakc_pb_socket:delete(Pbc, ?USER_BUCKET, KeyId, ?CONSISTENT_DELETE_OPTIONS),
+            ?LOG_DEBUG("recreating it as rcs_user_v3"),
+            Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(OldAdminUser), dict:new()),
+            Obj = riakc_obj:update_metadata(
+                    riakc_obj:new(?USER_BUCKET, AdminArn, term_to_binary(OldAdminUser)),
+                    Meta),
+            ok = riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS),
+
+            CompleteAdminConversion =
+                fun() ->
+                        ?LOG_DEBUG("Attaching admin policy to the recreated admin"),
+                        AdminPolicyDocument =
+                            #{<<"Version">> => <<"2012-10-17">>,
+                              <<"Statement">> => [#{<<"Principal">> => <<"*">>,
+                                                    <<"Effect">> => <<"Allow">>,
+                                                    <<"Action">> => [<<"sts:*">>, <<"iam:*">>, <<"s3:*">>],
+                                                    <<"Resource">> => <<"*">>
+                                                   }
+                                                 ]
+                             },
+                        {ok, ?IAM_POLICY{arn = PolicyArn}} =
+                            riak_cs_iam:create_policy(#{policy_name => <<"AdminPolicy">>,
+                                                        policy_document => D = jsx:encode(AdminPolicyDocument)}),
+                        ?LOG_DEBUG("Attached policy: ~p", [D]),
+                        ok = riak_cs_iam:attach_user_policy(PolicyArn, AdminUserName, Pbc),
+                        ok
+                end,
+            {ok, OldAdminUser, CompleteAdminConversion};
         ER ->
             ER
     end.
@@ -191,3 +200,13 @@ get_user(Arn, Pbc) ->
             ER
     end.
 
+
+riak_connection() ->
+    {Host, Port} = riak_cs_config:riak_host_port(),
+    Timeout = application:get_env(riak_cs, riakc_connect_timeout, 10_000),
+    StartOptions = [{connect_timeout, Timeout},
+                    {auto_reconnect, true}],
+    riakc_pb_socket:start_link(Host, Port, StartOptions).
+
+nop() ->
+    fun() -> ok end.
