@@ -129,33 +129,34 @@ validate_content_checksum(RD, Ctx = #rcs_web_context{submodule = Mod,
     resource_call(Mod, validate_content_checksum, [RD, Ctx], ExportsFun).
 
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-forbidden(RD, Ctx = #rcs_web_context{auth_module = AuthMod,
-                                     submodule = Mod,
-                                     riak_client = RcPid,
-                                     exports_fun = ExportsFun}) ->
-    {AuthResult, AnonOk} =
-        case AuthMod:identify(RD, Ctx) of
+forbidden(RD, Ctx0 = #rcs_web_context{auth_module = AuthMod,
+                                      submodule = Mod,
+                                      riak_client = RcPid,
+                                      exports_fun = ExportsFun}) ->
+    {AuthResult, AnonOk, Ctx} =
+        case AuthMod:identify(RD, Ctx0) of
             failed ->
-                {{error, no_such_key}, false};
+                {{error, no_such_key}, false, Ctx0};
             {failed, Reason} ->
-                {{error, Reason}, false};
+                {{error, Reason}, false, Ctx0};
             {UserKey, AuthData} ->
                 case maybe_create_user(
                        riak_cs_user:get_user(UserKey, RcPid),
                        UserKey,
-                       Ctx#rcs_web_context.api,
-                       Ctx#rcs_web_context.auth_module,
+                       Ctx0#rcs_web_context.api,
+                       Ctx0#rcs_web_context.auth_module,
                        AuthData,
                        RcPid) of
                     {ok, {User, Obj}} ->
                         {authenticate(
                            User, Obj,
-                           RD, Ctx#rcs_web_context{admin_access = riak_cs_user:is_admin(User)},
+                           RD, Ctx0,
                            AuthData),
-                         resource_call(Mod, anon_ok, [], ExportsFun)};
+                         resource_call(Mod, anon_ok, [], ExportsFun),
+                         Ctx0#rcs_web_context{admin_access = riak_cs_user:is_admin(User)}};
                     Error ->
                         {Error,
-                         resource_call(Mod, anon_ok, [], ExportsFun)}
+                         resource_call(Mod, anon_ok, [], ExportsFun), Ctx0}
                 end
         end,
     post_authentication(AuthResult, RD, Ctx, AnonOk).

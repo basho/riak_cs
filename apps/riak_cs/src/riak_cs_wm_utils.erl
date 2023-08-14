@@ -884,6 +884,8 @@ is_acl_request(_) ->
 -spec object_access_authorize_helper(AccessType::atom(), boolean(),
                                      #wm_reqdata{}, #rcs_web_context{}) ->
           authorized_response().
+object_access_authorize_helper(_AccessType, _Deletable, RD, #rcs_web_context{admin_access = true} = Ctx) ->
+    {false, RD, Ctx};
 object_access_authorize_helper(AccessType, Deletable, RD, Ctx) ->
     object_access_authorize_helper(AccessType, Deletable, false, RD, Ctx).
 
