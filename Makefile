@@ -68,6 +68,7 @@ relclean:
 ##
 test:
 	$(REBAR) eunit
+	$rm -f log@nonode* data@nonode*
 	$(REBAR) dialyzer
 
 
