@@ -32,7 +32,7 @@ def main():
             quiet = True
 
     res = create_user("127.0.0.1", port, admin_name, admin_email)
-    print("%s %s %s" % (res['key_id'], res['key_secret'], res['canonical_id']))
+    print("%s %s %s" % (res['key_id'], res['key_secret'], res['id']))
     admin_arn = res['arn']
 
     #boto3.set_stream_logger('')

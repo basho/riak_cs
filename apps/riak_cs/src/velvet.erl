@@ -537,12 +537,17 @@ request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
                 true ->
                     Resp;
                 false ->
-                    ?LOG_DEBUG("AAAaaa ~p", [RespBody]),
-                    #{error_tag := Tag_,
-                      resource := _Resource} = jsx:decode(list_to_binary(RespBody), [{labels, atom}]),
-                    Tag = binary_to_term(base64:decode(Tag_)),
-                    ?LOG_DEBUG("stanchion op non-success response, tag: ~p, resource: ~s", [Tag, _Resource]),
-                    {error, Tag}
+                    case catch jsx:decode(list_to_binary(RespBody), [{labels, atom}]) of
+                        #{error_tag := Tag_,
+                          resource := _Resource} ->
+                            Tag = binary_to_term(base64:decode(Tag_)),
+                            ?LOG_DEBUG("stanchion op non-success response, tag: ~p, resource: ~s", [Tag, _Resource]),
+                            {error, Tag};
+                        {'EXIT', _} ->
+                            logger:error("Unexpected response from stanchion (~p). Is it up?", [Status]),
+                            ?LOG_DEBUG("Stanchion response body: ~p", [RespBody]),
+                            {error, stanchion_recovery_failure}
+                    end
             end;
         Error ->
             logger:warning("Error contacting stanchion at ~s: ~p; retrying...", [Url, Error]),

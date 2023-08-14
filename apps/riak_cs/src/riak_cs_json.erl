@@ -82,7 +82,7 @@ to_json(?RCS_USER{} = A) ->
       jason:encode(A,
                    [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
                                {permissions_boundary, record_info(fields, permissions_boundary)},
-                               {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
+                               {moss_bucket_v2, record_info(fields, moss_bucket_v2)},
                                {acl_grant_v2, record_info(fields, acl_grant_v2)},
                                {acl_v3, record_info(fields, acl_v3)},
                                {tag, record_info(fields, tag)}]}]));

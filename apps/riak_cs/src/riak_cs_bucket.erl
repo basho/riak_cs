@@ -677,8 +677,9 @@ update_bucket_record(#moss_bucket_v1{name = Name,
                                      last_action = LastAction,
                                      creation_date = CreationDate,
                                      modification_time = {M1, M2, M3},
-                                     acl = Acl}) ->
-    #moss_bucket_v2{name = iolist_to_binary([Name]),
+                                     acl = Acl} = A) ->
+    ?LOG_DEBUG("Upgrading moss_bucket_v1 ~p", [A]),
+    #moss_bucket_v2{name = list_to_binary([Name]),
                     last_action = LastAction,
                     creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
                     modification_time = M1 * 1000_000 + M2 + M3 div 1000,

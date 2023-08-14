@@ -144,12 +144,13 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
 
 %% @doc Attempt to create a new user
 -spec create_user(maps:map(), pid()) -> ok | {error, term()}.
-create_user(FF = #{email := Email}, Pbc) ->
+create_user(FF = #{arn := Arn,
+                   email := Email}, Pbc) ->
     case email_available(Email, Pbc) of
         true ->
             User = riak_cs_iam:unarm(
                      riak_cs_iam:exprec_user(FF)),
-            save_user(User, Pbc);
+            save_user(User, riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)), Pbc);
         {false, Reason} ->
             logger:info("Refusing to create a user with email ~s: ~s", [Email, Reason]),
             {error, user_already_exists}
@@ -171,7 +172,8 @@ update_user(FF, Pbc) ->
     User = ?IAM_USER{arn = Arn,
                      email = Email} =
         riak_cs_iam:exprec_user(FF),
-    {ok, {_OldUser, Obj}} = riak_cs_iam:get_user(Arn, Pbc),
+    RObj = riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)),
+
     CanProceed =
         case riak_cs_iam:find_user(#{email => Email}, Pbc) of
             {ok, {?IAM_USER{arn = Arn}, _}} ->
@@ -182,7 +184,7 @@ update_user(FF, Pbc) ->
                 true
         end,
     if CanProceed ->
-            case save_user(User, Obj, Pbc) of
+            case save_user(User, RObj, Pbc) of
                 ok ->
                     {ok, User};
                 ER ->
@@ -790,9 +792,6 @@ get_manifests_raw(Pbc, Bucket, Key, Vsn) ->
                                         rcs_common_manifest:make_versioned_key(Key, Vsn))),
     stanchion_stats:update([riakc, get_manifest], TAT),
     Res.
-
-save_user(?IAM_USER{arn = Arn} = User, Pbc) ->
-    save_user(User, riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)), Pbc).
 
 save_user(User, Obj0, Pbc) ->
     Meta = dict:store(?MD_INDEX, riak_cs_utils:object_indices(User), dict:new()),
