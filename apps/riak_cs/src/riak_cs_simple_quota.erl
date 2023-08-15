@@ -205,7 +205,7 @@ error_response({disk_quota, Current, Limit}, RD, Ctx) ->
 
 get_latest_usage(Pid, User) ->
     Now = calendar:datetime_to_gregorian_seconds(
-            calendar:system_time_to_local_time(
+            calendar:system_time_to_universal_time(
               os:system_time(millisecond), millisecond)),
     ArchivePeriod = case riak_cs_storage:archive_period() of
                         {ok, Period} -> Period;

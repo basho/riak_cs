@@ -161,7 +161,7 @@ generate_etag(RD, Ctx = #rcs_web_context{local_context = LocalCtx}) ->
 last_modified(RD, Ctx = #rcs_web_context{local_context
                                          = #key_context{manifest
                                                         = ?MANIFEST{write_start_time = WST}}}) ->
-    ErlDate = calendar:system_time_to_local_time(WST, millisecond),
+    ErlDate = calendar:system_time_to_universal_time(WST, millisecond),
     {ErlDate, RD, Ctx}.
 
 -spec produce_body(#wm_reqdata{}, #rcs_web_context{}) ->
@@ -194,7 +194,7 @@ produce_body(RD, Ctx = #rcs_web_context{rc_pool = RcPool,
                                       metadata = Metadata} = Mfst} = LocalCtx,
     Method = wrq:method(RD),
     LastModified = webmachine_util:rfc1123_date(
-                     calendar:system_time_to_local_time(Created, millisecond)),
+                     calendar:system_time_to_universal_time(Created, millisecond)),
     ETag = riak_cs_manifest:etag(Mfst),
     NewRQ1 = lists:foldl(fun({K, V}, Rq) -> wrq:set_resp_header(K, V, Rq) end,
                          RD,
