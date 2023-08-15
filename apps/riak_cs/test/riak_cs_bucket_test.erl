@@ -34,7 +34,7 @@ bucket_resolution_test() ->
                            email = <<"fester@tester.com">>,
                            key_id = <<"festersquest">>,
                            key_secret = <<"wasthebest">>,
-                           canonical_id = <<"cid">>},
+                           id = <<"cid">>},
     BucketList1 = [bucket_record(<<"bucket1">>, create),
                    bucket_record(<<"bucket2">>, create),
                    bucket_record(<<"bucket3">>, create)],

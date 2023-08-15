@@ -893,7 +893,7 @@ user_record_to_xml_test() ->
                      email="barf@spaceballs.com",
                      key_id="barf_key",
                      key_secret="secretsauce",
-                     canonical_id="1234",
+                     id="1234",
                      status=enabled},
     io:format("~p", [riak_cs_xml:to_xml(User)]),
     ?assertEqual(Xml, riak_cs_xml:to_xml(User)).
