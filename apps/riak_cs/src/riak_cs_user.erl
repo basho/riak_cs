@@ -142,7 +142,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
         1 ->
             Value = binary_to_term(riakc_obj:get_value(Obj)),
             User = update_user_record(Value),
-            Buckets = riak_cs_bucket:resolve_buckets([Value], [], KeepDeletedBuckets),
+            Buckets = riak_cs_bucket:resolve_buckets([User], [], KeepDeletedBuckets),
             User?RCS_USER{buckets = Buckets};
         0 ->
             error(no_value);
