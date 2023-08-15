@@ -170,9 +170,23 @@ delete_user(Arn, Pbc) ->
 -spec update_user(maps:map(), pid()) -> {ok, rcs_user()} | {error, term()}.
 update_user(FF, Pbc) ->
     User = ?IAM_USER{arn = Arn,
+                     key_id = KeyId,
                      email = Email} =
         riak_cs_iam:exprec_user(FF),
-    RObj = riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User)),
+    RObj =
+        case riak_cs_iam:get_user(Arn, Pbc) of
+            {ok, {_, Obj32}} ->
+                Obj32;
+            {error, notfound} ->
+                case riak_cs_iam:get_user(KeyId, Pbc) of
+                    {ok, {_, Obj31}} ->
+                        Obj31;
+                    {error, notfound} ->
+                        logger:error("User ~s (~s) is gone while it is being updated. "
+                                     "Trying to create it as new.", [Arn, KeyId]),
+                        riakc_obj:new(?USER_BUCKET, Arn, term_to_binary(User))
+                end
+        end,
 
     CanProceed =
         case riak_cs_iam:find_user(#{email => Email}, Pbc) of
