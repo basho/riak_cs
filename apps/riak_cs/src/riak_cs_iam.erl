@@ -539,6 +539,7 @@ exprec_user(Map) ->
                 buckets = [exprec_bucket(B) || BB /= <<>>, B <- BB]}.
 status_from_binary(<<"enabled">>) -> enabled;
 status_from_binary(<<"disabled">>) -> disabled.
+maybe_int(null) -> undefined;
 maybe_int(undefined) -> undefined;
 maybe_int(A) -> A.
 
@@ -552,6 +553,7 @@ exprec_bucket(Map) ->
 last_action_from_binary(<<"undefined">>) -> undefined;
 last_action_from_binary(<<"created">>) -> created;
 last_action_from_binary(<<"deleted">>) -> deleted.
+maybe_exprec_acl(null) -> undefined;
 maybe_exprec_acl(undefined) -> undefined;
 maybe_exprec_acl(A) -> exprec:frommap_acl_v3(A).
 

@@ -101,10 +101,10 @@
                         }).
 
 -record(moss_bucket_v2, { name :: undefined | binary()
-                        , last_action :: undefined | created | deleted | binary()
+                        , last_action :: undefined | null | created | deleted | binary()
                         , creation_date = os:system_time(millisecond) :: non_neg_integer()
                         , modification_time :: undefined | non_neg_integer()
-                        , acl :: undefined | #{} | acl()
+                        , acl :: undefined | null | #{} | acl()
                         }).
 
 -type cs_bucket() :: #moss_bucket_v2{}.
