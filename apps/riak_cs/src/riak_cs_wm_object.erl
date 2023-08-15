@@ -168,7 +168,8 @@ last_modified(RD, Ctx = #rcs_web_context{local_context
           {{known_length_stream, non_neg_integer(), {<<>>, function()}}, #wm_reqdata{}, #rcs_web_context{}}.
 produce_body(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
                                         response_module = ResponseMod}) ->
-    #key_context{get_fsm_pid=GetFsmPid, manifest=Mfst} = LocalCtx,
+    #key_context{get_fsm_pid = GetFsmPid,
+                 manifest = Mfst} = LocalCtx,
     ResourceLength = Mfst?MANIFEST.content_length,
     case parse_range(RD, ResourceLength) of
         invalid_range ->
@@ -245,17 +246,15 @@ delete_resource(RD, Ctx = #rcs_web_context{local_context = LocalCtx,
                  key = Key,
                  obj_vsn = ObjVsn,
                  get_fsm_pid = GetFsmPid} = LocalCtx,
-    BFile_str = bfile_str(Bucket, Key, ObjVsn),
-    UserName = riak_cs_wm_utils:extract_name(Ctx#rcs_web_context.user),
     riak_cs_get_fsm:stop(GetFsmPid),
     DeleteObjectResponse = riak_cs_utils:delete_object(Bucket, Key, ObjVsn, RcPid),
-    handle_delete_object(DeleteObjectResponse, UserName, BFile_str, RD, Ctx).
+    handle_delete_object(DeleteObjectResponse, RD, Ctx).
 
 %% @private
-handle_delete_object({error, Error}, _UserName, _BFile_str, RD, Ctx) ->
+handle_delete_object({error, Error}, RD, Ctx) ->
     logger:error("delete object failed with reason: ~p", [Error]),
     {false, RD, Ctx};
-handle_delete_object({ok, _UUIDsMarkedforDelete}, _UserName, _BFile_str, RD, Ctx) ->
+handle_delete_object({ok, _UUIDsMarkedforDelete}, RD, Ctx) ->
     {true, RD, Ctx}.
 
 -spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
@@ -525,8 +524,3 @@ zero_length_metadata_update_p(0, RD) ->
     end;
 zero_length_metadata_update_p(_, _) ->
     false.
-
-bfile_str(B, K, ?LFS_DEFAULT_OBJECT_VERSION) ->
-    [B, $,, K];
-bfile_str(B, K, V) ->
-    [B, $,, K, $,, V].
