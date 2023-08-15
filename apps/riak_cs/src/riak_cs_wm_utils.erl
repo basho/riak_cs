@@ -743,8 +743,9 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
                             [] ->
                                 logger:info("No bucket or user-attached policies: granting ~s access to ~s on request ~s",
                                             [AccessType, Bucket, RequestId]),
-                                {false, RD, Ctx};
-                            _ ->
+                                AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
+                                {false, AccessRD, Ctx};
+                            _pp ->
                                 lists:foldl(
                                   fun(_, {false, _, _} = Q) ->
                                           Q;
