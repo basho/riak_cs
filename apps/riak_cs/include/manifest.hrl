@@ -26,12 +26,10 @@
 
 
 -define(MANIFEST, #lfs_manifest_v5).
--define(MULTIPART_MANIFEST, #multipart_manifest_v1).
--define(MULTIPART_MANIFEST_RECNAME, multipart_manifest_v1).
--define(PART_MANIFEST, #part_manifest_v2).
--define(PART_MANIFEST_RECNAME, part_manifest_v2).
+-define(MULTIPART_MANIFEST, #multipart_manifest_v2).
+-define(PART_MANIFEST, #part_manifest_v3).
 -define(MULTIPART_DESCR, #multipart_descr_v2).
--define(PART_DESCR, #part_descr_v1).
+-define(PART_DESCR, #part_descr_v2).
 
 -define(LFS_DEFAULT_OBJECT_VERSION, <<"null">>).
 
@@ -245,7 +243,7 @@
 -record(part_manifest_v1, {
     bucket :: binary(),
     key :: binary(),
-    start_time :: non_neg_integer(),
+    start_time :: erlang:timestamp(),
     part_number :: integer(),
     part_id :: binary(),
     content_length :: integer(),
@@ -257,6 +255,19 @@
     bucket :: binary(),
     key :: binary(),
     %% new in v2
+    vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
+    start_time :: erlang:timestamp(),
+    part_number :: integer(),
+    part_id :: binary(),
+    content_length :: integer(),
+    content_md5 :: undefined | binary(),
+    block_size :: integer()
+}).
+
+-record(part_manifest_v3, {
+    bucket :: binary(),
+    key :: binary(),
+
     vsn = ?LFS_DEFAULT_OBJECT_VERSION :: binary(),
 
     %% used to judge races between concurrent uploads
@@ -279,9 +290,19 @@
     %% parts for the same upload id could have different block_sizes.
     block_size :: integer()
 }).
--type part_manifest() :: #part_manifest_v2{}.
+-type part_manifest() :: #part_manifest_v3{}.
+
 
 -record(multipart_manifest_v1, {
+    upload_id :: binary(),
+    owner :: acl_owner_old(),
+    parts = ordsets:new() :: ordsets:ordset(#part_manifest_v2{}),
+    done_parts = ordsets:new() :: ordsets:ordset({binary(), binary()}),
+    cleanup_parts = ordsets:new() :: ordsets:ordset(#part_manifest_v2{}),
+    props = [] :: proplists:proplist()
+}).
+
+-record(multipart_manifest_v2, {
     upload_id :: binary(),
     owner :: acl_owner(),
 
@@ -297,38 +318,31 @@
     %% with this `upload_id' so far. A part
     %% can be uploaded more than once with the same
     %% part number.  type = #part_manifest_vX
-    parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+    parts = ordsets:new() :: ordsets:ordset(#part_manifest_v3{}),
     %% List of UUIDs for parts that are done uploading.
     %% The part number is redundant, so we only store
     %% {UUID::binary(), PartETag::binary()} here.
     done_parts = ordsets:new() :: ordsets:ordset({binary(), binary()}),
     %% type = #part_manifest_vX
-    cleanup_parts = ordsets:new() :: ordsets:ordset(?PART_MANIFEST{}),
+    cleanup_parts = ordsets:new() :: ordsets:ordset(#part_manifest_v3{}),
 
     %% a place to stuff future information
     %% without having to change
     %% the record format
     props = [] :: proplists:proplist()
 }).
--type multipart_manifest() :: #multipart_manifest_v1{}.
+
+-type multipart_manifest() :: #multipart_manifest_v2{}.
+
 
 %% Basis of list multipart uploads output
 -record(multipart_descr_v1, {
-    %% Object key for the multipart upload
     key :: binary(),
-
-    %% UUID of the multipart upload
     upload_id :: binary(),
-
-    %% User that initiated the upload
     owner_display :: string(),
     owner_key_id :: string(),
-
-    %% storage class: no real options here
     storage_class = standard,
-
-    %% Time that the upload was initiated
-    initiated :: string() %% conflict of func vs. type: riak_cs_wm_utils:iso_8601_datetime()
+    initiated :: string()
 }).
 
 -record(multipart_descr_v2, {
@@ -351,15 +365,23 @@
 
 -type multipart_descr() :: #multipart_descr_v2{}.
 
+
 %% Basis of multipart list parts output
 -record(part_descr_v1, {
+    part_number :: integer(),
+    last_modified :: erlang:timestamp(),
+    etag :: binary(),
+    size :: integer()
+}).
+
+-record(part_descr_v2, {
     part_number :: integer(),
     last_modified :: non_neg_integer(),
     etag :: binary(),
     size :: integer()
 }).
 
--type part_descr() :: #part_descr_v1{}.
+-type part_descr() :: #part_descr_v2{}.
 
 
 -endif.

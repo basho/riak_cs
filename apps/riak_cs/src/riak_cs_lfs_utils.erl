@@ -111,13 +111,13 @@ initial_blocks(ContentLength, BlockSize) ->
     lists:seq(0, (UpperBound - 1)).
 
 -spec initial_blocks(integer(), integer(), binary()) ->
-                            [{binary(), integer()}].
+          [{binary(), integer()}].
 initial_blocks(ContentLength, SafeBlockSize, UUID) ->
     Bs = initial_blocks(ContentLength, SafeBlockSize),
     [{UUID, B} || B <- Bs].
 
 -spec range_blocks(integer(), integer(), integer(), binary()) ->
-                            {[{binary(), integer()}], integer(), integer()}.
+          {[{binary(), integer()}], integer(), integer()}.
 range_blocks(Start, End, SafeBlockSize, UUID) ->
     SkipInitial = Start rem SafeBlockSize,
     KeepFinal = (End rem SafeBlockSize) + 1,
@@ -128,7 +128,7 @@ range_blocks(Start, End, SafeBlockSize, UUID) ->
      SkipInitial, KeepFinal}.
 
 -spec block_sequences_for_manifest(lfs_manifest()) ->
-                                          ordsets:ordset({binary(), integer()}).
+          ordsets:ordset({binary(), integer()}).
 block_sequences_for_manifest(?MANIFEST{uuid=UUID,
                                        content_length=ContentLength}=Manifest)->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),
@@ -143,7 +143,7 @@ block_sequences_for_manifest(?MANIFEST{uuid=UUID,
     end.
 
 -spec block_sequences_for_manifest(lfs_manifest(), {integer(), integer()}) ->
-                                          {[{binary(), integer()}], integer(), integer()}.
+          {[{binary(), integer()}], integer(), integer()}.
 block_sequences_for_manifest(?MANIFEST{uuid=UUID}=Manifest,
                              {Start, End})->
     SafeBlockSize = safe_block_size_from_manifest(Manifest),

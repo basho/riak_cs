@@ -42,7 +42,7 @@
          fold_all_buckets/3,
          fetch_bucket_keys/1,
          exprec_bucket_versioning/1,
-         update_bucket_record/1
+         upgrade_bucket_record/1
         ]).
 
 -include("riak_cs.hrl").
@@ -670,10 +670,10 @@ fetch_bucket_keys(RcPid) ->
     riak_cs_pbc:list_keys(MasterPbc, ?BUCKETS_BUCKET, Timeout,
                           [riakc, list_all_bucket_keys]).
 
--spec update_bucket_record(#moss_bucket{} | #moss_bucket_v1{} | #moss_bucket_v2{}) -> ?RCS_BUCKET{}.
-update_bucket_record(#moss_bucket_v2{} = B) ->
+-spec upgrade_bucket_record(#moss_bucket{} | #moss_bucket_v1{} | #moss_bucket_v2{}) -> ?RCS_BUCKET{}.
+upgrade_bucket_record(#moss_bucket_v2{} = B) ->
     B;
-update_bucket_record(#moss_bucket_v1{name = Name,
+upgrade_bucket_record(#moss_bucket_v1{name = Name,
                                      last_action = LastAction,
                                      creation_date = CreationDate,
                                      modification_time = {M1, M2, M3},
@@ -683,10 +683,10 @@ update_bucket_record(#moss_bucket_v1{name = Name,
                     last_action = LastAction,
                     creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
                     modification_time = M1 * 1000_000 + M2 + M3 div 1000,
-                    acl = riak_cs_acl:update_acl_record(Acl)};
-update_bucket_record(#moss_bucket{name = Name,
+                    acl = riak_cs_acl:upgrade_acl_record(Acl)};
+upgrade_bucket_record(#moss_bucket{name = Name,
                                   creation_date = CreationDate,
                                   acl = Acl}) ->
     #moss_bucket_v2{name = iolist_to_binary([Name]),
                     creation_date = calendar:rfc3339_to_system_time(CreationDate, [{unit, millisecond}]),
-                    acl = riak_cs_acl:update_acl_record(Acl)}.
+                    acl = riak_cs_acl:upgrade_acl_record(Acl)}.

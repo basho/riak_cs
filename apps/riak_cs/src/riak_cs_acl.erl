@@ -48,7 +48,8 @@
          object_access/6,
          owner_id/2,
          exprec_acl/1,
-         update_acl_record/1
+         upgrade_acl_record/1,
+         upgrade_owner/1
         ]).
 
 -define(ACL_UNDEF, {error, acl_undefined}).
@@ -413,46 +414,45 @@ user_grant([_ | RestGrants], _CanonicalId) ->
     user_grant(RestGrants, _CanonicalId).
 
 
--spec update_acl_record(undefined | #acl_v1{} | #acl_v2{} | #acl_v3{}) -> undefined | acl().
-update_acl_record(undefined) ->
+-spec upgrade_acl_record(undefined | #acl_v1{} | #acl_v2{} | #acl_v3{}) -> undefined | acl().
+upgrade_acl_record(undefined) ->
     undefined;
-update_acl_record(#acl_v3{} = A) ->
+upgrade_acl_record(#acl_v3{} = A) ->
     A;
-update_acl_record(#acl_v2{owner = Owner,
-                          grants = Grants,
-                          creation_time = {T1, T2, T3}}) ->
-    #acl_v3{owner = update_owner(Owner),
-            grants = [update_grant(G) || G <- Grants],
+upgrade_acl_record(#acl_v2{owner = Owner,
+                           grants = Grants,
+                           creation_time = {T1, T2, T3}}) ->
+    #acl_v3{owner = upgrade_owner(Owner),
+            grants = [upgrade_grant(G) || G <- Grants],
             creation_time = T1 * 1000_000 + T2 + T3 div 1000};
-update_acl_record(#acl_v1{owner = Owner,
-                          grants = Grants,
-                          creation_time = {T1, T2, T3}}) ->
-    #acl_v3{owner = update_owner(Owner),
-            grants = [update_grant(G) || G <- Grants],
+upgrade_acl_record(#acl_v1{owner = Owner,
+                           grants = Grants,
+                           creation_time = {T1, T2, T3}}) ->
+    #acl_v3{owner = upgrade_owner(Owner),
+            grants = [upgrade_grant(G) || G <- Grants],
             creation_time = T1 * 1000_000 + T2 + T3 div 1000}.
 
-update_owner({DisplayName, CanonicalId, KeyId}) ->
+upgrade_owner({DisplayName, CanonicalId, KeyId}) ->
     #{display_name => list_to_binary(DisplayName),
       canonical_id => list_to_binary(CanonicalId),
       key_id => list_to_binary(KeyId),
       email => undefined};
-update_owner({DisplayName, CanonicalId}) ->
+upgrade_owner({DisplayName, CanonicalId}) ->
     #{display_name => list_to_binary(DisplayName),
       canonical_id => list_to_binary(CanonicalId),
       key_id => <<"FaKeKeyIdWontWorkWillFailReplaceIt">>,
       email => undefined}.
 
-update_grant({Grantee, Perms}) ->
-    #acl_grant_v2{grantee = update_grantee(Grantee),
+upgrade_grant({Grantee, Perms}) ->
+    #acl_grant_v2{grantee = upgrade_grantee(Grantee),
                   perms = Perms}.
 
-update_grantee(GroupGrant) when is_atom(GroupGrant) ->
+upgrade_grantee(GroupGrant) when is_atom(GroupGrant) ->
     GroupGrant;
-update_grantee({A, B}) ->
+upgrade_grantee({A, B}) ->
     #{display_name => list_to_binary(A),
       canonical_id => list_to_binary(B)};
-update_grantee({A, B, C}) ->
+upgrade_grantee({A, B, C}) ->
     #{display_name => list_to_binary(A),
       canonical_id => list_to_binary(B),
       key_id => list_to_binary(C)}.
-
