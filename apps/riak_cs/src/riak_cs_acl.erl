@@ -449,10 +449,10 @@ update_grant({Grantee, Perms}) ->
 update_grantee(GroupGrant) when is_atom(GroupGrant) ->
     GroupGrant;
 update_grantee({A, B}) ->
-    #{display_name => A,
-      canonical_id => B};
+    #{display_name => list_to_binary(A),
+      canonical_id => list_to_binary(B)};
 update_grantee({A, B, C}) ->
-    #{display_name => A,
-      canonical_id => B,
-      key_id => C}.
+    #{display_name => list_to_binary(A),
+      canonical_id => list_to_binary(B),
+      key_id => list_to_binary(C)}.
 

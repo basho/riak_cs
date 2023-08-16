@@ -73,7 +73,7 @@
 -record(state, {from :: undefined | {pid(), reference()},
                 riak_client :: riak_client(),
                 mani_fsm_pid :: undefined | pid(),
-                bucket :: term(),
+                bucket :: binary(),
                 caller :: reference(),
                 key :: term(),
                 obj_vsn :: binary(),
