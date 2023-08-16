@@ -46,11 +46,11 @@ start_link() ->
 %% @doc Start a `riak_cs_get_fsm' child process.
 -spec start_get_fsm(node(), binary(), binary(), binary(), pid(), riak_client(), pos_integer(),
                     pos_integer()) ->
-                           {ok, pid()} | {error, term()}.  %% SLF: R14B04's supervisor:startchild_ret() is broken?
+          {ok, pid()} | {error, term()}.  %% SLF: R14B04's supervisor:startchild_ret() is broken?
 start_get_fsm(Node, Bucket, Key, ObjVsn, Caller, RcPid,
               FetchConcurrency, BufferFactor) ->
     supervisor:start_child({?MODULE, Node}, [Bucket, Key, ObjVsn, Caller, RcPid,
-                                            FetchConcurrency, BufferFactor]).
+                                             FetchConcurrency, BufferFactor]).
 
 %% ===================================================================
 %% Supervisor callbacks
@@ -58,23 +58,15 @@ start_get_fsm(Node, Bucket, Key, ObjVsn, Caller, RcPid,
 
 %% @doc Initialize this supervisor. This is a `simple_one_for_one',
 %%      whose child spec is for starting `riak_cs_get_fsm' processes.
--spec init([]) -> {ok, {{supervisor:strategy(),
-                         pos_integer(),
-                         pos_integer()},
-                        [supervisor:child_spec()]}}.
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    RestartStrategy = simple_one_for_one,
-    MaxRestarts = 1000,
-    MaxSecondsBetweenRestarts = 3600,
+    SupFlags = #{strategy => simple_one_for_one,
+                 intensity => 1000,
+                 period => 3600},
 
-    SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-
-    Restart = temporary,
-    Shutdown = 2000,
-    Type = worker,
-
-    PutFsmSpec = {undefined,
-                  {riak_cs_get_fsm, start_link, []},
-                  Restart, Shutdown, Type, [riak_cs_get_fsm]},
+    PutFsmSpec = #{id => get_fsm,
+                   start => {riak_cs_get_fsm, start_link, []},
+                   restart => temporary,
+                   shutdown => 2000},
 
     {ok, {SupFlags, [PutFsmSpec]}}.

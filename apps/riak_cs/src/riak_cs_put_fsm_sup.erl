@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -47,8 +47,8 @@ start_link() ->
 %% @doc Start a `riak_cs_put_fsm' child process.
 -spec start_put_fsm(node(),
                     [{binary(), binary(), binary(), non_neg_integer(), binary(),
-                      term(), pos_integer(), acl(), timeout(), pid(), pid()}])->
-                           {ok, pid()} | {error, term()}.
+                      term(), pos_integer(), acl(), timeout(), pid(), pid()}]) ->
+          {ok, pid()} | {error, term()}.
 start_put_fsm(Node, ArgList) ->
     supervisor:start_child({?MODULE, Node}, ArgList).
 
@@ -58,23 +58,15 @@ start_put_fsm(Node, ArgList) ->
 
 %% @doc Initialize this supervisor. This is a `simple_one_for_one',
 %%      whose child spec is for starting `riak_cs_put_fsm' processes.
--spec init([]) -> {ok, {{supervisor:strategy(),
-                         pos_integer(),
-                         pos_integer()},
-                        [supervisor:child_spec()]}}.
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    RestartStrategy = simple_one_for_one,
-    MaxRestarts = 1000,
-    MaxSecondsBetweenRestarts = 3600,
+    SupFlags = #{strategy => simple_one_for_one,
+                 intensity => 1000,
+                 period => 3600},
 
-    SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-
-    Restart = temporary,
-    Shutdown = 2000,
-    Type = worker,
-
-    PutFsmSpec = {undefined,
-                  {riak_cs_put_fsm, start_link, []},
-                  Restart, Shutdown, Type, [riak_cs_put_fsm]},
+    PutFsmSpec = #{id => put_fsm,
+                   start => {riak_cs_put_fsm, start_link, []},
+                   restart => temporary,
+                   shutdown => 2000},
 
     {ok, {SupFlags, [PutFsmSpec]}}.
