@@ -101,8 +101,8 @@ upgrade_manifest(#lfs_manifest_v4{block_size = BlockSize,
                      last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
                      delete_blocks_remaining = DeleteBlocksRemaining,
                      scheduled_delete_time = maybe_now_to_system_time(ScheduledDeleteTime),
-                     acl = riak_cs_acl:update_acl_record(Acl),
-                     props = Props,
+                     acl = riak_cs_acl:upgrade_acl_record(Acl),
+                     props = upgrade_props(Props),
                      cluster_id = ClusterID};
 
 upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
@@ -139,8 +139,8 @@ upgrade_manifest(#lfs_manifest_v3{block_size = BlockSize,
                      last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
                      delete_blocks_remaining = DeleteBlocksRemaining,
                      scheduled_delete_time = maybe_now_to_system_time(ScheduledDeleteTime),
-                     acl = riak_cs_acl:update_acl_record(Acl),
-                     props = fixup_props(Props),
+                     acl = riak_cs_acl:upgrade_acl_record(Acl),
+                     props = upgrade_props(fixup_props(Props)),
                      cluster_id = ClusterID};
 
 upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
@@ -174,9 +174,59 @@ upgrade_manifest(#lfs_manifest_v2{block_size = BlockSize,
                      delete_marked_time = maybe_now_to_system_time(DeleteMarkedTime),
                      last_block_deleted_time = maybe_now_to_system_time(LastBlockDeletedTime),
                      delete_blocks_remaining = DeleteBlocksRemaining,
-                     acl = riak_cs_acl:update_acl_record(Acl),
-                     props = fixup_props(Props),
+                     acl = riak_cs_acl:upgrade_acl_record(Acl),
+                     props = upgrade_props(fixup_props(Props)),
                      cluster_id = ClusterID}.
+
+upgrade_props(PP) ->
+    case proplists:get_value(multipart, PP, undefined) of
+        undefined ->
+            PP;
+        MPM ->
+            lists:keyreplace(multipart, 1, PP, {multipart, upgrade_multipart_manifest(MPM)})
+    end.
+
+
+upgrade_multipart_manifest(undefined) ->
+    undefined;
+upgrade_multipart_manifest(#multipart_manifest_v2{} = A) ->
+    A;
+upgrade_multipart_manifest(#multipart_manifest_v1{upload_id = UploadId,
+                                                  owner = Owner,
+                                                  parts = Parts,
+                                                  done_parts = DoneParts,
+                                                  cleanup_parts = CleanupParts,
+                                                  props = Props}) ->
+    #multipart_manifest_v2{upload_id = UploadId,
+                           owner = riak_cs_acl:upgrade_owner(Owner),
+                           parts = upgrade_parts(Parts),
+                           done_parts = DoneParts,
+                           cleanup_parts = upgrade_parts(CleanupParts),
+                           props = Props}.
+
+upgrade_parts(A) ->
+    ordsets:from_list(
+      [upgrade_part(P) || P <- ordsets:to_list(A)]).
+upgrade_part(P = #part_manifest_v3{}) ->
+    P;
+upgrade_part(#part_manifest_v2{bucket = Bucket,
+                               key = Key,
+                               vsn = Vsn,
+                               start_time = StartTime,
+                               part_number = PartNumber,
+                               part_id = PartId,
+                               content_length = ContentLength,
+                               content_md5 = ContentMD5,
+                               block_size = BlockSize}) ->
+    #part_manifest_v3{bucket = Bucket,
+                      key = Key,
+                      vsn = Vsn,
+                      start_time = maybe_now_to_system_time(StartTime),
+                      part_number = PartNumber,
+                      part_id = PartId,
+                      content_length = ContentLength,
+                      content_md5 = ContentMD5,
+                      block_size = BlockSize}.
 
 
 maybe_now_to_system_time({M1, M2, M3}) ->

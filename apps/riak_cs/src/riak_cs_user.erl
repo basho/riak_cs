@@ -141,7 +141,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
     case riakc_obj:value_count(Obj) of
         1 ->
             Value = binary_to_term(riakc_obj:get_value(Obj)),
-            User = update_user_record(Value),
+            User = upgrade_user_record(Value),
             Buckets = riak_cs_bucket:resolve_buckets([User], [], KeepDeletedBuckets),
             User?RCS_USER{buckets = Buckets};
         0 ->
@@ -151,7 +151,7 @@ from_riakc_obj(Obj, KeepDeletedBuckets) ->
                          Value <- riakc_obj:get_values(Obj),
                          Value /= <<>>  % tombstone
                      ],
-            [User|_] = Users = [update_user_record(A) || A <- Values],
+            [User|_] = Users = [upgrade_user_record(A) || A <- Values],
 
             KeyId = User?RCS_USER.key_id,
             logger:warning("User object of '~s' has ~p siblings", [KeyId, N]),
@@ -221,10 +221,9 @@ select_email([A|T]) ->
             select_email(T)
     end.
 
--spec update_user_record(#moss_user_v1{} | #rcs_user_v2{} | #rcs_user_v3{}) -> ?RCS_USER{}.
-update_user_record(#rcs_user_v3{} = A) ->
+upgrade_user_record(#rcs_user_v3{} = A) ->
     A;
-update_user_record(#rcs_user_v2{name = Name,
+upgrade_user_record(#rcs_user_v2{name = Name,
                                 display_name = DisplayName,
                                 email = Email,
                                 key_id = KeyId,
@@ -232,15 +231,15 @@ update_user_record(#rcs_user_v2{name = Name,
                                 canonical_id = CanonicalId,
                                 buckets = Buckets}) ->
     ?LOG_DEBUG("Upgrading rcs_user_v2", []),
-    ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
-              name = list_to_binary(Name),
-              display_name = list_to_binary(DisplayName),
-              email = list_to_binary(Email),
-              key_id = list_to_binary(KeyId),
-              key_secret = list_to_binary(KeySecret),
-              id = list_to_binary(CanonicalId),
-              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]};
-update_user_record(#moss_user_v1{name = Name,
+    #rcs_user_v3{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
+                 name = list_to_binary(Name),
+                 display_name = list_to_binary(DisplayName),
+                 email = list_to_binary(Email),
+                 key_id = list_to_binary(KeyId),
+                 key_secret = list_to_binary(KeySecret),
+                 id = list_to_binary(CanonicalId),
+                 buckets = [riak_cs_bucket:upgrade_bucket_record(B) || B <- Buckets]};
+upgrade_user_record(#moss_user_v1{name = Name,
                                  display_name = DisplayName,
                                  email = Email,
                                  key_id = KeyId,
@@ -248,11 +247,11 @@ update_user_record(#moss_user_v1{name = Name,
                                  canonical_id = CanonicalId,
                                  buckets = Buckets}) ->
     ?LOG_DEBUG("Upgrading moss_user_v1", []),
-    ?RCS_USER{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
-              name = list_to_binary(Name),
-              display_name = list_to_binary(DisplayName),
-              email = list_to_binary(Email),
-              key_id = list_to_binary(KeyId),
-              key_secret = list_to_binary(KeySecret),
-              id = list_to_binary(CanonicalId),
-              buckets = [riak_cs_bucket:update_bucket_record(B) || B <- Buckets]}.
+    #rcs_user_v3{arn = riak_cs_aws_utils:make_user_arn(Name, <<"/">>),
+                 name = list_to_binary(Name),
+                 display_name = list_to_binary(DisplayName),
+                 email = list_to_binary(Email),
+                 key_id = list_to_binary(KeyId),
+                 key_secret = list_to_binary(KeySecret),
+                 id = list_to_binary(CanonicalId),
+                 buckets = [riak_cs_bucket:upgrade_bucket_record(B) || B <- Buckets]}.

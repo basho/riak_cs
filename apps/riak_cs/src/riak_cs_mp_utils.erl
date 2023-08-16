@@ -24,8 +24,7 @@
 -module(riak_cs_mp_utils).
 
 %% export Public API
--export([
-         abort_multipart_upload/6,
+-export([abort_multipart_upload/6,
          calc_multipart_2i_dict/2,
          clean_multipart_unused_parts/2,
          complete_multipart_upload/7,
@@ -75,8 +74,8 @@ calc_multipart_2i_dict(Ms, Bucket) when is_list(Ms) ->
             case get_mp_manifest(M) of
                 undefined ->
                     [];
-                MpM when is_record(MpM, ?MULTIPART_MANIFEST_RECNAME) ->
-                    [{make_2i_key(Bucket, MpM?MULTIPART_MANIFEST.owner), <<"1">>},
+                ?MULTIPART_MANIFEST{owner = Owner} ->
+                    [{make_2i_key(Bucket, Owner), <<"1">>},
                      {make_2i_key(Bucket), <<"1">>}]
             end || M <- Ms,
                    M?MANIFEST.state == writing],
@@ -525,11 +524,10 @@ do_part_common2(upload_part_finished, RcPid, M, _Obj, MpM, Props) ->
                 {error, notfound};
             {_, true} ->
                 {error, notfound};
-            {PM, false} when is_record(PM, ?PART_MANIFEST_RECNAME) ->
+            {?PART_MANIFEST{}, false} ->
                 ?MANIFEST{props = MProps} = M,
-                NewMpM = MpM?MULTIPART_MANIFEST{
-                               done_parts = ordsets:add_element({PartUUID, MD5},
-                                                                DoneParts)},
+                NewMpM = MpM?MULTIPART_MANIFEST{done_parts = ordsets:add_element({PartUUID, MD5},
+                                                                                 DoneParts)},
                 NewM = M?MANIFEST{props = replace_mp_manifest(NewMpM, MProps)},
                 ok = update_manifest_with_confirmation(RcPid, NewM)
         end
@@ -801,16 +799,15 @@ get_riak_client_pid({remote_pid, RcPid}) ->
 
 -spec get_mp_manifest(lfs_manifest()) -> multipart_manifest() | 'undefined'.
 get_mp_manifest(?MANIFEST{props = Props}) when is_list(Props) ->
-    %% TODO: When the version number of the multipart_manifest_v1 changes
-    %%       to version v2 and beyond, this might be a good place to add
-    %%       a record conversion function to handle older versions of
-    %%       the multipart record?
     proplists:get_value(multipart, Props, undefined);
 get_mp_manifest(_) ->
     undefined.
 
 replace_mp_manifest(MpM, Props) ->
     [{multipart, MpM}|proplists:delete(multipart, Props)].
+
+
+
 
 %% ===================================================================
 %% EUnit tests
