@@ -787,11 +787,11 @@ make_assumed_role_user(#assumed_role_user{arn = Arn,
 
 make_credentials(#credentials{access_key_id = AccessKeyId,
                               secret_access_key = SecretAccessKey,
-                              session_token = SessioToken,
+                              session_token = SessionToken,
                               expiration = Expiration}) ->
     [{'AccessKeyId', [binary_to_list(AccessKeyId)]},
      {'SecretAccessKey', [binary_to_list(SecretAccessKey)]},
-     {'SessioToken', [binary_to_list(SessioToken)]},
+     {'SessionToken', [binary_to_list(SessionToken)]},
      {'Expiration', [binary_to_list(rts:iso8601(Expiration))]}
     ].
 
