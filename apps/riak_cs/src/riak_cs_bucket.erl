@@ -238,8 +238,6 @@ fold_delete_uploads(Bucket, RcPid, [?MULTIPART_DESCR{key = VKey,
 fold_all_buckets(Fun, Acc0, RcPid) when is_function(Fun) ->
     iterate_csbuckets(RcPid, Acc0, Fun, undefined).
 
--spec iterate_csbuckets(riak_client(), term(), fun(), binary()|undefined) ->
-          {ok, term()} | {error, any()}.
 iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
 
     Options = case Cont0 of
@@ -251,7 +249,8 @@ iterate_csbuckets(RcPid, Acc0, Fun, Cont0) ->
     case riak_cs_pbc:get_index_range(MasterPbc, ?BUCKETS_BUCKET,
                                      <<"$key">>, <<0>>, <<255>>,
                                      Options, [riakc, get_cs_buckets_by_index]) of
-        {ok, ?INDEX_RESULTS{keys=BucketNames, continuation=Cont}} ->
+        {ok, ?INDEX_RESULTS{keys = BucketNames,
+                            continuation = Cont}} ->
             Foldfun = iterate_csbuckets_fold_fun(Fun),
             Acc2 = lists:foldl(Foldfun, Acc0, BucketNames),
             case Cont of

@@ -281,7 +281,7 @@ bucket_to_xml(Name, CreationDate) when is_binary(Name) ->
 bucket_to_xml(Name, CreationDate) ->
     make_internal_node('Bucket',
                        [make_external_node('Name', Name),
-                        make_external_node('CreationDate', binary_to_list(rts:iso8601(CreationDate)))]).
+                        make_external_node('CreationDate', rts:iso8601_s(CreationDate))]).
 
 user_to_xml_owner(?RCS_USER{id = CanonicalId,
                             display_name = Name}) ->
@@ -378,10 +378,10 @@ iam_user_node(?IAM_USER{arn = Arn,
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
            {'Path', [binary_to_list(Path)]},
-           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+           {'CreateDate', [rts:iso8601_s(CreateDate)]},
            {'UserName', [binary_to_list(UserName)]},
            {'UserId', [binary_to_list(UserId)]},
-           [{'PasswordLastUsed', [binary_to_list(rts:iso8601(PasswordLastUsed))]}
+           [{'PasswordLastUsed', [rts:iso8601_s(PasswordLastUsed)]}
             || PasswordLastUsed /= undefined,
                PasswordLastUsed /= null],
            {'Tags', [tag_node(T) || T <- Tags]}
@@ -453,7 +453,7 @@ role_node(?IAM_ROLE{arn = Arn,
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
            [{'AssumeRolePolicyDocument', [binary_to_list(AssumeRolePolicyDocument)]} || AssumeRolePolicyDocument /= undefined],
-           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+           {'CreateDate', [rts:iso8601_s(CreateDate)]},
            [{'Description', [binary_to_list(Description)]} || Description /= undefined],
            [{'MaxSessionDuration', [integer_to_list(MaxSessionDuration)]} || MaxSessionDuration /= undefined],
            {'Path', [binary_to_list(Path)]},
@@ -483,7 +483,7 @@ make_arn(BareArn) when is_binary(BareArn) ->
 
 make_role_last_used(?IAM_ROLE_LAST_USED{last_used_date = LastUsedDate,
                                         region = Region}) ->
-    [{'LastUsedDate', [binary_to_list(rts:iso8601(LastUsedDate))]} || LastUsedDate =/= undefined ]
+    [{'LastUsedDate', [rts:iso8601_s(LastUsedDate)]} || LastUsedDate =/= undefined ]
         ++ [{'Region', [binary_to_list(Region)]} || Region =/= undefined].
 
 make_permissions_boundary(BareArn) when is_binary(BareArn) ->
@@ -554,7 +554,7 @@ policy_node(?IAM_POLICY{arn = Arn,
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
            {'Path', [binary_to_list(Path)]},
-           {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
+           {'CreateDate', [rts:iso8601_s(CreateDate)]},
            [{'Description', [binary_to_list(Description)]} || Description /= undefined],
            {'DefaultVersionId', [binary_to_list(DefaultVersionId)]},
            {'AttachmentCount', [integer_to_list(AttachmentCount)]},
@@ -564,7 +564,7 @@ policy_node(?IAM_POLICY{arn = Arn,
            {'PolicyId', [binary_to_list(PolicyId)]},
            {'PolicyName', [binary_to_list(PolicyName)]},
            {'Tags', [tag_node(T) || T <- Tags]},
-           {'UpdateDate', [binary_to_list(rts:iso8601(UpdateDate))]}
+           {'UpdateDate', [rts:iso8601_s(UpdateDate)]}
           ]),
     {'Policy', C}.
 
@@ -682,8 +682,8 @@ saml_provider_node(?IAM_SAML_PROVIDER{arn = Arn,
                                       valid_until = ValidUntil}) ->
     C = [{'Arn', [binary_to_list(Arn)]},
          {'SAMLMetadataDocument', [binary_to_list(SAMLMetadataDocument)]},
-         {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
-         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]},
+         {'CreateDate', [rts:iso8601_s(CreateDate)]},
+         {'ValidUntil', [rts:iso8601_s(ValidUntil)]},
          {'Tags', [tag_node(T) || T <- Tags]}
         ],
     {'SAMLProvider', C}.
@@ -695,16 +695,16 @@ saml_provider_node_for_create(Arn, Tags) ->
     {'CreateSAMLProviderResult', C}.
 
 saml_provider_node_for_get(CreateDate, ValidUntil, Tags) ->
-    C = [{'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
-         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]},
+    C = [{'CreateDate', [rts:iso8601_s(CreateDate)]},
+         {'ValidUntil', [rts:iso8601_s(ValidUntil)]},
          {'Tags', [], [tag_node(T) || T <- Tags]}
         ],
     {'GetSAMLProviderResult', C}.
 
 saml_provider_node_for_list(Arn, CreateDate, ValidUntil) ->
     C = [{'Arn', [make_arn(Arn)]},
-         {'CreateDate', [binary_to_list(rts:iso8601(CreateDate))]},
-         {'ValidUntil', [binary_to_list(rts:iso8601(ValidUntil))]}
+         {'CreateDate', [rts:iso8601_s(CreateDate)]},
+         {'ValidUntil', [rts:iso8601_s(ValidUntil)]}
         ],
     {'SAMLProviderListEntry', C}.
 
@@ -792,7 +792,7 @@ make_credentials(#credentials{access_key_id = AccessKeyId,
     [{'AccessKeyId', [binary_to_list(AccessKeyId)]},
      {'SecretAccessKey', [binary_to_list(SecretAccessKey)]},
      {'SessionToken', [binary_to_list(SessionToken)]},
-     {'Expiration', [binary_to_list(rts:iso8601(Expiration))]}
+     {'Expiration', [rts:iso8601_s(Expiration)]}
     ].
 
 tag_node(?IAM_TAG{key = Key,

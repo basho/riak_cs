@@ -259,10 +259,11 @@ stop_pbc(Pbc) when is_pid(Pbc) ->
 
 do_get_bucket(State) ->
     case ensure_master_pbc(State) of
-        {ok, #state{master_pbc=MasterPbc, bucket_name=BucketName} = NewState} ->
+        {ok, #state{master_pbc = MasterPbc,
+                    bucket_name = BucketName} = NewState} ->
             case get_bucket_with_pbc(MasterPbc, BucketName) of
                 {ok, Obj} ->
-                    {ok, NewState#state{bucket_obj=Obj}};
+                    {ok, NewState#state{bucket_obj = Obj}};
                 {error, Reason} ->
                     {error, Reason, NewState}
             end;

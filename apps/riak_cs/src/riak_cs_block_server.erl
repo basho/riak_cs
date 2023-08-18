@@ -345,9 +345,6 @@ handle_local_notfound(RcPid, FullBucket, FullKey, GetOptions2,
             RetryFun({failure, [{local_quorum, Other}|ErrorReasons]})
     end.
 
--spec get_block_local(riak_client(), binary(), binary(), list(),
-                      timeout(), riak_cs_stats:key()) ->
-                             {ok, binary()} | {error, term()}.
 get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey) ->
     case riak_cs_pbc:get(block_pbc(RcPid), FullBucket, FullKey,
                          GetOptions, Timeout, StatsKey) of
@@ -359,9 +356,6 @@ get_block_local(RcPid, FullBucket, FullKey, GetOptions, Timeout, StatsKey) ->
 
 -dialyzer([{no_match, get_block_remote/6}]).
 
--spec get_block_remote(riak_client(), binary(), binary(), binary(), get_options(),
-                       riak_cs_stats:key()) ->
-                              {ok, binary()} | {error, term()}.
 get_block_remote(RcPid, FullBucket, FullKey, ClusterID, GetOptions0, StatsKey) ->
     %% replace get_block_timeout with proxy_get_block_timeout
     GetOptions = proplists:delete(timeout, GetOptions0),
@@ -497,8 +491,6 @@ full_bkey(Bucket, Key, UUID, BlockId) ->
 find_md_usermeta(MD) ->
     dict:find(?MD_USERMETA, MD).
 
--spec resolve_block_object(riakc_obj:riakc_obj(), riak_client()) ->
-                                  {ok, binary()} | {error, notfound}.
 resolve_block_object(RObj, RcPid) ->
     {{MD, Value}, NeedRepair} =
         riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RObj)),
@@ -523,7 +515,7 @@ resolve_block_object(RObj, RcPid) ->
             do_put_block(RBucket, RKey, VClock, Value, MD, RcPid,
                          [riakc, put_block_resolved], FailFun);
        NeedRepair andalso not is_binary(Value) ->
-            logger:error("All checksums fail: ~P", [RObj, 200]);
+            logger:error("All checksums fail: ~P", [RObj]);
        true ->
             ok
     end,
