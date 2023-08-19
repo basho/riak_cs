@@ -28,6 +28,7 @@
 %% application API
 -export([start/2,
          stop/1]).
+-export([atoms_for_check_bucket_props/0]).
 
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
@@ -83,13 +84,15 @@ ensure_bucket_props(Pbc) ->
                              ?IAM_POLICY_BUCKET,
                              ?IAM_SAMLPROVIDER_BUCKET,
                              ?TEMP_SESSIONS_BUCKET],
-    %% %% Put atoms into atom table to suppress warning logs in `check_bucket_props'
-    %% _PreciousAtoms = [riak_core_util, chash_std_keyfun,
-    %%                   riak_kv_wm_link_walker, mapreduce_linkfun],
     [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
     [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
     ?LOG_DEBUG("ensure_bucket_props done"),
     ok.
+
+%% Put atoms into atom table to suppress warning logs in `check_bucket_props'
+atoms_for_check_bucket_props() ->
+    [riak_core_util, chash_std_keyfun,
+     riak_kv_wm_link_walker, mapreduce_linkfun].
 
 check_admin_creds(Pbc) ->
     case riak_cs_config:admin_creds() of

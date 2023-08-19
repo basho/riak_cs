@@ -389,8 +389,7 @@ pow(Base, Power, Acc) ->
 -type resolve_ok() :: {term(), binary()}.
 -type resolve_error() :: {atom(), atom()}.
 -spec resolve_robj_siblings(RObj::term()) ->
-                                   {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
-
+          {resolve_ok() | resolve_error(), NeedsRepair::boolean()}.
 resolve_robj_siblings(Cs) ->
     [{BestRating, BestMDV}|Rest] = lists:sort([{rate_a_dict(MD, V), MDV} ||
                                                   {MD, V} = MDV <- Cs]),

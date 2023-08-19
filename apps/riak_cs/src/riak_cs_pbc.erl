@@ -78,7 +78,7 @@ ping(PbcPid, Timeout, StatsKey) ->
 %% @doc Get an object from Riak
 -spec get_sans_stats(pid(), binary(), binary(), proplists:proplist(), timeout()) ->
           {ok, riakc_obj:riakc_obj()} | {error, term()}.
-get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout)  ->
+get_sans_stats(PbcPid, BucketName, Key, Opts, Timeout) ->
     riakc_pb_socket:get(PbcPid, BucketName, Key, Opts, Timeout).
 
 
@@ -125,8 +125,8 @@ get(Pbc, Bucket, Key, StatsItem) ->
 
 
 -spec repl_get(pid(), binary(), binary(), binary(),
-                          proplists:proplist(), timeout(), riak_cs_stats:key()) ->
-                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+               proplists:proplist(), timeout(), riak_cs_stats:key()) ->
+          {ok, riakc_obj:riakc_obj()} | {error, term()}.
 repl_get(PbcPid, BucketName, Key, ClusterID, Opts, Timeout, StatsKey) ->
     ?WITH_STATS(StatsKey,
                 riak_repl_pb_api:get(PbcPid, BucketName, Key, ClusterID, Opts, Timeout)).

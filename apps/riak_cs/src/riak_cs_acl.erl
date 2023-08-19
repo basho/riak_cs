@@ -328,7 +328,7 @@ exprec_grant(Map) ->
 acl_from_meta([]) ->
     ?ACL_UNDEF;
 acl_from_meta([{?MD_ACL, Acl} | _]) ->
-    {ok, binary_to_term(Acl)};
+    {ok, upgrade_acl_record(binary_to_term(Acl))};
 acl_from_meta([_ | RestMD]) ->
     acl_from_meta(RestMD).
 
