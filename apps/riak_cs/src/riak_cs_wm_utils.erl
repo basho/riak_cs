@@ -855,7 +855,7 @@ handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
     shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_web_context.riak_client);
-handle_policy_eval_result(User, _, _, RD, Ctx) ->
+handle_policy_eval_result(_, _, _, RD, Ctx) ->
     %% Policy says no
     #rcs_web_context{riak_client = RcPid,
                      response_module = ResponseMod,
