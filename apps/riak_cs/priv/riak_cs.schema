@@ -425,7 +425,7 @@
 
 %% @doc Access log directory.
 {mapping, "log.access.dir", "webmachine.log_handlers", [
-  {default, "{{platform_log_dir}}" },
+  {default, "$(platform_log_dir)" },
   {datatype, string}
 ]}.
 
@@ -515,7 +515,7 @@
 
 %% @doc Filename to use for log files.
 {mapping, "logger.file", "kernel.logger", [
-  {default, "{{platform_log_dir}}/console.log"},
+  {default, "$(platform_log_dir)/console.log"},
   {datatype, file}
 ]}.
 
@@ -541,7 +541,7 @@
 
 %% @doc Filename to use for SASL reports.
 {mapping, "logger.sasl.file", "kernel.logger", [
-  {default, "{{platform_log_dir}}/reports.log"},
+  {default, "$(platform_log_dir)/reports.log"},
   {datatype, file}
 ]}.
 
