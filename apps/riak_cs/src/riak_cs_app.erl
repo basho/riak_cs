@@ -84,8 +84,8 @@ ensure_bucket_props(Pbc) ->
                              ?IAM_POLICY_BUCKET,
                              ?IAM_SAMLPROVIDER_BUCKET,
                              ?TEMP_SESSIONS_BUCKET],
-    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
-    [riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
+    [ok = riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
+    [ok = riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
     ?LOG_DEBUG("ensure_bucket_props done"),
     ok.
 
