@@ -1,6 +1,6 @@
 # Riak CS 3.2.0 Release Notes
 
-Released August 12, 2023.
+Released August 25, 2023.
 
 ## New Features
 
@@ -28,7 +28,7 @@ encrypted SAML assertions.
 * A script, tools/create-admin, is provided to facilitate the creation
   of admin user. This script will also create a policy permitting
   all S3, IAM and STS calls and attach it to the admin user. The
-  script requires python and boto3.
+  script requires python3 with httplib2 and boto3.
 
 * Changed configuration items:
   * `fold_objects_for_list_keys` was removed, along with legacy
@@ -60,7 +60,10 @@ encrypted SAML assertions.
 
 ## Compatibility
 
-This release should be compatible with 3.1.0.
+This release is forward-compatible with 3.1.0. Users and data written
+by 3.1.0 can be read in 3.2.0. User records updated or created in 3.1
+will have a new layout (rcs\_user\_v3), and *will not* be accessible
+from older versions of Riak CS.
 
 
 # Riak CS 3.1.0 Release Notes
