@@ -18,14 +18,13 @@ jobs:
       matrix:
         otp:
           - "24"
-          - "23"
-          - "22"
+          - "25"
 
     container:
       image: erlang:${{ matrix.otp }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Compile
         run: make compile
       - name: Run checks
