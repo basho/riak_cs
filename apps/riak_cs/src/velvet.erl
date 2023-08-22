@@ -550,7 +550,12 @@ request(Method, Path, Expect, ContentType, Headers, Body, Attempt) ->
                     end
             end;
         Error ->
-            logger:warning("Error contacting stanchion at ~s: ~p; retrying...", [Url, Error]),
+            if Attempt == ?MAX_REQUEST_RETRIES ->
+                    %% first_call_failing_is_ok_on_startup
+                    ok;
+               el/=se ->
+                    logger:warning("Error contacting stanchion at ~s: ~p; retrying...", [Url, Error])
+            end,
             ok = stanchion_migration:adopt_stanchion(),
             request(Method, Path, Expect, ContentType, Headers, Body, Attempt - 1)
     end.
