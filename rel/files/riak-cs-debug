@@ -179,6 +179,7 @@ EOF
 exit
 }
 
+curdir=`pwd`
 cd "$PLATFORM_BASE_DIR"
 
 gen_result=`"{{platform_bin_dir}}"/riak-cs-chkconfig | grep -v "OK"`
@@ -367,7 +368,7 @@ fi
 
 if [ -z "$outfile" ]; then
     # If output file not specified, output to the default
-    outfile="`pwd`"/"${debug_dir}".tar.gz
+    outfile="${curdir}"/"${debug_dir}".tar.gz
 fi
 
 if [ '-' != "$outfile" ] && [ -f "$outfile" ]; then
