@@ -253,9 +253,9 @@ head(Bucket, Key, State) ->
 
 %% @doc Retrieve an object from the backend
 -spec get(riak_object:bucket(), riak_object:key(), state()) ->
-                 {ok, any(), state()} |
-                 {ok, not_found, state()} |
-                 {error, term(), state()}.
+          {ok, any(), state()} |
+          {ok, not_found, state()} |
+          {error, term(), state()}.
 get(Bucket, Key, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:get(Bucket, Key, SubState) of
@@ -269,10 +269,11 @@ get(Bucket, Key, State) ->
 
 %% @doc Insert an object with secondary index
 %% information into the kv backend
--type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
+-type index_spec() :: {add, Index::binary(), SecondaryKey::binary()}
+                    | {remove, Index::binary(), SecondaryKey::binary()}.
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) ->
-                 {ok, state()} |
-                 {error, term(), state()}.
+          {ok, state()} |
+          {error, term(), state()}.
 put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:put(Bucket, PrimaryKey, IndexSpecs, Value, SubState) of
@@ -286,8 +287,8 @@ put(Bucket, PrimaryKey, IndexSpecs, Value, State) ->
 
 %% @doc Delete an object from the backend
 -spec delete(riak_object:bucket(), riak_object:key(), [index_spec()], state()) ->
-                    {ok, state()} |
-                    {error, term(), state()}.
+          {ok, state()} |
+          {error, term(), state()}.
 delete(Bucket, Key, IndexSpecs, State) ->
     {Name, Module, SubState} = get_backend(Bucket, State),
     case Module:delete(Bucket, Key, IndexSpecs, SubState) of
