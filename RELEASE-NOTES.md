@@ -260,10 +260,10 @@ BEAM America 2021.
     case, the package is the result of `make rel` tarred; no special
     user is created).
   - Packages have been verified for:
-    o RPM-based: Centos 7 and 8, Amazon Linux 2, SLES 15, Oracle
+    * RPM-based: Centos 7 and 8, Amazon Linux 2, SLES 15, Oracle
       Linux 8;
-    o DEB-based: Debian 8 and 11, Ubuntu Bionic and Xenial;
-    o Other: FreeBSD 13, OSX 14; Alpine Linux 3.15.
+    * DEB-based: Debian 8 and 11, Ubuntu Bionic and Xenial;
+    * Other: FreeBSD 13, OSX 14; Alpine Linux 3.15.
 * A **Dockerfile**, bypassing cuttlefish mechanism to enable run-time
   configuration via environment variables.
 * `riak-cs-admin` now has a new option, **`test`**, which creates a bucket
