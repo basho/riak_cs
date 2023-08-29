@@ -254,7 +254,7 @@ handle_auth_admin(RD, Ctx, User, false) ->
     UserKeyId = User?RCS_USER.key_id,
     case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
-            ?LOG_DEBUG("admin account is allowed"),
+            ?LOG_DEBUG("admin access is allowed"),
             {false, RD, Ctx#rcs_web_context{admin_access = true}};
         _ ->
             %% non-admin account is not allowed -> 403
