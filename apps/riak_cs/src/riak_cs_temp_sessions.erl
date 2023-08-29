@@ -76,8 +76,6 @@ create(?IAM_ROLE{role_id = RoleId,
     case riakc_pb_socket:put(Pbc, Obj, ?CONSISTENT_WRITE_OPTIONS) of
         ok ->
             logger:info("Opened new temp session for user ~s with key_id ~s", [UserId, KeyId]),
-            {ok, _Tref} = timer:apply_after(DurationSeconds * 1000,
-                                            ?MODULE, close_session, [KeyId]),
             {ok, Session};
         {error, Reason} = ER ->
             logger:error("Failed to save temp session: ~p", [Reason]),
@@ -121,10 +119,24 @@ get(KeyId) ->
 get(KeyId, Pbc) ->
     case riakc_pb_socket:get(Pbc, ?TEMP_SESSIONS_BUCKET, KeyId) of
         {ok, Obj} ->
-            session_from_riakc_obj(Obj);
+            check_expired(
+              KeyId, session_from_riakc_obj(Obj));
         ER ->
             ER
     end.
+check_expired(KeyId, {ok, #temp_session{created = Created,
+                                        duration_seconds = DurationSeconds} = A}) ->
+    case os:system_time(millisecond) > Created + DurationSeconds * 1000 of
+        true ->
+            _ = close_session(KeyId),
+            {error, notfound};
+        false ->
+            {ok, A}
+    end;
+check_expired(_, ER) ->
+    ER.
+
+
 session_from_riakc_obj(Obj) ->
     case [binary_to_term(Value) || Value <- riakc_obj:get_values(Obj),
                                    Value /= <<>>] of
