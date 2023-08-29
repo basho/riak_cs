@@ -118,20 +118,37 @@ create_path(RD, Ctx) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
-    IAMExtra = #{path => maps:get(path, FF, <<"/">>),
-                 permissions_boundary => maps:get(permissions_boundary, FF, undefined),
-                 tags => maps:get(tags, FF, [])},
-    Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
-                                   maps:get(email, FF, <<>>),
-                                   IAMExtra),
-    user_response(Res, ?JSON_TYPE, RD, Ctx);
+    case check_required_fields(FF) of
+        ok ->
+            IAMExtra = #{path => maps:get(path, FF, <<"/">>),
+                         permissions_boundary => maps:get(permissions_boundary, FF, undefined),
+                         tags => maps:get(tags, FF, [])},
+            Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
+                                           maps:get(email, FF, <<>>),
+                                           IAMExtra),
+            user_response(Res, ?JSON_TYPE, RD, Ctx);
+        ER ->
+            user_response(ER, ?JSON_TYPE, RD, Ctx)
+    end;
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
-    IAMExtra = #{path => maps:get(path, FF, <<"/">>),
-                 permissions_boundary => maps:get(permissions_boundary, FF, undefined),
-                 tags => maps:get(tags, FF, [])},
-    user_response(update_user(maps:to_list(maps:merge(FF, IAMExtra)), User),
-                  ?JSON_TYPE, RD, Ctx).
+    case check_required_fields(FF) of
+        ok ->
+            IAMExtra = #{path => maps:get(path, FF, <<"/">>),
+                         permissions_boundary => maps:get(permissions_boundary, FF, undefined),
+                         tags => maps:get(tags, FF, [])},
+            user_response(update_user(maps:to_list(maps:merge(FF, IAMExtra)), User),
+                          ?JSON_TYPE, RD, Ctx);
+        ER ->
+            user_response(ER, ?JSON_TYPE, RD, Ctx)
+    end.
+check_required_fields(#{email := Email,
+                        name := Name}) when is_binary(Email),
+                                            is_binary(Name) ->
+    ok;
+check_required_fields(_) ->
+    {error, missing_parameter}.
+
 
 -spec accept_xml(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
