@@ -1,3 +1,15 @@
+# Riak CS 3.2.1 Release Notes
+
+Released September 3, 2023.
+
+## Bug fixes
+
+This is a bugfix release addressing the issue of temporary sessions
+created for federated users as a direct result of AssumeRoleWithSAML,
+not expiring after DurationSeconds if the Riak CS node which received
+this request is restarted.
+
+
 # Riak CS 3.2.0 Release Notes
 
 Released August 25, 2023.
