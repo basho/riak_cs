@@ -1,0 +1,50 @@
+body {
+  margin: 1em;
+}
+
+.hint {
+    color: grey;
+    font-size: 70%;
+    display: flex;
+    justify-content: space-around;
+    padding: 1.5em;
+}
+
+.info {
+    font-size: 70%;
+    padding: 1.5em;
+}
+
+.status-line-ready {
+    font-size: 70%;
+    padding: 0.5em;
+    color: grey;
+}
+
+.status-line-error {
+    font-size: 70%;
+    padding: 0.5em;
+    color: red;
+}
+
+.status-line-streaming {
+    font-size: 70%;
+    padding: 0.5em;
+    color: green;
+}
+
+.stats-table {
+    font-size: 70%;
+    margin-left: 1em;
+    padding: 0.7em;
+}
+
+paper-input {
+    margin: 0.5em;
+}
+
+.stats-table tr, td, th {
+    text-align: right;
+    padding-left: 1.5em;
+    padding-bottom: 0.3em;
+}

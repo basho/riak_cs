@@ -29,6 +29,7 @@
          api/0,
          auth_bypass/0,
          admin_auth_enabled/0,
+         control_ui_enabled/0,
          auth_module/0,
          auth_v4_enabled/0,
          cluster_id/1,
@@ -187,6 +188,10 @@ auth_bypass() ->
 -spec admin_auth_enabled() -> boolean().
 admin_auth_enabled() ->
     get_env(riak_cs, admin_auth_enabled, true).
+
+-spec control_ui_enabled() -> boolean().
+control_ui_enabled() ->
+    get_env(riak_cs, control_ui_enabled, true).
 
 -spec auth_module() -> atom().
 auth_module() ->

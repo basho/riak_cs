@@ -193,7 +193,7 @@ allowed_methods(RD, Ctx) ->
 
 
 -spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
-          {[{string(), module()}], #wm_reqdata{}, #rcs_web_context{}}.
+          {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{?WWWFORM_TYPE, accept_wwwform}], RD, Ctx}.
 
