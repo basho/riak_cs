@@ -1,5 +1,5 @@
-// Load the webcomponentsjs polyfill
-require('script!../bower_components/webcomponentsjs/webcomponents.js')
+require("material-components-web-elm/dist/material-components-web-elm.js");
+require("material-components-web-elm/dist/material-components-web-elm.css");
 
 window.Polymer = {
     dom: 'shadow',
@@ -17,14 +17,11 @@ window.addEventListener('WebComponentsReady', () => {
     let Elm = require('./Main.elm');
     let root = document.getElementById('root');
     let app = Elm.Main.embed(root, {
-        cs_control_port: process.env.CS_CONTROL_PORT,
         cs_port: process.env.CS_PORT,
         cs_host: process.env.CS_HOST,
         cs_proto: process.env.CS_PROTO,
         cs_admin_key: process.env.CS_ADMIN_KEY,
-        cs_admin_secret: process.env.CS_ADMIN_SECRET,
-        log_level: process.env.LOG_LEVEL,
-        log_dir: process.env.LOG_DIR
+        cs_admin_secret: process.env.CS_ADMIN_SECRET
     });
 
     let main = require("./js/main.js");

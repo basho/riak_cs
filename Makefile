@@ -10,17 +10,18 @@ OTP_VER          = $(shell erl -eval 'erlang:display(erlang:system_info(otp_rele
 REBAR           ?= $(BASE_DIR)/rebar3
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: all rel compile clean distclean check stagedevrel test depgraph graphviz package pkg-clean
+.PHONY: all rel compile clean distclean check stagedevrel test depgraph graphviz package pkg-clean \
+	www-compile www-install
 
 all: compile
 
-compile:
+compile: www-compile
 	@$(REBAR) compile
 
-clean:
+clean: www-clean
 	@$(REBAR) clean
 
-distclean: devclean relclean
+distclean: devclean relclean www-clean
 	@$(REBAR) clean -a
 
 check:
@@ -62,6 +63,15 @@ rel-docker: compile relclean
 
 relclean:
 	rm -rf _build/default/rel rel/riak-cs
+
+www-compile:
+	@$(MAKE) -C apps/riak_cs/www_src
+
+www-install:
+	@$(MAKE) -C apps/riak_cs/www_src install
+
+www-clean:
+	@$(MAKE) -C apps/riak_cs/www_src clean
 
 ##
 ## test targets

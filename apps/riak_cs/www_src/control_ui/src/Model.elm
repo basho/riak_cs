@@ -15,9 +15,11 @@ type alias Model =
 
 
 type alias Config =
-    { rcsHost : String
-    , admin_key_id : String
-    , admin_secret : String
+    { cs_port: String
+    , cs_host: String
+    , cs_proto: String
+    , cs_admin_key: String
+    , cs_admin_secret: String
     }
 
 type alias State =

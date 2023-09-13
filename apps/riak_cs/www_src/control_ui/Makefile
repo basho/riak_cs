@@ -6,15 +6,13 @@ clean:
 	rm -rf build/* $(WWW_DEST)/*
 
 deps:
-	npm install -y
-	bower install
 	elm-package install -y
 
 dev:
-	NODE_ENV=development npm run start
+	NODE_ENV=development yarn run start
 
 build:
-	NODE_ENV=production npm run build
+	NODE_ENV=production yarn run build
 
 install:
 	rm -rf $(WWW_DEST)
