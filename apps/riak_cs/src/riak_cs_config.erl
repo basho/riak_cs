@@ -73,15 +73,7 @@
          stanchion/0,
          stanchion_subnet_and_netmask/0,
          stanchion_hosting_mode/0,
-         tussle_voss_riak_host/0,
-         saml_idp_host/0,
-         saml_idp_metadata_url/0,
-         saml_sp_privkey/0,
-         saml_sp_cert/0,
-         saml_sp_org_name/0,
-         saml_sp_org_displayname/0,
-         saml_sp_org_url/0,
-         saml_idp_cert_fingerprints/0
+         tussle_voss_riak_host/0
         ]).
 
 %% Timeouts hitting Riak
@@ -401,45 +393,6 @@ set_stanchion(Host, Port, Ssl) ->
     ok.
 
 
--spec saml_idp_host() -> string().
-saml_idp_host() ->
-    {ok, A} = application:get_env(riak_cs, saml_idp_host),
-    A.
-
--spec saml_idp_metadata_url() -> string().
-saml_idp_metadata_url() ->
-    {ok, A} = application:get_env(riak_cs, saml_idp_metadata_url),
-    A.
-
--spec saml_sp_privkey() -> string().
-saml_sp_privkey() ->
-    {ok, A} = application:get_env(riak_cs, saml_sp_privkey),
-    A.
-
--spec saml_sp_cert() -> string().
-saml_sp_cert() ->
-    {ok, A} = application:get_env(riak_cs, saml_sp_cert),
-    A.
-
--spec saml_sp_org_name() -> string().
-saml_sp_org_name() ->
-    {ok, A} = application:get_env(riak_cs, saml_sp_org_name),
-    A.
-
--spec saml_sp_org_displayname() -> string().
-saml_sp_org_displayname() ->
-    {ok, A} = application:get_env(riak_cs, saml_sp_org_displayname),
-    A.
-
--spec saml_sp_org_url() -> string().
-saml_sp_org_url() ->
-    {ok, A} = application:get_env(riak_cs, saml_sp_org_url),
-    A.
-
--spec saml_idp_cert_fingerprints() -> [string()].
-saml_idp_cert_fingerprints() ->
-    {ok, A} = application:get_env(riak_cs, saml_idp_cert_fingerprints),
-    string:split(A, " ").
 
 %% @doc This options is useful for use case involving high churn and
 %% concurrency on a fixed set of keys and when not using a Riak
