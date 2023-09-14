@@ -4,16 +4,14 @@ module Msg
         , Action(..)
         )
 
-import Navigation
-import Routes exposing (Route)
-
+import User exposing (User)
 
 type Msg
-    = ListUsersResponse List User
+    = ListUsersResponse (List User)
       -- user input:
     | GotCreateUserResult User
       -- other
-    | NoOp.
+    | NoOp
 
 
 type Action
@@ -21,4 +19,4 @@ type Action
     | CreateUser
     | EnableUser
     | DisableUser
-    | RegenerateCreds.
+    | RegenerateCreds

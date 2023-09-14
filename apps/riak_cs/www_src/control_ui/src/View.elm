@@ -10,6 +10,7 @@ import Material.IconButton as IconButton
 
 import Model exposing (Model)
 import Msg exposing (Msg(..), Action(..))
+import User exposing (Status)
 
 
 
@@ -25,34 +26,44 @@ view model =
                     )
                     (IconButton.icon "menu")
                 , Html.span [ TopAppBar.title ]
-                    users model
+                    (makeUsers model)
                 ]
             ]
         ]
 
+makeUsers model =
+    List.map makeUser model.state.users
 
-users model =
-    
+makeUser user =
     Card.card Card.config
         { blocks =
             ( Card.block <|
                 Html.div []
-                    [ Html.h2 [] [ text "Title" ]
-                    , Html.h3 [] [ text "Subtitle" ]
+                    [ Html.h2 [] [ text user.name ]
+                    , Html.h3 [] [ text user.email ]
                     ]
             , [ Card.block <|
                     Html.div []
-                        [ Html.p [] [ text "Lorem ipsum…" ] ]
+                        [ Html.p [] [ text user.id ]
+                        , Html.p [] [ text user.key_id]
+                        ]
               ]
             )
         , actions =
             Just <|
                 Card.actions
                     { buttons =
-                        [ Card.button Button.config "Visit" ]
+                        [ Card.button Button.config (disableOrEnable user.status) ]
                     , icons =
                         [ Card.icon IconButton.config
                             (IconButton.icon "favorite")
                         ]
                     }
         }
+
+disableOrEnable status =
+    case status of
+        User.Enabled ->
+            "Disable"
+        User.Disabled ->
+            "Enable"

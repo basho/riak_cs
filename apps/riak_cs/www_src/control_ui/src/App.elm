@@ -2,6 +2,8 @@ module App exposing (..)
 
 import Model exposing (Model)
 import Msg exposing (Msg(..))
+import Http
+import Json.Decode as D
 
 type alias Flags =
     { cs_url : String
@@ -22,7 +24,7 @@ init flags =
                 }
           }
     , Http.get
-          { url = url
-          , expect = Http.expectString ListUsersResponse
+          { url = flags.cs_url ++ "/riak-cs/users"
+          , expect = Http.expectJson  ListUsersResponse (D.list (D.field "name" D.string))
           }
   )

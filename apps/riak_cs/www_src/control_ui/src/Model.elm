@@ -5,7 +5,7 @@ module Model
         , State
         )
 
-import Routes exposing (Route(..))
+import User exposing (User)
 
 
 type alias Model =
@@ -30,20 +30,4 @@ type alias State =
 
 type Status
     = Ok
-    | Error String.
-
-type alias User =
-    { name : String
-    , display_name : String
-    , email : String
-    , key_id : String
-    , secret_key : String
-    , id : String
-    , policies : List String
-    , tags : List String
-    , status : UserStatus
-    , buckets : List String
-    }
-
-type UserStatus
-    = Enabled | Disabled.
+    | Error String
