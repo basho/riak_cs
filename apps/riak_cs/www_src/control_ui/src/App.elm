@@ -4,9 +4,8 @@ import Model exposing (Model)
 import Msg exposing (Msg(..))
 
 type alias Flags =
-    { cs_port: String
-    , cs_host: String
-    , cs_proto: String
+    { cs_url : String
+    -- these should be collected from user; passing these as flags pending development
     , cs_admin_key: String
     , cs_admin_secret: String
     }

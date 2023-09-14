@@ -61,7 +61,7 @@ admin_resources(Props) ->
      {["riak-cs", "users"], riak_cs_wm_users, Props},
      {["riak-cs", "user", '*'], riak_cs_wm_user, Props},
      {["riak-cs", "usage", '*'], riak_cs_wm_usage, Props},
-     {["riak-cs", "ui"], riak_cs_wm_control, []}
+     {["riak-cs", "ui", '*'], riak_cs_wm_control, []}
     ].
 
 -spec base_resources() -> [dispatch_rule()].
