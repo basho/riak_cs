@@ -15,9 +15,7 @@ type alias Model =
 
 
 type alias Config =
-    { cs_port: String
-    , cs_host: String
-    , cs_proto: String
+    { cs_url: String
     , cs_admin_key: String
     , cs_admin_secret: String
     }

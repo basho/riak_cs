@@ -1,22 +1,29 @@
 module Update exposing (update)
 
-import UrlParser as Url
 import Model exposing (Model, Config, State)
 import Msg exposing (Msg(..), Action(..))
-import Routes exposing (parseRoute)
-import Json.Decode exposing (int, string, float, Decoder, nullable)
-import Json.Decode.Pipeline exposing (decode, required, optional)
-import Http
+import User exposing (GotListUsersResponse)
+import Request exposing (Status(..), ListUsers, CreateUser)
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotListUsersResult users ->
+        GotListUsers (Ok users) ->
             let
                 oldState =
                     model.state
             in
-                { model | state = { oldState | users = users } } ! []
+                { model | state = { oldState | users = Loaded users, message = ""} } ! []
+
+        GotListUsers (Err err) ->
+            let
+                oldState =
+                    model.state
+            in
+                { model | state = {oldState | items = [], message = "Couldn't fetch users" } } ! Cmd.none
+
+        UserCreated ->
+            model ! ListUsers model.config.cs_url
 
         NoOp ->
             model ! []

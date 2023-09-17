@@ -3,7 +3,6 @@ SUBDIRS = control_ui
 all: $(SUBDIRS)
 
 $(SUBDIRS):
-	$(MAKE) -C $@ deps
 	$(MAKE) -C $@ build
 
 install:
@@ -12,4 +11,4 @@ install:
 clean:
 	for d in $(SUBDIRS); do $(MAKE) -C $$d clean; done
 
-.PHONY: all install deps clean $(SUBDIRS)
+.PHONY: all install clean $(SUBDIRS)
