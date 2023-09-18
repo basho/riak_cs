@@ -4,12 +4,12 @@ type alias User =
     { name : String
     , display_name : String
     , email : String
-    , key_id : String
-    , secret_key : String
+    , keyId : String
+    , secretKey : String
     , id : String
+    , status : String
     , policies : List String
     , tags : List String
-    , status : Status
     , buckets : List String
     }
 

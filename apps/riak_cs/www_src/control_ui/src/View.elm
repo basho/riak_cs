@@ -45,7 +45,7 @@ makeUser user =
             , [ Card.block <|
                     Html.div []
                         [ Html.p [] [ text user.id ]
-                        , Html.p [] [ text user.key_id]
+                        , Html.p [] [ text user.keyId]
                         ]
               ]
             )
@@ -53,17 +53,10 @@ makeUser user =
             Just <|
                 Card.actions
                     { buttons =
-                        [ Card.button Button.config (disableOrEnable user.status) ]
+                        [ Card.button Button.config user.status ]
                     , icons =
                         [ Card.icon IconButton.config
                             (IconButton.icon "favorite")
                         ]
                     }
         }
-
-disableOrEnable status =
-    case status of
-        User.Enabled ->
-            "Disable"
-        User.Disabled ->
-            "Enable"

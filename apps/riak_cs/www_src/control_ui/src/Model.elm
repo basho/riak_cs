@@ -1,31 +1,23 @@
-module Model
-    exposing
-        ( Model
-        , Config
-        , State
-        )
+module Model exposing (Model, Config, State)
 
 import User exposing (User)
+import Time
 
 
 type alias Model =
     { config : Config
     , state : State
+    , time : Time.Posix
     }
 
 
 type alias Config =
-    { cs_url: String
-    , cs_admin_key: String
-    , cs_admin_secret: String
+    { csUrl: String
+    , csAdminKey: String
+    , csAdminSecret: String
     }
 
 type alias State =
     { users : List User
-    , status : Status
-    , message : String
+    , status : Result String ()
     }
-
-type Status
-    = Ok
-    | Error String

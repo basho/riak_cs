@@ -1,16 +1,13 @@
-module Msg
-    exposing
-        ( Msg(..)
-        , Action(..)
-        )
+module Msg exposing (Msg(..), Action(..))
 
 import User exposing (User)
+import Http
+import Time
 
 type Msg
-    = ListUsersResponse (List User)
-      -- user input:
-    | GotCreateUserResult User
-      -- other
+    = GotListUsers (Result Http.Error (List User))
+    | UserCreated (Result Http.Error ())
+    | Tick Time.Posix
     | NoOp
 
 

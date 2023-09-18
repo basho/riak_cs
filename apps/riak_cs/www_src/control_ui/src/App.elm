@@ -1,26 +1,31 @@
-module App exposing (..)
+module App exposing (init, subscriptions, Flags)
 
-import Model exposing (Model)
+import Model exposing (Model, Config, State)
 import Msg exposing (Msg(..))
-import Request exposing (ListUsers, CreateUser)
+import Request exposing (listUsers, createUser)
+import Time
 
 type alias Flags =
-    { cs_url : String
+    { csUrl : String
     -- these should be collected from user; passing these as flags pending development
-    , cs_admin_key: String
-    , cs_admin_secret: String
+    , csAdminKey: String
+    , csAdminSecret: String
     }
+
 
 
 init : (Flags) -> (Model, Cmd Msg)
 init flags =
-    ( Model
-          { config = flags
-          , state =
-                { users = []
-                , status = Ok
-                , message = ""
-                }
-          }
-    , ListUsers flags.cs_url
-  )
+    let
+        config = Config flags.csUrl flags.csAdminKey flags.csAdminSecret
+        state = State [] (Ok ())
+        model = Model config state (Time.millisToPosix 0)
+    in
+        ( model
+        , listUsers model
+        )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Time.every 1000 Tick

@@ -1,10 +1,10 @@
 module Main exposing (..)
 
-import App exposing (init, subscriptions)
+import App exposing (init, subscriptions, Flags)
 import View exposing (view)
 import Update exposing (update)
-import Msg exposing (Msg)
 import Model exposing (Model)
+import Msg exposing (Msg)
 import Browser
 
 main : Program Flags Model Msg

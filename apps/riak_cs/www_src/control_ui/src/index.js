@@ -23,9 +23,9 @@ window.addEventListener('WebComponentsReady', () => {
         //    meaningful and clear placeholders like {{CS_THING}}.
         // 2. This is a shim pending development; eventually, creds
         //    will be collected from the user.
-        cs_url: process.env.CS_URL,
-        cs_admin_key: process.env.CS_ADMIN_KEY,
-        cs_admin_secret: process.env.CS_ADMIN_SECRET
+        csUrl: process.env.CS_URL,
+        csAdminKey: process.env.CS_ADMIN_KEY,
+        csAdminSecret: process.env.CS_ADMIN_SECRET
     });
 
     let main = require("./js/main.js");

@@ -2,10 +2,9 @@ module Update exposing (update)
 
 import Model exposing (Model, Config, State)
 import Msg exposing (Msg(..), Action(..))
-import User exposing (GotListUsersResponse)
-import Request exposing (Status(..), ListUsers, CreateUser)
+import Request exposing (listUsers, Status(..))
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
         GotListUsers (Ok users) ->
@@ -13,17 +12,37 @@ update msg model =
                 oldState =
                     model.state
             in
-                { model | state = { oldState | users = Loaded users, message = ""} } ! []
+                ( { model | state = { oldState | users = users, status = Ok ()} }
+                , Cmd.none
+                )
 
         GotListUsers (Err err) ->
             let
                 oldState =
                     model.state
             in
-                { model | state = {oldState | items = [], message = "Couldn't fetch users" } } ! Cmd.none
+                ( { model | state = {oldState | users = [], status = Err "Couldn't fetch users" } }
+                , Cmd.none
+                )
 
-        UserCreated ->
-            model ! ListUsers model.config.cs_url
+        UserCreated (Ok ()) ->
+            ( model
+            , listUsers model
+            )
+
+        UserCreated (Err err) ->
+            let
+                oldState =
+                    model.state
+            in
+                ( { model | state = {oldState | status = Err "Failed to create user"} }
+                , Cmd.none
+                )
+
+        Tick newTime ->
+            ({ model | time = newTime }
+            , Cmd.none
+            )
 
         NoOp ->
-            model ! []
+            (model, Cmd.none)
