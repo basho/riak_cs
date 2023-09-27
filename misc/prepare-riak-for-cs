@@ -1,6 +1,8 @@
 #!/bin/bash
 
 ETC=${ETC:-"/etc/riak"}
+RIAK_CS_EBIN=${RIAK_CS_EBIN:-"/usr/lib/riak-cs/lib"}
+paths_to_add=`for p in ${RIAK_CS_EBIN}/riak_cs*/ebin; do echo -n \\"$p\\",; done | sed 's/,$//'`
 
 # sed the riak-cs settings into factory riak.conf and advanced.config
 
@@ -15,6 +17,7 @@ buckets.default.merge_strategy = 2" \
 sed -i \
     -e "s|]\\.|, \
     {riak_kv, [ \
+      {add_paths, [${paths_to_add}]}, \
       {multi_backend, \
           [{be_default,riak_kv_eleveldb_backend, \
                [{max_open_files,20}]}, \
