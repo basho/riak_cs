@@ -106,7 +106,14 @@ valid_entity_length(RD, Ctx) ->
 
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-forbidden(RD, #rcs_web_context{auth_module = AuthMod,
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        'POST' ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, #rcs_web_context{auth_module = AuthMod,
                                riak_client = RcPid,
                                request_id = RequestId} = Ctx) ->
     AuthResult =

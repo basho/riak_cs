@@ -129,10 +129,17 @@ validate_content_checksum(RD, Ctx = #rcs_web_context{submodule = Mod,
     resource_call(Mod, validate_content_checksum, [RD, Ctx], ExportsFun).
 
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) -> {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
-forbidden(RD, Ctx0 = #rcs_web_context{auth_module = AuthMod,
-                                      submodule = Mod,
-                                      riak_client = RcPid,
-                                      exports_fun = ExportsFun}) ->
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        _ ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, Ctx0 = #rcs_web_context{auth_module = AuthMod,
+                                       submodule = Mod,
+                                       riak_client = RcPid,
+                                       exports_fun = ExportsFun}) ->
     {AuthResult, AnonOk, Ctx} =
         case AuthMod:identify(RD, Ctx0) of
             failed ->
