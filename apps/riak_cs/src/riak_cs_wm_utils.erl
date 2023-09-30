@@ -156,9 +156,6 @@ service_available(Pool, RD, Ctx) ->
 %%      the appropriate module to use to authenticate the request.
 %%      The passthru auth can be used either with a KeyID or
 %%      anonymously by leving the header empty.
--spec parse_auth_header(string(), boolean()) -> {atom(),
-                                                 string() | undefined,
-                                                 string() | undefined}.
 parse_auth_header(KeyId, true) when KeyId =/= undefined ->
     {riak_cs_s3_passthru_auth, KeyId, undefined};
 parse_auth_header(S, _) ->

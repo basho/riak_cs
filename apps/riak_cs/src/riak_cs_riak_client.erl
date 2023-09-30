@@ -116,7 +116,7 @@ pbc_pool_name(BagId) when is_binary(BagId) ->
 -spec rts_puller(riak_client(), binary(), binary(), riak_cs_stats:key()) -> fun().
 rts_puller(RcPid, Bucket, Suffix, StatsKey) ->
     fun(Slice, {Samples, Errors}) ->
-            {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+            {ok, MasterPbc} = master_pbc(RcPid),
             Timeout = riak_cs_config:get_access_timeout(),
             case riak_cs_pbc:get(MasterPbc, Bucket, rts:slice_key(Slice, Suffix), [],
                                  Timeout, StatsKey) of
