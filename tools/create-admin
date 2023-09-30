@@ -12,28 +12,66 @@ def create_user(host, port, name, email):
                                  headers = {"Content-Type": "application/json"},
                                  body = json.dumps({"email": email, "name": name}))
     conn.close()
-    return json.loads(content)
+    try:
+        return json.loads(content)
+    except:
+        print("""
+We tried to do a POST to /riak-cs/users, and the request failed.
+
+Check to make sure:
+  a) riak and riak_cs are both running;
+  b) `anonymous_user_creation` is set to `on` in riak-cs.conf.
+
+Note that this script is meant to only be run once. If you lose the
+creds, attach to your riak_cs node (`riak-cs daemon_attach`) and do:
+
+  rr(riak_cs_iam),
+  {ok, Pbc} = riak_cs_utils:riak_connection(),
+  {ok, {Admin, _}} = riak_cs_iam:find_user(#{name => <<"admin">>}, Pbc),
+  Admin.
+
+""")
+        exit(1)
+
 
 def main():
+    rcs_host = "127.0.0.1"
     admin_name = "admin"
     admin_email = "admin@me.com"
     port = 8080
     quiet = False
 
-    opts, args = getopt.getopt(sys.argv[1:], 'p:u:e:q')
+    opts, args = getopt.getopt(sys.argv[1:], 'h:p:e:q', ["help"])
     for o, a in opts:
-        if o == "-u":
-            admin_user = a
         if o == "-e":
             admin_email = a
         if o == "-p":
             port = int(a)
         if o == "-q":
             quiet = True
+        if o == "--help":
+            print("""
+A script to create a Riak CS admin user.
+
+  create-admin [-h HOST] [-p PORT] [-e EMAIL] [-q]
+
+Options, with default values:
+
+  -h HOST, riak_cs host (127.0.0.1).
+  -p PORT, riak_cs port (8080).
+  -e EMAIL, admin user email (admin@me.com).
+  -q, only print the creds.
+
+Run this script once, and note down the creds, to be used with your client or Riak CS Control.
+""")
+            exit(0)
 
     res = create_user("127.0.0.1", port, admin_name, admin_email)
-    print("%s %s %s" % (res['key_id'], res['key_secret'], res['id']))
-    admin_arn = res['arn']
+    if quiet:
+        print("%s %s %s" % (res['key_id'], res['key_secret'], res['id']))
+    else:
+        print("An admin user was created with these credentials:")
+        pprint.pp(res)
 
     #boto3.set_stream_logger('')
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
@@ -61,17 +99,16 @@ def main():
         Description = "Admin Policy allowing access to all s3. iam and sts actions"
     )
     if not quiet:
-        print("Created admin policy:")
-        pprint.pp(res)
-    policy_arn = res['Policy']['Arn']
+        print("Admin policy attached to user \"admin\":")
+        pprint.pp(res['Policy'])
+        print("""
+Next steps:
+  * in riak-cs.conf, set `anonymous_user_creation` back to `off`
+    and replace the value of `admin.key` ("admin-key") with the one given
+    above (field "key_id");
+  * restart riak_cs.
+""")
 
-    res = iam_client.attach_user_policy(
-        UserName = admin_name,
-        PolicyArn = policy_arn
-    )
-    if not quiet:
-        print("Attached admin policy to admin user:")
-        pprint.pp(res)
 
 if __name__ == "__main__":
     main()
