@@ -27,6 +27,7 @@
          malformed_request/2,
          forbidden/2,
          authorize/2,
+         options/2,
          content_types_accepted/2,
          generate_etag/2,
          last_modified/2,
@@ -46,6 +47,7 @@
               malformed_request/2,
               forbidden/2,
               authorize/2,
+              options/2,
               content_types_accepted/2,
               generate_etag/2,
               last_modified/2,
@@ -83,13 +85,20 @@ init(Config) ->
     {ok, Ctx}.
 
 
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(),
+     RD, Ctx}.
+
 -spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 service_available(RD, Ctx = #rcs_web_context{rc_pool = undefined}) ->
     service_available(RD, Ctx#rcs_web_context{rc_pool = request_pool});
 service_available(RD, Ctx = #rcs_web_context{rc_pool = Pool}) ->
     case riak_cs_riak_client:checkout(Pool) of
         {ok, RcPid} ->
-            {true, RD, Ctx#rcs_web_context{riak_client = RcPid}};
+            {true, wrq:set_resp_headers(
+                     riak_cs_wm_utils:cors_headers(), RD),
+             Ctx#rcs_web_context{riak_client = RcPid}};
         {error, _Reason} ->
             {false, RD, Ctx}
     end.
@@ -187,7 +196,7 @@ authenticate(User, _UserObj, _RD, _Ctx, _AuthData)
 
 -spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
 allowed_methods(RD, Ctx) ->
-    {['POST'], RD, Ctx}.
+    {['POST', 'OPTIONS'], RD, Ctx}.
 
 
 -spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->

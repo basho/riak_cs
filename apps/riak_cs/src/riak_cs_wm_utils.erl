@@ -67,7 +67,8 @@
          role_access_authorize_helper/3,
          aws_service_action/2,
          make_final_rd/2,
-         make_request_id/0
+         make_request_id/0,
+         cors_headers/0
         ]).
 
 -include("riak_cs.hrl").
@@ -1237,6 +1238,13 @@ make_request_id() ->
 etag(Body) ->
         riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
 
+
+cors_headers() ->
+    [ {"Access-Control-Allow-Origin", "*"}
+    , {"Access-Control-Allow-Credentials", "true"}
+    , {"Access-Control-Allow-Headers",
+       "x-amz-content-sha256,x-amz-date,authorization,content-type,host,origin"}
+    ].
 
 
 

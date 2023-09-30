@@ -24,6 +24,7 @@
 
 -export([init/1,
          service_available/2,
+         options/2,
          malformed_request/2,
          forbidden/2,
          authorize/2,
@@ -41,6 +42,7 @@
 
 -ignore_xref([init/1,
               service_available/2,
+              options/2,
               malformed_request/2,
               forbidden/2,
               authorize/2,
@@ -83,13 +85,20 @@ init(Config) ->
     {ok, Ctx}.
 
 
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(),
+     RD, Ctx}.
+
 -spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 service_available(RD, Ctx = #rcs_web_context{rc_pool = undefined}) ->
     service_available(RD, Ctx#rcs_web_context{rc_pool = request_pool});
 service_available(RD, Ctx = #rcs_web_context{rc_pool = RcPool}) ->
     case riak_cs_riak_client:checkout(RcPool) of
         {ok, RcPid} ->
-            {true, RD, Ctx#rcs_web_context{riak_client = RcPid}};
+            {true, wrq:set_resp_headers(
+                     riak_cs_wm_utils:cors_headers(), RD),
+             Ctx#rcs_web_context{riak_client = RcPid}};
         {error, _Reason} ->
             {false, RD, Ctx}
     end.

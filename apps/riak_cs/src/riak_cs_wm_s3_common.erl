@@ -31,6 +31,7 @@
          valid_entity_length/2,
          validate_content_checksum/2,
          malformed_request/2,
+         options/2,
          to_xml/2,
          to_json/2,
          post_is_create/2,
@@ -55,6 +56,7 @@
          default_init/1,
          default_authorize/2,
          default_malformed_request/2,
+         default_options/2,
          default_valid_entity_length/2,
          default_validate_content_checksum/2,
          default_delete_resource/2,
@@ -113,6 +115,11 @@ malformed_request(RD, Ctx = #rcs_web_context{submodule = Mod,
     _ = update_stats_inflow(RD, StatsPrefix),
     resource_call(Mod, malformed_request, [RD, Ctx], ExportsFun).
 
+
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx = #rcs_web_context{submodule = Mod,
+                                   exports_fun = ExportsFun}) ->
+    resource_call(Mod, options, [RD, Ctx], ExportsFun).
 
 -spec valid_entity_length(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 valid_entity_length(RD, #rcs_web_context{submodule = Mod,
@@ -483,6 +490,8 @@ default(last_modified) ->
     default_last_modified;
 default(malformed_request) ->
     default_malformed_request;
+default(options) ->
+    default_options;
 default(valid_entity_length) ->
     default_valid_entity_length;
 default(validate_content_checksum) ->
@@ -510,6 +519,9 @@ default_stats_prefix() ->
 
 default_malformed_request(RD, Ctx) ->
     {false, RD, Ctx}.
+
+default_options(RD, Ctx) ->
+    {[{"Access-Control-Allow-Origin", "*"}], RD, Ctx}.
 
 default_valid_entity_length(RD, Ctx) ->
     {true, RD, Ctx}.
@@ -539,7 +551,7 @@ default_delete_resource(RD, Ctx) ->
     {false, RD, Ctx}.
 
 default_allowed_methods() ->
-    [].
+    ['OPTIONS'].
 
 default_finish_request(RD, Ctx) ->
     {true, RD, Ctx}.

@@ -26,6 +26,7 @@
          forbidden/2,
          content_types_provided/2,
          allowed_methods/2,
+         options/2,
          produce_json/2,
          produce_xml/2,
          finish_request/2
@@ -36,6 +37,7 @@
               forbidden/2,
               content_types_provided/2,
               allowed_methods/2,
+              options/2,
               produce_json/2,
               produce_xml/2,
               finish_request/2
@@ -58,15 +60,30 @@ init(Config) ->
                           api = Api,
                           response_module = RespModule}}.
 
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(), RD, Ctx}.
+
 -spec service_available(term(), term()) -> {true, term(), term()}.
 service_available(RD, Ctx) ->
-    riak_cs_wm_utils:service_available(RD, Ctx).
+    riak_cs_wm_utils:service_available(
+      wrq:set_resp_headers(
+        riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
 -spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
 allowed_methods(RD, Ctx) ->
-    {['GET', 'HEAD'], RD, Ctx}.
+    {['GET', 'HEAD', 'OPTIONS'], RD, Ctx}.
 
-forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
+-spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        _ ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 content_types_provided(RD, Ctx) ->
