@@ -1236,14 +1236,24 @@ make_request_id() ->
     list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
 etag(Body) ->
-        riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
+    riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
 
 
 cors_headers() ->
     [ {"Access-Control-Allow-Origin", "*"}
     , {"Access-Control-Allow-Credentials", "true"}
+    , {"Access-Control-Allow-Methods", "POST,GET,OPTIONS,DELETE"}
     , {"Access-Control-Allow-Headers",
-       "x-amz-content-sha256,x-amz-date,authorization,content-type,host,origin"}
+       "host,"
+       "origin,"
+       "authorization,"
+       "x-amz-content-sha256,"
+       "x-amz-date,"
+       "content-type,"
+       "content-md5,"
+       "accept,"
+       "accept-encoding"
+      }
     ].
 
 
