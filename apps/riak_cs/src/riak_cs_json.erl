@@ -79,39 +79,49 @@ to_json(?KEYSTONE_S3_AUTH_REQ{} = A) ->
                    [{records, [{keystone_aws_auth_req_v1, record_info(fields, keystone_aws_auth_req_v1)}]}]));
 to_json(?RCS_USER{} = A) ->
     list_to_binary(
-      jason:encode(A,
-                   [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
-                               {permissions_boundary, record_info(fields, permissions_boundary)},
-                               {moss_bucket_v2, record_info(fields, moss_bucket_v2)},
-                               {acl_grant_v2, record_info(fields, acl_grant_v2)},
-                               {acl_v3, record_info(fields, acl_v3)},
-                               {tag, record_info(fields, tag)}]}]));
+      fix_quotes_for_empty_lists(
+        user,
+        jason:encode(A,
+                     [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
+                                 {permissions_boundary, record_info(fields, permissions_boundary)},
+                                 {moss_bucket_v2, record_info(fields, moss_bucket_v2)},
+                                 {acl_grant_v2, record_info(fields, acl_grant_v2)},
+                                 {acl_v3, record_info(fields, acl_v3)},
+                                 {tag, record_info(fields, tag)}]}])));
 to_json({users, AA}) ->
     list_to_binary(
-      jason:encode(AA,
-                   [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
-                               {permissions_boundary, record_info(fields, permissions_boundary)},
-                               {moss_bucket_v1, record_info(fields, moss_bucket_v1)},
-                               {acl_grant_v2, record_info(fields, acl_grant_v2)},
-                               {acl_v3, record_info(fields, acl_v3)},
-                               {tag, record_info(fields, tag)}]}]));
+      fix_quotes_for_empty_lists(
+        user,
+        jason:encode(AA,
+                     [{records, [{rcs_user_v3, record_info(fields, rcs_user_v3)},
+                                 {permissions_boundary, record_info(fields, permissions_boundary)},
+                                 {moss_bucket_v2, record_info(fields, moss_bucket_v2)},
+                                 {acl_grant_v2, record_info(fields, acl_grant_v2)},
+                                 {acl_v3, record_info(fields, acl_v3)},
+                                 {tag, record_info(fields, tag)}]}])));
 to_json(?IAM_ROLE{assume_role_policy_document = D} = A) ->
     list_to_binary(
-      jason:encode(A?IAM_ROLE{assume_role_policy_document = base64:encode(D)},
-                   [{records, [{role_v1, record_info(fields, role_v1)},
-                               {role_last_used, record_info(fields, role_last_used)},
-                               {permissions_boundary, record_info(fields, permissions_boundary)},
-                               {tag, record_info(fields, tag)}]}]));
+      fix_quotes_for_empty_lists(
+        role,
+        jason:encode(A?IAM_ROLE{assume_role_policy_document = base64:encode(D)},
+                     [{records, [{role_v1, record_info(fields, role_v1)},
+                                 {role_last_used, record_info(fields, role_last_used)},
+                                 {permissions_boundary, record_info(fields, permissions_boundary)},
+                                 {tag, record_info(fields, tag)}]}])));
 to_json(?IAM_POLICY{policy_document = D} = A) ->
     list_to_binary(
-      jason:encode(A?IAM_POLICY{policy_document = base64:encode(D)},
-                   [{records, [{iam_policy, record_info(fields, iam_policy)},
-                               {tag, record_info(fields, tag)}]}]));
+      fix_quotes_for_empty_lists(
+        policy,
+        jason:encode(A?IAM_POLICY{policy_document = base64:encode(D)},
+                     [{records, [{iam_policy, record_info(fields, iam_policy)},
+                                 {tag, record_info(fields, tag)}]}])));
 to_json(?IAM_SAML_PROVIDER{saml_metadata_document = D} = A) ->
     list_to_binary(
-      jason:encode(A?IAM_SAML_PROVIDER{saml_metadata_document = base64:encode(D)},
-                   [{records, [{saml_provider_v1, record_info(fields, saml_provider_v1)},
-                               {tag, record_info(fields, tag)}]}]));
+      fix_quotes_for_empty_lists(
+        saml_provider,
+        jason:encode(A?IAM_SAML_PROVIDER{saml_metadata_document = base64:encode(D)},
+                     [{records, [{saml_provider_v1, record_info(fields, saml_provider_v1)},
+                                 {tag, record_info(fields, tag)}]}])));
 to_json(?ACL{} = A) ->
     list_to_binary(
       jason:encode(A,
@@ -122,6 +132,24 @@ to_json(undefined) ->
     <<>>;
 to_json([]) ->
     <<>>.
+
+fix_quotes_for_empty_lists(A, S) ->
+    lists:foldl(fun({RE, Replacement}, Q) -> re:replace(Q, RE, Replacement) end, S, res(A)).
+res(user) ->
+    [{"\"buckets\": \"\"", "\"buckets\": []"},
+     {"\"attached_policies\": \"\"", "\"attached_policies\": []"},
+     {"\"tags\": \"\"", "\"tags\": []"}];
+res(role) ->
+    [{"\"attached_policies\": \"\"", "\"attached_policies\": []"},
+     {"\"tags\": \"\"", "\"tags\": []"}];
+res(policy) ->
+    [{"\"statement\": \"\"", "\"statement\": []"},
+     {"\"tags\": \"\"", "\"tags\": []"}];
+res(saml_provider) ->
+    [{"\"certificates\": \"\"", "\"certificates\": []"},
+     {"\"tags\": \"\"", "\"tags\": []"}].
+
+
 
 -spec value_or_default({ok, term()} | {error, term()}, term()) -> term().
 value_or_default({error, Reason}, Default) ->
