@@ -374,6 +374,7 @@ iam_user_node(?IAM_USER{arn = Arn,
                         path = Path,
                         id = UserId,
                         password_last_used = PasswordLastUsed,
+                        permissions_boundary = PermissionsBoundary,
                         tags = Tags}) ->
     C = lists:flatten(
           [{'Arn', [make_arn(Arn)]},
@@ -384,6 +385,10 @@ iam_user_node(?IAM_USER{arn = Arn,
            [{'PasswordLastUsed', [rts:iso8601_s(PasswordLastUsed)]}
             || PasswordLastUsed /= undefined,
                PasswordLastUsed /= null],
+           [{'PermissionsBoundary', [{'xmlns:xsi', ?XML_SCHEMA_INSTANCE},
+                                     {'xsi:type', "PermissionsBoundary"}],
+             make_permissions_boundary(PermissionsBoundary)} || PermissionsBoundary /= null,
+                                                                PermissionsBoundary /= undefined],
            {'Tags', [tag_node(T) || T <- Tags]}
           ]),
     {'User', C}.
