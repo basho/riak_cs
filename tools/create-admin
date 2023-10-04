@@ -96,11 +96,16 @@ Run this script once, and note down the creds, to be used with your client or Ri
     res = iam_client.create_policy(
         PolicyName = "AdminPolicy",
         PolicyDocument = policy,
-        Description = "Admin Policy allowing access to all s3. iam and sts actions"
+        Description = "Admin Policy allowing access to all S3. IAM and STS actions"
+    )
+    policy_arn = res['Policy']['Arn']
+
+    res = iam_client.attach_user_policy(
+        UserName = "admin",
+        PolicyArn = policy_arn,
     )
     if not quiet:
-        print("Admin policy attached to user \"admin\":")
-        pprint.pp(res['Policy'])
+        print("Admin policy", policy_arn, "created and attached to user \"admin\"")
         print("""
 Next steps:
   * in riak-cs.conf, set `anonymous_user_creation` back to `off`
