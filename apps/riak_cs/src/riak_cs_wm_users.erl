@@ -64,15 +64,15 @@ init(Config) ->
 options(RD, Ctx) ->
     {riak_cs_wm_utils:cors_headers(), RD, Ctx}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
+-spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}}.
 service_available(RD, Ctx) ->
     riak_cs_wm_utils:service_available(
-      wrq:set_resp_headers(
-        riak_cs_wm_utils:cors_headers(), RD), Ctx).
+      wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+-spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
 allowed_methods(RD, Ctx) ->
     {['GET', 'HEAD', 'OPTIONS'], RD, Ctx}.
+
 
 -spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
