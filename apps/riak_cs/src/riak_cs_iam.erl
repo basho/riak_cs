@@ -79,7 +79,7 @@ delete_user(?IAM_USER{buckets = BB}) when BB /= [] ->
     {error, user_has_buckets};
 delete_user(?IAM_USER{arn = Arn}) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:delete_user(Arn, [{auth_creds, AdminCreds}]).
+    velvet:delete_user(base64:encode(Arn), [{auth_creds, AdminCreds}]).
 
 -spec get_user(flat_arn(), pid()) -> {ok, {rcs_user(), riakc_obj:riakc_obj()}} | {error, notfound}.
 get_user(Arn, Pbc) ->

@@ -156,14 +156,15 @@ create_user(FF = #{arn := Arn,
             {error, user_already_exists}
     end.
 
--spec delete_user(flat_arn(), pid()) -> ok | {error, term()}.
-delete_user(Arn, Pbc) ->
+-spec delete_user(binary(), pid()) -> ok | {error, term()}.
+delete_user(Arn_, Pbc) ->
+    Arn = base64:decode(Arn_),
     case ?TURNAROUND_TIME(
             riakc_pb_socket:delete(Pbc, ?USER_BUCKET, Arn, ?CONSISTENT_DELETE_OPTIONS)) of
         {ok, TAT} ->
             stanchion_stats:update([riakc, delete_cs_user], TAT);
         {{error, Reason} = ER, _} ->
-            logger:error("Failed to delete role object ~s: ~p", [Arn, Reason]),
+            logger:error("Failed to delete user object ~s: ~p", [Arn, Reason]),
             ER
     end.
 
