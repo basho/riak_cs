@@ -89,7 +89,7 @@ authenticate_1(User, Signature, RD, _Ctx) ->
     authenticate_1(User, Signature, RD, _Ctx, ?SIGV2_QUIRKS).
 authenticate_1(_, _, _, _, []) ->
     {error, invalid_authentication};
-authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
+authenticate_1(User, Signature, RD, Ctx = #rcs_web_context{request_id = RequestId}, [Quirk|MoreQuirks]) ->
     CalculatedSignature = calculate_signature_v2(User?RCS_USER.key_secret, RD, Quirk),
     if Signature == CalculatedSignature ->
             Expires = wrq:get_qs_value("Expires", RD),
@@ -108,8 +108,9 @@ authenticate_1(User, Signature, RD, _Ctx, [Quirk|MoreQuirks]) ->
                     end
             end;
         el/=se ->
-            logger:notice("Bad signature: received ~s vs calculated ~s", [CalculatedSignature, Signature]),
-            authenticate_1(User, Signature, RD, _Ctx, MoreQuirks)
+            logger:notice("Bad signature: received ~s vs calculated ~s on request_id ~s",
+                          [Signature, CalculatedSignature, RequestId]),
+            authenticate_1(User, Signature, RD, Ctx, MoreQuirks)
     end.
 
 -spec parse_auth_header(string()) ->
