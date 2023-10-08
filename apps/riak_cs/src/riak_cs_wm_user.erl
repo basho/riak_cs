@@ -28,6 +28,7 @@
          content_types_accepted/2,
          accept_json/2,
          accept_xml/2,
+         delete_resource/2,
          allowed_methods/2,
          post_is_create/2,
          create_path/2,
@@ -43,6 +44,7 @@
               content_types_accepted/2,
               accept_json/2,
               accept_xml/2,
+              delete_resource/2,
               allowed_methods/2,
               post_is_create/2,
               create_path/2,
@@ -69,15 +71,25 @@ init(Config) ->
                           api = Api,
                           response_module = RespModule}}.
 
--spec service_available(term(), term()) -> {true, term(), term()}.
+-spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 service_available(RD, Ctx) ->
-    riak_cs_wm_utils:service_available(RD, Ctx).
+    riak_cs_wm_utils:service_available(
+      wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
--spec allowed_methods(term(), term()) -> {[atom()], term(), term()}.
+-spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
 allowed_methods(RD, Ctx) ->
-    {['GET', 'HEAD', 'POST', 'PUT'], RD, Ctx}.
+    {['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'], RD, Ctx}.
 
-forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
+-spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        _ ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     Method = wrq:method(RD),
     AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
               riak_cs_config:anonymous_user_creation())
@@ -90,15 +102,7 @@ forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
                              user_key(RD),
                              AnonOk)
            end,
-    UserAuthResponse = riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next),
-    handle_user_auth_response(UserAuthResponse).
-
-handle_user_auth_response({false, _RD, _Ctx} = Ret) ->
-    Ret;
-handle_user_auth_response({{halt, _Code}, _RD, _Ctx} = Ret) ->
-    Ret;
-handle_user_auth_response({_Reason, _RD, _Ctx} = Ret) ->
-    Ret.
+    riak_cs_wm_utils:find_and_auth_user(RD, Ctx, Next).
 
 -spec content_types_accepted(#wm_reqdata{}, #rcs_web_context{}) ->
     {[{string(), atom()}], #wm_reqdata{}, #rcs_web_context{}}.
@@ -151,7 +155,7 @@ check_required_fields(_) ->
 
 
 -spec accept_xml(#wm_reqdata{}, #rcs_web_context{}) ->
-    {boolean() | {halt, term()}, term(), term()}.
+    {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
 accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
@@ -198,6 +202,19 @@ produce_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     RD2 = wrq:set_resp_header("ETag", Etag, RD),
     {Body, RD2, Ctx}.
 
+
+delete_resource(RD, Ctx = #rcs_web_context{user = User,
+                                           response_module = ResponseMod}) ->
+    case riak_cs_iam:delete_user(User) of
+        ok ->
+            {true, RD, Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end.
+
+
+-spec finish_request(#wm_reqdata{}, #rcs_web_context{}) ->
+    {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
     {true, RD, Ctx};
 finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
@@ -209,7 +226,7 @@ finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
 %% -------------------------------------------------------------------
 
 admin_check(true, RD, Ctx) ->
-    {false, RD, Ctx#rcs_web_context{user = undefined}};
+    {false, RD, Ctx};
 admin_check(false, RD, Ctx) ->
     riak_cs_wm_utils:deny_access(RD, Ctx).
 
@@ -291,8 +308,9 @@ set_resp_data(ContentType, RD, #rcs_web_context{user = User}) ->
 
 user_key(RD) ->
     case wrq:path_tokens(RD) of
-        [KeyId|_] -> list_to_binary(mochiweb_util:unquote(KeyId));
-        _         -> <<>>
+        [KeyId|_] ->
+            list_to_binary(mochiweb_util:unquote(KeyId));
+        _ -> <<>>
     end.
 
 user_xml_filter(#xmlText{}, Acc) ->
