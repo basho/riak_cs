@@ -225,22 +225,22 @@ handle_validation_response({ok, User, UserObj}, RD, Ctx, Next, _, _) ->
                                  user_object = UserObj});
 handle_validation_response({error, _Reason}, RD, Ctx, Next, _, true) ->
     %% no keyid was given, proceed anonymously
-    ?LOG_DEBUG("anonymous_user_creation is enabled, skipping auth (specific error was ~p)", [_Reason]),
+    logger:notice("anonymous_user_creation is enabled, skipping auth (specific error was ~p)", [_Reason]),
     Next(RD, Ctx);
 handle_validation_response({error, no_user_key}, RD, Ctx, _, Conv2KeyCtx, false) ->
     %% no keyid was given, deny access
-    ?LOG_DEBUG("No user key, deny"),
+    logger:notice("No user key, deny"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, bad_auth}, RD, Ctx, _, Conv2KeyCtx, _) ->
     logger:notice("given key_id was found, but signature didn't match"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, notfound}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no keyid was found
-    ?LOG_DEBUG("key_id not found"),
+    logger:notice("key_id not found"),
     deny_access(RD, Conv2KeyCtx(Ctx));
 handle_validation_response({error, Reason}, RD, Ctx, _, Conv2KeyCtx, _) ->
     %% no matching keyid was found, or lookup failed
-    ?LOG_DEBUG("Authentication error: ~p", [Reason]),
+    logger:notice("Authentication error: ~p", [Reason]),
     deny_invalid_key(RD, Conv2KeyCtx(Ctx)).
 
 handle_auth_admin(RD, Ctx, undefined, true) ->
@@ -252,7 +252,7 @@ handle_auth_admin(RD, Ctx, User, false) ->
     UserKeyId = User?RCS_USER.key_id,
     case riak_cs_config:admin_creds() of
         {ok, {Admin, _}} when Admin == UserKeyId ->
-            ?LOG_DEBUG("admin access is allowed"),
+            logger:notice("admin access is allowed"),
             {false, RD, Ctx#rcs_web_context{admin_access = true}};
         _ ->
             %% non-admin account is not allowed -> 403
