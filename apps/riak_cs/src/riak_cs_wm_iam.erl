@@ -24,7 +24,6 @@
 
 -export([init/1,
          service_available/2,
-         malformed_request/2,
          forbidden/2,
          authorize/2,
          options/2,
@@ -44,7 +43,6 @@
          add_tag/3]).
 -ignore_xref([init/1,
               service_available/2,
-              malformed_request/2,
               forbidden/2,
               authorize/2,
               options/2,
@@ -91,21 +89,9 @@ options(RD, Ctx) ->
      RD, Ctx}.
 
 -spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
-service_available(RD, Ctx = #rcs_web_context{rc_pool = undefined}) ->
-    service_available(RD, Ctx#rcs_web_context{rc_pool = request_pool});
-service_available(RD, Ctx = #rcs_web_context{rc_pool = Pool}) ->
-    case riak_cs_riak_client:checkout(Pool) of
-        {ok, RcPid} ->
-            {true, wrq:set_resp_headers(
-                     riak_cs_wm_utils:cors_headers(), RD),
-             Ctx#rcs_web_context{riak_client = RcPid}};
-        {error, _Reason} ->
-            {false, RD, Ctx}
-    end.
-
--spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
-malformed_request(RD, Ctx) ->
-    {false, RD, Ctx}.
+service_available(RD, Ctx) ->
+    riak_cs_wm_utils:service_available(
+      wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
 
 -spec valid_entity_length(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
