@@ -120,29 +120,22 @@ create_path(RD, Ctx) ->
 
 -spec accept_json(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_json(RD, Ctx = #rcs_web_context{user = undefined}) ->
-    FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
-    case check_required_fields(FF) of
-        ok ->
-            IAMExtra = #{path => maps:get(path, FF, <<"/">>),
-                         permissions_boundary => maps:get(permissions_boundary, FF, undefined),
-                         tags => maps:get(tags, FF, [])},
-            Res = riak_cs_user:create_user(maps:get(name, FF, <<>>),
-                                           maps:get(email, FF, <<>>),
-                                           IAMExtra),
-            user_response(Res, ?JSON_TYPE, RD, Ctx);
-        ER ->
-            user_response(ER, ?JSON_TYPE, RD, Ctx)
-    end;
 accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case check_required_fields(FF) of
         ok ->
-            IAMExtra = #{path => maps:get(path, FF, <<"/">>),
-                         permissions_boundary => maps:get(permissions_boundary, FF, undefined),
+            IAMExtra = #{permissions_boundary => maps:get(permissions_boundary, FF, undefined),
                          tags => maps:get(tags, FF, [])},
-            user_response(update_user(maps:to_list(maps:merge(FF, IAMExtra)), User),
-                          ?JSON_TYPE, RD, Ctx);
+            Res =
+                case wrq:method(RD) of
+                    'POST' ->
+                        riak_cs_user:create_user(maps:get(name, FF, <<>>),
+                                                 maps:get(email, FF, <<>>),
+                                                 IAMExtra);
+                    'PUT' ->
+                        update_user(maps:to_list(maps:merge(FF, IAMExtra)), User)
+                end,
+            user_response(Res, ?JSON_TYPE, RD, Ctx);
         ER ->
             user_response(ER, ?JSON_TYPE, RD, Ctx)
     end.
@@ -156,38 +149,23 @@ check_required_fields(_) ->
 
 -spec accept_xml(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
-accept_xml(RD, Ctx = #rcs_web_context{user = undefined}) ->
-    Body = binary_to_list(wrq:req_body(RD)),
-    case riak_cs_xml:scan(Body) of
-        {error, malformed_xml} ->
-            riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx);
-        {ok, ParsedData} ->
-            ValidItems = lists:foldl(fun user_xml_filter/2,
-                                     [],
-                                     ParsedData#xmlElement.content),
-            UserName = proplists:get_value(name, ValidItems, ""),
-            Email= proplists:get_value(email, ValidItems, ""),
-            user_response(riak_cs_user:create_user(UserName, Email),
-                          ?XML_TYPE,
-                          RD,
-                          Ctx)
-    end;
-accept_xml(RD, Ctx = #rcs_web_context{user_object = undefined}) ->
-    riak_cs_aws_response:api_error(no_updates_for_federated_users, RD, Ctx);
 accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
             riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx);
-        {ok, ParsedData} ->
-            UpdateItems = lists:foldl(fun user_xml_filter/2,
-                                      [],
-                                      ParsedData#xmlElement.content),
-            user_response(update_user(UpdateItems, User),
-                          ?XML_TYPE,
-                          RD,
-                          Ctx)
-
+        {ok, Xml} ->
+            FF = lists:foldl(fun user_xml_filter/2, [], Xml#xmlElement.content),
+            UserName = proplists:get_value(name, FF, ""),
+            Email = proplists:get_value(email, FF, ""),
+            Res =
+                case wrq:method(RD) of
+                    'POST' ->
+                        riak_cs_user:create_user(UserName, Email);
+                    'PUT' ->
+                        update_user(maps:to_list(FF), User)
+                end,
+            user_response(Res, ?JSON_TYPE, RD, Ctx)
     end.
 
 produce_json(RD, Ctx = #rcs_web_context{user = User}) ->
@@ -232,7 +210,7 @@ admin_check(false, RD, Ctx) ->
 
 %% @doc Calculate the etag of a response body
 etag(Body) ->
-        riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
+    riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)).
 
 forbidden(_Method, RD, Ctx, undefined, _UserPathKey, false) ->
     %% anonymous access disallowed
@@ -321,7 +299,7 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    [{email, list_to_binary(Content#xmlText.value)} | Acc];
+                   Acc#{email => list_to_binary(Content#xmlText.value)};
                 false ->
                     Acc
             end;
@@ -329,7 +307,15 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    [{name, list_to_binary(Content#xmlText.value)} | Acc];
+                    Acc#{name => list_to_binary(Content#xmlText.value)};
+                false ->
+                    Acc
+            end;
+        'Path' ->
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    Acc#{path => list_to_binary(Content#xmlText.value)};
                 false ->
                     Acc
             end;
@@ -337,7 +323,7 @@ user_xml_filter(Element, Acc) ->
             [Content | _] = Element#xmlElement.content,
             case is_record(Content, xmlText) of
                 true ->
-                    [{status, list_to_binary(Content#xmlText.value)} | Acc];
+                    Acc#{status => list_to_binary(Content#xmlText.value)};
                 false ->
                     Acc
             end;
@@ -347,9 +333,9 @@ user_xml_filter(Element, Acc) ->
                 true ->
                     case Content#xmlText.value of
                         "true" ->
-                            [{new_key_secret, true} | Acc];
+                            Acc#{new_key_secret => true};
                         "false" ->
-                            [{new_key_secret, false} | Acc];
+                            Acc#{new_key_secret => false};
                         _ ->
                             Acc
                     end;
