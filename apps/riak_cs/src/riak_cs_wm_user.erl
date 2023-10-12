@@ -120,7 +120,7 @@ create_path(RD, Ctx) ->
 
 -spec accept_json(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, term(), term()}.
-accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
+accept_json(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
     case check_required_fields(FF) of
         ok ->
@@ -133,15 +133,23 @@ accept_json(RD, Ctx = #rcs_web_context{user = User}) ->
                                                  maps:get(email, FF, <<>>),
                                                  IAMExtra);
                     'PUT' ->
-                        update_user(maps:to_list(maps:merge(FF, IAMExtra)), User)
+                        {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+                        case riak_cs_iam:find_user(#{canonical_id => maps:get(id, FF)}, Pbc) of
+                            {ok, {User, _}} ->
+                                update_user(maps:to_list(maps:merge(FF, IAMExtra)), User);
+                            {error, notfound} ->
+                                {error, no_such_user}
+                        end
                 end,
             user_response(Res, ?JSON_TYPE, RD, Ctx);
         ER ->
             user_response(ER, ?JSON_TYPE, RD, Ctx)
     end.
 check_required_fields(#{email := Email,
-                        name := Name}) when is_binary(Email),
-                                            is_binary(Name) ->
+                        name := Name,
+                        id := Id}) when is_binary(Email),
+                                        is_binary(Name),
+                                        is_binary(Id) ->
     ok;
 check_required_fields(_) ->
     {error, missing_parameter}.
@@ -149,7 +157,7 @@ check_required_fields(_) ->
 
 -spec accept_xml(#wm_reqdata{}, #rcs_web_context{}) ->
     {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
-accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
+accept_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     Body = binary_to_list(wrq:req_body(RD)),
     case riak_cs_xml:scan(Body) of
         {error, malformed_xml} ->
@@ -163,7 +171,13 @@ accept_xml(RD, Ctx = #rcs_web_context{user = User}) ->
                     'POST' ->
                         riak_cs_user:create_user(UserName, Email);
                     'PUT' ->
-                        update_user(maps:to_list(FF), User)
+                        {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+                        case riak_cs_iam:find_user(#{canonical_id => maps:get(id, FF)}, Pbc) of
+                            {ok, {User, _}} ->
+                                update_user(maps:to_list(FF), User);
+                            {error, notfound} ->
+                                {error, no_such_user}
+                        end
                 end,
             user_response(Res, ?JSON_TYPE, RD, Ctx)
     end.
@@ -266,6 +280,8 @@ update_user_record(User, [{email, Email} | RestUpdates], _) ->
                                      display_name = DisplayName},
                        RestUpdates,
                        true);
+update_user_record(User, [{path, Path} | RestUpdates], _) ->
+    update_user_record(User?RCS_USER{path = Path}, RestUpdates, true);
 update_user_record(User = ?RCS_USER{}, [{new_key_secret, true} | RestUpdates], _) ->
     update_user_record(riak_cs_user:update_key_secret(User), RestUpdates, true);
 update_user_record(User, [_ | RestUpdates], U1) ->
@@ -308,6 +324,14 @@ user_xml_filter(Element, Acc) ->
             case is_record(Content, xmlText) of
                 true ->
                     Acc#{name => list_to_binary(Content#xmlText.value)};
+                false ->
+                    Acc
+            end;
+        'Id' ->
+            [Content | _] = Element#xmlElement.content,
+            case is_record(Content, xmlText) of
+                true ->
+                    Acc#{id => list_to_binary(Content#xmlText.value)};
                 false ->
                     Acc
             end;

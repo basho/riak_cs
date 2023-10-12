@@ -71,6 +71,8 @@ error_message(no_updates_for_federated_users) ->
     "Federated users cannot be updated.";
 error_message(invalid_role_parameters) ->
     "Incomplete or invalid role parameters.";
+error_message(no_such_user) ->
+    "The specified user does not exist.";
 error_message(no_such_bucket) ->
     "The specified bucket does not exist.";
 error_message({riak_connect_failed, Reason}) ->
@@ -150,6 +152,7 @@ error_code(bad_etag) -> "InvalidPart";
 error_code(bad_etag_order) -> "InvalidPartOrder";
 error_code(invalid_user_update) -> "InvalidUserUpdate";
 error_code(no_updates_for_federated_users) -> "InvalidUserUpdate";
+error_code(no_such_user) -> "NoSuchUser";
 error_code(no_such_bucket) -> "NoSuchBucket";
 error_code(no_such_key) -> "NoSuchKey";
 error_code(no_copy_source_key) -> "NoSuchKey";
@@ -225,6 +228,7 @@ status_code(bad_etag)                         -> 400;
 status_code(bad_etag_order)                   -> 400;
 status_code(invalid_user_update)              -> 400;
 status_code(no_updates_for_federated_users)   -> 400;
+status_code(no_such_user)                     -> 404;
 status_code(no_such_bucket)                   -> 404;
 status_code(no_such_key)                      -> 404;
 status_code(no_copy_source_key)               -> 404;
