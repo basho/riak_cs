@@ -134,7 +134,7 @@ to_json([]) ->
     <<>>.
 
 fix_quotes_for_empty_lists(A, S) ->
-    lists:foldl(fun({RE, Replacement}, Q) -> re:replace(Q, RE, Replacement) end, S, res(A)).
+    lists:foldl(fun({RE, Replacement}, Q) -> re:replace(Q, RE, Replacement, [global]) end, S, res(A)).
 res(user) ->
     [{"\"buckets\": \"\"", "\"buckets\": []"},
      {"\"attached_policies\": \"\"", "\"attached_policies\": []"},
