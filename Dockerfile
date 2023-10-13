@@ -17,4 +17,4 @@ FROM debian:latest AS runtime-image
 
 COPY --from=compile-image /usr/src/riak_cs/rel/riak-cs /opt/riak-cs
 
-CMD /opt/riak-cs/bin/riak-cs foreground
+ENTRYPOINT [ "/opt/riak-cs/bin/riak-cs" "foreground" ]
