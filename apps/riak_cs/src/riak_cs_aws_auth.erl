@@ -261,8 +261,8 @@ authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders) ->
         true ->
             ok;
         _ ->
-            ?LOG_NOTICE("Bad signature: ~s (expected: ~s", [Presented, Calculated]),
-            {error, {unmatched_signature, Presented, Calculated}}
+            ?LOG_NOTICE("Bad signature: ~s (expected: ~s)", [Presented, Calculated]),
+            {error, bad_signature}
     end.
 
 canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders) ->

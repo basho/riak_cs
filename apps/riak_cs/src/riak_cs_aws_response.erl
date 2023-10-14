@@ -45,8 +45,12 @@ error_message(user_has_buckets) ->
     "User has buckets and cannot be deleted.";
 error_message(user_has_attached_policies) ->
     "User has attached policies and cannot be deleted.";
+error_message(bad_signature) ->
+    "The request signature that the server calculated does not match the signature that you provided.";
 error_message(access_denied) ->
     "Access Denied";
+error_message(user_disabled) ->
+    "User is disabled";
 error_message(copy_source_access_denied) ->
     "Access Denied";
 error_message(reqtime_tooskewed) ->
@@ -138,7 +142,9 @@ error_message(ErrorName) ->
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(user_has_buckets) -> "DeleteConflict";
 error_code(user_has_attached_policies) -> "DeleteConflict";
+error_code(bad_signature) -> "SignatureDoesNotMatch";
 error_code(access_denied) -> "AccessDenied";
+error_code(user_disabled) -> "AccessDenied";
 error_code(copy_source_access_denied) -> "AccessDenied";
 error_code(reqtime_tooskewed) -> "RequestTimeTooSkewed";
 error_code(bucket_not_empty) -> "BucketNotEmpty";
@@ -213,7 +219,9 @@ status_code(invalid_access_key_id)            -> 403;
 status_code(invalid_email_address)            -> 400;
 status_code(user_has_buckets)                 -> 409;
 status_code(user_has_attached_policies)       -> 409;
+status_code(bad_signature)                    -> 403;
 status_code(access_denied)                    -> 403;
+status_code(user_disabled)                    -> 403;
 status_code(copy_source_access_denied)        -> 403;
 status_code(reqtime_tooskewed)                -> 403;
 status_code(bucket_not_empty)                 -> 409;

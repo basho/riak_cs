@@ -25,7 +25,6 @@
 -export([init/1,
          service_available/2,
          forbidden/2,
-         authorize/2,
          options/2,
          content_types_accepted/2,
          generate_etag/2,
@@ -44,13 +43,11 @@
 -ignore_xref([init/1,
               service_available/2,
               forbidden/2,
-              authorize/2,
               options/2,
               content_types_accepted/2,
               generate_etag/2,
               last_modified/2,
               multiple_choices/2,
-              authorize/2,
               accept_wwwform/2,
               allowed_methods/2,
               valid_entity_length/2,
@@ -106,79 +103,8 @@ forbidden(RD, Ctx) ->
         'OPTIONS' ->
             {false, RD, Ctx};
         'POST' ->
-            forbidden2(RD, Ctx)
+            riak_cs_wm_utils:forbidden(RD, Ctx, iam_entity)
     end.
-forbidden2(RD, #rcs_web_context{auth_module = AuthMod,
-                               riak_client = RcPid,
-                               request_id = RequestId} = Ctx) ->
-    AuthResult =
-        case AuthMod:identify(RD, Ctx) of
-            failed ->
-                %% Identification failed, deny access
-                {error, no_such_key};
-            {failed, Reason} ->
-                {error, Reason};
-            {UserKey, AuthData} ->
-                case riak_cs_config:admin_creds() of
-                    {ok, {UserKey, _}} ->
-                        logger:notice("Granting admin access to request ~s", [RequestId]),
-                        {ok, admin_access};
-                    _NoAdmiAccess ->
-                        case riak_cs_user:get_user(UserKey, RcPid) of
-                            {ok, {User, Obj}} ->
-                                authenticate(User, Obj, RD, Ctx, AuthData);
-                            {error, _} = Error ->
-                                Error
-                        end
-                end
-        end,
-    post_authentication(AuthResult, RD, Ctx, fun authorize/2).
-
-post_authentication({ok, admin_access}, RD, Ctx, _Authorize) ->
-    {false, RD, Ctx#rcs_web_context{admin_access = true}};
-post_authentication({ok, User, UserObj}, RD, Ctx, Authorize) ->
-    %% given keyid and signature matched, proceed
-    Authorize(RD, Ctx#rcs_web_context{user = User,
-                                      user_object = UserObj});
-post_authentication({error, no_user_key}, RD, Ctx, Authorize) ->
-    %% no keyid was given, proceed anonymously
-    ?LOG_DEBUG("No user key"),
-    Authorize(RD, Ctx);
-post_authentication({error, bad_auth}, RD, #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
-    %% given keyid was found, but signature didn't match
-    ?LOG_DEBUG("bad_auth"),
-    ResponseMod:api_error(access_denied, RD, Ctx);
-post_authentication({error, reqtime_tooskewed} = Error, RD,
-                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
-    ?LOG_DEBUG("reqtime_tooskewed"),
-    ResponseMod:api_error(Error, RD, Ctx);
-post_authentication({error, {auth_not_supported, AuthType}}, RD,
-                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
-    ?LOG_DEBUG("auth_not_supported: ~s", [AuthType]),
-    ResponseMod:api_error({auth_not_supported, AuthType}, RD, Ctx);
-post_authentication({error, notfound}, RD, #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
-    ?LOG_DEBUG("User does not exist"),
-    ResponseMod:api_error(invalid_access_key_id, RD, Ctx);
-post_authentication({error, Reason}, RD,
-                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
-    %% Lookup failed, basically due to disconnected stuff
-    ?LOG_DEBUG("Authentication error: ~p", [Reason]),
-    ResponseMod:api_error(Reason, RD, Ctx).
-
-authenticate(User, UserObj, RD, Ctx = #rcs_web_context{auth_module = AuthMod}, AuthData)
-  when User?RCS_USER.status =:= enabled ->
-    case AuthMod:authenticate(User, AuthData, RD, Ctx) of
-        ok ->
-            {ok, User, UserObj};
-        {error, reqtime_tooskewed} ->
-            {error, reqtime_tooskewed};
-        {error, _Reason} ->
-            {error, bad_auth}
-    end;
-authenticate(User, _UserObj, _RD, _Ctx, _AuthData)
-  when User?RCS_USER.status =/= enabled ->
-    %% {ok, _} -> %% disabled account, we are going to 403
-    {error, bad_auth}.
 
 -spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
 allowed_methods(RD, Ctx) ->
@@ -189,12 +115,6 @@ allowed_methods(RD, Ctx) ->
           {[{string(), module()}], #wm_reqdata{}, #rcs_web_context{}}.
 content_types_accepted(RD, Ctx) ->
     {[{?WWWFORM_TYPE, accept_wwwform}], RD, Ctx}.
-
-
--spec authorize(#wm_reqdata{}, #rcs_web_context{}) ->
-          {boolean() | {halt, term()}, #wm_reqdata{}, #rcs_web_context{}}.
-authorize(RD, Ctx) ->
-    riak_cs_wm_utils:role_access_authorize_helper(iam_entity, RD, Ctx).
 
 
 -spec generate_etag(#wm_reqdata{}, #rcs_web_context{}) ->

@@ -23,6 +23,7 @@
 
 -export([service_available/2,
          service_available/3,
+         forbidden/3,
          lower_case_method/1,
          iso_8601_datetime/0,
          iso_8601_datetime/1,
@@ -64,7 +65,6 @@
          check_timeskew/1,
          content_length/1,
          valid_entity_length/3,
-         role_access_authorize_helper/3,
          aws_service_action/2,
          make_final_rd/2,
          make_request_id/0,
@@ -299,6 +299,89 @@ validate_auth_header(RD, AuthBypass, RcPid, Ctx) ->
             logger:error("Retrieval of user record for ~p failed. Reason: ~p", [KeyId, Reason]),
             {error, Reason}
     end.
+
+forbidden(RD, #rcs_web_context{auth_module = AuthMod,
+                               riak_client = RcPid} = Ctx,
+          Target) ->
+    {AuthResult, IsAdmin} =
+        case AuthMod:identify(RD, Ctx) of
+            failed ->
+                {{error, no_such_key}, false};
+            {failed, Reason} ->
+                {{error, Reason}, false};
+            {UserKey, AuthData} ->
+                case riak_cs_user:get_user(UserKey, RcPid) of
+                    {ok, {?RCS_USER{status = enabled,
+                                    key_id = UserKey} = User, _}} = OkayedUserTuple ->
+                        case AuthMod:authenticate(User, AuthData, RD, Ctx) of
+                            ok ->
+                                {ok, {AdminKey, _}} = riak_cs_config:admin_creds(),
+                                {OkayedUserTuple, (AdminKey == UserKey)};
+                            NotOk ->
+                                {NotOk, false}
+                        end;
+                    {ok, {?RCS_USER{status = disabled}, _}} ->
+                        {{error, user_disabled}, false};
+                    {error, _} = Error ->
+                        {Error, false}
+                end
+        end,
+    post_authentication(
+      AuthResult, RD, Ctx#rcs_web_context{admin_access = IsAdmin}, Target).
+
+post_authentication({ok, User, UserObj}, RD, Ctx, Target) ->
+    %% given keyid and signature matched, proceed
+    role_access_authorize_helper(
+      Target, RD, Ctx#rcs_web_context{user = User,
+                                      user_object = UserObj});
+post_authentication({error, no_user_key}, RD, Ctx, Target) ->
+    %% no keyid was given, proceed anonymously
+    ?LOG_DEBUG("No user key"),
+    role_access_authorize_helper(
+      Target, RD, Ctx);
+post_authentication({error, notfound}, RD, #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
+    ?LOG_DEBUG("User does not exist"),
+    ResponseMod:api_error(invalid_access_key_id, RD, Ctx);
+post_authentication({error, Reason}, RD,
+                    #rcs_web_context{response_module = ResponseMod} = Ctx, _) ->
+    %% Lookup failed, basically due to disconnected stuff
+    ?LOG_DEBUG("Authentication error: ~p", [Reason]),
+    ResponseMod:api_error(Reason, RD, Ctx).
+
+role_access_authorize_helper(Target, RD,
+                             Ctx = #rcs_web_context{policy_module = PolicyMod,
+                                                    user = User}) ->
+    Access = PolicyMod:reqdata_to_access(RD, Target,
+                                         User?RCS_USER.id),
+    case get_user_policies_or_halt(Ctx) of
+        user_session_expired ->
+            deny_access(RD, Ctx);
+        {UserPolicies, PermissionsBoundary} ->
+            PolicyVerdict =
+                lists:foldl(
+                  fun(_, true) ->
+                          true;
+                     (P, _) ->
+                          PolicyMod:eval(Access, P)
+                  end,
+                  undefined,
+                  UserPolicies),
+            PermBoundaryVerdict =
+                case PermissionsBoundary of
+                    ?POLICY{} ->
+                        PolicyMod:eval(Access, PermissionsBoundary);
+                    [] ->
+                        undefined
+                end,
+            case PolicyVerdict == true andalso PermBoundaryVerdict /= false of
+                true ->
+                    {false, RD, Ctx};
+                false ->
+                    deny_access(RD, Ctx)
+            end
+    end.
+
+
 
 %% @doc Utility function for building #key_contest
 %% Spawns manifest FSM
@@ -1188,41 +1271,6 @@ valid_entity_length(MaxLen, RD, #rcs_web_context{response_module = ResponseMod,
             {true, RD, Ctx}
     end.
 
-
--spec role_access_authorize_helper(action_target(), #wm_reqdata{}, #rcs_web_context{}) ->
-          authorized_response().
-role_access_authorize_helper(Target, RD,
-                             Ctx = #rcs_web_context{policy_module = PolicyMod,
-                                                    user = User}) ->
-    Access = PolicyMod:reqdata_to_access(RD, Target,
-                                         User?RCS_USER.id),
-    case get_user_policies_or_halt(Ctx) of
-        user_session_expired ->
-            deny_access(RD, Ctx);
-        {UserPolicies, PermissionsBoundary} ->
-            PolicyVerdict =
-                lists:foldl(
-                  fun(_, true) ->
-                          true;
-                     (P, _) ->
-                          PolicyMod:eval(Access, P)
-                  end,
-                  undefined,
-                  UserPolicies),
-            PermBoundaryVerdict =
-                case PermissionsBoundary of
-                    ?POLICY{} ->
-                        PolicyMod:eval(Access, PermissionsBoundary);
-                    [] ->
-                        undefined
-                end,
-            case PolicyVerdict == true andalso PermBoundaryVerdict /= false of
-                true ->
-                    {false, RD, Ctx};
-                false ->
-                    deny_access(RD, Ctx)
-            end
-    end.
 
 
 make_final_rd(Body, RD) ->
