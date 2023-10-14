@@ -329,7 +329,7 @@ forbidden(RD, #rcs_web_context{auth_module = AuthMod,
     post_authentication(
       AuthResult, RD, Ctx#rcs_web_context{admin_access = IsAdmin}, Target).
 
-post_authentication({ok, User, UserObj}, RD, Ctx, Target) ->
+post_authentication({ok, {User, UserObj}}, RD, Ctx, Target) ->
     %% given keyid and signature matched, proceed
     role_access_authorize_helper(
       Target, RD, Ctx#rcs_web_context{user = User,
