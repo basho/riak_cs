@@ -172,9 +172,9 @@ accept_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
                         riak_cs_user:create_user(UserName, Email);
                     'PUT' ->
                         {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-                        case riak_cs_iam:find_user(#{canonical_id => maps:get(id, FF)}, Pbc) of
+                        case riak_cs_iam:find_user(#{canonical_id => proplists:get_value(id, FF)}, Pbc) of
                             {ok, {User, _}} ->
-                                update_user(maps:to_list(FF), User);
+                                update_user(FF, User);
                             {error, notfound} ->
                                 {error, no_such_user}
                         end
