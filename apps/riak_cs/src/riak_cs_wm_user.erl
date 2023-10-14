@@ -122,12 +122,13 @@ create_path(RD, Ctx) ->
     {boolean() | {halt, term()}, term(), term()}.
 accept_json(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     FF = jsx:decode(wrq:req_body(RD), [{labels, atom}]),
-    case check_required_fields(FF) of
+    Method = wrq:method(RD),
+    case check_required_fields(Method, FF) of
         ok ->
             IAMExtra = #{permissions_boundary => maps:get(permissions_boundary, FF, undefined),
                          tags => maps:get(tags, FF, [])},
             Res =
-                case wrq:method(RD) of
+                case Method of
                     'POST' ->
                         riak_cs_user:create_user(maps:get(name, FF, <<>>),
                                                  maps:get(email, FF, <<>>),
@@ -145,13 +146,19 @@ accept_json(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
         ER ->
             user_response(ER, ?JSON_TYPE, RD, Ctx)
     end.
-check_required_fields(#{email := Email,
+check_required_fields('POST',
+                      #{email := Email,
+                        name := Name}) when is_binary(Email),
+                                            is_binary(Name) ->
+    ok;
+check_required_fields('PUT',
+                      #{email := Email,
                         name := Name,
                         id := Id}) when is_binary(Email),
                                         is_binary(Name),
                                         is_binary(Id) ->
     ok;
-check_required_fields(_) ->
+check_required_fields(_, _) ->
     {error, missing_parameter}.
 
 
