@@ -254,7 +254,7 @@ authenticate_v4(SecretAccessKey, AuthAttrs, Method, Path, Qs, AllHeaders) ->
     %% ?LOG_DEBUG("CanonicalRequest(v4): ~s", [CanonicalRequest]),
     {StringToSign, Scope} =
         string_to_sign_v4(AuthAttrs, AllHeaders, CanonicalRequest),
-    %% ?LOG_DEBUG("StringToSign(v4): ~s", [StringToSign]),
+    %%?LOG_DEBUG("StringToSign(v4): ~s", [StringToSign]),
     Calculated = calculate_signature_v4(SecretAccessKey, Scope, StringToSign),
     {"Signature", Presented} = lists:keyfind("Signature", 1, AuthAttrs),
     case Calculated == Presented of
@@ -272,12 +272,14 @@ canonical_request_v4(AuthAttrs, Method, Path, Qs, AllHeaders) ->
                                             string:tokens(SignedHeaders, [$;])),
     {"x-amz-content-sha256", HashedPayload} =
         lists:keyfind("x-amz-content-sha256", 1, AllHeaders),
+    %%?LOG_DEBUG("HashedPayload ~p", [HashedPayload]),
     CanonicalRequest = [atom_to_list(Method), $\n,
                         strict_url_encode_for_path(Path), $\n,
                         CanonicalQs, $\n,
                         CanonicalHeaders, $\n,
                         SignedHeaders, $\n,
                         HashedPayload],
+    %%?LOG_DEBUG("CanonicalRequest: ~p", [CanonicalRequest]),
     CanonicalRequest.
 
 canonical_headers_v4(AllHeaders, HeaderNames) ->
@@ -334,7 +336,7 @@ canonicalize_qs(Version, QS) ->
     %% The QS must be sorted be canonicalized,
     %% and since `canonicalize_qs/2` builds up the
     %% accumulator with cons, it comes back in reverse
-    %% order. So we'll sort then reverise, so cons'ing
+    %% order. So we'll sort then reverse, so cons'ing
     %% actually puts it back in the correct order
     ReversedSorted = lists:reverse(lists:sort(QS)),
     case Version of
