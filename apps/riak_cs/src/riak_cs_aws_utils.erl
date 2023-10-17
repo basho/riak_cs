@@ -166,12 +166,12 @@ generate_key(UserName) ->
 
 %% @doc Generate a secret access token for a user
 -spec generate_secret(binary(), binary()) -> binary().
-generate_secret(UserName, Key) ->
+generate_secret(UserId, Key) ->
     Bytes = 14,
-    Ctx = crypto:mac_init(hmac, sha, UserName),
+    Ctx = crypto:mac_init(hmac, sha, UserId),
     Ctx1 = crypto:mac_update(Ctx, Key),
     SecretPart1 = crypto:mac_finalN(Ctx1, Bytes),
-    Ctx2 = crypto:mac_init(hmac, sha, UserName),
+    Ctx2 = crypto:mac_init(hmac, sha, UserId),
     Ctx3 = crypto:mac_update(Ctx2, uuid:get_v4()),
     SecretPart2 = crypto:mac_finalN(Ctx3, Bytes),
     base64url:encode(
