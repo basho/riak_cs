@@ -45,6 +45,8 @@ error_message(user_has_buckets) ->
     "User has buckets and cannot be deleted.";
 error_message(user_has_attached_policies) ->
     "User has attached policies and cannot be deleted.";
+error_message(policy_in_use) ->
+    "Policy is attached to other entities cannot be deleted.";
 error_message(bad_signature) ->
     "The request signature that the server calculated does not match the signature that you provided.";
 error_message(access_denied) ->
@@ -116,6 +118,7 @@ error_message(unexpected_content) -> "This request does not support content";
 error_message(conflicting_grantee_canonical_id) -> "ACL grantee with Email and defined ID that does not match user's canonical_id on record";
 error_message(canned_acl_and_header_grant) -> "Specifying both Canned ACLs and Header Grants is not allowed";
 error_message(malformed_xml) -> "The XML you provided was not well-formed or did not validate against our published schema";
+error_message(no_such_policy) -> "No such policy";
 error_message(no_such_role) -> "No such role";
 error_message(no_such_saml_provider) -> "No such SAML provider";
 error_message(role_already_exists) -> "Role already exists";
@@ -142,6 +145,7 @@ error_message(ErrorName) ->
 error_code(invalid_access_key_id) -> "InvalidAccessKeyId";
 error_code(user_has_buckets) -> "DeleteConflict";
 error_code(user_has_attached_policies) -> "DeleteConflict";
+error_code(policy_in_use) -> "DeleteConflict";
 error_code(bad_signature) -> "SignatureDoesNotMatch";
 error_code(access_denied) -> "AccessDenied";
 error_code(user_disabled) -> "AccessDenied";
@@ -191,6 +195,7 @@ error_code(conflicting_grantee_canonical_id) -> "ConflictingGranteeCanonicalId";
 error_code(canned_acl_and_header_grant) -> "InvalidRequest";
 error_code(malformed_acl_error) -> "MalformedACLError";
 error_code(malformed_xml) -> "MalformedXML";
+error_code(no_such_policy) -> "NoSuchEntity";
 error_code(no_such_role) -> "NoSuchEntity";
 error_code(no_such_saml_provider) -> "NoSuchEntity";
 error_code(role_already_exists) -> "EntityAlreadyExists";
@@ -219,6 +224,7 @@ status_code(invalid_access_key_id)            -> 403;
 status_code(invalid_email_address)            -> 400;
 status_code(user_has_buckets)                 -> 409;
 status_code(user_has_attached_policies)       -> 409;
+status_code(policy_in_use)                    -> 409;
 status_code(bad_signature)                    -> 403;
 status_code(access_denied)                    -> 403;
 status_code(user_disabled)                    -> 403;
@@ -271,6 +277,7 @@ status_code(conflicting_grantee_canonical_id) -> 400;
 status_code(canned_acl_and_header_grant)      -> 400;
 status_code(malformed_acl_error)              -> 400;
 status_code(malformed_xml)                    -> 400;
+status_code(no_such_policy)                   -> 404;
 status_code(no_such_role)                     -> 404;
 status_code(no_such_saml_provider)            -> 404;
 status_code(role_already_exists)              -> 409;

@@ -385,10 +385,12 @@ do_action("GetPolicy",
     end;
 
 do_action("DeletePolicy",
-          Form, RD, Ctx = #rcs_web_context{response_module = ResponseMod,
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod,
                                            request_id = RequestId}) ->
     Arn = proplists:get_value("PolicyArn", Form),
-    case riak_cs_iam:delete_policy(list_to_binary(Arn)) of
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:delete_policy(list_to_binary(Arn), Pbc) of
         ok ->
             logger:info("Deleted policy with arn ~s on request_id ~s", [Arn, RequestId]),
             Doc = riak_cs_xml:to_xml(

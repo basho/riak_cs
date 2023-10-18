@@ -41,7 +41,7 @@
 
          create_policy/1,
          update_policy/1,
-         delete_policy/1,
+         delete_policy/2,
          get_policy/2,
          find_policy/2,
          attach_role_policy/3,
@@ -214,10 +214,17 @@ create_policy(Specs = #{policy_document := D}) ->
             ER
     end.
 
--spec delete_policy(binary()) -> ok | {error, reportable_error_reason()}.
-delete_policy(Arn) ->
+-spec delete_policy(binary(), pid()) -> ok | {error, reportable_error_reason()}.
+delete_policy(Arn, Pbc) ->
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:delete_policy(Arn, [{auth_creds, AdminCreds}]).
+    case get_policy(Arn, Pbc) of
+        {ok, ?IAM_POLICY{attachment_count = AC}} when AC > 0 ->
+            {error, policy_in_use};
+        {ok, _} ->
+            velvet:delete_policy(Arn, [{auth_creds, AdminCreds}]);
+        {error, notfound} ->
+            {error, no_such_policy}
+    end.
 
 -spec get_policy(binary(), pid()) -> {ok, ?IAM_POLICY{}} | {error, term()}.
 get_policy(Arn, Pbc) ->
