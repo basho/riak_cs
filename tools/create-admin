@@ -16,8 +16,10 @@ def create_user(host, port, name, email):
         return json.loads(content)
     except:
         print("""
-We tried to do a POST to /riak-cs/users, and the request failed.
-
+We tried to do a POST to /riak-cs/users, and the request failed:
+-----------
+%s
+-----------
 Check to make sure:
   a) riak and riak_cs are both running;
   b) `anonymous_user_creation` is set to `on` in riak-cs.conf.
@@ -30,7 +32,7 @@ creds, attach to your riak_cs node (`riak-cs daemon_attach`) and do:
   {ok, {Admin, _}} = riak_cs_iam:find_user(#{name => <<"admin">>}, Pbc),
   Admin.
 
-""")
+""" % (content))
         exit(1)
 
 
@@ -40,6 +42,12 @@ def main():
     admin_email = "admin@me.com"
     port = 8080
     quiet = False
+
+    rcs_bin = os.getenv('RCS_BIN_PATH', default = "/usr/sbin")
+    rcs_etc = os.getenv('RCS_ETC_PATH', default = "/etc/riak-cs")
+
+    admin_key_id = None
+    admin_key_secret = None
 
     opts, args = getopt.getopt(sys.argv[1:], 'h:p:e:q', ["help"])
     for o, a in opts:
@@ -66,6 +74,15 @@ Run this script once, and note down the creds, to be used with your client or Ri
 """)
             exit(0)
 
+    # preflight check
+    _   = os.system(rcs_bin + "/riak-cs stop >/dev/null")
+    _   = os.system("sed -i 's/anonymous_user_creation = .+/anonymous_user_creation = on/' %s/riak-cs.conf" % (rcs_etc))
+    _   = os.system(rcs_bin + "/riak-cs start >/dev/null")
+    res = os.system(rcs_bin + "/riak-cs ping >/dev/null")
+    if res != 0:
+        print("Couldn't ensure riak-cs is started and pingable")
+        exit(1)
+
     res = create_user("127.0.0.1", port, admin_name, admin_email)
     if quiet:
         print("%s %s %s" % (res['key_id'], res['key_secret'], res['id']))
@@ -73,13 +90,25 @@ Run this script once, and note down the creds, to be used with your client or Ri
         print("An admin user was created with these credentials:")
         pprint.pp(res)
 
+    admin_key_id = res['key_id']
+    admin_key_secret = res['key_secret']
+
+    if not quiet:
+        print("Now going to sed the admin key_id in %s/riak-cs.conf and restart riak_cs" % (rcs_etc))
+    os.system(rcs_bin + "/riak-cs stop")
+    res = os.system("sed -i 's/admin\.key = admin-key/admin.key = %s/' %s/riak-cs.conf" % (admin_key_id, rcs_etc))
+    if res != 0:
+        print("Failed to modify your riak-cs.conf")
+        exit(1)
+    res = os.system(rcs_bin + "/riak-cs start")
+
     #boto3.set_stream_logger('')
     os.environ['http_proxy'] = 'http://127.0.0.1:%d' % (port)
     config = Config(signature_version = 's3v4')
     iam_client = boto3.client('iam',
                               use_ssl = False,
-                              aws_access_key_id = "admin-key",
-                              aws_secret_access_key = "admin_secret",
+                              aws_access_key_id = admin_key_id,
+                              aws_secret_access_key = admin_key_secret,
                               config = config)
 
     policy = json.dumps({
@@ -98,6 +127,7 @@ Run this script once, and note down the creds, to be used with your client or Ri
         PolicyDocument = policy,
         Description = "Admin Policy allowing access to all S3. IAM and STS actions"
     )
+    #print(res)
     policy_arn = res['Policy']['Arn']
 
     res = iam_client.attach_user_policy(
@@ -106,13 +136,14 @@ Run this script once, and note down the creds, to be used with your client or Ri
     )
     if not quiet:
         print("Admin policy", policy_arn, "created and attached to user \"admin\"")
-        print("""
-Next steps:
-  * in riak-cs.conf, set `anonymous_user_creation` back to `off`
-    and replace the value of `admin.key` ("admin-key") with the one given
-    above (field "key_id");
-  * restart riak_cs.
-""")
+
+    if not quiet:
+        print("Finally, disabling anonymous_user_creation")
+    res = os.system("sed -i 's/anonymous_user_creation = on/anonymous_user_creation = off/' %s/riak-cs.conf" % (rcs_etc))
+    if res != 0:
+        print("Failed to modify your riak-cs.conf")
+        exit(1)
+
 
 
 if __name__ == "__main__":

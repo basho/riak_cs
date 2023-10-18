@@ -331,9 +331,20 @@ forbidden(RD, #rcs_web_context{auth_module = AuthMod,
 
 post_authentication({ok, {User, UserObj}}, RD, Ctx, Target) ->
     %% given keyid and signature matched, proceed
-    role_access_authorize_helper(
-      Target, RD, Ctx#rcs_web_context{user = User,
-                                      user_object = UserObj});
+    case {riak_cs_config:admin_creds(),
+          riak_cs_config:anonymous_user_creation(),
+          User} of
+        {{ok, {AdminKeyId, _}},
+         true,
+         ?RCS_USER{key_id = AdminKeyId}} ->
+            logger:notice("Allowing admin user to execute this call ignoring policy checks", []),
+            logger:notice("Set `anonymous_user_creation` to `off` (after creating policies as appropriate) to squelch this message", []),
+            {false, RD, Ctx};
+        _ ->
+            role_access_authorize_helper(
+              Target, RD, Ctx#rcs_web_context{user = User,
+                                              user_object = UserObj})
+    end;
 post_authentication({error, no_user_key}, RD, Ctx, Target) ->
     %% no keyid was given, proceed anonymously
     ?LOG_DEBUG("No user key"),
