@@ -58,6 +58,7 @@ admin_resources(Props) ->
     [
      {["riak-cs", "stats"], riak_cs_wm_stats, Props},
      {["riak-cs", "ping"], riak_cs_wm_ping, []},
+     {["riak-cs", "info"], riak_cs_wm_info, []},
      {["riak-cs", "users"], riak_cs_wm_users, Props},
      {["riak-cs", "user", '*'], riak_cs_wm_user, Props},
      {["riak-cs", "usage", '*'], riak_cs_wm_usage, Props}
