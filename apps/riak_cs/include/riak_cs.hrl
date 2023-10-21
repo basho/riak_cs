@@ -25,7 +25,8 @@
 -include("aws_api.hrl").
 -include("riak_cs_web.hrl").
 
--define(RCS_VERSION, 030200).
+-define(RCS_VERSION, 030202).
+-define(RCS_VERSION_STRING, "3.2.2").
 
 -type riak_client() :: pid().
 
