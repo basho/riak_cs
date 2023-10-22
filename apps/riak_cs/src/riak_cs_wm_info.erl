@@ -75,7 +75,7 @@ forbidden2(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
 content_types_provided(RD, Ctx) ->
     {[{?JSON_TYPE, to_json}], RD, Ctx}.
 
--spec to_json(#wm_reqdata{}, #rcs_web_context{}) -> {string(), #wm_reqdata{}, #rcs_web_context{}}.
+-spec to_json(#wm_reqdata{}, #rcs_web_context{}) -> {binary(), #wm_reqdata{}, #rcs_web_context{}}.
 to_json(RD, Ctx) ->
     {jsx:encode(gather_info()), RD, Ctx}.
 
