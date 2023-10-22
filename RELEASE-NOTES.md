@@ -1,3 +1,33 @@
+# Riak CS 3.2.2 Release Notes
+
+Released October 23, 2023.
+
+## General
+
+This is mostly a bug-fix release, with a smattering of small
+improvements enabling it to operate with the new Riak CS Control
+(version 3.2.2, rewritten in Elm).
+
+## New features
+
+* New admin API endpoint, /riak-cs/info, reporting Riak CS version and
+  uptime.
+* tools/create-admin now is more user-friendly.
+
+## Bug fixes
+
+### Critical bugs
+
+* In 3.2.x, admin user signature was not verified in IAM calls.
+
+### Less critical bugs
+
+* Fix DeleteUserPolicy when called on a policy with a non-zero
+  attachment count.
+* GetUser now includes PermissionsBoundary in its XML response.
+* Fix parsing of IsAttachable parameter in *Policy calls.
+* Fix updating user email via PUT to /riak-cs/user.
+
 # Riak CS 3.2.1 Release Notes
 
 Released September 3, 2023.
