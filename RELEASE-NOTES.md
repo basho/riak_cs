@@ -10,9 +10,14 @@ improvements enabling it to operate with the new Riak CS Control
 
 ## New features
 
-* New admin API endpoint, /riak-cs/info, reporting Riak CS version and
-  uptime.
-* tools/create-admin now is more user-friendly.
+* New admin API endpoint, /riak-cs/info, currently reporting Riak CS version
+  and uptime.
+* Two helper scripts, `create-riak-cs-admin` (useful to create an
+  admin user on a fresh install of Riak CS; requires python with boto3
+  and httplib2) and `prepare-riak-for-cs` (modifies riak configuration
+  files in /etc/riak to work with locally co-installed Riak CS). These
+  scripts are installed in /usr/lib/riak-cs/bin (or /usr/lib64/... on
+  other distros).
 
 ## Bug fixes
 
