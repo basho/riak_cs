@@ -1,7 +1,14 @@
 #!/bin/bash
 
 ETC=${ETC:-"/etc/riak"}
-RIAK_CS_EBIN=${RIAK_CS_EBIN:-"/usr/lib/riak-cs/lib"}
+
+if [ -d /usr/lib/riak-cs ]; then
+    RCS_PKG_INST=/usr/lib/riak-cs/lib
+elif [ -d /usr/lib64/riak-cs ]; then
+    RCS_PKG_INST=/usr/lib64/riak-cs/lib
+fi
+
+RIAK_CS_EBIN=${RIAK_CS_EBIN:-$RCS_PKG_INST}
 paths_to_add=`for p in ${RIAK_CS_EBIN}/riak_cs*/ebin; do echo -n \\"$p\\",; done | sed 's/,$//'`
 
 # sed the riak-cs settings into factory riak.conf and advanced.config
