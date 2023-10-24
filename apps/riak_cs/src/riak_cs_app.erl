@@ -96,10 +96,9 @@ atoms_for_check_bucket_props() ->
 
 check_admin_creds(Pbc) ->
     case riak_cs_config:admin_creds() of
-        {ok, {<<"admin-key">>, _}} ->
+        {ok, {?DEFAULT_ADMIN_KEY, _}} ->
             %% The default key
-            logger:warning("admin.key is defined as default. Please create"
-                           " admin user and configure it.", []),
+            logger:warning("admin.key has not been set. Please create an admin user (e.g., `riak-cs admin create-admin-user`)", []),
             application:set_env(riak_cs, admin_secret, <<"admin-secret">>),
             {ok, nop()};
         {ok, {undefined, _}} ->

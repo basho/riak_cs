@@ -1,6 +1,6 @@
 # Riak CS 3.2.2 Release Notes
 
-Released October 23, 2023.
+Released November 4, 2023.
 
 ## General
 
@@ -12,12 +12,12 @@ improvements enabling it to operate with the new Riak CS Control
 
 * New admin API endpoint, /riak-cs/info, currently reporting Riak CS version
   and uptime.
-* Two helper scripts, `create-riak-cs-admin` (useful to create an
-  admin user on a fresh install of Riak CS; requires python with boto3
-  and httplib2) and `prepare-riak-for-cs` (modifies riak configuration
-  files in /etc/riak to work with locally co-installed Riak CS). These
-  scripts are installed in /usr/lib/riak-cs/bin (or /usr/lib64/... on
-  other distros).
+* New riak-cs admin command, `create-admin-user`, intended to help
+  create an admin user on a fresh install of Riak CS.
+* New helper script, `prepare-riak-for-cs`, which prepares riak
+  configuration files in /etc/riak to work with locally co-installed
+  Riak CS. This script is installed in /usr/lib/riak-cs/bin (or
+  /usr/lib64/... on other distros).
 
 ## Bug fixes
 
@@ -32,6 +32,7 @@ improvements enabling it to operate with the new Riak CS Control
 * GetUser now includes PermissionsBoundary in its XML response.
 * Fix parsing of IsAttachable parameter in *Policy calls.
 * Fix updating user email via PUT to /riak-cs/user.
+
 
 # Riak CS 3.2.1 Release Notes
 

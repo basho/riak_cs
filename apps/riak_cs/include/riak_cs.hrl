@@ -28,6 +28,9 @@
 -define(RCS_VERSION, 030202).
 -define(RCS_VERSION_STRING, "3.2.2").
 
+-define(DEFAULT_ADMIN_NAME, <<"admin">>).
+-define(DEFAULT_ADMIN_KEY, <<"admin-key">>).
+
 -type riak_client() :: pid().
 
 -define(AWS_API_MOD, riak_cs_aws_rewrite).

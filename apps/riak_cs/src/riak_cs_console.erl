@@ -1,7 +1,7 @@
 %% ---------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2014 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021, 2022 TI Tokyo    All Rights Reserved.
+%%               2021-2023 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -21,7 +21,7 @@
 
 -module(riak_cs_console).
 
--export([
+-export([create_admin/1,
          version/1,
          status/1,
          supps/1,
@@ -41,6 +41,70 @@
 %%%===================================================================
 %%% Public API
 %%%===================================================================
+
+create_admin(Options_) ->
+    {ok, {Options, _Args}} = getopt:parse([{email, $e, "email", utf8_binary, "admin email"},
+                                           {quiet, $t, "terse", boolean, ""}], Options_),
+    Email = proplists:get_value(email, Options, "admin@me.com"),
+    Terse = proplists:get_value(quiet, Options, false),
+    case riak_cs_config:admin_creds() of
+        {ok, {?DEFAULT_ADMIN_KEY, _}} ->
+            do_create_admin(Email, Terse);
+        {ok, {SAK, Secret}} ->
+            io:format("An admin user already exists, with these creds:\n"
+                      "    SAK: ~s\n"
+                      " Secret: ~s\n",
+                      [SAK, Secret]),
+            ok
+    end.
+
+do_create_admin(Email, Terse) ->
+    case riak_cs_user:create_user(
+           ?DEFAULT_ADMIN_NAME, list_to_binary(Email)) of
+        {ok, ?RCS_USER{key_id = SAK,
+                       key_secret = Secret,
+                       id = Id}} ->
+            application:set_env(riak_cs, admin_key, SAK),
+            application:set_env(riak_cs, admin_secret, Secret),
+            if Terse ->
+                    io:format("~s ~s ~s\n", [SAK, Secret, Id]);
+               el/=se ->
+                    io:format("Admin user created:\n\n"
+                              "    SAK: ~s\n"
+                              " Secret: ~s\n\n"
+                              "Next steps:\n\n"
+                              "1. Copy these details for use with your clients.\n"
+                              "2. For all Riak CS nodes backed by the Riak cluster this node is connected to,\n"
+                              "   edit riak-cs.conf and set `admin.key` to the value shown above.\n"
+                              "3. Restart all affected Riak CS nodes.\n",
+                              [SAK, Secret])
+            end,
+            create_and_attach_admin_policy();
+        {error, Reason} ->
+            io:format("Failed to create admin user: ~p\n", [Reason])
+    end.
+
+create_and_attach_admin_policy() ->
+    PD = #{<<"Version">> => <<"2012-10-17">>,
+           <<"Statement">> =>
+               [ #{ <<"Principal">> => <<"*">>,
+                    <<"Effect">> => <<"Allow">>,
+                    <<"Action">> => [<<"sts:*">>, <<"iam:*">>, <<"s3:*">>],
+                    <<"Resource">> => <<"*">>
+                  }
+               ]
+          },
+    {ok, ?IAM_POLICY{arn = Arn}} =
+        riak_cs_iam:create_policy(
+          #{path => <<"/">>,
+            description => <<"Admin Policy allowing access to all S3. IAM and STS actions">>,
+            policy_name => <<"Admin policy">>,
+            policy_document => jsx:encode(PD)}),
+    {ok, Pbc} = riak_cs_utils:riak_connection(),
+    ok = riak_cs_iam:attach_user_policy(Arn, ?DEFAULT_ADMIN_NAME, Pbc),
+    ok = riak_cs_utils:close_riak_connection(Pbc),
+    ok.
+
 
 version([]) ->
     {ok, Vsn} = application:get_env(riak_cs, cs_version),
@@ -87,6 +151,7 @@ test([]) ->
         io:format("deleting bucket\n", []),
         ok = riak_cs_bucket:delete_bucket(
                User, UserObj, Bucket, RcPid),
+        ok = riak_cs_iam:delete_user(User),
         ok = riak_cs_riak_client:stop(RcPid),
         ok
     catch

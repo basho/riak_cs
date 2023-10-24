@@ -42,10 +42,9 @@ fi
 export USE_NODETOOL=1  # {use_nodetool, true} is not clear enough
 
 usage() {
-    echo "Usage: $SCRIPT { version | status | gc | access | storage |"
-    echo "                       stanchion | cluster-info | test |"
-    echo "                       cleanup-orphan-multipart | audit-bucket-ownership |}"
-    echo "                       supps }"
+    echo "Usage: $SCRIPT { access | audit-bucket-ownership | cleanup-orphan-multipart |"
+    echo "                       cluster-info | create-admin-user | gc | stanchion | status |"
+    echo "                       storage | supps | test | version }"
 }
 
 # Check the first argument for instructions
@@ -61,6 +60,10 @@ case "$1" in
     supps)
         shift
         rpc riak_cs_console supps $@
+        ;;
+    create[_-]admin[_-]user)
+        shift
+        rpc riak_cs_console create_admin $@
         ;;
     gc)
         shift
