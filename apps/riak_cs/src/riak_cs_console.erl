@@ -43,19 +43,26 @@
 %%%===================================================================
 
 create_admin(Options_) ->
-    {ok, {Options, _Args}} = getopt:parse([{email, $e, "email", utf8_binary, "admin email"},
-                                           {quiet, $t, "terse", boolean, ""}], Options_),
-    Email = proplists:get_value(email, Options, "admin@me.com"),
-    Terse = proplists:get_value(quiet, Options, false),
-    case riak_cs_config:admin_creds() of
-        {ok, {?DEFAULT_ADMIN_KEY, _}} ->
-            do_create_admin(Email, Terse);
-        {ok, {SAK, Secret}} ->
-            io:format("An admin user already exists, with these creds:\n"
-                      "    SAK: ~s\n"
-                      " Secret: ~s\n",
-                      [SAK, Secret]),
-            ok
+    GetoptSpecs = [{terse, $t, "terse", boolean,
+                    "produce machine-readable output (just \"KeyId Secret Id\" on a single line)"},
+                   {ignored_admin_option, $n, "dont-touch-riak-cs-conf", boolean,
+                    "don't try to sed KeyId into /etc/riak-cs/riak-cs.conf"}],
+    case getopt:parse(GetoptSpecs, Options_) of
+        {ok, {Options, _Args}} ->
+            Email = "admin@me.com",
+            Terse = proplists:get_value(terse, Options, false),
+            case riak_cs_config:admin_creds() of
+                {ok, {?DEFAULT_ADMIN_KEY, _}} ->
+                    do_create_admin(Email, Terse);
+                {ok, {SAK, Secret}} ->
+                    io:format("An admin user already exists, with these creds:\n"
+                              "  KeyId: ~s\n"
+                              " Secret: ~s\n",
+                              [SAK, Secret]),
+                    ok
+            end;
+        _ ->
+            getopt:usage(GetoptSpecs, "riak-cs admin create-admin-user")
     end.
 
 do_create_admin(Email, Terse) ->
@@ -70,7 +77,7 @@ do_create_admin(Email, Terse) ->
                     io:format("~s ~s ~s\n", [SAK, Secret, Id]);
                el/=se ->
                     io:format("Admin user created:\n\n"
-                              "    SAK: ~s\n"
+                              "  KeyId: ~s\n"
                               " Secret: ~s\n\n"
                               "Next steps:\n\n"
                               "1. Copy these details for use with your clients.\n"
@@ -80,6 +87,16 @@ do_create_admin(Email, Terse) ->
                               [SAK, Secret])
             end,
             create_and_attach_admin_policy();
+        {error, user_already_exists} ->
+            {ok, Pbc} = riak_cs_utils:riak_connection(),
+            {ok, {?RCS_USER{key_id = KeyId,
+                            key_secret = KeySecret}, _}} =
+                riak_cs_iam:find_user(#{name => ?DEFAULT_ADMIN_NAME}, Pbc),
+            ok = riak_cs_utils:close_riak_connection(Pbc),
+            io:format("An admin user has been created before (KeyId: ~s, KeySecret: ~s),\n"
+                      "but your riak-cs.conf has not been updated.\n\n"
+                      "Please set `admin.key` to the actual value and restart this node.\n",
+                      [KeyId, KeySecret]);
         {error, Reason} ->
             io:format("Failed to create admin user: ~p\n", [Reason])
     end.

@@ -63,7 +63,23 @@ case "$1" in
         ;;
     create[_-]admin[_-]user)
         shift
-        rpc riak_cs_console create_admin $@
+        case "$1" in
+            "--dont-touch-riak-cs-conf"|"-n"|"--terse"|"-t"|"")
+                output=`rpc riak_cs_console create_admin $@`
+                echo "$output"
+                key=`echo $output | sed -ne 's/ *KeyId: \(.*\)/\1/p'`
+                if [[ -z "$1" && -n $key ]]; then
+                    read -p "Do you want to paste this key into your riak-cs.conf? " a
+                    if [[ x$a = x"y" || x$a = x"Y" ]]; then
+                        sed -i "s/admin\\.key = .*/admin.key = $key/" /etc/riak-cs/riak-cs.conf
+                    fi
+                fi
+                ;;
+            *)
+                echo "Usage: $SCRIPT create-admin-user [--terse|-t] [--dont-touch-riak-cs-conf|-n]"
+                exit 1
+                ;;
+        esac
         ;;
     gc)
         shift
