@@ -245,6 +245,8 @@ assume_role_with_saml_fields_filter({K, V}, Acc) ->
             maps:put(role_arn, list_to_binary(V), Acc);
         "SAMLAssertion" ->
             maps:put(saml_assertion, list_to_binary(V), Acc);
+        "PolicyArns" ->
+            Acc;
         "PolicyArns.member." ++ _MemberNo ->
             AA = maps:get(policy_arns, Acc, []),
             maps:put(policy_arns, AA ++ [list_to_binary(V)], Acc);
