@@ -68,9 +68,9 @@ case "$1" in
                 output=`rpc riak_cs_console create_admin $@`
                 echo "$output"
                 key=`echo "$output" | sed -ne 's/ *KeyId: \(.*\)/\1/p'`
-                if [[ -z "$1" && -n $key ]]; then
+                if [ -z "$1" ] && [ -n $key ]; then
                     read -p "Do you want to paste this key into your riak-cs.conf? " a
-                    if [[ x$a = x"y" || x$a = x"Y" ]]; then
+                    if [ x$a = x"y" ] || [ x$a = x"Y" ]; then
                         sed -i "s/admin\\.key = .*/admin.key = $key/" /etc/riak-cs/riak-cs.conf
                     fi
                 fi
