@@ -101,7 +101,9 @@ cp -R %{relpath}/releases  %{buildroot_lib}
 cp -R %{relpath}/share     %{buildroot_lib}
 cp rel/pkg/rpm/%{name}.service %{buildroot_unit}
 
-find %{relpath}/bin -type f -maxdepth 1 -exec cp '{}' %{buildroot_bin}/ \;
+(cd %{relpath}/bin && \
+ find . -type f -exec install -Dm 0755 {} %{buildroot_bin}/{} \;)
+
 cp -a %{relpath}/priv/tools %{buildroot_bin}
 
 cp %{relpath}/etc/riak-cs.conf %{buildroot_etc}
