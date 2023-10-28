@@ -96,6 +96,7 @@ gather_info() ->
               _ -> io_lib:format("~b sec", [S])
           end,
     #{version => list_to_binary(?RCS_VERSION_STRING),
+      system_version => list_to_binary(lists:droplast(erlang:system_info(system_version))),
       uptime => iolist_to_binary(Str)
      }.
 
