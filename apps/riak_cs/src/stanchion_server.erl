@@ -224,9 +224,13 @@ update_user(A) ->
 
 -spec msgq_len() -> non_neg_integer().
 msgq_len() ->
-    Pid = whereis(?MODULE),
-    {message_queue_len, Len} = erlang:process_info(Pid, message_queue_len),
-    Len.
+    case whereis(?MODULE) of
+        undefined ->
+            0;  %% server hasn't been started yet
+        Pid ->
+            {message_queue_len, Len} = erlang:process_info(Pid, message_queue_len),
+            Len
+    end.
 
 %% ===================================================================
 %% gen_server callbacks
