@@ -93,9 +93,10 @@ do_create_admin(Email, Terse) ->
                             key_secret = KeySecret}, _}} =
                 riak_cs_iam:find_user(#{name => ?DEFAULT_ADMIN_NAME}, Pbc),
             ok = riak_cs_utils:close_riak_connection(Pbc),
-            io:format("An admin user has been created before (KeyId: ~s, KeySecret: ~s),\n"
-                      "but your riak-cs.conf has not been updated.\n\n"
-                      "Please set `admin.key` to the actual value and restart this node.\n",
+            io:format("An admin user has been created before with these creds:\n"
+                      "     KeyId: ~s\n"
+                      " KeySecret: ~s\n"
+                      "but your riak-cs.conf has not been updated.\n",
                       [KeyId, KeySecret]);
         {error, Reason} ->
             io:format("Failed to create admin user: ~p\n", [Reason])
