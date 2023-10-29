@@ -34,7 +34,7 @@ default_config_test() ->
     cuttlefish_unit:assert_config(Config, "riak_cs.stanchion_ssl", false),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.ssl"),
     cuttlefish_unit:assert_config(Config, "riak_cs.anonymous_user_creation", false),
-    cuttlefish_unit:assert_config(Config, "riak_cs.admin_key", ?DEFAULT_ADMIN_KEY),
+    cuttlefish_unit:assert_config(Config, "riak_cs.admin_key", binary_to_list(?DEFAULT_ADMIN_KEY)),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_secret"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_ip"),
     cuttlefish_unit:assert_not_configured(Config, "riak_cs.admin_port"),
