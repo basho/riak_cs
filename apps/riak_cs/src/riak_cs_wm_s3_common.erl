@@ -437,9 +437,13 @@ update_stats_inflow(_RD, undefined = _StatsPrefix) ->
 update_stats_inflow(_RD, no_stats = _StatsPrefix) ->
     ok;
 update_stats_inflow(RD, StatsPrefix) ->
-    Method = riak_cs_wm_utils:lower_case_method(wrq:method(RD)),
-    Key = [StatsPrefix, Method],
-    riak_cs_stats:inflow(Key).
+    case riak_cs_wm_utils:lower_case_method(wrq:method(RD)) of
+        options ->
+            ok;
+        Method ->
+            Key = [StatsPrefix, Method],
+            riak_cs_stats:inflow(Key)
+    end.
 
 update_stats(_RD, #rcs_web_context{stats_key = no_stats}) ->
     ok;
