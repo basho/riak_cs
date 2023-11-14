@@ -105,7 +105,9 @@
 -module(riak_cs_wm_usage).
 
 -export([init/1,
+         options/2,
          service_available/2,
+         allowed_methods/2,
          malformed_request/2,
          resource_exists/2,
          content_types_provided/2,
@@ -117,7 +119,9 @@
         ]).
 
 -ignore_xref([init/1,
+              options/2,
               service_available/2,
+              allowed_methods/2,
               malformed_request/2,
               resource_exists/2,
               content_types_provided/2,
@@ -179,14 +183,20 @@ init(Config) ->
     {ok, #rcs_web_context{auth_bypass = AuthBypass,
                           local_context = #local_context{}}}.
 
-service_available(RD, Ctx) ->
-    case riak_cs_riak_client:checkout() of
-        {ok, RcPid} ->
-            {true, RD, Ctx#rcs_web_context{riak_client = RcPid}};
-        {error, _} ->
-            {false, error_msg(RD, <<"Usage database connection failed">>), Ctx}
-    end.
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(), RD, Ctx}.
 
+-spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}}.
+service_available(RD, Ctx) ->
+    riak_cs_wm_utils:service_available(
+      wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
+
+-spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
+allowed_methods(RD, Ctx) ->
+    {['GET', 'OPTIONS'], RD, Ctx}.
+
+-spec malformed_request(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}}.
 malformed_request(RD, #rcs_web_context{local_context = LCtx0} = Ctx) ->
     case parse_start_time(RD) of
         {ok, Start} ->
@@ -246,7 +256,16 @@ generate_etag(RD, #rcs_web_context{local_context = #local_context{etag = undefin
 generate_etag(RD, #rcs_web_context{local_context = #local_context{etag = Etag}} = Ctx) ->
     {Etag, RD, Ctx}.
 
-forbidden(RD, #rcs_web_context{auth_bypass = AuthBypass,
+-spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        _ ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, #rcs_web_context{auth_bypass = AuthBypass,
                                riak_client = RcPid} = Ctx) ->
     BogusContext = #rcs_web_context{auth_bypass = AuthBypass,
                                     riak_client = RcPid},

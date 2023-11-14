@@ -24,6 +24,7 @@
 -module(riak_cs_wm_objects).
 
 -export([init/1,
+         options/2,
          authorize/2,
          stats_prefix/0,
          allowed_methods/0,
@@ -43,23 +44,28 @@
 
 -define(RIAKCPOOL, bucket_list_pool).
 
--spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
-init(Ctx) ->
-    {ok, Ctx#rcs_web_context{rc_pool=?RIAKCPOOL}}.
-
 -spec stats_prefix() -> list_objects.
 stats_prefix() -> list_objects.
 
+-spec init(#rcs_web_context{}) -> {ok, #rcs_web_context{}}.
+init(Ctx) ->
+    {ok, Ctx#rcs_web_context{rc_pool = ?RIAKCPOOL}}.
+
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(), RD, Ctx}.
+
 -spec allowed_methods() -> [atom()].
 allowed_methods() ->
-    %% GET is for object listing
-    ['GET'].
+    ['GET', 'OPTIONS'].
 
 %% TODO: change to authorize/spec/cleanup unneeded cases
 %% TODO: requires update for multi-delete
 -spec authorize(#wm_reqdata{}, #rcs_web_context{}) -> {boolean(), #wm_reqdata{}, #rcs_web_context{}}.
 authorize(RD, Ctx) ->
-    riak_cs_wm_utils:bucket_access_authorize_helper(bucket, false, RD, Ctx).
+    riak_cs_wm_utils:bucket_access_authorize_helper(
+      bucket, false,
+      wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
 -spec api_request(#wm_reqdata{}, #rcs_web_context{}) -> {ok, ?LORESP{}} | {error, term()}.
 api_request(RD, Ctx = #rcs_web_context{bucket = Bucket,
