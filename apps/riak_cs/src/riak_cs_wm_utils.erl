@@ -833,7 +833,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
                     {PolicyVerdict, VerdictRD1, _} =
                         case Policies of
                             [] ->
-                                logger:info("No bucket or user-attached policies: granting ~s access to ~s on request ~s",
+                                logger:info("No bucket or user-attached policies: granting ~s access to bucket \"~s\" on request ~s",
                                             [AccessType, Bucket, RequestId]),
                                 AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
                                 {false, AccessRD, Ctx};
@@ -878,7 +878,7 @@ get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
             %% there was a call to temp_sessions:get a fraction of a
             %% second ago as part of webmachine's serving of this
             %% request. Still, races happen.
-            logger:notice("Denying an API request by user with key_id ~s as their session has expired", [KeyId]),
+            logger:notice("Denying an API request by user with key_id \"~s\" as their session has expired", [KeyId]),
             user_session_expired
     end;
 get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
