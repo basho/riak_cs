@@ -365,6 +365,7 @@
        ).
 -record(get_saml_provider_response, { create_date :: non_neg_integer()
                                     , valid_until :: non_neg_integer()
+                                    , saml_metadata_document :: binary()
                                     , tags :: [tag()]
                                     , request_id :: binary()
                                     }

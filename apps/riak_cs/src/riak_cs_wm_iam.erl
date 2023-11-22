@@ -567,10 +567,12 @@ do_action("GetSAMLProvider",
     case riak_cs_iam:get_saml_provider(list_to_binary(Arn), Pbc) of
         {ok, ?IAM_SAML_PROVIDER{create_date = CreateDate,
                                 valid_until = ValidUntil,
+                                saml_metadata_document = SAMLMetadataDocument,
                                 tags = Tags}} ->
             Doc = riak_cs_xml:to_xml(
                     #get_saml_provider_response{create_date = CreateDate,
                                                 valid_until = ValidUntil,
+                                                saml_metadata_document = SAMLMetadataDocument,
                                                 tags = Tags,
                                                 request_id = RequestId}),
             {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
