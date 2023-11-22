@@ -468,7 +468,7 @@ create_saml_provider(ContentType, Doc, Options) ->
     case request(post, Path, [201], ContentType, Headers, Doc) of
         {ok, {{_, 201, _}, _RespHeaders, RespBody}} ->
             #{arn := Arn, tags := Tags_} = jason:decode(RespBody, [{mode, map}, {binary, v}]),
-            {ok, {Arn, [#tag{key = K, value = V} || #{key := K, value := V} <- Tags_]}};
+            {ok, {Arn, [#tag{key = K, value = V} || Tags_ /= <<>>, #{key := K, value := V} <- Tags_]}};
         {error, Error} ->
             {error, Error}
     end.
