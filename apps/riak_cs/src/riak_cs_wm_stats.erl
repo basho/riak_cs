@@ -24,6 +24,8 @@
 %% webmachine resource exports
 -export([init/1,
          encodings_provided/2,
+         options/2,
+         allowed_methods/2,
          content_types_provided/2,
          service_available/2,
          forbidden/2,
@@ -47,6 +49,24 @@
 init(Props) ->
     AuthBypass = not proplists:get_value(admin_auth_enabled, Props),
     {ok, #rcs_web_context{auth_bypass = AuthBypass}}.
+
+-spec options(#wm_reqdata{}, #rcs_web_context{}) -> {[{string(), string()}], #wm_reqdata{}, #rcs_web_context{}}.
+options(RD, Ctx) ->
+    {riak_cs_wm_utils:cors_headers(), RD, Ctx}.
+
+-spec service_available(#wm_reqdata{}, #rcs_web_context{}) -> {true, #wm_reqdata{}, #rcs_web_context{}}.
+service_available(RD, Ctx) ->
+    case riak_cs_config:riak_cs_stat() of
+        false ->
+            {false, RD, Ctx};
+        true ->
+            riak_cs_wm_utils:service_available(
+              wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx)
+    end.
+
+-spec allowed_methods(#wm_reqdata{}, #rcs_web_context{}) -> {[atom()], #wm_reqdata{}, #rcs_web_context{}}.
+allowed_methods(RD, Ctx) ->
+    {['GET', 'OPTIONS'], RD, Ctx}.
 
 %% @spec encodings_provided(webmachine:wrq(), context()) ->
 %%         {[encoding()], webmachine:wrq(), context()}
@@ -78,26 +98,22 @@ content_types_provided(RD, Context) ->
       {"text/plain", pretty_print}],
      RD, Context}.
 
-service_available(RD, Ctx) ->
-    case riak_cs_config:riak_cs_stat() of
-        false ->
-            {false, RD, Ctx};
-        true ->
-            case riak_cs_riak_client:checkout() of
-                {ok, Pid} ->
-                    {true, RD, Ctx#rcs_web_context{riak_client = Pid}};
-                _ ->
-                    {false, RD, Ctx}
-            end
-    end.
-
 produce_body(RD, Ctx) ->
     Body = jsx:encode(get_stats()),
     ETag = riak_cs_utils:etag_from_binary(riak_cs_utils:md5(Body)),
     RD2 = wrq:set_resp_header("ETag", ETag, RD),
     {Body, RD2, Ctx}.
 
-forbidden(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
+-spec forbidden(#wm_reqdata{}, #rcs_web_context{}) ->
+          {boolean() | {halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
+forbidden(RD, Ctx) ->
+    case wrq:method(RD) of
+        'OPTIONS' ->
+            {false, RD, Ctx};
+        _ ->
+            forbidden2(RD, Ctx)
+    end.
+forbidden2(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     riak_cs_wm_utils:find_and_auth_admin(RD, Ctx, AuthBypass).
 
 finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
