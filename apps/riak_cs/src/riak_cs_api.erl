@@ -22,7 +22,7 @@
 -module(riak_cs_api).
 
 -export([list_buckets/1,
-         list_objects/6,
+         list_objects/5,
          list_users/2,
          list_roles/2,
          list_policies/2,
@@ -40,13 +40,11 @@ list_buckets(User = ?RCS_USER{buckets=Buckets}) ->
             buckets = [Bucket || Bucket <- Buckets,
                                  Bucket?RCS_BUCKET.last_action /= deleted]}.
 
--spec list_objects(list_objects_req_type(), [string()], binary(), non_neg_integer(), proplists:proplist(), riak_client()) ->
+-spec list_objects(list_objects_req_type(), binary(), non_neg_integer(), proplists:proplist(), riak_client()) ->
           {ok, list_objects_response() | list_object_versions_response()} | {error, term()}.
-list_objects(_, [], _, _, _, _) ->
-    {error, no_such_bucket};
-list_objects(_, _UserBuckets, _Bucket, {error, _} = Error, _Options, _RcPid) ->
+list_objects(_, _Bucket, {error, _} = Error, _Options, _RcPid) ->
     Error;
-list_objects(ReqType, _UserBuckets, Bucket, MaxKeys, Options, RcPid) ->
+list_objects(ReqType, Bucket, MaxKeys, Options, RcPid) ->
     Request = riak_cs_list_objects:new_request(
                 ReqType, Bucket, MaxKeys, Options),
     case riak_cs_list_objects_fsm_v2:start_link(RcPid, Request) of

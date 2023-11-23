@@ -68,13 +68,9 @@ authorize(RD, Ctx) ->
       wrq:set_resp_headers(riak_cs_wm_utils:cors_headers(), RD), Ctx).
 
 -spec api_request(#wm_reqdata{}, #rcs_web_context{}) -> {ok, ?LORESP{}} | {error, term()}.
-api_request(RD, Ctx = #rcs_web_context{bucket = Bucket,
-                                       riak_client = RcPid,
-                                       user = User}) ->
+api_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     riak_cs_api:list_objects(
       objects,
-      [B || B <- riak_cs_bucket:get_buckets(User),
-            B?RCS_BUCKET.name =:= Bucket],
       Ctx#rcs_web_context.bucket,
       get_max_keys(RD),
       get_options(RD),

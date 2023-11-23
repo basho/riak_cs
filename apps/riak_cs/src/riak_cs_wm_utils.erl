@@ -816,6 +816,8 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
                                #rcs_web_context{riak_client = RcPid,
                                                 response_module = ResponseMod,
                                                 policy_module = PolicyMod,
+                                                user = ?RCS_USER{name = UserName,
+                                                                 buckets = UserBuckets},
                                                 request_id = RequestId} = Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
@@ -830,11 +832,12 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
             case riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) of
                 {ok, {Acl, BucketPolicy}} ->
                     Policies = lists:filter(fun(P) -> P /= undefined end, [BucketPolicy | UserPolicies]),
+                    UserOwnsBucket = lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, UserBuckets),
                     {PolicyVerdict, VerdictRD1, _} =
                         case Policies of
-                            [] ->
-                                logger:info("No bucket or user-attached policies: granting ~s access to bucket \"~s\" on request ~s",
-                                            [AccessType, Bucket, RequestId]),
+                            [] when UserOwnsBucket ->
+                                logger:info("No bucket or user-attached policies: granting ~s access to ~s on user's own bucket \"~s\" on request ~s",
+                                            [AccessType, UserName, Bucket, RequestId]),
                                 AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
                                 {false, AccessRD, Ctx};
                             _pp ->
@@ -904,9 +907,6 @@ handle_acl_check_result(true, _, undefined, _, _, RD, Ctx) ->
     AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
     {false, AccessRD, Ctx};
 handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
-    %% because users are not allowed to create/destroy
-    %% buckets, we can assume that User is not
-    %% undefined here
     User = Ctx#rcs_web_context.user,
     PolicyMod = Ctx#rcs_web_context.policy_module,
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
@@ -933,16 +933,12 @@ handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     handle_policy_eval_result(Ctx#rcs_web_context.user, false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
     #rcs_web_context{riak_client = RcPid,
-                     user = User0} = Ctx,
+                     user = ?RCS_USER{id = UserId}} = Ctx,
     PolicyMod = Ctx#rcs_web_context.policy_module,
-    User = case User0 of
-               undefined -> undefined;
-               _ ->         User0?RCS_USER.id
-           end,
-    Access = PolicyMod:reqdata_to_access(RD, AccessType, User),
+    Access = PolicyMod:reqdata_to_access(RD, AccessType, UserId),
     PolicyResult = PolicyMod:eval(Access, Policy),
     OwnerId = riak_cs_acl:owner_id(Acl, RcPid),
-    handle_policy_eval_result(User, PolicyResult, OwnerId, RD, Ctx).
+    handle_policy_eval_result(UserId, PolicyResult, OwnerId, RD, Ctx).
 
 handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
