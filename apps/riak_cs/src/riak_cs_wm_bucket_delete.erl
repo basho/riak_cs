@@ -101,7 +101,10 @@ handle_with_bucket_obj({ok, BucketObj},
         {ok, Keys} ->
             ?LOG_DEBUG("deleting keys at ~p: ~p", [Bucket, Keys]),
 
-            Policy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
+            BucketPolicy = riak_cs_wm_utils:translate_bucket_policy(PolicyMod, BucketObj),
+            {UserPolicies, PermissionsBoundary} =
+                riak_cs_wm_utils:get_user_policies_or_halt(Ctx),
+            ApplicablePolicies = [BucketPolicy | UserPolicies],
             Access0 = PolicyMod:reqdata_to_access(RD, object, CanonicalId),
 
             %% map: keys => delete_results => xmlElements
@@ -109,8 +112,11 @@ handle_with_bucket_obj({ok, BucketObj},
                 lists:map(fun({Key, Vsn} = VKey) ->
                                   handle_key(RcPid, Bucket, VKey,
                                              check_permission(
-                                               RcPid, Bucket, Key, Vsn,
-                                               Access0, CanonicalId, Policy, PolicyMod, BucketObj))
+                                               Key, Vsn,
+                                               Access0,
+                                               ApplicablePolicies, PermissionsBoundary,
+                                               BucketObj,
+                                               RD, Ctx))
                           end, Keys),
 
             %% xmlDoc => return body.
@@ -120,16 +126,19 @@ handle_with_bucket_obj({ok, BucketObj},
             {true, RD2, Ctx}
     end.
 
-check_permission(RcPid, Bucket, Key, Vsn,
-                 Access0, CanonicalId, Policy, PolicyMod, BucketObj) ->
+check_permission(Key, Vsn,
+                 Access0, Policies, PermissionsBoundary, BucketObj,
+                 RD, Ctx = #rcs_web_context{bucket = Bucket,
+                                            riak_client = RcPid}) ->
     case riak_cs_manifest:fetch(RcPid, Bucket, Key, Vsn) of
         {ok, Manifest} ->
             ObjectAcl = riak_cs_manifest:object_acl(Manifest),
-            Access = Access0#access_v1{key=Key, method='DELETE', target=object},
+            Access = Access0#access_v1{key = Key,
+                                       method = 'DELETE',
+                                       target = object},
 
-            case riak_cs_wm_utils:check_object_authorization(Access, false, ObjectAcl,
-                                                             Policy, CanonicalId, PolicyMod,
-                                                             RcPid, BucketObj) of
+            case riak_cs_wm_utils:check_object_authorization(
+                   Access, false, ObjectAcl, Policies, PermissionsBoundary, BucketObj, RD, Ctx) of
                 {ok, _} -> ok;
                 {error, _} -> {error, access_denied}
             end;

@@ -58,6 +58,7 @@
          object_access_authorize_helper/4,
          object_access_authorize_helper/5,
          check_object_authorization/8,
+         get_user_policies_or_halt/1,
          translate_bucket_policy/2,
          fetch_bucket_owner/2,
          bucket_owner/1,
@@ -815,16 +816,8 @@ extract_user_metadata([_ | Headers], Acc) ->
 bucket_access_authorize_helper(AccessType, Deletable, RD,
                                #rcs_web_context{riak_client = RcPid,
                                                 response_module = ResponseMod,
-                                                policy_module = PolicyMod,
-                                                user = ?RCS_USER{name = UserName,
-                                                                 buckets = UserBuckets},
-                                                request_id = RequestId} = Ctx) ->
-    Method = wrq:method(RD),
-    RequestedAccess =
-        riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
+                                                policy_module = PolicyMod} = Ctx) ->
     Bucket = list_to_binary(wrq:path_info(bucket, RD)),
-    PermCtx = Ctx#rcs_web_context{bucket = Bucket,
-                                  requested_perm = RequestedAccess},
     case get_user_policies_or_halt(Ctx) of
         user_session_expired ->
             deny_access(RD, Ctx);
@@ -832,40 +825,60 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
             case riak_cs_bucket:get_bucket_acl_policy(Bucket, PolicyMod, RcPid) of
                 {ok, {Acl, BucketPolicy}} ->
                     Policies = lists:filter(fun(P) -> P /= undefined end, [BucketPolicy | UserPolicies]),
-                    UserOwnsBucket = lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, UserBuckets),
-                    {PolicyVerdict, VerdictRD1, _} =
-                        case Policies of
-                            [] when UserOwnsBucket ->
-                                logger:info("No bucket or user-attached policies: granting ~s access to ~s on user's own bucket \"~s\" on request ~s",
-                                            [AccessType, UserName, Bucket, RequestId]),
-                                AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
-                                {false, AccessRD, Ctx};
-                            _pp ->
-                                lists:foldl(
-                                  fun(_, {false, _, _} = Q) ->
-                                          Q;
-                                     (P, _) ->
-                                          handle_bucket_acl_policy_response(
-                                            Acl, P, AccessType, Deletable, RD, PermCtx)
-                                  end,
-                                  {undefined, RD, Ctx},
-                                  Policies)
-                        end,
-                    {PermBoundaryVerdict, VerdictRD2, _} =
-                        case PermissionsBoundary of
-                            [] ->
-                                {undefined, VerdictRD1, PermCtx};
-                            _ ->
-                                handle_bucket_acl_policy_response(
-                                  Acl, PermissionsBoundary, AccessType, Deletable, VerdictRD1, PermCtx)
-                        end,
-                    UltimateVerdict =
-                        (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
-                    {not UltimateVerdict, VerdictRD2, PermCtx};
+                    policies_to_verdict(AccessType, Deletable, Bucket,
+                                        Acl, Policies, PermissionsBoundary,
+                                        RD, Ctx);
                 {error, Reason} ->
                     ResponseMod:api_error(Reason, RD, Ctx)
             end
     end.
+
+policies_to_verdict(AccessType, Deletable, Bucket,
+                    Acl, Policies, PermissionsBoundary,
+                    RD, #rcs_web_context{user = ?RCS_USER{name = UserName,
+                                                          buckets = UserBuckets} = User,
+                                         request_id = RequestId} = Ctx) ->
+    Method = wrq:method(RD),
+    RequestedAccess =
+        riak_cs_acl_utils:requested_access(Method, is_acl_request(AccessType)),
+    PermCtx =
+        Ctx#rcs_web_context{bucket = Bucket,
+                            requested_perm = RequestedAccess},
+    UserOwnsBucket =
+        lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, UserBuckets),
+
+    {PolicyVerdict, VerdictRD1, _} =
+        case Policies of
+            [] when UserOwnsBucket ->
+                logger:info("No bucket or user-attached policies: granting ~s access to ~s on user's own bucket \"~s\" on request ~s",
+                            [AccessType, UserName, Bucket, RequestId]),
+                AccessRD = riak_cs_access_log_handler:set_user(User, RD),
+                {false, AccessRD, Ctx};
+            _pp ->
+                lists:foldl(
+                  fun(_, {false, _, _} = Q) ->
+                          Q;
+                     (P, _) ->
+                          A = handle_bucket_acl_policy_response(
+                            Acl, P, AccessType, Deletable, RD, PermCtx),
+                          A
+                  end,
+                  {undefined, RD, Ctx},
+                  Policies)
+        end,
+    {PermBoundaryVerdict, VerdictRD2, _} =
+        case PermissionsBoundary of
+            [] ->
+                {undefined, VerdictRD1, PermCtx};
+            _ ->
+                handle_bucket_acl_policy_response(
+                  Acl, PermissionsBoundary, AccessType, Deletable, VerdictRD1, PermCtx)
+        end,
+    UltimateVerdict =
+        (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
+
+    {not UltimateVerdict, VerdictRD2, PermCtx}.
+
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
                                            user = undefined}) ->
@@ -881,7 +894,8 @@ get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
             %% there was a call to temp_sessions:get a fraction of a
             %% second ago as part of webmachine's serving of this
             %% request. Still, races happen.
-            logger:notice("Denying an API request by user with key_id \"~s\" as their session has expired", [KeyId]),
+            logger:notice("Denying an API request from user with key_id \"~s\" as their session has expired",
+                          [KeyId]),
             user_session_expired
     end;
 get_user_policies_or_halt(#rcs_web_context{user_object = _NotFederatedUser,
@@ -960,7 +974,6 @@ handle_policy_eval_result(_, _, _, RD, Ctx) ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end.
 
--spec is_acl_request(atom()) -> boolean().
 is_acl_request(ReqType) when ReqType =:= bucket_acl orelse
                              ReqType =:= object_acl ->
     true;
@@ -994,10 +1007,12 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
          AccessType =:= object )
        andalso is_boolean(Deletable)
        andalso is_boolean(SkipAcl) ->
+
     #key_context{bucket_object = BucketObj,
                  manifest = Manifest} = LocalCtx,
+
     case translate_bucket_policy(PolicyMod, BucketObj) of
-        {error, multiple_bucket_owners=E} ->
+        {error, multiple_bucket_owners = E} ->
             %% We want to bail out early if there are siblings when
             %% retrieving the bucket policy
             ResponseMod:api_error(E, RD, Ctx);
@@ -1005,52 +1020,60 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             %% The call to `fetch_bucket_object' returned `notfound'
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
-        Policy ->
+        BucketPolicy ->
             Method = wrq:method(RD),
             CanonicalId = safely_extract_canonical_id(User),
             Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
             ObjectAcl = extract_object_acl(Manifest),
 
-            case check_object_authorization(Access, SkipAcl, ObjectAcl,
-                                            Policy, CanonicalId,
-                                            PolicyMod, RcPid, BucketObj) of
-                {error, actor_is_owner_but_denied_policy} ->
-                    %% return forbidden or 404 based on the `Method' and `Deletable'
-                    %% values
-                    actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
-                {ok, actor_is_owner_and_allowed_policy} ->
-                    %% actor is the owner
-                    %% Quota hook here
-                    case riak_cs_quota:invoke_all_callbacks(User, Access, Ctx) of
-                        {ok, RD2, Ctx2} ->
-                            actor_is_owner_and_allowed_policy(User, RD2, Ctx2, LocalCtx);
-                        {error, Module, Reason, RD3, Ctx3} ->
-                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
-                    end;
-                {error, {actor_is_not_owner_and_denied_policy, OwnerId}} ->
-                    actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
-                                                         Method, Deletable);
-                {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}} ->
-                    %% actor is not the owner
-                    %% Quota hook here
-                    case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
-                        {ok, RD2, Ctx2} ->
-                            actor_is_not_owner_but_allowed_policy(User, OwnerId, RD2, Ctx2, LocalCtx);
-                        {error, Module, Reason, RD3, Ctx3} ->
-                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
-                    end;
-                {ok, just_allowed_by_policy} ->
-                    %% actor is not the owner, not permitted by ACL but permitted by policy
-                    %% Quota hook here
-                    OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
-                    case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
-                        {ok, RD2, Ctx2} ->
-                            just_allowed_by_policy(OwnerId, RD2, Ctx2, LocalCtx);
-                        {error, Module, Reason, RD3, Ctx3} ->
-                            riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
-                    end;
-                {error, access_denied} ->
-                    deny_access(RD, Ctx)
+            case get_user_policies_or_halt(Ctx) of
+                user_session_expired ->
+                    deny_access(RD, Ctx);
+                {UserPolicies, PermissionsBoundary} ->
+                    ApplicablePolicies = [P || P <- [BucketPolicy | UserPolicies],
+                                               P /= undefined],
+                    case check_object_authorization(
+                           Access, SkipAcl, ObjectAcl,
+                           ApplicablePolicies, PermissionsBoundary,
+                           BucketObj, RD, Ctx) of
+                        {error, actor_is_owner_but_denied_policy} ->
+                            %% return forbidden or 404 based on the `Method' and `Deletable'
+                            %% values
+                            actor_is_owner_but_denied_policy(User, RD, Ctx, Method, Deletable);
+                        {ok, actor_is_owner_and_allowed_policy} ->
+                            %% actor is the owner
+                            %% Quota hook here
+                            case riak_cs_quota:invoke_all_callbacks(User, Access, Ctx) of
+                                {ok, RD2, Ctx2} ->
+                                    actor_is_owner_and_allowed_policy(User, RD2, Ctx2, LocalCtx);
+                                {error, Module, Reason, RD3, Ctx3} ->
+                                    riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                            end;
+                        {error, {actor_is_not_owner_and_denied_policy, OwnerId}} ->
+                            actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx,
+                                                                 Method, Deletable);
+                        {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}} ->
+                            %% actor is not the owner
+                            %% Quota hook here
+                            case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
+                                {ok, RD2, Ctx2} ->
+                                    actor_is_not_owner_but_allowed_policy(User, OwnerId, RD2, Ctx2, LocalCtx);
+                                {error, Module, Reason, RD3, Ctx3} ->
+                                    riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                            end;
+                        {ok, just_allowed_by_policy} ->
+                            %% actor is not the owner, not permitted by ACL but permitted by policy
+                            %% Quota hook here
+                            OwnerId = riak_cs_acl:owner_id(ObjectAcl, RcPid),
+                            case riak_cs_quota:invoke_all_callbacks(OwnerId, Access, Ctx) of
+                                {ok, RD2, Ctx2} ->
+                                    just_allowed_by_policy(OwnerId, RD2, Ctx2, LocalCtx);
+                                {error, Module, Reason, RD3, Ctx3} ->
+                                    riak_cs_quota:handle_error(Module, Reason, RD3, Ctx3)
+                            end;
+                        {error, access_denied} ->
+                            deny_access(RD, Ctx)
+                    end
             end
     end.
 
@@ -1058,30 +1081,41 @@ safely_extract_canonical_id(?IAM_USER{id = A}) -> A;
 safely_extract_canonical_id(undefined) -> undefined.
 
 
--spec check_object_authorization(access(), boolean(), undefined|acl(), policy(),
-                                 undefined|binary(), atom(), riak_client(), riakc_obj:riakc_obj()) ->
+-spec check_object_authorization(
+        access(), boolean(), undefined | acl(), [policy()], policy(),
+        riakc_obj:riakc_obj(), #wm_reqdata{}, #rcs_web_context{}) ->
           {ok, actor_is_owner_and_allowed_policy |
            {actor_is_not_owner_but_allowed_policy, binary()} |
            just_allowed_by_policy} |
           {error, actor_is_owner_but_denied_policy |
            {actor_is_not_owner_and_denied_policy, binary()} |
            access_denied}.
-check_object_authorization(Access, SkipAcl, ObjectAcl, Policy,
-                           CanonicalId, PolicyMod,
-                           RcPid, BucketObj) ->
+check_object_authorization(Access, SkipAcl, ObjectAcl,
+                           Policies, PermissionsBoundary,
+                           BucketObj,
+                           RD, Ctx = #rcs_web_context{user = ?RCS_USER{id = CanonicalId},
+                                                      bucket = Bucket,
+                                                      riak_client = RcPid,
+                                                      request_id = RequestId}) ->
     #access_v1{method = Method, target = AccessType} = Access,
     RequestedAccess = requested_access_helper(AccessType, Method),
-    ?LOG_DEBUG("ObjectAcl: ~p, RequestedAccess: ~p, Policy ~p", [ObjectAcl, RequestedAccess, Policy]),
-    Acl = case SkipAcl of
-              true -> true;
-              false -> riak_cs_acl:object_access(BucketObj,
-                                                 ObjectAcl,
-                                                 RequestedAccess,
-                                                 CanonicalId,
-                                                 RcPid)
-          end,
-    case {Acl, PolicyMod:eval(Access, Policy)} of
+    ?LOG_DEBUG("ObjectAcl: ~p, RequestedAccess: ~p, Policies (~b) ~p",
+               [ObjectAcl, RequestedAccess, length(Policies), Policies]),
+    ObjectAccess =
+        case SkipAcl of
+            true -> true;
+            false -> riak_cs_acl:object_access(
+                       BucketObj, ObjectAcl, RequestedAccess, CanonicalId, RcPid)
+        end,
+    {Verdict, _, _} = policies_to_verdict(
+                        AccessType, _Deletable = true, Bucket,
+                        ObjectAcl, Policies, PermissionsBoundary,
+                        RD, Ctx),
+    ?LOG_DEBUG("ObjectAccess: ~p, Verdict: ~p", [ObjectAccess, Verdict]),
+    case {ObjectAccess, not Verdict} of
         {true, false} ->
+            logger:info("caller the owner, but denied by policy (request_id: ~s)",
+                        [RequestId]),
             {error, actor_is_owner_but_denied_policy};
         {true, _} ->
             {ok, actor_is_owner_and_allowed_policy};
@@ -1090,7 +1124,8 @@ check_object_authorization(Access, SkipAcl, ObjectAcl, Policy,
         {{true, OwnerId}, _} ->
             {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}};
         {false, true} ->
-            %% actor is not the owner, not permitted by ACL but permitted by policy
+            logger:info("caller is not the owner, not permitted by ACL but permitted by policy (request_id: ~s)",
+                        [RequestId]),
             {ok, just_allowed_by_policy};
         {false, _} ->
             %% policy says undefined or false
@@ -1163,7 +1198,6 @@ actor_is_owner_and_allowed_policy(User, RD, Ctx, LocalCtx) ->
 actor_is_not_owner_and_denied_policy(OwnerId, RD, Ctx, Method, Deletable)
   when Method =:= 'PUT' orelse
        (Deletable andalso Method =:= 'DELETE') ->
-    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     deny_access(AccessRD, Ctx);
 actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
@@ -1174,18 +1208,15 @@ actor_is_not_owner_and_denied_policy(_OwnerId, RD, Ctx, Method, Deletable)
 actor_is_not_owner_but_allowed_policy(undefined, OwnerId, RD, Ctx, LocalCtx) ->
     %% This is an anonymous request so shift to the context of the
     %% owner for the remainder of the request.
-    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#rcs_web_context{local_context = LocalCtx#key_context{owner = OwnerId}},
     shift_to_owner(AccessRD, UpdCtx, OwnerId, Ctx#rcs_web_context.riak_client);
 actor_is_not_owner_but_allowed_policy(_, OwnerId, RD, Ctx, LocalCtx) ->
-    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdCtx = Ctx#rcs_web_context{local_context = LocalCtx#key_context{owner = OwnerId}},
     {false, AccessRD, UpdCtx}.
 
 just_allowed_by_policy(OwnerId, RD, Ctx, LocalCtx) ->
-    ?LOG_DEBUG("Surely this is an arn? ~p", [OwnerId]),
     AccessRD = riak_cs_access_log_handler:set_user(OwnerId, RD),
     UpdLocalCtx = LocalCtx#key_context{owner = OwnerId},
     {false, AccessRD, Ctx#rcs_web_context{local_context = UpdLocalCtx}}.
