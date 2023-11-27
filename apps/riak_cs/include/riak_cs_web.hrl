@@ -420,4 +420,17 @@
                                               }
        ).
 
+%% this is not an official AWS request
+-record(list_temp_sessions_request, { max_items = 1000 :: non_neg_integer()
+                                    , marker :: binary() | undefined
+                                    , request_id :: binary()
+                                    }
+       ).
+-record(list_temp_sessions_response, { temp_sessions :: [#temp_session{}]
+                                     , request_id :: binary()
+                                     , marker :: binary() | undefined
+                                     , is_truncated :: boolean()
+                                     }
+       ).
+
 -endif.

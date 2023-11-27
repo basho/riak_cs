@@ -75,7 +75,7 @@ bucket_summary_map({error, notfound}, _, _Args) ->
     [];
 bucket_summary_map(Object, _, Args) ->
     LeewayEdge = proplists:get_value(leeway_edge, Args),
-    Summary = riak_cs_utils:maybe_process_resolved(
+    Summary = riak_cs_riak_mapred:maybe_process_resolved(
                 Object, fun(History) -> sum_objs(LeewayEdge, History) end, #sum{}),
     Res = summary_to_list(Summary),
     [Res].
@@ -84,7 +84,7 @@ object_size_map({error, notfound}, _, _) ->
     [];
 object_size_map(Object, _, _) ->
     Handler = fun(Resolved) -> object_size(Resolved) end,
-    riak_cs_utils:maybe_process_resolved(Object, Handler, []).
+    riak_cs_riak_mapred:maybe_process_resolved(Object, Handler, []).
 
 object_size_reduce(Sizes, _) ->
     {Objects,Bytes} = lists:unzip(Sizes),

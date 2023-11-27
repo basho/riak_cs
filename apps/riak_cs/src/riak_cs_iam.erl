@@ -26,29 +26,33 @@
          find_user/2,
          update_user/1,
          list_attached_user_policies/3,
-
-         create_role/1,
-         update_role/1,
-         delete_role/1,
-         get_role/2,
-         find_role/2,
-
-         create_saml_provider/1,
-         delete_saml_provider/1,
-         get_saml_provider/2,
-         find_saml_provider/2,
-         parse_saml_provider_idp_metadata/1,
+         list_users/2,
 
          create_policy/1,
          update_policy/1,
          delete_policy/2,
          get_policy/2,
          find_policy/2,
+         list_policies/2,
          attach_role_policy/3,
          detach_role_policy/3,
          attach_user_policy/3,
          detach_user_policy/3,
          express_policies/2,
+
+         create_role/1,
+         update_role/1,
+         delete_role/1,
+         get_role/2,
+         list_roles/2,
+         find_role/2,
+
+         create_saml_provider/1,
+         delete_saml_provider/1,
+         get_saml_provider/2,
+         list_saml_providers/2,
+         find_saml_provider/2,
+         parse_saml_provider_idp_metadata/1,
 
          fix_permissions_boundary/1,
          exprec_user/1,
@@ -66,6 +70,8 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+
+%% ------------ users
 
 -spec create_user(maps:map()) -> {ok, rcs_user()} | {error, already_exists | term()}.
 create_user(Specs = #{user_name := Name}) ->
@@ -155,51 +161,28 @@ list_attached_user_policies(UserName, PathPrefix, Pbc) ->
             ER
     end.
 
-
--spec create_role(maps:map()) -> {ok, role()} | {error, reportable_error_reason()}.
-create_role(Specs) ->
-    Encoded = riak_cs_json:to_json(exprec_role(Specs)),
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:create_role("application/json",
-                       Encoded,
-                       [{auth_creds, AdminCreds}]).
-
--spec delete_role(binary()) -> ok | {error, reportable_error_reason()}.
-delete_role(Arn) ->
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:delete_role(Arn, [{auth_creds, AdminCreds}]).
-
--spec get_role(binary(), pid()) -> {ok, role()} | {error, term()}.
-get_role(Arn, Pbc) ->
-    case riak_cs_pbc:get(Pbc, ?IAM_ROLE_BUCKET, Arn, get_cs_role) of
-        {OK, Obj} when OK =:= ok;
-                       OK =:= weak_ok ->
-            from_riakc_obj(Obj);
-        Error ->
-            Error
+-spec list_users(riak_client(), #list_users_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_users(RcPid, #list_users_request{path_prefix = PathPrefix,
+                                      max_items = MaxItems,
+                                      marker = Marker}) ->
+    Arg = #{path_prefix => PathPrefix,
+            max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_USER_BUCKET, riak_cs_riak_mapred:query(users, Arg)) of
+        {ok, Batches} ->
+            {ok, #{users => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
     end.
 
--spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
-find_role(Name, Pbc) when is_binary(Name) ->
-    find_role(#{name => Name}, Pbc);
-find_role(#{name := A}, Pbc) ->
-    find_role(?ROLE_NAME_INDEX, A, Pbc);
-find_role(#{path := A}, Pbc) ->
-    find_role(?ROLE_PATH_INDEX, A, Pbc);
-find_role(#{id := A}, Pbc) ->
-    find_role(?ROLE_ID_INDEX, A, Pbc).
-find_role(Index, A, Pbc) ->
-    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, Index, A),
-    case Res of
-        {ok, ?INDEX_RESULTS{keys = []}} ->
-            {error, notfound};
-        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
-            get_role(Key, Pbc);
-        {error, Reason} ->
-            logger:notice("Riak client connection error while finding role ~s in ~s: ~p", [A, Index, Reason]),
-            {error, Reason}
-    end.
 
+
+%% ------------ policies
 
 -spec create_policy(maps:map()) -> {ok, iam_policy()} | {error, reportable_error_reason()}.
 create_policy(Specs = #{policy_document := D}) ->
@@ -248,6 +231,31 @@ find_policy(#{name := Name}, Pbc) ->
             get_policy(Key, Pbc);
         {error, Reason} ->
             {error, Reason}
+    end.
+
+-spec list_policies(riak_client(), #list_policies_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_policies(RcPid, #list_policies_request{path_prefix = PathPrefix,
+                                            only_attached = OnlyAttached,
+                                            policy_usage_filter = PolicyUsageFilter,
+                                            scope = Scope,
+                                            max_items = MaxItems,
+                                            marker = Marker}) ->
+    Arg = #{path_prefix => PathPrefix,
+            only_attached => OnlyAttached,
+            policy_usage_filter => PolicyUsageFilter,
+            scope => Scope,
+            max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_POLICY_BUCKET, riak_cs_riak_mapred:query(policies, Arg)) of
+        {ok, Batches} ->
+            {ok, #{policies => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
     end.
 
 -spec attach_role_policy(binary(), binary(), pid()) ->
@@ -395,7 +403,6 @@ express_policies(AA, Pbc) ->
        end || Arn <- AA]
      ).
 
-
 %% CreateRole takes a string for PermissionsBoundary parameter, which
 %% needs to become part of a structure (and handled and exported thus), so:
 -spec fix_permissions_boundary(maps:map()) -> maps:map().
@@ -405,6 +412,74 @@ fix_permissions_boundary(#{permissions_boundary := A} = Map) when A /= null,
 fix_permissions_boundary(Map) ->
     Map.
 
+
+%% ------------ roles
+
+-spec create_role(maps:map()) -> {ok, role()} | {error, reportable_error_reason()}.
+create_role(Specs) ->
+    Encoded = riak_cs_json:to_json(exprec_role(Specs)),
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    velvet:create_role("application/json",
+                       Encoded,
+                       [{auth_creds, AdminCreds}]).
+
+-spec delete_role(binary()) -> ok | {error, reportable_error_reason()}.
+delete_role(Arn) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    velvet:delete_role(Arn, [{auth_creds, AdminCreds}]).
+
+-spec get_role(binary(), pid()) -> {ok, role()} | {error, term()}.
+get_role(Arn, Pbc) ->
+    case riak_cs_pbc:get(Pbc, ?IAM_ROLE_BUCKET, Arn, get_cs_role) of
+        {OK, Obj} when OK =:= ok;
+                       OK =:= weak_ok ->
+            from_riakc_obj(Obj);
+        Error ->
+            Error
+    end.
+
+-spec find_role(maps:map() | Name::binary(), pid()) -> {ok, role()} | {error, notfound | term()}.
+find_role(Name, Pbc) when is_binary(Name) ->
+    find_role(#{name => Name}, Pbc);
+find_role(#{name := A}, Pbc) ->
+    find_role(?ROLE_NAME_INDEX, A, Pbc);
+find_role(#{path := A}, Pbc) ->
+    find_role(?ROLE_PATH_INDEX, A, Pbc);
+find_role(#{id := A}, Pbc) ->
+    find_role(?ROLE_ID_INDEX, A, Pbc).
+find_role(Index, A, Pbc) ->
+    Res = riakc_pb_socket:get_index_eq(Pbc, ?IAM_ROLE_BUCKET, Index, A),
+    case Res of
+        {ok, ?INDEX_RESULTS{keys = []}} ->
+            {error, notfound};
+        {ok, ?INDEX_RESULTS{keys = [Key|_]}} ->
+            get_role(Key, Pbc);
+        {error, Reason} ->
+            logger:notice("Riak client connection error while finding role ~s in ~s: ~p", [A, Index, Reason]),
+            {error, Reason}
+    end.
+
+-spec list_roles(riak_client(), #list_roles_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
+                                      max_items = MaxItems,
+                                      marker = Marker}) ->
+    Arg = #{path_prefix => PathPrefix,
+            max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_ROLE_BUCKET, riak_cs_riak_mapred:query(roles, Arg)) of
+        {ok, Batches} ->
+            {ok, #{roles => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
+    end.
+
+
+%% ------------ SAML providers
 
 -spec create_saml_provider(maps:map()) -> {ok, {Arn::binary(), [tag()]}} | {error, reportable_error_reason()}.
 create_saml_provider(Specs) ->
@@ -429,6 +504,19 @@ get_saml_provider(Arn, Pbc) ->
             from_riakc_obj(Obj);
         Error ->
             Error
+    end.
+
+-spec list_saml_providers(riak_client(), #list_saml_providers_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list_saml_providers(RcPid, #list_saml_providers_request{}) ->
+    Arg = #{},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?IAM_SAMLPROVIDER_BUCKET, riak_cs_riak_mapred:query(saml_providers, Arg)) of
+        {ok, Batches} ->
+            {ok, #{saml_providers => extract_objects(Batches, [])}};
+        {error, _} = ER ->
+            ER
     end.
 
 -spec find_saml_provider(maps:map() | Arn::binary(), pid()) ->
@@ -621,3 +709,9 @@ unarm(A = ?IAM_ROLE{assume_role_policy_document = D})
     A?IAM_ROLE{assume_role_policy_document = base64:decode(D)};
 unarm(A = ?IAM_SAML_PROVIDER{saml_metadata_document = D}) ->
     A?IAM_SAML_PROVIDER{saml_metadata_document = base64:decode(D)}.
+
+
+extract_objects([], Q) ->
+    Q;
+extract_objects([{_N, RR}|Rest], Q) ->
+    extract_objects(Rest, Q ++ RR).

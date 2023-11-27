@@ -26,7 +26,7 @@
 -include("riak_cs_web.hrl").
 
 -define(RCS_VERSION, 030202).
--define(RCS_VERSION_STRING, "3.2.2").
+-define(RCS_VERSION_STRING, "3.2.3").
 
 -define(DEFAULT_ADMIN_NAME, <<"admin">>).
 -define(DEFAULT_ADMIN_KEY, <<"admin-key">>).
@@ -88,6 +88,7 @@
 -define(POLICY_NAME_INDEX, <<"policy_name_bin">>).
 -define(SAMLPROVIDER_NAME_INDEX, <<"samlprovider_name_bin">>).
 -define(SAMLPROVIDER_ENTITYID_INDEX, <<"samlprovider_entityid_bin">>).
+-define(TEMP_SESSION_ID_INDEX, <<"tmpsession_keyid_bin">>).
 
 -define(CONSISTENT_READ_OPTIONS, [{r, all}, {pr, all}, {notfound_ok, false}]).
 -define(WEAK_READ_OPTIONS, [{r, quorum}, {pr, one}, {notfound_ok, false}]).

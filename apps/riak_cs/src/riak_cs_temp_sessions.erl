@@ -22,6 +22,7 @@
 
 -export([create/8,
          get/1, get/2,
+         list/2,
          effective_policies/2,
          close_session/1
         ]).
@@ -81,6 +82,29 @@ create(?IAM_ROLE{role_id = RoleId,
             logger:error("Failed to save temp session: ~p", [Reason]),
             ER
     end.
+
+
+-spec list(riak_client(), #list_temp_sessions_request{}) ->
+          {ok, maps:map()} | {error, term()}.
+list(RcPid, #list_temp_sessions_request{max_items = MaxItems,
+                                        marker = Marker}) ->
+    Arg = #{max_items => MaxItems,
+            marker => Marker},
+    {ok, MasterPbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riakc_pb_socket:mapred_bucket(
+           MasterPbc, ?TEMP_SESSIONS_BUCKET, riak_cs_riak_mapred:query(temp_sessions, Arg)) of
+        {ok, Batches} ->
+            {ok, #{temp_sessions => extract_objects(Batches, []),
+                   marker => undefined,
+                   is_truncated => false}};
+        {error, _} = ER ->
+            ER
+    end.
+
+extract_objects([], Q) ->
+    Q;
+extract_objects([{_N, RR}|Rest], Q) ->
+    extract_objects(Rest, Q ++ RR).
 
 
 -spec effective_policies(#temp_session{}, pid()) -> {[policy()], PermissionsBoundary::policy() | []}.

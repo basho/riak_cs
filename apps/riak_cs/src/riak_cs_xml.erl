@@ -138,7 +138,10 @@ to_xml(#list_attached_user_policies_response{} = R) ->
     list_attached_user_policies_response_to_xml(R);
 
 to_xml(#assume_role_with_saml_response{} = R) ->
-    assume_role_with_saml_response_to_xml(R).
+    assume_role_with_saml_response_to_xml(R);
+
+to_xml(#list_temp_sessions_response{} = R) ->
+    list_temp_sessions_response_to_xml(R).
 
 
 
@@ -804,6 +807,53 @@ make_credentials(#credentials{access_key_id = AccessKeyId,
      {'SessionToken', [binary_to_list(SessionToken)]},
      {'Expiration', [rts:iso8601_s(Expiration)]}
     ].
+
+
+temp_session_node(#temp_session{ assumed_role_user = AssumedRoleUser
+                               , role = Role
+                               , credentials = Credentials
+                               , duration_seconds = DurationSeconds
+                               , created = Created
+                               , inline_policy = InlinePolicy
+                               , session_policies = SessionPolicies
+                               , subject = Subject
+                               , source_identity = SourceIdentity
+                               , email = Email
+                               , user_id = UserId
+                               , canonical_id = CanonicalID
+                               }) ->
+    C = lists:flatten(
+          [{'AssumedRoleUser', make_assumed_role_user(AssumedRoleUser)},
+           {'Role', role_node(Role)},
+           {'Credentials', make_credentials(Credentials)},
+           {'DurationSeconds', [integer_to_list(DurationSeconds)]},
+           {'Created', [rts:iso8601_s(Created)]},
+           [{'InlinePolicy', [binary_to_list(InlinePolicy) || InlinePolicy /= undefined]}],
+           {'SessionPolicies', [binary_to_list(A) || A <- SessionPolicies]},
+           {'Subject', [binary_to_list(Subject)]},
+           {'SourceIdentity', [binary_to_list(SourceIdentity)]},
+           {'Email', [binary_to_list(Email)]},
+           {'UserId', [binary_to_list(UserId)]},
+           {'CanonicalID', [binary_to_list(CanonicalID)]}
+          ]),
+    {'TempSession', C}.
+
+list_temp_sessions_response_to_xml(#list_temp_sessions_response{temp_sessions = RR,
+                                                                is_truncated = IsTruncated,
+                                                                marker = Marker,
+                                                                request_id = RequestId}) ->
+    ListTempSessionsResult =
+        lists:flatten(
+          [{'TempSessions', [temp_session_node(R) || R <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
+    C = [{'ListTempSessionsResult', ListTempSessionsResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListTempSessionsResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
+
 
 tag_node(?IAM_TAG{key = Key,
                   value = Value}) ->

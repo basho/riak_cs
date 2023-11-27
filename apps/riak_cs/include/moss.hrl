@@ -132,5 +132,6 @@
                       }
        ).
 -type temp_session() :: #temp_session{}.
+-define(TEMP_SESSION, #temp_session).
 
 -endif.

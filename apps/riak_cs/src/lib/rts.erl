@@ -60,6 +60,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-include_lib("kernel/include/logger.hrl").
+
 -export_type([slice/0]).
 
 -type datetime() :: calendar:datetime().
@@ -179,6 +181,7 @@ iso8601_s({{Y,M,D},{H,I,S}}) ->
 datetime(Binary) when is_binary(Binary) ->
     datetime(binary_to_list(Binary));
 datetime(String) when is_list(String) ->
+    ?LOG_DEBUG("fafa ~p", [String]),
     case catch io_lib:fread("~4d~2d~2dT~2d~2d~2dZ", String) of
         {ok, [Y,M,D,H,I,S], _} ->
             {ok, {{Y,M,D},{H,I,S}}};
