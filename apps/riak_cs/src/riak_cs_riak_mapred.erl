@@ -205,8 +205,14 @@ map_temp_sessions(Object, _2, _Args) ->
         [<<>>|_] ->
             [];
         [PBin|_] ->
-            ?TEMP_SESSION{} = P = binary_to_term(PBin),
-            [P]
+            ?TEMP_SESSION{created = Created,
+                          duration_seconds = DurationSeconds} = P = binary_to_term(PBin),
+            case Created + DurationSeconds * 1000 > os:system_time(millisecond) of
+                true ->
+                    [P];
+                false ->
+                    []
+            end
     end.
 
 reduce_temp_sessions(Acc, _) ->
