@@ -73,9 +73,9 @@ content_types_provided(RD, Ctx) ->
 
 -spec finish_request(#wm_reqdata{}, #rcs_web_context{}) ->
           {boolean() | {halt, term()}, term(), term()}.
-finish_request(RD, Ctx=#rcs_web_context{riak_client = undefined}) ->
+finish_request(RD, Ctx = #rcs_web_context{riak_client = undefined}) ->
     {true, RD, Ctx};
-finish_request(RD, Ctx=#rcs_web_context{riak_client=RcPid}) ->
+finish_request(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
     riak_cs_riak_client:checkin(RcPid),
     {true, RD, Ctx#rcs_web_context{riak_client = undefined}}.
 
@@ -83,9 +83,8 @@ finish_request(RD, Ctx=#rcs_web_context{riak_client=RcPid}) ->
 produce_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                        response_module = ResponseMod,
                                        request_id = RequestId}) ->
-    Form = mochiweb_util:parse_qs(wrq:req_body(RD)),
-    MaxItems = proplists:get_value("MaxItems", Form),
-    Marker = proplists:get_value("Marker", Form),
+    MaxItems = list_to_integer(wrq:get_qs_value("MaxItems", "1000", RD)),
+    Marker = wrq:get_qs_value("Marker", RD),
     case riak_cs_temp_sessions:list(
            RcPid, #list_temp_sessions_request{request_id = RequestId,
                                               max_items = MaxItems,
@@ -98,7 +97,7 @@ produce_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                                  request_id = RequestId,
                                                  marker = NewMarker,
                                                  is_truncated = IsTruncated}),
-            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+            {Doc, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
         {error, Reason} ->
             ResponseMod:api_error(Reason, RD, Ctx)
     end.

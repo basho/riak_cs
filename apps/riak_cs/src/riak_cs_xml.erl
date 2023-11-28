@@ -824,7 +824,7 @@ temp_session_node(#temp_session{ assumed_role_user = AssumedRoleUser
                                }) ->
     C = lists:flatten(
           [{'AssumedRoleUser', make_assumed_role_user(AssumedRoleUser)},
-           {'Role', role_node(Role)},
+           role_node(Role),
            {'Credentials', make_credentials(Credentials)},
            {'DurationSeconds', [integer_to_list(DurationSeconds)]},
            {'Created', [rts:iso8601_s(Created)]},
