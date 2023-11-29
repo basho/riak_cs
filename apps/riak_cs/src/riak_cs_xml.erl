@@ -829,7 +829,7 @@ temp_session_node(#temp_session{ assumed_role_user = AssumedRoleUser
            {'DurationSeconds', [integer_to_list(DurationSeconds)]},
            {'Created', [rts:iso8601_s(Created)]},
            [{'InlinePolicy', [binary_to_list(InlinePolicy) || InlinePolicy /= undefined]}],
-           {'SessionPolicies', [binary_to_list(A) || A <- SessionPolicies]},
+           {'SessionPolicies', [session_policy_node(A) || A <- SessionPolicies]},
            {'Subject', [binary_to_list(Subject)]},
            {'SourceIdentity', [binary_to_list(SourceIdentity)]},
            {'Email', [binary_to_list(Email)]},
@@ -837,6 +837,10 @@ temp_session_node(#temp_session{ assumed_role_user = AssumedRoleUser
            {'CanonicalID', [binary_to_list(CanonicalID)]}
           ]),
     {'TempSession', C}.
+
+session_policy_node(A) ->
+    {'SessionPolicy', [binary_to_list(A)]}.
+
 
 list_temp_sessions_response_to_xml(#list_temp_sessions_response{temp_sessions = RR,
                                                                 is_truncated = IsTruncated,
