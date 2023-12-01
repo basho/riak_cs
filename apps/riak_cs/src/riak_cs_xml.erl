@@ -136,6 +136,8 @@ to_xml(#detach_user_policy_response{} = R) ->
     detach_user_policy_response_to_xml(R);
 to_xml(#list_attached_user_policies_response{} = R) ->
     list_attached_user_policies_response_to_xml(R);
+to_xml(#list_attached_role_policies_response{} = R) ->
+    list_attached_role_policies_response_to_xml(R);
 
 to_xml(#assume_role_with_saml_response{} = R) ->
     assume_role_with_saml_response_to_xml(R);
@@ -676,6 +678,22 @@ list_attached_user_policies_response_to_xml(#list_attached_user_policies_respons
                                    [{'xmlns', ?IAM_XMLNS}],
                                    lists:flatten(C))], []).
 
+
+list_attached_role_policies_response_to_xml(#list_attached_role_policies_response{policies = RR,
+                                                                                  request_id = RequestId,
+                                                                                  is_truncated = IsTruncated,
+                                                                                  marker = Marker}) ->
+    ListAttachedRolePoliciesResult =
+        lists:flatten(
+          [{'AttachedPolicies', [policy_node_for_laup_result(A, N) || {A, N} <- RR]},
+           {'IsTruncated', [atom_to_list(IsTruncated)]},
+           [{'Marker', Marker} || Marker /= undefined]]),
+    ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
+    C = [{'ListAttachedRolePoliciesResult', ListAttachedRolePoliciesResult},
+         {'ResponseMetadata', [ResponseMetadata]}],
+    export_xml([make_internal_node('ListAttachedRolePoliciesResponse',
+                                   [{'xmlns', ?IAM_XMLNS}],
+                                   lists:flatten(C))], []).
 
 
 saml_provider_record_to_xml(P) ->

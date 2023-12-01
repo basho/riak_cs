@@ -46,6 +46,7 @@
          get_role/2,
          list_roles/2,
          find_role/2,
+         list_attached_role_policies/3,
 
          create_saml_provider/1,
          delete_saml_provider/1,
@@ -477,6 +478,35 @@ list_roles(RcPid, #list_roles_request{path_prefix = PathPrefix,
         {error, _} = ER ->
             ER
     end.
+
+
+-spec list_attached_role_policies(binary(), binary(), pid()) ->
+          {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
+list_attached_role_policies(RoleName, PathPrefix, Pbc) ->
+    case find_role(#{name => RoleName}, Pbc) of
+        {ok, ?IAM_ROLE{attached_policies = AA}} ->
+            AANN = [begin
+                        try
+                            {ok, ?IAM_POLICY{path = Path,
+                                             policy_name = N}} = get_policy(A, Pbc),
+                            case 0 < binary:longest_common_prefix([Path, PathPrefix]) of
+                                true ->
+                                    {A, N};
+                                false ->
+                                    []
+                            end
+                        catch
+                            error:badmatch ->
+                                logger:notice("Policy ~s not found while it is still attached to role ~s",
+                                              [A, RoleName]),
+                                []
+                        end
+                    end || A <- AA],
+            {ok, lists:flatten(AANN)};
+        ER ->
+            ER
+    end.
+
 
 
 %% ------------ SAML providers

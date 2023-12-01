@@ -458,6 +458,31 @@ do_action("ListAttachedUserPolicies",
             ResponseMod:api_error(Reason, RD, Ctx)
     end;
 
+do_action("ListAttachedRolePolicies",
+          Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
+                                           response_module = ResponseMod,
+                                           request_id = RequestId}) ->
+    PathPrefix = proplists:get_value("PathPrefix", Form, "/"),
+    RoleName = proplists:get_value("RoleName", Form),
+    %% _MaxItems = proplists:get_value("MaxItems", Form),
+    %% _Marker = proplists:get_value("Marker", Form),
+    {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
+    case riak_cs_iam:list_attached_role_policies(
+           list_to_binary(RoleName),
+           list_to_binary(PathPrefix), Pbc) of
+        {ok, AANN} ->
+            NewMarker = undefined,
+            IsTruncated = false,
+            Doc = riak_cs_xml:to_xml(
+                    #list_attached_role_policies_response{policies = AANN,
+                                                          request_id = RequestId,
+                                                          marker = NewMarker,
+                                                          is_truncated = IsTruncated}),
+            {true, riak_cs_wm_utils:make_final_rd(Doc, RD), Ctx};
+        {error, Reason} ->
+            ResponseMod:api_error(Reason, RD, Ctx)
+    end;
+
 do_action("AttachRolePolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod,

@@ -1,3 +1,31 @@
+# Riak CS 3.2.3 Release Notes
+
+Released December 24, 2023.
+
+## General
+
+Incremental release, with features complementary to the more
+substantial release of Riak CS Control 3.2.3.
+
+## New features
+
+* New IAM call `ListAttachedRolePolicies`.
+* New admin API endpoint /riak-cs/temp-sessions, listing the currently
+  active assumed roles.
+
+## Bug fixes
+
+* `GetSAMLProvider` now includes `SAMLMetadataDocument` field as it
+  should have.
+* `CreateSAMLProvider` fixed for the case when request is made without
+  tags.
+* `CreateBucket` by federated users now properly returns 400 (and
+  not 500).
+* Fix `ListBucket` for federated users with appropriate policy
+* Federated users' policies are now correctly evaluated in operations
+  on objects.
+
+
 # Riak CS 3.2.2 Release Notes
 
 Released November 4, 2023.

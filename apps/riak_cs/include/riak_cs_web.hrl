@@ -420,6 +420,13 @@
                                               }
        ).
 
+-record(list_attached_role_policies_response, { policies :: [{flat_arn(), binary()}]
+                                              , marker :: binary() | undefined
+                                              , is_truncated :: boolean()
+                                              , request_id :: binary()
+                                              }
+       ).
+
 %% this is not an official AWS request
 -record(list_temp_sessions_request, { max_items = 1000 :: non_neg_integer()
                                     , marker :: binary() | undefined
