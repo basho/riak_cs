@@ -246,7 +246,9 @@ create_role(Fields, Pbc) ->
 
 -spec update_role(maps:map(), pid()) -> ok | {error, already_exists|term()}.
 update_role(Fields, Pbc) ->
-    Role = riak_cs_iam:exprec_role(Fields),
+    Role =
+        riak_cs_iam:unarm(
+          riak_cs_iam:exprec_role(Fields)),
     save_role_directly(Role, Pbc).
 
 role_name_available(Name, Pbc) ->
