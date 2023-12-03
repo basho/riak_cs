@@ -668,7 +668,7 @@ list_attached_user_policies_response_to_xml(#list_attached_user_policies_respons
                                                                                   marker = Marker}) ->
     ListAttachedUserPoliciesResult =
         lists:flatten(
-          [{'AttachedPolicies', [policy_node_for_laup_result(A, N) || {A, N} <- RR]},
+          [[policy_node_for_laup_result(A, N) || {A, N} <- RR],
            {'IsTruncated', [atom_to_list(IsTruncated)]},
            [{'Marker', Marker} || Marker /= undefined]]),
     ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
@@ -685,7 +685,7 @@ list_attached_role_policies_response_to_xml(#list_attached_role_policies_respons
                                                                                   marker = Marker}) ->
     ListAttachedRolePoliciesResult =
         lists:flatten(
-          [{'AttachedPolicies', [policy_node_for_laup_result(A, N) || {A, N} <- RR]},
+          [[policy_node_for_laup_result(A, N) || {A, N} <- RR],
            {'IsTruncated', [atom_to_list(IsTruncated)]},
            [{'Marker', Marker} || Marker /= undefined]]),
     ResponseMetadata = make_internal_node('RequestId', [binary_to_list(RequestId)]),
