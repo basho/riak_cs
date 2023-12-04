@@ -128,12 +128,19 @@ find_user(Index, A, Pbc) ->
     end.
 
 -spec update_user(rcs_user()) -> {ok, rcs_user()} | {error, reportable_error_reason()}.
-update_user(U = ?IAM_USER{key_id = KeyId}) ->
+update_user(U = ?IAM_USER{key_id = KeyId,
+                          name = Name}) ->
+    UserKeyForLocking = <<"u", Name/binary>>,
+    Lock = stanchion_lock:acquire(UserKeyForLocking),
     {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:update_user("application/json",
-                       KeyId,
-                       riak_cs_json:to_json(U),
-                       [{auth_creds, AdminCreds}]).
+    try
+        velvet:update_user("application/json",
+                           KeyId,
+                           riak_cs_json:to_json(U),
+                           [{auth_creds, AdminCreds}])
+    after
+        stanchion_lock:release(UserKeyForLocking, Lock)
+    end.
 
 -spec list_attached_user_policies(binary(), binary(), pid()) ->
           {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
@@ -262,7 +269,10 @@ list_policies(RcPid, #list_policies_request{path_prefix = PathPrefix,
 -spec attach_role_policy(binary(), binary(), pid()) ->
           ok | {error, reportable_error_reason()}.
 attach_role_policy(PolicyArn, RoleName, Pbc) ->
-    case find_role(#{name => RoleName}, Pbc) of
+    RoleKeyForLocking = <<"r", RoleName/binary>>,
+    Lock1 = stanchion_lock:acquire(RoleKeyForLocking),
+    Lock2 = stanchion_lock:acquire(PolicyArn),
+    try find_role(#{name => RoleName}, Pbc) of
         {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
             case lists:member(PolicyArn, PP) of
                 true ->
@@ -285,12 +295,18 @@ attach_role_policy(PolicyArn, RoleName, Pbc) ->
             end;
         {error, notfound} ->
             {error, no_such_role}
+    after
+        stanchion_lock:release(RoleKeyForLocking, Lock1),
+        stanchion_lock:release(PolicyArn, Lock2)
     end.
 
 -spec detach_role_policy(binary(), binary(), pid()) ->
           ok | {error, unmodifiable_entity}.
 detach_role_policy(PolicyArn, RoleName, Pbc) ->
-    case find_role(#{name => RoleName}, Pbc) of
+    RoleKeyForLocking = <<"r", RoleName/binary>>,
+    Lock1 = stanchion_lock:acquire(RoleKeyForLocking),
+    Lock2 = stanchion_lock:acquire(PolicyArn),
+    try find_role(#{name => RoleName}, Pbc) of
         {ok, Role = ?IAM_ROLE{attached_policies = PP}} ->
             case lists:member(PolicyArn, PP) of
                 false ->
@@ -310,12 +326,18 @@ detach_role_policy(PolicyArn, RoleName, Pbc) ->
             end;
         {error, notfound} ->
             {error, no_such_role}
+    after
+        stanchion_lock:release(RoleKeyForLocking, Lock1),
+        stanchion_lock:release(PolicyArn, Lock2)
     end.
 
 -spec attach_user_policy(binary(), binary(), pid()) ->
           ok | {error, reportable_error_reason()}.
 attach_user_policy(PolicyArn, UserName, Pbc) ->
-    case find_user(#{name => UserName}, Pbc) of
+    UserKeyForLocking = <<"u", UserName/binary>>,
+    Lock1 = stanchion_lock:acquire(UserKeyForLocking),
+    Lock2 = stanchion_lock:acquire(PolicyArn),
+    try find_user(#{name => UserName}, Pbc) of
         {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 true ->
@@ -338,12 +360,18 @@ attach_user_policy(PolicyArn, UserName, Pbc) ->
             end;
         {error, notfound} ->
             {error, no_such_user}
+    after
+        stanchion_lock:release(UserKeyForLocking, Lock1),
+        stanchion_lock:release(PolicyArn, Lock2)
     end.
 
 -spec detach_user_policy(binary(), binary(), pid()) ->
           ok | {error, unmodifiable_entity}.
 detach_user_policy(PolicyArn, UserName, Pbc) ->
-    case find_user(#{name => UserName}, Pbc) of
+    UserKeyForLocking = <<"u", UserName/binary>>,
+    Lock1 = stanchion_lock:acquire(UserKeyForLocking),
+    Lock2 = stanchion_lock:acquire(PolicyArn),
+    try find_user(#{name => UserName}, Pbc) of
         {ok, {User = ?RCS_USER{attached_policies = PP}, _}} ->
             case lists:member(PolicyArn, PP) of
                 false ->
@@ -363,6 +391,9 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
             end;
         {error, notfound} ->
             {error, no_such_user}
+    after
+        stanchion_lock:release(UserKeyForLocking, Lock1),
+        stanchion_lock:release(PolicyArn, Lock2)
     end.
 
 -spec update_role(role()) -> ok | {error, reportable_error_reason()}.

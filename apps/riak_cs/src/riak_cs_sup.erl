@@ -105,7 +105,10 @@ rcs_process_specs() ->
       #{id => stanchion_sup,
         start => {stanchion_sup, start_link, []},
         type => supervisor,
-        modules => dynamic}
+        modules => dynamic},
+
+      #{id => stanchion_lock,
+        start => {stanchion_lock, start_link, []}}
     ]
         ++ riak_cs_mb_helper:process_specs().
 

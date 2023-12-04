@@ -61,6 +61,8 @@
 -define(IAM_POLICY_BUCKET, <<"moss.iam.policies">>).
 -define(IAM_SAMLPROVIDER_BUCKET, <<"moss.iam.samlproviders">>).
 -define(TEMP_SESSIONS_BUCKET, <<"moss.sts.temp-sessions">>).
+
+-define(OBJECT_LOCK_BUCKET, <<"moss.object.lock">>).
 -define(GC_BUCKET, <<"riak-cs-gc">>).
 -define(FREE_BUCKET_MARKER, <<"0">>).
 -define(DELETED_MARKER, <<"0">>).

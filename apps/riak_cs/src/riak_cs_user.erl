@@ -64,7 +64,8 @@ create_user(Name, Email, IAMExtra) ->
 -spec create_user(binary(), binary(), binary(), binary(), maps:map()) ->
           {ok, rcs_user()} | {error, term()}.
 create_user(Name, Email, KeyId, Secret, IAMExtra) ->
-    case validate_email(Email) of
+    Precious = stanchion_lock:acquire(KeyId),
+    try validate_email(Email) of
         ok ->
             CanonicalId = riak_cs_aws_utils:generate_canonical_id(KeyId),
             DisplayName = display_name(Email),
@@ -83,6 +84,8 @@ create_user(Name, Email, KeyId, Secret, IAMExtra) ->
             create_credentialed_user(User);
         {error, _Reason} = Error ->
             Error
+    after
+        stanchion_lock:release(KeyId, Precious)
     end.
 
 create_credentialed_user(User) ->

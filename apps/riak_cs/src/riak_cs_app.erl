@@ -54,6 +54,7 @@ start(_Type, _StartArgs) ->
     Ret = {ok, _Pid} = riak_cs_sup:start_link(),
     ok = PostFun(),
     ok = riakc_pb_socket:stop(Pbc),
+    ok = stanchion_lock:cleanup(),
     Ret.
 
 
@@ -83,10 +84,10 @@ ensure_bucket_props(Pbc) ->
                              ?IAM_ROLE_BUCKET,
                              ?IAM_POLICY_BUCKET,
                              ?IAM_SAMLPROVIDER_BUCKET,
-                             ?TEMP_SESSIONS_BUCKET],
+                             ?TEMP_SESSIONS_BUCKET,
+                             ?OBJECT_LOCK_BUCKET],
     [ok = riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, true}]) || B <- BucketsWithMultiTrue],
     [ok = riakc_pb_socket:set_bucket(Pbc, B, [{allow_mult, false}]) || B <- BucketsWithMultiFalse],
-    ?LOG_DEBUG("ensure_bucket_props done"),
     ok.
 
 %% Put atoms into atom table to suppress warning logs in `check_bucket_props'

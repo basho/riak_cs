@@ -24,6 +24,11 @@ substantial release of Riak CS Control 3.2.3.
 * Fix `ListBucket` for federated users with appropriate policy
 * Federated users' policies are now correctly evaluated in operations
   on objects.
+* Operations involving role update do not double-base64 encode its
+  `AssumeRolePolicyDocument` anymore.
+* Improved locking when updating users and roles in `AttachUserPolicy`
+  and `DetachuserPolicy` (same for roles).
+
 
 
 # Riak CS 3.2.2 Release Notes
