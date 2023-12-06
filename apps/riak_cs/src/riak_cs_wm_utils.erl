@@ -835,8 +835,7 @@ bucket_access_authorize_helper(AccessType, Deletable, RD,
 
 policies_to_verdict(AccessType, Deletable, Bucket,
                     Acl, Policies, PermissionsBoundary,
-                    RD, #rcs_web_context{user = ?RCS_USER{name = UserName,
-                                                          buckets = UserBuckets} = User,
+                    RD, #rcs_web_context{user = User,
                                          request_id = RequestId} = Ctx) ->
     Method = wrq:method(RD),
     RequestedAccess =
@@ -844,8 +843,15 @@ policies_to_verdict(AccessType, Deletable, Bucket,
     PermCtx =
         Ctx#rcs_web_context{bucket = Bucket,
                             requested_perm = RequestedAccess},
-    UserOwnsBucket =
-        lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, UserBuckets),
+    {UserOwnsBucket, UserName} =
+        case User of
+            undefined ->
+                {false, "anonymous"};
+            ?RCS_USER{name = Name,
+                      buckets = Buckets} ->
+                {lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, Buckets),
+                 Name}
+        end,
 
     {PolicyVerdict, VerdictRD1, _} =
         case Policies of
@@ -944,20 +950,21 @@ handle_acl_check_result({true, OwnerId}, _, _, _, _, RD, Ctx) ->
     shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_web_context.riak_client);
 handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     %% No policy so emulate a policy eval failure to avoid code duplication
-    handle_policy_eval_result(Ctx#rcs_web_context.user, false, undefined, RD, Ctx);
+    handle_policy_eval_result(false, undefined, RD, Ctx);
 handle_acl_check_result(false, Acl, Policy, AccessType, _Deletable, RD, Ctx) ->
     #rcs_web_context{riak_client = RcPid,
-                     user = ?RCS_USER{id = UserId}} = Ctx,
+                     user = User} = Ctx,
+    UserId = safely_extract_canonical_id(User),
     PolicyMod = Ctx#rcs_web_context.policy_module,
     Access = PolicyMod:reqdata_to_access(RD, AccessType, UserId),
     PolicyResult = PolicyMod:eval(Access, Policy),
     OwnerId = riak_cs_acl:owner_id(Acl, RcPid),
-    handle_policy_eval_result(UserId, PolicyResult, OwnerId, RD, Ctx).
+    handle_policy_eval_result(PolicyResult, OwnerId, RD, Ctx).
 
-handle_policy_eval_result(_, true, OwnerId, RD, Ctx) ->
+handle_policy_eval_result(true, OwnerId, RD, Ctx) ->
     %% Policy says yes while ACL says no
     shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_web_context.riak_client);
-handle_policy_eval_result(_, _, _, RD, Ctx) ->
+handle_policy_eval_result(_, _, RD, Ctx) ->
     %% Policy says no
     #rcs_web_context{riak_client = RcPid,
                      response_module = ResponseMod,
@@ -1093,10 +1100,11 @@ safely_extract_canonical_id(undefined) -> undefined.
 check_object_authorization(Access, SkipAcl, ObjectAcl,
                            Policies, PermissionsBoundary,
                            BucketObj,
-                           RD, Ctx = #rcs_web_context{user = ?RCS_USER{id = CanonicalId},
+                           RD, Ctx = #rcs_web_context{user = User,
                                                       bucket = Bucket,
                                                       riak_client = RcPid,
                                                       request_id = RequestId}) ->
+    CanonicalId = safely_extract_canonical_id(User),
     #access_v1{method = Method, target = AccessType} = Access,
     RequestedAccess = requested_access_helper(AccessType, Method),
     ?LOG_DEBUG("ObjectAcl: ~p, RequestedAccess: ~p, Policies (~b) ~p",
