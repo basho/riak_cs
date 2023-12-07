@@ -46,7 +46,7 @@ error_message(user_has_buckets) ->
 error_message(user_has_attached_policies) ->
     "User has attached policies and cannot be deleted.";
 error_message(policy_in_use) ->
-    "Policy is attached to other entities cannot be deleted.";
+    "Policy is attached to other entities and cannot be deleted.";
 error_message(bad_signature) ->
     "The request signature that the server calculated does not match the signature that you provided.";
 error_message(access_denied) ->
