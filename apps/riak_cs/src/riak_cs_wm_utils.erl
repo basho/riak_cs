@@ -862,12 +862,11 @@ policies_to_verdict(AccessType, Deletable, Bucket,
                 {false, AccessRD, Ctx};
             _pp ->
                 lists:foldl(
-                  fun(_, {false, _, _} = Q) ->
+                  fun(_, {{halt, _}, _, _} = Q) ->
                           Q;
                      (P, _) ->
-                          A = handle_bucket_acl_policy_response(
-                            Acl, P, AccessType, Deletable, RD, PermCtx),
-                          A
+                          handle_bucket_acl_policy_response(
+                            Acl, P, AccessType, Deletable, RD, PermCtx)
                   end,
                   {undefined, RD, Ctx},
                   Policies)
