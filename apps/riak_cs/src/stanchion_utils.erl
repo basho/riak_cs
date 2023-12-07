@@ -145,8 +145,9 @@ delete_bucket(Bucket, OwnerId, Pbc) ->
 %% @doc Attempt to create a new user
 -spec create_user(maps:map(), pid()) -> ok | {error, term()}.
 create_user(FF = #{arn := Arn,
+                   name := Name,
                    email := Email}, Pbc) ->
-    case email_available(Email, Pbc) of
+    case email_and_name_available(Email, Name, Pbc) of
         true ->
             User = riak_cs_iam:unarm(
                      riak_cs_iam:exprec_user(FF)),
@@ -217,15 +218,17 @@ update_user(FF, Pbc) ->
 %% for a particular key.
 %% @TODO Consider other options that would give more
 %% assurance that a particular email address is available.
-email_available(Email, Pbc) ->
-    case riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email) of
-        {ok, ?INDEX_RESULTS{keys = []}} ->
+email_and_name_available(Email, Name, Pbc) ->
+    case {riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_EMAIL_INDEX, Email),
+          riakc_pb_socket:get_index_eq(Pbc, ?USER_BUCKET, ?USER_NAME_INDEX, Name)} of
+        {{ok, ?INDEX_RESULTS{keys = []}},
+         {ok, ?INDEX_RESULTS{keys = []}}} ->
             true;
-        {ok, ?INDEX_RESULTS{keys = [_|_]}} ->
+        {{ok, _}, {ok, _}} ->
             {false, user_already_exists};
-        {error, Reason} ->
+        {{error, Reason}, _} ->
             %% @TODO Maybe bubble up this error info
-            logger:warning("Error occurred trying to check if the address ~p has been registered. Reason: ~p",
+            logger:warning("Error occurred trying to check if the email ~p has been registered. Reason: ~p",
                            [Email, Reason]),
             {false, Reason}
     end.
