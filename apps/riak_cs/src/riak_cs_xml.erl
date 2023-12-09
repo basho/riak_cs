@@ -656,9 +656,10 @@ detach_user_policy_response_to_xml(#detach_user_policy_response{request_id = Req
 
 
 policy_entry_for_laup_result(Arn, Name) ->
-    [{'PolicyArn', [make_arn(Arn)]},
-     {'PolicyName', [binary_to_list(Name)]}
-    ].
+    P = [{'PolicyArn', [make_arn(Arn)]},
+         {'PolicyName', [binary_to_list(Name)]}
+        ],
+    {'member', P}.
 
 list_attached_user_policies_response_to_xml(#list_attached_user_policies_response{policies = RR,
                                                                                   request_id = RequestId,
