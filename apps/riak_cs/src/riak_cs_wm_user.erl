@@ -91,7 +91,7 @@ forbidden(RD, Ctx) ->
     end.
 forbidden2(RD, Ctx = #rcs_web_context{auth_bypass = AuthBypass}) ->
     Method = wrq:method(RD),
-    AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST') andalso
+    AnonOk = ((Method =:= 'PUT' orelse Method =:= 'POST' orelse Method =:= 'DELETE') andalso
               riak_cs_config:anonymous_user_creation())
         orelse AuthBypass,
     Next = fun(NewRD, NewCtx = #rcs_web_context{user = User}) ->
@@ -240,10 +240,11 @@ forbidden(_, RD, Ctx, undefined, <<>>, true) ->
     {false, RD, Ctx};
 forbidden(_, RD, Ctx, undefined, UserPathKey, true) ->
     get_user({false, RD, Ctx}, UserPathKey);
-forbidden('POST', RD, Ctx, User, <<>>, _) ->
-    %% Admin is creating a new user
-    admin_check(riak_cs_user:is_admin(User), RD, Ctx);
-forbidden('PUT', RD, Ctx, User, <<>>, _) ->
+forbidden(Method, RD, Ctx, User, <<>>, _)
+  when Method =:= 'PUT';
+       Method =:= 'POST';
+       Method =:= 'DELETE' ->
+    %% Admin is creating/updating/deleting a user
     admin_check(riak_cs_user:is_admin(User), RD, Ctx);
 forbidden(_Method, RD, Ctx, User, UserPathKey, _) when
       UserPathKey =:= User?RCS_USER.key_id;
