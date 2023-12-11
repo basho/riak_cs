@@ -879,10 +879,19 @@ policies_to_verdict(AccessType, Deletable, Bucket,
                 handle_bucket_acl_policy_response(
                   Acl, PermissionsBoundary, AccessType, Deletable, VerdictRD1, PermCtx)
         end,
-    UltimateVerdict =
-        (PolicyVerdict == false andalso PermBoundaryVerdict /= true),
+    UltimateVerdict = ultimate_verdict(PolicyVerdict, PermBoundaryVerdict),
+    {UltimateVerdict, VerdictRD2, PermCtx}.
 
-    {not UltimateVerdict, VerdictRD2, PermCtx}.
+%% 'false' means allow
+ultimate_verdict(undefined, undefined) -> undefined;
+ultimate_verdict(undefined, {halt, _} = Deny) -> Deny;
+ultimate_verdict(undefined, false) -> undefined;
+ultimate_verdict(false, undefined) -> false;
+ultimate_verdict(false, {halt, _} = Deny) -> Deny;
+ultimate_verdict(false, false) -> false;
+ultimate_verdict({halt, _} = Deny, _) -> Deny.
+
+
 
 
 get_user_policies_or_halt(#rcs_web_context{user_object = undefined,
@@ -1119,18 +1128,21 @@ check_object_authorization(Access, SkipAcl, ObjectAcl,
                         ObjectAcl, Policies, PermissionsBoundary,
                         RD, Ctx),
     ?LOG_DEBUG("ObjectAccess: ~p, Verdict: ~p", [ObjectAccess, Verdict]),
-    case {ObjectAccess, not Verdict} of
-        {true, false} ->
+    case {ObjectAccess, Verdict} of
+        {true, {halt, _}} ->
             logger:info("caller the owner, but denied by policy (request_id: ~s)",
                         [RequestId]),
             {error, actor_is_owner_but_denied_policy};
-        {true, _} ->
+        {true, _p} ->
+            ?LOG_DEBUG("actor is owner and (maybe implicitly: ~p) allowed by policy", [_p]),
             {ok, actor_is_owner_and_allowed_policy};
-        {{true, OwnerId}, false} ->
+        {{true, OwnerId}, {halt, _}} ->
+            ?LOG_DEBUG("actor_is_not_owner_and_denied_policy"),
             {error, {actor_is_not_owner_and_denied_policy, OwnerId}};
-        {{true, OwnerId}, _} ->
+        {{true, OwnerId}, _p} ->
+            ?LOG_DEBUG("actor is not owner and no policy (~p): implicitly allow", [_p]),
             {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}};
-        {false, true} ->
+        {false, false} ->
             logger:info("caller is not the owner, not permitted by ACL but permitted by policy (request_id: ~s)",
                         [RequestId]),
             {ok, just_allowed_by_policy};
