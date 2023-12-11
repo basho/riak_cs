@@ -930,13 +930,13 @@ handle_bucket_acl_policy_response(Acl, Policy, AccessType, DeleteEligible, RD, C
 
 handle_acl_check_result(true, _, undefined, _, _, RD, Ctx) ->
     %% because users are not allowed to create/destroy
-    %% buckets, we can assume that User is not
+    %% buckets (why?), we can assume that User is not
     %% undefined here
     AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
     {false, AccessRD, Ctx};
-handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
-    User = Ctx#rcs_web_context.user,
-    PolicyMod = Ctx#rcs_web_context.policy_module,
+handle_acl_check_result(true, _, Policy, AccessType, _,
+                        RD, Ctx = #rcs_web_context{policy_module = PolicyMod,
+                                                   user = User}) ->
     AccessRD = riak_cs_access_log_handler:set_user(User, RD),
     Access = PolicyMod:reqdata_to_access(RD, AccessType,
                                          User?RCS_USER.id),
@@ -946,16 +946,11 @@ handle_acl_check_result(true, _, Policy, AccessType, _, RD, Ctx) ->
         _ ->
             {false, AccessRD, Ctx}
     end;
-handle_acl_check_result({true, _OwnerId}, _, _, _, true, RD, Ctx) ->
-    %% grants lied: this is a delete, and only the owner is allowed to
-    %% do that; setting user for the request anyway, so the error
-    %% tally is logged for them
-    AccessRD = riak_cs_access_log_handler:set_user(Ctx#rcs_web_context.user, RD),
-    riak_cs_wm_utils:deny_access(AccessRD, Ctx);
-handle_acl_check_result({true, OwnerId}, _, _, _, _, RD, Ctx) ->
-    %% this operation is allowed, but we need to get the owner's
-    %% record, and log the access against them instead of the actor
-    shift_to_owner(RD, Ctx, OwnerId, Ctx#rcs_web_context.riak_client);
+handle_acl_check_result({true, _OwnerId}, Acl, Policy, AccessType, Deletable,
+                        RD, Ctx = #rcs_web_context{user = User}) ->
+    ?LOG_DEBUG("Actor (~s) is not owner (~s); applying policy checks regardless", [User?IAM_USER.id, _OwnerId]),
+    handle_acl_check_result(true, Acl, Policy, AccessType, Deletable, RD, Ctx);
+
 handle_acl_check_result(false, _, undefined, _, _Deletable, RD, Ctx) ->
     %% No policy so emulate a policy eval failure to avoid code duplication
     handle_policy_eval_result(false, undefined, RD, Ctx);
@@ -1156,7 +1151,7 @@ check_object_authorization(Access, SkipAcl, ObjectAcl,
 %% object_acces_authorize_helper helper functions
 
 -spec requested_access_helper(object | object_part | object_acl, atom()) ->
-                                     acl_perm().
+          acl_perm().
 requested_access_helper(object, Method) ->
     riak_cs_acl_utils:requested_access(Method, false);
 requested_access_helper(object_part, Method) ->
