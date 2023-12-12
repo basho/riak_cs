@@ -399,6 +399,8 @@ resource_call(Mod, Fun, Args, ExportsFun) ->
 post_authentication(AuthResult, RD, Ctx, AnonOk) ->
     post_authentication(AuthResult, RD, Ctx, fun authorize/2, AnonOk).
 
+post_authentication({ok, ?RCS_USER{status = disabled}, _}, RD, Ctx, _, _) ->
+    riak_cs_wm_utils:deny_access(RD, Ctx);
 post_authentication({ok, User, UserObj}, RD, Ctx, Authorize, _) ->
     %% given keyid and signature matched, proceed
     Authorize(RD, Ctx#rcs_web_context{user = User,
