@@ -135,7 +135,7 @@ accept_json(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
                                                  IAMExtra);
                     'PUT' ->
                         {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-                        case riak_cs_iam:find_user(#{canonical_id => maps:get(id, FF)}, Pbc) of
+                        case riak_cs_iam:find_user(#{key_id => user_key(RD)}, Pbc) of
                             {ok, {User, _}} ->
                                 update_user(maps:to_list(maps:merge(FF, IAMExtra)), User);
                             {error, notfound} ->
@@ -152,11 +152,7 @@ check_required_fields('POST',
                                             is_binary(Name) ->
     ok;
 check_required_fields('PUT',
-                      #{email := Email,
-                        name := Name,
-                        id := Id}) when is_binary(Email),
-                                        is_binary(Name),
-                                        is_binary(Id) ->
+                      #{}) ->
     ok;
 check_required_fields(_, _) ->
     {error, missing_parameter}.
@@ -170,7 +166,8 @@ accept_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
         {error, malformed_xml} ->
             riak_cs_aws_response:api_error(invalid_user_update, RD, Ctx);
         {ok, Xml} ->
-            FF = lists:foldl(fun user_xml_filter/2, [], Xml#xmlElement.content),
+            FF = maps:to_list(
+                   lists:foldl(fun user_xml_filter/2, #{}, Xml#xmlElement.content)),
             UserName = proplists:get_value(name, FF, ""),
             Email = proplists:get_value(email, FF, ""),
             Res =
@@ -179,14 +176,14 @@ accept_xml(RD, Ctx = #rcs_web_context{riak_client = RcPid}) ->
                         riak_cs_user:create_user(UserName, Email);
                     'PUT' ->
                         {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
-                        case riak_cs_iam:find_user(#{canonical_id => proplists:get_value(id, FF)}, Pbc) of
+                        case riak_cs_iam:find_user(#{key_id => user_key(RD)}, Pbc) of
                             {ok, {User, _}} ->
                                 update_user(FF, User);
                             {error, notfound} ->
                                 {error, no_such_user}
                         end
                 end,
-            user_response(Res, ?JSON_TYPE, RD, Ctx)
+            user_response(Res, ?XML_TYPE, RD, Ctx)
     end.
 
 produce_json(RD, Ctx = #rcs_web_context{user = User}) ->
