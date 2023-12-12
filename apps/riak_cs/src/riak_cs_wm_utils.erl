@@ -852,6 +852,7 @@ policies_to_verdict(AccessType, Deletable, Bucket,
                 {lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, Buckets),
                  Name}
         end,
+    ?LOG_DEBUG("Policies ~p", [Policies]),
 
     {PolicyVerdict, VerdictRD1, _} =
         case Policies of
@@ -871,6 +872,7 @@ policies_to_verdict(AccessType, Deletable, Bucket,
                   {undefined, RD, Ctx},
                   Policies)
         end,
+    ?LOG_DEBUG("PolicyVerdict: ~p", [PolicyVerdict]),
     {PermBoundaryVerdict, VerdictRD2, _} =
         case PermissionsBoundary of
             [] ->
@@ -925,6 +927,7 @@ handle_bucket_acl_policy_response(Acl, Policy, AccessType, DeleteEligible, RD, C
                      requested_perm = RequestedAccess} = Ctx,
     AclCheckRes = riak_cs_acl_utils:check_grants(
                     User, Bucket, RequestedAccess, RcPid, Acl),
+    ?LOG_DEBUG("AclCheckRes: ~p", [AclCheckRes]),
     Deletable = DeleteEligible andalso (RequestedAccess =:= 'WRITE'),
     handle_acl_check_result(AclCheckRes, Acl, Policy, AccessType, Deletable, RD, Ctx).
 
@@ -1031,6 +1034,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
             %% so we can assume to bucket does not exist.
             ResponseMod:api_error(no_such_bucket, RD, Ctx);
         BucketPolicy ->
+            ?LOG_DEBUG("BucketPolicy: ~p", [BucketPolicy]),
             Method = wrq:method(RD),
             CanonicalId = safely_extract_canonical_id(User),
             Access = PolicyMod:reqdata_to_access(RD, AccessType, CanonicalId),
@@ -1042,6 +1046,7 @@ object_access_authorize_helper(AccessType, Deletable, SkipAcl,
                 {UserPolicies, PermissionsBoundary} ->
                     ApplicablePolicies = [P || P <- [BucketPolicy | UserPolicies],
                                                P /= undefined],
+                    ?LOG_DEBUG("ApplicablePolicies ~p", [ApplicablePolicies]),
                     case check_object_authorization(
                            Access, SkipAcl, ObjectAcl,
                            ApplicablePolicies, PermissionsBoundary,
