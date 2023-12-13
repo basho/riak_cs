@@ -88,7 +88,7 @@ maybe_process_resolved(Object, ResolvedManifestsHandler, ErrorReturn) ->
     try
         AllManifests = [ binary_to_term(V)
                          || {_, V} = Content <- riak_object:get_contents(Object),
-                            not riak_cs_util:has_tombstone(Content) ],
+                            not riak_cs_utils:has_tombstone(Content) ],
         Upgraded = rcs_common_manifest_utils:upgrade_wrapped_manifests(AllManifests),
         Resolved = rcs_common_manifest_resolution:resolve(Upgraded),
         ResolvedManifestsHandler(Resolved)
