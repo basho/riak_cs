@@ -53,14 +53,19 @@ test_condition_and_permission(RcPid, SrcManifest, RD, Ctx) ->
     %% TODO: write tests around these conditions, any kind of test is okay
     case condition_check(RD, ETag, LastUpdate) of
         ok ->
-            authorize_on_src(RcPid, SrcManifest, RD, Ctx);
+            case {authorize_on_src(RcPid, SrcManifest, RD, Ctx),
+                  authorize_on_dst(RD, Ctx)} of
+                {{false, _, _} = Allow, {false, _, _}} ->
+                    Allow;
+                {_1, _2} ->
+                    ?LOG_DEBUG("put_copy denied due to either ~p (src) or ~p (dst)", [_1, _2]),
+                    riak_cs_wm_utils:deny_access(RD, Ctx)
+            end;
         Other ->
             {Other, RD, Ctx}
     end.
 
 %% @doc tests permission on acl, policy
--spec authorize_on_src(riak_client(), lfs_manifest(), #wm_reqdata{}, #rcs_web_context{}) ->
-          {boolean()|{halt, non_neg_integer()}, #wm_reqdata{}, #rcs_web_context{}}.
 authorize_on_src(RcPid, SrcManifest, RD,
                  #rcs_web_context{auth_module = AuthMod,
                                   local_context = LocalCtx} = Ctx) ->
@@ -85,6 +90,7 @@ authorize_on_src(RcPid, SrcManifest, RD,
     OtherCtx = Ctx#rcs_web_context{local_context = OtherLocalCtx,
                                    acl = SrcBucketAcl,
                                    user = User,
+                                   bucket = SrcBucket,
                                    user_object = UserObj},
 
     %% Build fake ReqData for checking read access to the src object
@@ -102,6 +108,10 @@ authorize_on_src(RcPid, SrcManifest, RD,
     %% check the permission on ACL and Policy
     riak_cs_wm_utils:object_access_authorize_helper(object, false,
                                                     OtherRD, OtherCtx).
+
+authorize_on_dst(RD, Ctx) ->
+    riak_cs_wm_utils:object_access_authorize_helper(object, false,
+                                                    RD, Ctx).
 
 -spec malformed_request(#wm_reqdata{}) ->
                                false |
