@@ -852,7 +852,7 @@ policies_to_verdict(AccessType, Deletable, Bucket,
                 {lists:any(fun(?RCS_BUCKET{name = N}) -> Bucket == N end, Buckets),
                  Name}
         end,
-    ?LOG_DEBUG("Policies ~p", [Policies]),
+    ?LOG_DEBUG("Bucket: ~s, Policies ~p", [Bucket, Policies]),
 
     {PolicyVerdict, VerdictRD1, _} =
         case Policies of
@@ -1115,8 +1115,8 @@ check_object_authorization(Access, SkipAcl, ObjectAcl,
     CanonicalId = safely_extract_canonical_id(User),
     #access_v1{method = Method, target = AccessType} = Access,
     RequestedAccess = requested_access_helper(AccessType, Method),
-    ?LOG_DEBUG("ObjectAcl: ~p, RequestedAccess: ~p, Policies (~b) ~p",
-               [ObjectAcl, RequestedAccess, length(Policies), Policies]),
+    ?LOG_DEBUG("ObjectAcl: ~p, BucketName: ~p, RequestedAccess: ~p, Policies (~b) ~p",
+               [ObjectAcl, RequestedAccess, riakc_obj:key(BucketObj), length(Policies), Policies]),
     ObjectAccess =
         case SkipAcl of
             true -> true;
@@ -1127,7 +1127,7 @@ check_object_authorization(Access, SkipAcl, ObjectAcl,
                         AccessType, _Deletable = true, Bucket,
                         ObjectAcl, Policies, PermissionsBoundary,
                         RD, Ctx),
-    ?LOG_DEBUG("ObjectAccess: ~p, Verdict: ~p", [ObjectAccess, Verdict]),
+    ?LOG_DEBUG("User: ~p, ObjectAccess: ~p, Verdict: ~p", [CanonicalId, ObjectAccess, Verdict]),
     case {ObjectAccess, Verdict} of
         {true, {halt, _}} ->
             logger:info("caller the owner, but denied by policy (request_id: ~s)",
@@ -1143,8 +1143,7 @@ check_object_authorization(Access, SkipAcl, ObjectAcl,
             ?LOG_DEBUG("actor is not owner and no policy (~p): implicitly allow", [_p]),
             {ok, {actor_is_not_owner_but_allowed_policy, OwnerId}};
         {false, false} ->
-            logger:info("caller is not the owner, not permitted by ACL but permitted by policy (request_id: ~s)",
-                        [RequestId]),
+            ?LOG_DEBUG("caller is not the owner, not permitted by ACL but permitted by policy (request_id: ~s)", [RequestId]),
             {ok, just_allowed_by_policy};
         {false, _} ->
             %% policy says undefined or false
@@ -1170,10 +1169,9 @@ extract_object_acl(Manifest) ->
     riak_cs_manifest:object_acl(Manifest).
 
 -spec translate_bucket_policy(atom(), riakc_obj:riakc_obj()) ->
-                                     policy() |
-                                     undefined |
-                                     {error, multiple_bucket_owners} |
-                                     {error, notfound}.
+          policy() | undefined |
+          {error, multiple_bucket_owners} |
+          {error, notfound}.
 translate_bucket_policy(PolicyMod, BucketObj) ->
     case PolicyMod:bucket_policy(BucketObj) of
         {ok, P} ->
