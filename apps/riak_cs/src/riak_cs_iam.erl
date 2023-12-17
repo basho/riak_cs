@@ -128,19 +128,21 @@ find_user(Index, A, Pbc) ->
     end.
 
 -spec update_user(rcs_user()) -> {ok, rcs_user()} | {error, reportable_error_reason()}.
-update_user(U = ?IAM_USER{key_id = KeyId,
-                          name = Name}) ->
+update_user(U = ?IAM_USER{name = Name}) ->
     UserKeyForLocking = <<"u", Name/binary>>,
     Lock = stanchion_lock:acquire(UserKeyForLocking),
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
     try
-        velvet:update_user("application/json",
-                           KeyId,
-                           riak_cs_json:to_json(U),
-                           [{auth_creds, AdminCreds}])
+        update_user_already_locked(U)
     after
         stanchion_lock:release(UserKeyForLocking, Lock)
     end.
+
+update_user_already_locked(U = ?IAM_USER{key_id = KeyId}) ->
+    {ok, AdminCreds} = riak_cs_config:admin_creds(),
+    velvet:update_user("application/json",
+                       KeyId,
+                       riak_cs_json:to_json(U),
+                       [{auth_creds, AdminCreds}]).
 
 -spec list_attached_user_policies(binary(), binary(), pid()) ->
           {ok, [{flat_arn(), PolicyName::binary()}]} | {error, term()}.
@@ -346,7 +348,8 @@ attach_user_policy(PolicyArn, UserName, Pbc) ->
                     case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{is_attachable = true,
                                                   attachment_count = AC}} ->
-                            case update_user(User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
+                            case update_user_already_locked(
+                                   User?RCS_USER{attached_policies = lists:usort([PolicyArn | PP])}) of
                                 {ok, _} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC + 1});
                                 {error, _} = ER ->
@@ -361,8 +364,8 @@ attach_user_policy(PolicyArn, UserName, Pbc) ->
         {error, notfound} ->
             {error, no_such_user}
     after
-        stanchion_lock:release(UserKeyForLocking, Lock1),
-        stanchion_lock:release(PolicyArn, Lock2)
+        stanchion_lock:release(PolicyArn, Lock2),
+        stanchion_lock:release(UserKeyForLocking, Lock1)
     end.
 
 -spec detach_user_policy(binary(), binary(), pid()) ->
@@ -379,7 +382,8 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
                 true ->
                     case get_policy(PolicyArn, Pbc) of
                         {ok, Policy = ?IAM_POLICY{attachment_count = AC}} ->
-                            case update_user(User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
+                            case update_user_already_locked(
+                                   User?RCS_USER{attached_policies = lists:delete(PolicyArn, PP)}) of
                                 {ok, _} ->
                                     update_policy(Policy?IAM_POLICY{attachment_count = AC - 1});
                                 {error, _} = ER ->
@@ -392,8 +396,9 @@ detach_user_policy(PolicyArn, UserName, Pbc) ->
         {error, notfound} ->
             {error, no_such_user}
     after
-        stanchion_lock:release(UserKeyForLocking, Lock1),
-        stanchion_lock:release(PolicyArn, Lock2)
+        ?LOG_DEBUG("Are we even releasing?"),
+        stanchion_lock:release(PolicyArn, Lock2),
+        stanchion_lock:release(UserKeyForLocking, Lock1)
     end.
 
 -spec update_role(role()) -> ok | {error, reportable_error_reason()}.

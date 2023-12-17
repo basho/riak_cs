@@ -506,8 +506,8 @@ do_action("AttachUserPolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
-    PolicyArn = proplists:get_value("PolicyArn", Form),
     UserName = proplists:get_value("UserName", Form),
+    PolicyArn = proplists:get_value("PolicyArn", Form),
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:attach_user_policy(list_to_binary(PolicyArn),
                                         list_to_binary(UserName), Pbc) of
@@ -525,8 +525,8 @@ do_action("DetachRolePolicy",
           Form, RD, Ctx = #rcs_web_context{riak_client = RcPid,
                                            response_module = ResponseMod,
                                            request_id = RequestId}) ->
-    PolicyArn = proplists:get_value("PolicyArn", Form),
     RoleName = proplists:get_value("RoleName", Form),
+    PolicyArn = proplists:get_value("PolicyArn", Form),
     {ok, Pbc} = riak_cs_riak_client:master_pbc(RcPid),
     case riak_cs_iam:detach_role_policy(list_to_binary(PolicyArn),
                                         list_to_binary(RoleName), Pbc) of

@@ -25,8 +25,10 @@
 -module(stanchion_lock).
 
 -export([acquire/1,
+         acquire/2,
          release/2,
-         cleanup/0
+         cleanup/0,
+         precious/0
         ]).
 -export([start_link/0
         ]).
@@ -43,19 +45,21 @@
 -include("riak_cs.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--define(ACQUIRE_WAIT_MSEC, 300).
--define(AUTO_RELEASE_MSEC, 2000).
+-define(ACQUIRE_WAIT_MSEC, 500).
+-define(AUTO_RELEASE_MSEC, 15000).
 -define(MAX_ACQUIRE_WAIT_MSEC, 5000).
 
 -spec acquire(binary()) -> binary() | busy.
 acquire(A) ->
-    acquire(A, 0).
-acquire(A, TT) ->
-    case gen_server:call(?SERVER, {acquire, A}, infinity) of
+    acquire(A, precious()).
+acquire(A, Precious) ->
+    acquire(A, Precious, 0).
+acquire(A, Precious, TT) ->
+    case gen_server:call(?SERVER, {acquire, A, Precious}, infinity) of
         busy ->
             ?LOG_DEBUG("waiting tick ~b to acquire lock on ~p", [TT, A]),
             timer:sleep(?ACQUIRE_WAIT_MSEC),
-            acquire(A, TT + 1);
+            acquire(A, Precious, TT + 1);
         Precious ->
             Precious
     end.
@@ -83,8 +87,8 @@ init([]) ->
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
           {reply, ok, #state{}}.
-handle_call({acquire, A}, _From, State = #state{pbc = Pbc}) ->
-    {reply, do_acquire(A, Pbc), State};
+handle_call({acquire, A, Precious}, _From, State = #state{pbc = Pbc}) ->
+    {reply, do_acquire(A, Precious, Pbc), State};
 handle_call({release, A, B}, _From, State = #state{pbc = Pbc}) ->
     {reply, do_release(A, B, Pbc), State};
 handle_call(cleanup, _From, State = #state{pbc = Pbc}) ->
@@ -112,34 +116,49 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-do_acquire(A, Pbc) ->
+do_acquire(A, Precious, Pbc) ->
     case riakc_pb_socket:get(Pbc, ?OBJECT_LOCK_BUCKET, A, ?CONSISTENT_READ_OPTIONS) of
-        {ok, _x} ->
-            busy;
+        {ok, Obj} ->
+            case riakc_obj:get_value(Obj) of
+                Precious ->
+                    ?LOG_DEBUG("lock on \"~s\" already acquired (~s)", [A, Precious]),
+                    Precious;
+                _NotOurs ->
+                    ?LOG_DEBUG("lock on \"~s\" in use (~s)", [A, _NotOurs]),
+                    busy
+            end;
         {error, notfound} ->
-            Precious = term_to_binary(make_ref()),
+            ?LOG_DEBUG("Placing lock on \"~s\" (precious: ~s)", [A, Precious]),
             ok = riakc_pb_socket:put(
                    Pbc, riakc_obj:new(?OBJECT_LOCK_BUCKET, A, Precious),
                    ?CONSISTENT_WRITE_OPTIONS),
             _ = spawn(fun() ->
                               timer:sleep(?AUTO_RELEASE_MSEC),
-                              do_release(A, Precious, Pbc)
+                              do_release(A, Precious, Pbc, auto)
                       end),
             Precious
     end.
 
-do_release(A, PreciousOrig, Pbc) ->
+do_release(A, Precious, Pbc) ->
+    do_release(A, Precious, Pbc, normal).
+do_release(A, PreciousOrig, Pbc, Mode) ->
     case riakc_pb_socket:get(Pbc, ?OBJECT_LOCK_BUCKET, A, ?CONSISTENT_READ_OPTIONS) of
         {ok, Obj} ->
             case riakc_obj:get_value(Obj) of
                 PreciousOrig ->
-                    ?LOG_DEBUG("lock ~p found, releasing it", [A]);
+                    ?LOG_DEBUG("lock on \"~s\" found (precious: ~s), releasing it", [A, PreciousOrig]);
                 _NotOurs ->
-                    logger:error("found a lock on ~p overwritten by another process", [A])
+                    logger:error("found a lock on ~p overwritten by another process (precious: ~s)", [A, _NotOurs])
             end,
             ok = riakc_pb_socket:delete(Pbc, ?OBJECT_LOCK_BUCKET, A, ?CONSISTENT_DELETE_OPTIONS);
         {error, notfound} ->
-            ok
+            case Mode of
+                normal ->
+                    logger:notice("Lock on \"~s\" not found. The process that acquired it was holding it for too long (>~b msec) and it was autodeleted.", [A, ?AUTO_RELEASE_MSEC]),
+                    ok;
+                auto ->
+                    ok
+            end
     end.
 
 do_cleanup(Pbc) ->
@@ -156,3 +175,8 @@ delete_all(_, []) ->
 delete_all(Pbc, [A | AA]) ->
     ok = riakc_pb_socket:delete(Pbc, ?OBJECT_LOCK_BUCKET, A, ?CONSISTENT_DELETE_OPTIONS),
     delete_all(Pbc, AA).
+
+
+precious() ->
+    list_to_binary(
+      [$A + rand:uniform($Z-$A) || _ <- [a, a, a, a, a, a, a]]).
