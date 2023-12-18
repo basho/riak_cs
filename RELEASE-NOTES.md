@@ -5,7 +5,7 @@ Released December 24, 2023.
 ## General
 
 Incremental release, with features complementary to the more
-substantial release of Riak CS Control 3.2.3.
+substantive release of Riak CS Control 3.2.3.
 
 ## New features
 
@@ -21,7 +21,7 @@ substantial release of Riak CS Control 3.2.3.
   tags.
 * `CreateBucket` by federated users now properly returns 400 (and
   not 500).
-* Fix `ListBucket` for federated users with appropriate policy
+* Fix `ListBucket` for federated users with appropriate policy.
 * Federated users' policies are now correctly evaluated in operations
   on objects.
 * Operations involving role update do not double-base64 encode its

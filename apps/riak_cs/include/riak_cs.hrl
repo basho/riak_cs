@@ -25,7 +25,7 @@
 -include("aws_api.hrl").
 -include("riak_cs_web.hrl").
 
--define(RCS_VERSION, 030202).
+-define(RCS_VERSION, 030203).
 -define(RCS_VERSION_STRING, "3.2.3").
 
 -define(DEFAULT_ADMIN_NAME, <<"admin">>).

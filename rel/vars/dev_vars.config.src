@@ -22,7 +22,7 @@
 {admin_key,         "admin-key"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
-{cs_version,        030202}.
+{cs_version,        030203}.
 {rewrite_module,    riak_cs_aws_rewrite}.
 {auth_module,       riak_cs_aws_auth}.
 {stanchion_hosting_mode, auto}.
