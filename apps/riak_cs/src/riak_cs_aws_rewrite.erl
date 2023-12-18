@@ -39,17 +39,19 @@ rewrite(Method, Scheme, Vsn, Headers, Url) ->
         likely_s3_or_native ->
             case service_from_url(Url) of
                 unrecognized ->
-                    logger:warning("passing \"~s\" through legacy/s3 rewrite", [Url]),
-                    riak_cs_aws_s3_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url);
+                    case needs_rewriting(Url) of
+                        true ->
+                            riak_cs_aws_s3_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url);
+                        false ->
+                            riak_cs_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url)
+                    end;
                 _Mod ->
-                    logger:debug("not rewriting known service in \"~s\"", [Url]),
                     riak_cs_rewrite:rewrite(Method, Scheme, Vsn, Headers, Url)
             end;
         {unsupported, A} ->
             logger:warning("Service ~s is not supported", [A]),
             {Headers, Url};
         Mod ->
-            logger:debug("rewriting url ~s for service ~s", [Url, Mod]),
             Mod:rewrite(Method, Scheme, Vsn, Headers, Url)
     end.
 
@@ -86,6 +88,12 @@ aws_service_submodule("iam") -> riak_cs_aws_iam_rewrite;
 aws_service_submodule("sts") -> riak_cs_aws_sts_rewrite;
 aws_service_submodule(A) ->  {unsupported, A}.
 
+needs_rewriting(Url) ->
+    case string:split(string:to_lower(Url), "/", all) of
+        [[], "buckets" | _] -> false;
+        [[], "riak-cs" | _] -> false;
+        _ -> true
+    end.
 
 -spec original_resource(#wm_reqdata{}) -> {string(), [{term(),term()}]}.
 original_resource(RD) ->
