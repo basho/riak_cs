@@ -238,7 +238,7 @@ check_with_saml_provider(#{pbc := Pbc,
         {ok, SP = ?IAM_SAML_PROVIDER{name = SAMLProviderName}} ->
             State#{status => validate_assertion(ResponseDoc, SP, RequestId),
                    saml_provider_name => SAMLProviderName};
-        {error, not_found} ->
+        {error, notfound} ->
             State#{status => {error, no_such_saml_provider}}
     end.
 
