@@ -120,10 +120,10 @@ map_users(Object, _2, Args) ->
             [];
         [RBin|_] ->
             ?IAM_USER{path = Path} = R = binary_to_term(RBin),
-            case binary:longest_common_prefix([Path, PathPrefix]) of
-                0 ->
+            case prefix_match(Path, PathPrefix) of
+                false ->
                     [];
-                _ ->
+                true ->
                     [R]
             end
     end.
@@ -139,10 +139,10 @@ map_roles(Object, _2, Args) ->
             [];
         [RBin|_] ->
             ?IAM_ROLE{path = Path} = R = binary_to_term(RBin),
-            case binary:longest_common_prefix([Path, PathPrefix]) of
-                0 ->
+            case prefix_match(Path, PathPrefix) of
+                false ->
                     [];
-                _ ->
+                true ->
                     [R]
             end
     end.
@@ -168,7 +168,7 @@ map_policies(Object, _2, Args) ->
         [PBin|_] ->
             ?IAM_POLICY{path = Path,
                         attachment_count = AttachmentCount} = P = binary_to_term(PBin),
-            case (0 < binary:longest_common_prefix([Path, PathPrefix])) and
+            case prefix_match(Path, PathPrefix) and
                 ((true == OnlyAttached andalso AttachmentCount > 0) orelse false == OnlyAttached) of
                 false ->
                     [];
@@ -217,3 +217,7 @@ map_temp_sessions(Object, _2, _Args) ->
 
 reduce_temp_sessions(Acc, _) ->
     Acc.
+
+
+prefix_match(_, <<>>) -> true;
+prefix_match(A, P) -> 0 < binary:longest_common_prefix([A, P]).
