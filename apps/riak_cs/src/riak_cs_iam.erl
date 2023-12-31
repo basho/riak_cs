@@ -454,11 +454,27 @@ fix_permissions_boundary(Map) ->
 
 -spec create_role(maps:map()) -> {ok, role()} | {error, reportable_error_reason()}.
 create_role(Specs) ->
-    Encoded = riak_cs_json:to_json(exprec_role(Specs)),
-    {ok, AdminCreds} = riak_cs_config:admin_creds(),
-    velvet:create_role("application/json",
-                       Encoded,
-                       [{auth_creds, AdminCreds}]).
+    case validate_role_specs(Specs) of
+        ok ->
+            Encoded = riak_cs_json:to_json(exprec_role(Specs)),
+            {ok, AdminCreds} = riak_cs_config:admin_creds(),
+            velvet:create_role("application/json",
+                               Encoded,
+                               [{auth_creds, AdminCreds}]);
+        ER ->
+            ER
+    end.
+
+validate_role_specs(#{assume_role_policy_document := A}) ->
+    case riak_cs_aws_policy:policy_from_json(A) of
+        {ok, _} ->
+            ok;
+        ER ->
+            ER
+    end;
+validate_role_specs(#{}) ->
+    {error, missing_parameter}.
+
 
 -spec delete_role(binary()) -> ok | {error, reportable_error_reason()}.
 delete_role(Arn) ->
