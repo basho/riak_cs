@@ -1,7 +1,7 @@
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2007-2016 Basho Technologies, Inc.  All Rights Reserved,
-%%               2021-2023 TI Tokyo    All Rights Reserved.
+%%               2021-2024 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -61,7 +61,8 @@
          stanchion_data/0,
          camel_case/1,
          capitalize/1,
-         object_indices/1
+         object_indices/1,
+         get_df/0
         ]).
 
 -include("riak_cs.hrl").
@@ -491,6 +492,11 @@ object_indices(?IAM_SAML_PROVIDER{name = Name,
                                   entity_id = EntityId}) ->
     [{?SAMLPROVIDER_NAME_INDEX, Name},
      {?SAMLPROVIDER_ENTITYID_INDEX, EntityId}].
+
+
+get_df() ->
+    ?LOG_DEBUG("STUB"),
+    -1.
 
 
 -ifdef(TEST).

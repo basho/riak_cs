@@ -1,6 +1,6 @@
 %% ---------------------------------------------------------------------
 %%
-%% Copyright (c) 2023 TI Tokyo    All Rights Reserved.
+%% Copyright (c) 2023-2024 TI Tokyo    All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -97,7 +97,8 @@ gather_info() ->
           end,
     #{version => list_to_binary(?RCS_VERSION_STRING),
       system_version => list_to_binary(lists:droplast(erlang:system_info(system_version))),
-      uptime => iolist_to_binary(Str)
+      uptime => iolist_to_binary(Str),
+      free_space => riak_cs_utils:get_df()
      }.
 
 s(1) -> "";
