@@ -11,6 +11,8 @@ substantive release of Riak CS Control 3.2.3.
 
 * A rough implementation of `df -h` on filesystems where riak keeps
   its data.
+* Make `prepare-riak-for-cs` work for the case when riak and riak_cs
+  are on separate hosts.
 
 ## Bug fixes
 

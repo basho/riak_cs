@@ -1,6 +1,45 @@
 #!/bin/bash
 
-ETC=${ETC:-"/etc/riak"}
+# This is a convenience script to help set up a Riak instance to which
+# your Riak CS node is configured to connect. It does the following:
+#
+# 1. Modifies riak.conf and advanced.config (enables milti-backend,
+#    with leveldb and bitcask for object data and manifests, resp.).
+#
+# 2. If Riak is installed on the same host as Riak CS, its ebin path
+#    will be added to riak/advanced.config; otherwise, beams will be
+#    rsync'ed to where Riak can load them (if the remote host is not
+#    accessible, files will need to be copied in some other way).
+#
+# Relevant environment variables (with defaults):
+# * RCS_CONFIG_DIR, "/etc/riak-cs";
+# * RIAK_CONFIG_DIR, "/etc/riak";
+# * RCS_EBIN, "/usr/lib/riak-cs" if it exists, else "/usr/lib64/riak-cs";
+# * RIAK_EBIN, "/usr/lib/riak/lib"
+#
+# For a devrel, assuming you are in the riak dir where you did `make
+# devrel`, and have riak and riak_cs as sister dirs in .., you might
+# use:
+#
+#   RCS_CONFIG_DIR=../riak_cs/dev/dev1/riak-cs/etc \
+#   RIAK_CONFIG_DIR=dev/dev1/riak/etc \
+#   RCS_EBIN=../riak_cs/dev/dev1/riak-cs/lib/riak_cs-3.2pre1/ebin \
+#   RIAK_EBIN=dev/dev1/riak/lib/riak_kv-riak_kv-3.0.9+build.3962.ref1d4ee470/ebin \
+#   ../riak_cs/misc/prepare-riak-for-cs
+
+set -e
+
+# 0. get riak host address
+RCS_CONFIG_DIR=${RCS_CONFIG_DIR:-"/etc/riak-cs"}
+RIAK_HOST=`sed -n 's/^riak_host = \(.*\):.*/\1/p' $RCS_CONFIG_DIR/riak-cs.conf`
+
+if [ $RIAK_HOST = "127.0.0.1" ]; then
+    local_riak=yes
+else
+    local_riak=
+fi
+
+# 1. Copy modules that are to be loaded on riak VM
 
 if [ -d /usr/lib/riak-cs ]; then
     RCS_PKG_INST=/usr/lib/riak-cs/lib
@@ -8,31 +47,76 @@ elif [ -d /usr/lib64/riak-cs ]; then
     RCS_PKG_INST=/usr/lib64/riak-cs/lib
 fi
 
-RIAK_CS_EBIN=${RIAK_CS_EBIN:-$RCS_PKG_INST}
-paths_to_add=`for p in ${RIAK_CS_EBIN}/riak_cs*/ebin; do echo -n \\"$p\\",; done | sed 's/,$//'`
+RCS_EBIN=${RCS_EBIN:-$RCS_PKG_INST}
+mods_to_add="
+$RCS_EBIN/riak_cs_kv_multi_backend.beam
+$RCS_EBIN/riak_cs_riak_mapred.beam
+$RCS_EBIN/riak_cs_utils.beam
+$RCS_EBIN/rcs_common_manifest_utils.beam
+$RCS_EBIN/rcs_common_manifest_resolution.beam
+"
 
-# sed the riak-cs settings into factory riak.conf and advanced.config
+if [ $local_riak != yes ]; then
+    echo "* Copying CS modules to $RIAK_HOST:$RIAK_EBIN"
+    rsync $mods_to_add $RIAK_HOST:$RIAK_EBIN/
+fi
 
+
+RIAK_EBIN=${RIAK_EBIN:-/usr/lib/riak/lib}
+
+
+# 2. Modify riak.conf and advanced.config
+
+RIAK_CONFIG_DIR=${RIAK_CONFIG_DIR:-"/etc/riak"}
+
+echo "* Pulling riak.conf and advanced.config"
+
+d=/tmp/$RIAK_HOST-riak-configs
+mkdir $d
+if [ $local_riak = yes ]; then
+    cp $RIAK_CONFIG_DIR/* $d
+else
+    rsync $RIAK_HOST:$RIAK_CONFIG_DIR/* $d/
+fi
+
+echo "* Modifying riak.conf"
 sed -i \
     -e "s|storage_backend = bitcask|storage_backend = multi|" \
-    $ETC/riak.conf
+    $d/riak.conf
 
 echo "
 buckets.default.merge_strategy = 2" \
-    >>$ETC/riak.conf
+    >>$d/riak.conf
 
-sed -i \
-    -e "s|]\\.|, \
-    {riak_kv, [ \
-      {add_paths, [${paths_to_add}]}, \
-      {multi_backend, \
-          [{be_default,riak_kv_eleveldb_backend, \
-               [{max_open_files,20}]}, \
-           {be_blocks,riak_kv_bitcask_backend, \
-               []}]}, \
-      {multi_backend_default,be_default}, \
-      {multi_backend_prefix_list,[{<<\"0b:\">>,be_blocks}]}, \
-      {storage_backend,riak_kv_multi_backend} \
-     ]} \
-     ].|" \
-     $ETC/advanced.config
+echo "* Modifying advanced.config"
+
+if [ $local_riak = yes ]; then
+    paths_option="{add_paths, [\"$RCS_EBIN\"]},\n\\"
+else
+    paths_option=
+fi
+
+sed -i -e \
+    "s|]\\.|,\n\
+    {riak_kv, [\n\
+      $paths_option\
+      {multi_backend,\n\
+          [{be_default,riak_kv_eleveldb_backend,\n\
+               [{max_open_files,20}]},\n\
+           {be_blocks,riak_kv_bitcask_backend,\n\
+               []}]},\n\
+      {multi_backend_default,be_default},\n\
+      {multi_backend_prefix_list,[{<<\"0b:\">>,be_blocks}]},\n\
+      {storage_backend,riak_kv_multi_backend}\n\
+     ]}\n\
+   ].\n|" \
+     $d/advanced.config
+
+echo "* Pushing riak.conf and advanced.config"
+if [ $local_riak = yes ]; then
+    cp $d/* $RIAK_CONFIG_DIR
+else
+    rsync $d/* $RIAK_HOST:$ETC/riak/
+fi
+
+rm -rf $d
