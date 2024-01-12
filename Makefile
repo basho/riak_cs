@@ -10,7 +10,7 @@ OTP_VER          = $(shell erl -eval 'erlang:display(erlang:system_info(otp_rele
 REBAR           ?= $(BASE_DIR)/rebar3
 PULSE_TESTS      = riak_cs_get_fsm_pulse
 
-.PHONY: all rel compile clean distclean check stagedevrel test depgraph graphviz package pkg-clean
+.PHONY: all rel compile clean distclean check stagedevrel test depgraph graphviz package pkg-clean sbom
 
 all: compile
 
@@ -27,6 +27,9 @@ check:
 	@$(REBAR) eunit
 	@$(REBAR) xref
 	@$(REBAR) dialyzer
+
+sbom:
+	@$(REBAR) sbom
 
 ##
 ## Release targets
