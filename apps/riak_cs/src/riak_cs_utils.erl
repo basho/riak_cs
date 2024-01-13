@@ -62,7 +62,9 @@
          camel_case/1,
          capitalize/1,
          object_indices/1,
-         get_df/0
+         get_df_on_connected_riak_node/0,
+         get_df/0,
+         guess_riak_node_name/0
         ]).
 
 -include("riak_cs.hrl").
@@ -494,10 +496,65 @@ object_indices(?IAM_SAML_PROVIDER{name = Name,
      {?SAMLPROVIDER_ENTITYID_INDEX, EntityId}].
 
 
-get_df() ->
-    ?LOG_DEBUG("STUB"),
-    -1.
+-spec get_df_on_connected_riak_node() -> integer().
+get_df_on_connected_riak_node() ->
+    Node = guess_riak_node_name(),
+    case rpc:call(Node, [riak_cs_utils, get_df, []]) of
+        {badrpc, Reason} ->
+            logger:notice("Intending to do an rpc call, found riak node ~s not connected (~p)", [Node, Reason]),
+            -1;
+        Res ->
+            Res
+    end.
 
+guess_riak_node_name() ->
+    {H, _} = riak_cs_config:riak_host_port(),
+    ?LOG_DEBUG("H: ~p", [H]),
+    list_to_atom(guess_riak_node_name(atom_to_list(node())) ++ "@" ++ H).
+
+guess_riak_node_name([$r, $c, $s, $-, $d, $e, $v, N, $@ | _]) ->
+    "dev" ++ [N];
+guess_riak_node_name("riak@" ++ _) ->
+    "riak";
+guess_riak_node_name(_) ->
+    logger:info("will use standard node name \"riak\" for rpc calls"),
+    "riak".
+
+
+
+
+-spec get_df() -> {integer(), integer()}.
+-if (OTP_26).
+get_df() ->
+    case disksup:get_disk_info("./data") of
+        {ok, {Total, _, _, _}, Remaining} ->
+            {Total, Remaining};
+        _ ->
+            {-1, -1}
+    end.
+-else.
+get_df() ->
+    [_Header, Line, _] = string:split(os:cmd("df ./data"), "\n", all),
+    case parse_df(Line) of
+        {ok, {Total, _, _, _}, Remaining} ->
+            {Total, Remaining};
+        _ ->
+            {-1, -1}
+    end.
+parse_df(L) ->
+    try
+        [_Device, OneKblocks, _Used, Available, _UsedPC, MountPoint] =
+            string:tokens(L, " "),
+        KiBTotal = list_to_integer(OneKblocks),
+        KiBAvailable = list_to_integer(Available),
+        Capacity = list_to_integer(OneKblocks),
+        {ok, {KiBTotal, KiBAvailable, Capacity, MountPoint}, KiBAvailable}
+    catch
+        error:badarg ->
+            {error, parse_df}
+    end.
+
+-endif.
 
 -ifdef(TEST).
 

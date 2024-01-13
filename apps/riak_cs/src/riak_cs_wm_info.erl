@@ -95,10 +95,12 @@ gather_info() ->
               {_, _, A} when A > 0 -> io_lib:format("~b minute~s, ~b sec", [M, s(M), S]);
               _ -> io_lib:format("~b sec", [S])
           end,
+    {KiBTotal, KiBAvailable} = riak_cs_utils:get_df(),
     #{version => list_to_binary(?RCS_VERSION_STRING),
       system_version => list_to_binary(lists:droplast(erlang:system_info(system_version))),
       uptime => iolist_to_binary(Str),
-      free_space => riak_cs_utils:get_df()
+      df_available => KiBAvailable,
+      df_total => KiBTotal
      }.
 
 s(1) -> "";

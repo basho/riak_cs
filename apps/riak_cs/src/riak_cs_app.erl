@@ -51,12 +51,23 @@ start(_Type, _StartArgs) ->
     ok = is_config_valid(),
     ok = ensure_bucket_props(Pbc),
     {ok, PostFun} = check_admin_creds(Pbc),
+    ok = try_connect_to_riak_node(),
     Ret = {ok, _Pid} = riak_cs_sup:start_link(),
     ok = PostFun(),
     ok = riakc_pb_socket:stop(Pbc),
     ok = stanchion_lock:cleanup(),
     Ret.
 
+
+try_connect_to_riak_node() ->
+    Node = riak_cs_utils:guess_riak_node_name(),
+    case net_kernel:connect_node(Node) of
+        true ->
+            ok;
+        false ->
+            logger:notice("Failed to connect to riak node ~s. Rpc calls won't work.", [Node]),
+            ok
+    end.
 
 
 %% @doc application stop callback for riak_cs.
