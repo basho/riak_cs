@@ -62,8 +62,8 @@
          camel_case/1,
          capitalize/1,
          object_indices/1,
-         get_df_on_connected_riak_node/0,
-         get_df/0,
+         gather_disk_usage_on_connected_riak_nodes/0,
+         get_storage_info/0,
          guess_riak_node_name/0
         ]).
 
@@ -496,50 +496,61 @@ object_indices(?IAM_SAML_PROVIDER{name = Name,
      {?SAMLPROVIDER_ENTITYID_INDEX, EntityId}].
 
 
--spec get_df_on_connected_riak_node() -> integer().
-get_df_on_connected_riak_node() ->
-    Node = guess_riak_node_name(),
-    case rpc:call(Node, [riak_cs_utils, get_df, []]) of
-        {badrpc, Reason} ->
-            logger:notice("Intending to do an rpc call, found riak node ~s not connected (~p)", [Node, Reason]),
-            -1;
-        Res ->
-            Res
-    end.
-
-guess_riak_node_name() ->
-    {H, _} = riak_cs_config:riak_host_port(),
-    ?LOG_DEBUG("H: ~p", [H]),
-    list_to_atom(guess_riak_node_name(atom_to_list(node())) ++ "@" ++ H).
-
-guess_riak_node_name([$r, $c, $s, $-, $d, $e, $v, N, $@ | _]) ->
-    "dev" ++ [N];
-guess_riak_node_name("riak@" ++ _) ->
-    "riak";
-guess_riak_node_name(_) ->
-    logger:info("will use standard node name \"riak\" for rpc calls"),
-    "riak".
+-spec gather_disk_usage_on_connected_riak_nodes() -> [{node(), #{}}].
+gather_disk_usage_on_connected_riak_nodes() ->
+    [begin
+         Info =
+             case rpc:call(N, riak_cs_utils, get_storage_info, []) of
+                 #{} = A ->
+                     A;
+                 _ ->
+                     logger:warning("failed to get storage info via rpc from node ~s", [N]),
+                     #{}
+             end,
+         maps:merge(#{node => N}, Info)
+     end || N <- nodes(), is_riak_node(atom_to_list(N))].
+is_riak_node([$r, $i, $a, $k, $@ | _]) -> true;
+is_riak_node([$d, $e, $v, N, $@ | _]) when N >= $1, N =< $9 -> true;
+is_riak_node(_) -> false.
 
 
 
+-spec get_storage_info() -> #{}.
+get_storage_info() ->
+    lists:foldl(fun maps:merge/2, #{},
+                [get_df(), get_nval(), get_backend_data_du()]).
 
--spec get_df() -> {integer(), integer()}.
+get_nval() ->
+    {ok, DefBP} = application:get_env(riak_core, default_bucket_props),
+    #{n_val => proplists:get_value(n_val, DefBP)}.
+
+get_backend_data_du() ->
+    {ok, DataDir} = application:get_env(riak_core, platform_data_dir),
+    #{backend_data_total_size =>
+          filelib:fold_files(
+            DataDir, ".*\.sst$", true,
+            fun(F, Q) -> filelib:file_size(F) + Q end, 0)}.
+
+%% this function will be called on riak nodes
 -if (OTP_26).
 get_df() ->
     case disksup:get_disk_info("./data") of
         {ok, {Total, _, _, _}, Remaining} ->
             {Total, Remaining};
         _ ->
-            {-1, -1}
+            #{df_total => -1,
+              df_available => -1}
     end.
 -else.
 get_df() ->
     [_Header, Line, _] = string:split(os:cmd("df ./data"), "\n", all),
     case parse_df(Line) of
         {ok, {Total, _, _, _}, Remaining} ->
-            {Total, Remaining};
+            #{df_total => Total,
+              df_available => Remaining};
         _ ->
-            {-1, -1}
+            #{df_total => -1,
+              df_available => -1}
     end.
 parse_df(L) ->
     try
@@ -555,6 +566,17 @@ parse_df(L) ->
     end.
 
 -endif.
+
+
+guess_riak_node_name() ->
+    {H, _} = riak_cs_config:riak_host_port(),
+    list_to_atom(guess_riak_node_name(atom_to_list(node())) ++ "@" ++ H).
+
+guess_riak_node_name([$r, $c, $s, $-, $d, $e, $v, N, $@ | _]) ->
+    "dev" ++ [N];
+guess_riak_node_name(_) ->
+    logger:info("will use standard node name \"riak\" for rpc calls"),
+    "riak".
 
 -ifdef(TEST).
 

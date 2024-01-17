@@ -1,24 +1,22 @@
 # Riak CS 3.2.4 Release Notes
 
-Released February 2, 2023.
+Released January 25, 2023.
 
 ## General
 
-Bugfix release, with features complementary to the more
-substantive release of Riak CS Control 3.2.3.
+Bugfix/minor feature release.
 
 ## New features
 
-* A rough implementation of `df -h` on filesystems where riak keeps
-  its data.
-* Make `prepare-riak-for-cs` work for the case when riak and riak_cs
-  are on separate hosts.
+* /riak-cs/info has a new field, `storage_info`, with the following
+  bits: `backend_data_total_size`, `df_available`, `df_total`,
+  `n_val`, gathered from each nodes in the riak cluster.
 
 ## Bug fixes
 
 * `AssumeRoleWithSAML`, when called on a non-existing
   `SAMLProvider`, now correctly returns a 404 (not 500).
-* Listing objects with an explicit PathPrefix value of "" now correctly
+* Listing objects with an explicit `PathPrefix` value of "" now correctly
   includes items with empty path.
 
 
