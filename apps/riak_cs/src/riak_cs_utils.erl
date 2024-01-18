@@ -496,7 +496,11 @@ object_indices(?IAM_SAML_PROVIDER{name = Name,
      {?SAMLPROVIDER_ENTITYID_INDEX, EntityId}].
 
 
--spec gather_disk_usage_on_connected_riak_nodes() -> [{node(), #{}}].
+-spec gather_disk_usage_on_connected_riak_nodes() -> [#{node := atom(),
+                                                       df_total := integer(),
+                                                       df_available := integer(),
+                                                       backend_data_total_size := integer(),
+                                                       n_val := integer()}].
 gather_disk_usage_on_connected_riak_nodes() ->
     [begin
          Info =
