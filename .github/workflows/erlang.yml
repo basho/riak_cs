@@ -1,0 +1,31 @@
+name: Erlang CI
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - "24"
+          - "25"
+
+    container:
+      image: erlang:${{ matrix.otp }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compile
+        run: make compile
+      - name: Run checks
+        run: make check

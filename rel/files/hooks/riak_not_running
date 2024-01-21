@@ -1,0 +1,8 @@
+#!/bin/sh
+
+RIAK="{{platform_bin_dir}}/riak-cs"
+
+if $RIAK "ping" > /dev/null; then
+    echo "Node is already running!"
+    exit 1
+fi

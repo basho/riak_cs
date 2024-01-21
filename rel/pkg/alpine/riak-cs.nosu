@@ -1,0 +1,34 @@
+#!/bin/bash
+
+RUNNER_GEN_DIR={{platform_gen_dir}}
+RELX_RIAK={{platform_bin_dir}}/riak-cs
+export PID_DIR={{pid_dir}}
+export RUNNER_LOG_DIR={{platform_log_dir}}
+
+PID_FILE=$PID_DIR/riak-cs.pid
+
+mkdir -p $PID_DIR
+
+# cuttlefish should be doing this, but it doesn't:
+VMARGS_PATH=`ls -1 ${RUNNER_GEN_DIR}/generated.conf/vm.*.args 2>/dev/null | tail -1`
+if [ ! -r  "$VMARGS_PATH" ]; then
+    VMARGS_PATH="{{platform_base_dir}}/releases/{{rel_vsn}}/vm.args"
+fi
+export VMARGS_PATH
+
+case "$1" in
+    start)
+        $RELX_RIAK $* -pa {{platform_patch_dir}}
+        test -r $PID_FILE && exit 0
+        ;;
+    console|foreground)
+        $RELX_RIAK $* -pa {{platform_patch_dir}}
+        ;;
+    stop)
+        $RELX_RIAK $* \
+            && rm -f $PID_FILE
+        ;;
+    *)
+        $RELX_RIAK $*
+        ;;
+esac

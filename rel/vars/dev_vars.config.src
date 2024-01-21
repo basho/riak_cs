@@ -1,18 +1,17 @@
-%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
-%% ex: ts=4 sw=4 et
+%% -*- mode: erlang; -*-
 
-{devrel, true}.
+{rel_vsn, "{{release_version}}"}.
 
 %% Platform-specific installation paths
-{platform_bin_dir,  "./bin"}.
-{platform_data_dir, "./data"}.
-{platform_etc_dir,  "./etc"}.
-{platform_lib_dir,  "./lib"}.
-{platform_log_dir,  "./log"}.
+{platform_base_dir,  "@PLATFORM_BASE_DIR@"}.
+{platform_bin_dir,   "{{platform_base_dir}}/bin"}.
+{platform_data_dir,  "{{platform_base_dir}}/data"}.
+{platform_etc_dir,   "{{platform_base_dir}}/etc"}.
+{platform_lib_dir,   "{{platform_base_dir}}/lib"}.
+{platform_log_dir,   "{{platform_base_dir}}/log"}.
+{platform_gen_dir,   "{{platform_base_dir}}"}.
+{platform_patch_dir, "{{platform_lib_dir}}/patches"}.
 
-%%
-%% etc/app.config
-%%
 {cs_ip,             "127.0.0.1"}.
 {cs_port,           @CSPORT@}.
 {admin_ip,          "127.0.0.1"}.
@@ -21,35 +20,21 @@
 {riak_pb_port,      @RIAKPBPORT@}.
 {auth_bypass,       false}.
 {admin_key,         "admin-key"}.
-{stanchion_ip,      "127.0.0.1"}.
 {stanchion_port,    8085}.
 {stanchion_ssl,     off}.
-{cs_version,        010300}.
-{rewrite_module,    riak_cs_s3_rewrite}.
-{auth_module,       riak_cs_s3_auth}.
+{cs_version,        030203}.
+{rewrite_module,    riak_cs_aws_rewrite}.
+{auth_module,       riak_cs_aws_auth}.
+{stanchion_hosting_mode, auto}.
+{tussle_voss_riak_host, auto}.
 
-%%
-%% etc/vm.args
-%%
 {node,         "@NODE@"}.
 {crash_dump,   "{{platform_log_dir}}/erl_crash.dump"}.
 
-%%
-%% bin/riak_cs
-%%
-{data_dir,           "{{target_dir}}/data"}.
-{runner_script_dir,  "\`cd \\`dirname $0\\` && /bin/pwd\`"}.
-{runner_base_dir,    "{{runner_script_dir}}/.."}.
-{runner_etc_dir,     "$RUNNER_BASE_DIR/etc"}.
-{runner_log_dir,     "$RUNNER_BASE_DIR/log"}.
-{runner_lib_dir,     "$RUNNER_BASE_DIR/lib"}.
-{runner_patch_dir,   "$RUNNER_BASE_DIR/lib/basho-patches"}.
-{pipe_dir,           "/tmp/$RUNNER_BASE_DIR/"}.
-{runner_user,        ""}.
-{runner_wait_process, "riak_cs_put_fsm_sup"}.
+{log_level, debug}.
+{logger_sasl_enabled, true}.
 
-%%
-%% cuttlefish
-%%
 {cuttlefish,         "on"}.
 {cuttlefish_conf,    "riak-cs.conf"}.
+
+{devrel, true}.

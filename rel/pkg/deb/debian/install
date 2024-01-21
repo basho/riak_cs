@@ -1,0 +1,8 @@
+rel/riak-cs/lib usr/lib/riak-cs
+rel/riak-cs/share usr/lib/riak-cs
+rel/riak-cs/erts* usr/lib/riak-cs
+rel/riak-cs/releases usr/lib/riak-cs
+rel/riak-cs/bin/riak-cs-* usr/sbin
+rel/riak-cs/usr/bin/riak-cs usr/sbin
+rel/riak-cs/bin usr/lib/riak-cs
+rel/riak-cs/etc/* etc/riak-cs
